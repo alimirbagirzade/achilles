@@ -19,7 +19,7 @@
 - [x] `nomic-embed-text` (embedding modeli) indirildi
 - [x] `qwen2.5-coder:7b` (LLM) indirildi — RAG ile **canlı doğrulandı** (ama 8GB için ağır, ~3dk/sorgu)
 - [x] `mlx-lm 0.31.3` (LoRA eğitim extra'sı, Apple Silicon)
-- [ ] `qwen2.5-coder:3b` (8GB profili, aktif model) — ⏳ iniyor
+- [x] `qwen2.5-coder:3b` (8GB profili, **aktif model**) — indirildi + RAG ile canlı çalışıyor (~60s/sorgu)
 
 > **RAM profilleri** (`.env` / `.env.example`): **8GB → `qwen2.5-coder:3b`** (aktif) · 16GB → `7b` · **32GB → `qwen2.5-coder:14b`** (gelecekte makine değişince). Bilgisayar yükseltilince `.env`'de `ACHILLES_LLM_MODEL`'i 14b yapıp `ollama pull qwen2.5-coder:14b` yeterli.
 
@@ -30,18 +30,19 @@
 - [x] RAG **canlı LLM** doğrulandı — `achilles ask` qwen 7B ile kaynaklı, 5-bölümlü cevap üretti (`llm_used=True`, 3 kaynak, doğru citation)
 - [x] Backtest + evaluator — EMA/RSI çalıştı, **FAIL** yargısı SQLite'a yazıldı
 - [x] LoRA `train` dry-run — `mlx_lm.lora` komut kurulumu doğrulandı
-- [ ] Knowledge card / dataset **canlı** üretimi — 3b aktif olunca doğrulanacak
+- [x] Knowledge card **canlı** üretimi — `pytest -m ollama` ile 3b'de doğrulandı (kart üretildi + kaydedildi)
 
 **Kalite & Test**
-- [x] 30 test geçti · 2 `@pytest.mark.ollama` entegrasyon testi atlandı (qwen bekliyor)
+- [x] **32/32 test** (model varken): 30 çevrimdışı + 2 `@pytest.mark.ollama` canlı entegrasyon (RAG + card, 3b ile geçti)
 - [x] ruff format + lint: 0 ihlal · mypy: 0 hata (37 dosya)
 - [x] Şartname bölüm-7'nin **8 test dosyası da mevcut**
 
 **Yapılacaklar (sıradaki)**
-- [ ] qwen gelince `ask` / `card` / `dataset` akışını uçtan uca doğrula
+- [ ] `dataset` → LoRA `train --run` uçtan uca (3b ile küçük deneme)
 - [ ] Gerçek OHLCV verisiyle backtest (sentetik yerine)
 - [ ] `uv.lock`'u versiyonlamaya alma kararı (tekrarlanabilirlik)
 - [ ] CI'da ollama-işaretli testleri ayır (`pytest -m "not ollama"`)
+- [ ] 32GB makineye geçince `ACHILLES_LLM_MODEL=qwen2.5-coder:14b` (profil hazır)
 
 ---
 

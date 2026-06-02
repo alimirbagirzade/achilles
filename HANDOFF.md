@@ -67,7 +67,9 @@ Sözleşmeler: `paper_id` içerik hash'inden türer (idempotent ingestion). Stra
 
 ## Açık konular / sonraki adımlar
 
-- [ ] **`qwen2.5-coder:7b` indirme bitince** RAG'i doğrula: `uv run achilles ask "..."` (cevap + kaynaklar), ardından `card <paper_id>` ve `dataset`. (Embedding zaten `ollama` modunda — doğrulandı.)
+- [x] **RAG canlı doğrulandı** — `achilles ask` hem 7B hem 3b ile kaynaklı 5-bölümlü cevap üretti; `pytest -m ollama` (RAG + knowledge card) 3b'de **2 passed**.
+- [x] **8GB RAM kararı** — 7B 8GB'da ağır (model+embed birlikte sığmıyor, RAG ~3dk). Aktif model **`qwen2.5-coder:3b`** (`.env`). 32GB'a geçince `ACHILLES_LLM_MODEL=qwen2.5-coder:14b` (profil `.env.example`'da kayıtlı).
+- [ ] **`dataset` → `train --run`** ile küçük gerçek LoRA denemesi (mlx-lm hazır).
 - [ ] **Python sürümü:** ortam **3.13** kuruldu; spec **3.12** diyor. Testler 3.13'te geçiyor; istenirse `uv python pin 3.12 && uv sync` ile sabitlenebilir.
 - [ ] **`uv.lock` `.gitignore`'da** — uygulamalarda tekrarlanabilirlik için lock dosyasını commit etmek tercih edilir; gözden geçir.
 - [ ] **Gerçek PDF ile ingestion** test edilmedi (henüz `data/papers/raw_pdf/` boş). Bir akademik PDF koyup `achilles ingest` → `ask` akışını uçtan uca dene.
