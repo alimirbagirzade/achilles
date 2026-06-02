@@ -30,6 +30,7 @@
 - [x] RAG **canlı LLM** doğrulandı — `achilles ask` qwen 7B ile kaynaklı, 5-bölümlü cevap üretti (`llm_used=True`, 3 kaynak, doğru citation)
 - [x] Backtest + evaluator — EMA/RSI çalıştı, **FAIL** yargısı SQLite'a yazıldı
 - [x] LoRA `train` dry-run — `mlx_lm.lora` komut kurulumu doğrulandı
+- [x] **LoRA `train --run` UÇTAN UCA** — `dataset` (10 örnek) → `mlx_lm.lora` (1.5B-4bit MLX) → adapter; train loss **1.21→0.029**, peak mem **3.8GB** (8GB'a sığdı), adapter registry'ye kaydedildi, çıkarımda **öğrenilmiş disiplin formatı** üretti
 - [x] Knowledge card **canlı** üretimi — `pytest -m ollama` ile 3b'de doğrulandı (kart üretildi + kaydedildi)
 
 **Kalite & Test**
@@ -38,7 +39,8 @@
 - [x] Şartname bölüm-7'nin **8 test dosyası da mevcut**
 
 **Yapılacaklar (sıradaki)**
-- [ ] `dataset` → LoRA `train --run` uçtan uca (3b ile küçük deneme)
+- [ ] Knowledge card'ı 8GB'da güvenilir üret (3b geçersiz JSON / 7b timeout) — daha kısa prompt + retry + lenient JSON parse, ya da 32GB'da çöz
+- [ ] LoRA datasetini gerçek (çok makaleli) kart havuzundan büyüt; daha fazla iter
 - [ ] Gerçek OHLCV verisiyle backtest (sentetik yerine)
 - [ ] `uv.lock`'u versiyonlamaya alma kararı (tekrarlanabilirlik)
 - [ ] CI'da ollama-işaretli testleri ayır (`pytest -m "not ollama"`)
