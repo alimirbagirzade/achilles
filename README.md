@@ -176,6 +176,28 @@ Tarayıcıda `http://127.0.0.1:8765` aç. Sekmeler: **Araştırma** (RAG soru-ce
 > Sunucuyu internete açacaksan **mutlaka** `ACHILLES_API_TOKEN` ata ve TLS'li bir
 > reverse proxy arkasına koy. Ayrıntılar: [`SECURITY.md`](./SECURITY.md).
 
+### 🌐 Arkadaşların bağlanabilir mi? (paylaşım)
+
+Varsayılan: **yalnız senin makinende** (`127.0.0.1`) — başkası bağlanamaz (güvenli). Paylaşmak için:
+
+**A) Aynı Wi-Fi / yerel ağ:**
+```bash
+echo 'ACHILLES_API_TOKEN=uzun-gizli-bir-parola' >> .env   # ZORUNLU (ağa açıyorsun)
+echo 'ACHILLES_WEB_HOST=0.0.0.0' >> .env
+uv run achilles-web
+```
+- IP'ni öğren: `ipconfig getifaddr en0` → arkadaşların `http://<o-IP>:8765` açar.
+- **SİSTEM** sekmesinden token'ı girerler. macOS güvenlik duvarı sorarsa **İzin Ver**.
+
+**B) İnternet üzerinden (geçici tünel):**
+```bash
+ngrok http 8765        # veya: cloudflared tunnel --url http://localhost:8765
+```
+Sana `https://…` bir adres verir; arkadaşların oradan (token ile) girer.
+
+> ⚠️ Açınca kendi makinendeki modele + dosya yükleme/backtest'e erişim verirsin.
+> **Güçlü token şart**, işin bitince kapat. Detay: [`SECURITY.md`](./SECURITY.md).
+
 ---
 
 ## ⚙️ Sekmeler Nasıl Çalışır? (motorun içi)
@@ -276,7 +298,34 @@ make format       # ruff format
 make typecheck    # mypy
 ```
 
-CI (`.github/workflows/ci.yml`): her push/PR'da `uv sync` + `ruff` + `pytest`.
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)): her push/PR'da
+`uv sync` + `ruff check` + `ruff format --check` + `mypy` + `pytest` (offline,
+ollama-işaretli testler hariç). Ubuntu + Python 3.12; `mlx-lm` (Apple-Silicon) kurulmaz.
+
+---
+
+## 🗺️ Yol Haritası (açık işler)
+
+**Veri & Araştırma**
+- [ ] Intraday (15m/1h) OHLCV kaynağı + `market_data_loader`'a fetch fonksiyonu
+- [ ] arXiv/SSRN'den otomatik makale çekme (şu an elle yükleme)
+- [ ] Web: "tüm makaleyi özetle" düğmesi + ayarlanabilir `top_k`
+
+**Eğitim (LoRA)**
+- [ ] Çok-makaleli gerçek LoRA dataseti (kartlar artık otomatik) + daha fazla iter
+- [ ] `evaluate` (eval setleri) akışını web'e bağla
+- [ ] DPO / preference tuning (ileride, yeterli veri birikince)
+
+**Web / UX**
+- [ ] Bilgi kartını/makale detayını arayüzde görüntüleme
+- [ ] Kütüphane yönetimi (makale silme)
+- [ ] Strateji IR'i web'den düzenleyip backtest etme
+
+**Çıktı & Altyapı**
+- [ ] Pine Script / MQL5 strateji çıktısı (spec)
+- [x] CI (GitHub Actions) — kuruldu
+- [ ] `uv.lock`'u versiyonlama kararı (tekrarlanabilirlik)
+- [ ] 32GB makineye geçince `ACHILLES_LLM_MODEL=qwen2.5-coder:14b` (profil hazır)
 
 ---
 
