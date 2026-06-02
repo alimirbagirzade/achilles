@@ -13,10 +13,14 @@ Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple S
 1. **Proje doğrulandı** — ~40 modül / 3235+ satır kod (ingestion, memory, brain, training, trading, CLI, testler) tutarlı ve çalışır durumda.
 2. **İsim tutarlılığı** — repo genelindeki tüm `Ares` / `ares` ibareleri **`Achilles` / `achilles`** olarak değiştirildi (kod, env prefix `ACHILLES_`, db `achilles_trader_ai.db`, CLI komutu `achilles`, scriptler, şartname `.txt`). Kalan "ares" yok.
 3. **Ortam kuruldu** — `uv sync --extra dev` → **Python 3.13** + 267 paket (chromadb, pymupdf, sqlalchemy, typer, backtesting…).
-4. **Ollama kuruldu** — `brew install ollama`, `brew services start ollama` (servis ayakta, `http://localhost:11434`). Modeller arka planda çekiliyor: `nomic-embed-text` + `qwen2.5-coder:7b`.
-5. **Testler** — `uv run pytest` → **21/21 geçti** (çevrimdışı, fake embedding).
-6. **Uçtan uca duman testi** — `achilles init` + `gen-data` + `backtest` çalıştı; EMA/RSI stratejisi metrik üretti, evaluator **FAIL** yargısı verdi (out-of-sample + min işlem şartı), SQLite'a `bt_…` olarak kaydedildi.
-7. **GitHub'a push edildi** — `alimirbagirzade/achilles` `main`: `Initial commit → feat: Achilles Trader AI MVP skeleton` (temiz lineer tarih, force yok).
+4. **Ollama kuruldu** — `brew install ollama`, `brew services start ollama` (servis ayakta, `http://localhost:11434`). `nomic-embed-text` ✅ indi; `qwen2.5-coder:7b` ⏳ iniyor.
+5. **mlx-lm kuruldu** — `uv sync --extra dev --extra train` → `mlx-lm 0.31.3` (Apple Silicon, LoRA eğitim hazır).
+6. **Testler** — `uv run pytest` → **21/21 geçti** (çevrimdışı, fake embedding).
+7. **Kalite kapıları (ruflo `quality` ajanı)** — `ruff format` (43 dosya temiz), `ruff check` (0 ihlal), `mypy` (37 dosya, 0 hata).
+8. **Uçtan uca duman testi** — `achilles init` + `gen-data` + `backtest` çalıştı; EMA/RSI metrik üretti, evaluator **FAIL** yargısı verdi (out-of-sample + min işlem), SQLite'a `bt_…` kaydedildi.
+9. **GERÇEK PDF ingestion doğrulandı (ruflo `ingestion` ajanı)** — arXiv `2606.01650` "Post-Selection Estimation of Sharpe Ratios" indirildi → **1 makale, 69 chunk** SQLite + ChromaDB, **gerçek ollama embedding** (63.459 karakter). Hatasız.
+10. **GitHub'a push edildi** — `alimirbagirzade/achilles` `main`: `Initial commit → feat: MVP skeleton → docs(handoff)` (temiz lineer tarih, force yok).
+11. **ruflo devrede** — hierarchical swarm `swarm-1780379731927-98lit9`, oturum durumu `patterns` namespace'inde (HNSW, 384-dim). İki uzman ajan (`code-analyzer`, `backend-dev`) görevleri tamamladı.
 
 ---
 
@@ -63,7 +67,7 @@ Sözleşmeler: `paper_id` içerik hash'inden türer (idempotent ingestion). Stra
 
 ## Açık konular / sonraki adımlar
 
-- [ ] **Model indirme** bitince `uv run achilles status` ile Ollama erişimini ve embedding modunun `ollama` olduğunu doğrula (artık `fake` değil).
+- [ ] **`qwen2.5-coder:7b` indirme bitince** RAG'i doğrula: `uv run achilles ask "..."` (cevap + kaynaklar), ardından `card <paper_id>` ve `dataset`. (Embedding zaten `ollama` modunda — doğrulandı.)
 - [ ] **Python sürümü:** ortam **3.13** kuruldu; spec **3.12** diyor. Testler 3.13'te geçiyor; istenirse `uv python pin 3.12 && uv sync` ile sabitlenebilir.
 - [ ] **`uv.lock` `.gitignore`'da** — uygulamalarda tekrarlanabilirlik için lock dosyasını commit etmek tercih edilir; gözden geçir.
 - [ ] **Gerçek PDF ile ingestion** test edilmedi (henüz `data/papers/raw_pdf/` boş). Bir akademik PDF koyup `achilles ingest` → `ask` akışını uçtan uca dene.
