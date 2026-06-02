@@ -53,6 +53,20 @@ class Settings(BaseSettings):
     allow_fake_embeddings: bool = True
     log_level: str = "INFO"
 
+    # --- Web (FastAPI) ---
+    # Güvenlik: varsayılan olarak SADECE localhost'a bağlanır (dışarı açılmaz).
+    web_host: str = "127.0.0.1"
+    web_port: int = 8765
+    # Boşsa kimlik doğrulama kapalıdır (yalnız localhost güvenli sayılır).
+    # Sunucuyu ağa açacaksan MUTLAKA güçlü bir token ata.
+    api_token: str = ""
+    # CORS: yalnız bu kökenlere izin verilir (frontend aynı origin'den sunulur).
+    cors_origins: str = "http://127.0.0.1:8765,http://localhost:8765"
+    # PDF upload üst sınırı (MB).
+    max_upload_mb: int = 50
+    # Basit hız sınırı: IP başına dakikadaki istek.
+    rate_limit_per_min: int = 120
+
     # --- Derived dirs (not env-configurable) ---
     @property
     def root(self) -> Path:

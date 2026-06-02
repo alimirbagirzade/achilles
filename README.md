@@ -9,43 +9,19 @@
 
 ---
 
-## 📊 Proje Durumu — _canlı_ (son güncelleme: 2026-06-02, branch `main`)
+## 📊 Proje Durumu — _canlı_ (2026-06-02, branch `main`)
 
-> Repo: https://github.com/alimirbagirzade/achilles · Test: **30 passed, 2 skipped** · Kalite: ruff+mypy temiz
+> Repo: https://github.com/alimirbagirzade/achilles · Test: **43 geçti** (offline) + 2 ollama-entegrasyon · Kalite: ruff+mypy temiz
 
-**Kurulum & Ortam**
-- [x] uv ortamı (Python 3.13) + bağımlılıklar (`uv sync --extra dev --extra train`)
-- [x] Ollama kurulu + servis ayakta
-- [x] `nomic-embed-text` (embedding modeli) indirildi
-- [x] `qwen2.5-coder:7b` (LLM) indirildi — RAG ile **canlı doğrulandı** (ama 8GB için ağır, ~3dk/sorgu)
-- [x] `mlx-lm 0.31.3` (LoRA eğitim extra'sı, Apple Silicon)
-- [x] `qwen2.5-coder:3b` (8GB profili, **aktif model**) — indirildi + RAG ile canlı çalışıyor (~60s/sorgu)
-
-> **RAM profilleri** (`.env` / `.env.example`): **8GB → `qwen2.5-coder:3b`** (aktif) · 16GB → `7b` · **32GB → `qwen2.5-coder:14b`** (gelecekte makine değişince). Bilgisayar yükseltilince `.env`'de `ACHILLES_LLM_MODEL`'i 14b yapıp `ollama pull qwen2.5-coder:14b` yeterli.
-
-**Çekirdek pipeline**
-- [x] PDF ingestion → SQLite + ChromaDB — **gerçek PDF ile doğrulandı** (arXiv `2606.01650`, 1 makale / 69 chunk / gerçek ollama embedding)
-- [x] Embedding servisi (ollama + deterministik fake fallback)
-- [x] RAG yanıtlama — mantık **çevrimdışı** test edildi (stub LLM/retriever)
-- [x] RAG **canlı LLM** doğrulandı — `achilles ask` qwen 7B ile kaynaklı, 5-bölümlü cevap üretti (`llm_used=True`, 3 kaynak, doğru citation)
-- [x] Backtest + evaluator — sentetik **ve gerçek veride** çalıştı
-- [x] **GERÇEK VERİ backtest** — BTC-USD 1g (Yahoo, 1827 bar/5yıl), EMA/RSI: getiri +%52 / Sharpe 4.0 görünse de evaluator **FAIL** verdi (örneklem-dışı negatif = overfit, az işlem) → disiplin gerçek veride kanıtlandı
-- [x] LoRA `train` dry-run — `mlx_lm.lora` komut kurulumu doğrulandı
-- [x] **LoRA `train --run` UÇTAN UCA** — `dataset` (10 örnek) → `mlx_lm.lora` (1.5B-4bit MLX) → adapter; train loss **1.21→0.029**, peak mem **3.8GB** (8GB'a sığdı), adapter registry'ye kaydedildi, çıkarımda **öğrenilmiş disiplin formatı** üretti
-- [x] Knowledge card **canlı** üretimi — `pytest -m ollama` ile 3b'de doğrulandı (kart üretildi + kaydedildi)
-
-**Kalite & Test**
-- [x] **32/32 test** (model varken): 30 çevrimdışı + 2 `@pytest.mark.ollama` canlı entegrasyon (RAG + card, 3b ile geçti)
-- [x] ruff format + lint: 0 ihlal · mypy: 0 hata (37 dosya)
-- [x] Şartname bölüm-7'nin **8 test dosyası da mevcut**
-
-**Yapılacaklar (sıradaki)**
-- [ ] Knowledge card'ı 8GB'da güvenilir üret (3b geçersiz JSON / 7b timeout) — daha kısa prompt + retry + lenient JSON parse, ya da 32GB'da çöz
-- [ ] LoRA datasetini gerçek (çok makaleli) kart havuzundan büyüt; daha fazla iter
-- [ ] Veri kaynağı: Binance/CryptoCompare/Kraken Türkiye'de bloklu → Yahoo Finance kullanıldı. İçeride bir `market_data_loader` fetch fonksiyonu + intraday (15m/1h) kaynağı eklenebilir
-- [ ] `uv.lock`'u versiyonlamaya alma kararı (tekrarlanabilirlik)
-- [ ] CI'da ollama-işaretli testleri ayır (`pytest -m "not ollama"`)
-- [ ] 32GB makineye geçince `ACHILLES_LLM_MODEL=qwen2.5-coder:14b` (profil hazır)
+- [x] **Ortam**: uv (Python 3.13) · Ollama (servis) · `nomic-embed-text` · `qwen2.5-coder:3b`+`7b` · `mlx-lm 0.31.3`
+- [x] **İsim**: tüm repo `Achilles` (sıfır "ares" kalıntısı)
+- [x] **Ingestion**: gerçek arXiv PDF → SQLite + ChromaDB (69 chunk, gerçek embedding)
+- [x] **RAG canlı**: `ask` kaynaklı 5-bölümlü cevap (3b aktif, 8GB profili)
+- [x] **LoRA `train --run`**: uçtan uca (loss 1.21→0.029, adapter + registry, öğrenilmiş davranış)
+- [x] **Gerçek veri backtest**: BTC-USD 1g (5 yıl) → evaluator overfit'i **FAIL** ile yakaladı
+- [x] **Web arayüzü**: güvenlik-sertleştirilmiş FastAPI + terminal estetiği (`app/web/`, `SECURITY.md`)
+- [ ] 8GB'da güvenilir LLM bilgi-kartı (3b geçersiz JSON / 7b timeout) · intraday OHLCV kaynağı · çok-makaleli LoRA dataseti
+- [ ] 32GB makineye geçince `ACHILLES_LLM_MODEL=qwen2.5-coder:14b` (profil `.env.example`'da hazır)
 
 ---
 
@@ -114,12 +90,13 @@ cp .env.example .env
 # ACHILLES_OLLAMA_HOST, ACHILLES_LLM_MODEL, ACHILLES_EMBED_MODEL, ACHILLES_RAG_TOP_K ...
 ```
 
-### Ollama (opsiyonel ama RAG/kart için gerekli)
+### Ollama (RAG/kart için gerekli)
 ```bash
 brew install ollama && brew services start ollama
-ollama pull qwen2.5-coder:7b   # LLM (varsayılan, ~4.7GB)
-ollama pull nomic-embed-text   # embedding modeli (~274MB)
+ollama pull qwen2.5-coder:3b   # 8GB profili (aktif). 16GB->7b, 32GB->14b
+ollama pull nomic-embed-text   # embedding modeli
 ```
+> RAM profilleri `.env.example`'da belgeli; `ACHILLES_LLM_MODEL` ile seçilir.
 
 ---
 
@@ -161,6 +138,44 @@ achilles backtest data/market/raw/synthetic.csv
 
 ---
 
+## Web arayüzü 🖥️
+
+Terminal estetiğinde, **güvenlik-sertleştirilmiş** yerel web arayüzü.
+
+```bash
+pip install -e ".[web]"      # veya: uv sync --extra web
+achilles-web                 # http://127.0.0.1:8765 (yalnız localhost)
+# alternatif: uvicorn app.web.server:app
+```
+
+Tarayıcıda `http://127.0.0.1:8765` aç. Sekmeler: **Araştırma** (RAG soru-cevap),
+**Makaleler** (PDF yükle/indeksle, bilgi kartı), **Backtest** (sentetik veri +
+örnek strateji + yargı), **Sistem** (durum + token).
+
+### API uçları
+| Yöntem | Uç | Açıklama |
+|--------|-----|----------|
+| GET | `/api/status` | Sistem durumu |
+| GET | `/api/papers` | İndekslenmiş makaleler |
+| POST | `/api/papers/upload` | PDF yükle (doğrulanır) → indeksle |
+| POST | `/api/ingest` | Tüm PDF'leri yeniden indeksle |
+| POST | `/api/ask` | RAG sorusu (kaynaklı) |
+| POST | `/api/card/{paper_id}` | Bilgi kartı üret |
+| POST | `/api/backtest` | Sentetik veri üzerinde backtest |
+| GET | `/api/docs` | OpenAPI (Swagger) arayüzü |
+
+### Güvenlik (özet — tamamı `SECURITY.md`)
+- **Yalnız localhost'a bağlanır** (`127.0.0.1`); ağa açmak için token zorunlu.
+- İsteğe bağlı **bearer token** (`ACHILLES_API_TOKEN`), sabit-zamanlı karşılaştırma.
+- **CSP + güvenlik başlıkları** her yanıtta; frontend'de inline script yok.
+- **Katı PDF doğrulama** (uzantı + sihirli bayt + 50 MB limit) + path-traversal koruması.
+- IP başına **hız sınırı**. Kullanıcı girdisi asla çalıştırılmaz.
+
+> Sunucuyu internete açacaksan **mutlaka** `ACHILLES_API_TOKEN` ata ve TLS'li bir
+> reverse proxy arkasına koy. Ayrıntılar: [`SECURITY.md`](./SECURITY.md).
+
+---
+
 ## Geliştirme
 
 ```bash
@@ -193,7 +208,7 @@ Repo: **https://github.com/alimirbagirzade/achilles** (`main`). Klonlama:
 
 ```bash
 git clone https://github.com/alimirbagirzade/achilles.git
-cd achilles && uv sync --extra dev && uv run achilles init
+cd achilles && uv sync --extra dev --extra web && uv run achilles init
 ```
 
 ---

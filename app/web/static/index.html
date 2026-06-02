@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ACHILLES — Trading Research Terminal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/assets/app.css" />
+  </head>
+  <body>
+    <div class="scanlines" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">▰▰▱</span>
+        <span class="brand-name">ACHILLES</span>
+        <span class="brand-sub">trading research terminal</span>
+      </div>
+      <div class="status-strip" id="statusStrip">
+        <span class="dot dot-idle" id="connDot"></span>
+        <span id="connText">bağlanıyor…</span>
+        <span class="sep">│</span>
+        <span id="embedMode" class="muted">embed: —</span>
+        <span class="sep">│</span>
+        <span id="paperCount" class="muted">papers: —</span>
+      </div>
+    </header>
+
+    <div class="disclaimer">
+      ⚠ ARAŞTIRMA ARACI — yatırım tavsiyesi değildir. Her çıktı test edilmesi
+      gereken bir <em>hipotezdir</em>. Hiçbir strateji backtest + örneklem-dışı
+      doğrulama olmadan "başarılı" sayılmaz.
+    </div>
+
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-tab="research">01 · ARAŞTIRMA</button>
+      <button class="tab" data-tab="papers">02 · MAKALELER</button>
+      <button class="tab" data-tab="backtest">03 · BACKTEST</button>
+      <button class="tab" data-tab="about">04 · SİSTEM</button>
+    </nav>
+
+    <main>
+      <!-- RESEARCH -->
+      <section class="panel active" id="panel-research">
+        <div class="panel-head">
+          <h2>RAG Araştırma</h2>
+          <p class="muted">
+            Soru sor → indekslenmiş makalelerden kaynaklı cevap. Kaynak yoksa
+            sistem uydurmaz.
+          </p>
+        </div>
+        <form id="askForm" class="ask-form">
+          <textarea
+            id="question"
+            rows="3"
+            maxlength="2000"
+            placeholder="örn: Volatilite kümelenmesi momentum sinyallerinin kalıcılığını nasıl etkiler?"
+          ></textarea>
+          <div class="ask-row">
+            <label class="topk">
+              top_k
+              <input type="number" id="topk" min="1" max="20" value="6" />
+            </label>
+            <button type="submit" class="btn btn-primary" id="askBtn">
+              SORGULA →
+            </button>
+          </div>
+        </form>
+        <div id="askResult" class="result hidden"></div>
+      </section>
+
+      <!-- PAPERS -->
+      <section class="panel" id="panel-papers">
+        <div class="panel-head">
+          <h2>Makale Kütüphanesi</h2>
+          <p class="muted">PDF yükle → otomatik indekslenir (SQLite + ChromaDB).</p>
+        </div>
+        <div class="upload-zone" id="uploadZone">
+          <input type="file" id="pdfInput" accept="application/pdf" hidden />
+          <div class="upload-inner">
+            <span class="upload-icon">⇪</span>
+            <p>PDF'i buraya bırak veya <button class="link" id="browseBtn">dosya seç</button></p>
+            <p class="muted small">yalnız .pdf · maks 50&nbsp;MB · içerik doğrulanır</p>
+          </div>
+        </div>
+        <div class="toolbar">
+          <button class="btn" id="refreshPapers">↻ YENİLE</button>
+          <button class="btn" id="reindexBtn">⟳ TÜMÜNÜ İNDEKSLE</button>
+        </div>
+        <div id="papersList" class="papers-list"></div>
+      </section>
+
+      <!-- BACKTEST -->
+      <section class="panel" id="panel-backtest">
+        <div class="panel-head">
+          <h2>Strateji Backtest</h2>
+          <p class="muted">
+            Sentetik veri üzerinde örnek strateji. Motor look-ahead'siz, maliyetli
+            ve örneklem-dışı denetimli. Zayıf strateji <b>FAIL</b> alır.
+          </p>
+        </div>
+        <form id="btForm" class="bt-form">
+          <label>
+            bar sayısı
+            <input type="number" id="nBars" min="200" max="20000" value="2000" />
+          </label>
+          <label>
+            seed
+            <input type="number" id="seed" min="0" max="9999999" value="42" />
+          </label>
+          <button type="submit" class="btn btn-primary" id="btBtn">ÇALIŞTIR →</button>
+        </form>
+        <div id="btResult" class="result hidden"></div>
+      </section>
+
+      <!-- ABOUT -->
+      <section class="panel" id="panel-about">
+        <div class="panel-head"><h2>Sistem & Disiplin</h2></div>
+        <div class="about-grid">
+          <div class="card">
+            <h3>Katmanlar</h3>
+            <pre class="ascii">PDF → ingestion
+   → SQLite + ChromaDB
+   → RAG / bilgi kartı
+   → (LoRA, dry-run)
+   → Strateji IR → Backtest
+   → Overfit → Evaluator</pre>
+          </div>
+          <div class="card">
+            <h3>Disiplin Kuralları</h3>
+            <ul class="rules">
+              <li>Kaynak yoksa uydurma.</li>
+              <li>Test edilmeden "başarılı" deme.</li>
+              <li>Komisyon + slippage daima dahil.</li>
+              <li>Look-ahead yasak (shift+1).</li>
+              <li>In/out-of-sample bölmesi.</li>
+              <li>Kullanıcı girdisi asla çalıştırılmaz.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Güvenlik</h3>
+            <ul class="rules">
+              <li>Yalnız localhost'a bağlanır.</li>
+              <li>İsteğe bağlı token kimlik doğrulama.</li>
+              <li>Katı PDF doğrulama + boyut limiti.</li>
+              <li>CSP + güvenlik başlıkları.</li>
+              <li>IP başına hız sınırı.</li>
+              <li>Path-traversal koruması.</li>
+            </ul>
+          </div>
+        </div>
+        <p class="muted small">
+          API token ayarlamak için <code>.env</code> içinde
+          <code>ACHILLES_API_TOKEN</code>; ardından arayüzde aşağıya gir.
+        </p>
+        <div class="token-row">
+          <input type="password" id="tokenInput" placeholder="API token (opsiyonel)" />
+          <button class="btn" id="saveToken">KAYDET</button>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span class="muted small"
+        >achilles-trader-ai · local-first · not financial advice</span
+      >
+    </footer>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="/assets/app.js"></script>
+  </body>
+</html>

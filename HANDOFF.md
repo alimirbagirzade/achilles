@@ -77,6 +77,7 @@ Sözleşmeler: `paper_id` içerik hash'inden türer (idempotent ingestion). Stra
 - [ ] **MLX-LM LoRA**: `train` komutu varsayılan dry-run; gerçek eğitim `--run` ile (Apple Silicon + `uv sync --extra train`).
 
 - [x] **Gerçek OHLCV backtest YAPILDI** — BTC-USD günlük (Yahoo Finance, 1827 bar / 5 yıl; Binance+CryptoCompare+Kraken Türkiye'de bloklu, Stooq apikey istiyor). EMA/RSI: getiri +%52 / Sharpe 4.0 / DD -%52 ama evaluator **FAIL** (`bt_e22fbfde4b`): örneklem-dışı negatif (overfit) + az işlem. Gerçek veride disiplin doğrulandı. CSV: `data/market/raw/BTCUSD_1d.csv` (gitignored).
+- [x] **Güvenlikli web arayüzü eklendi** (`app/web/`) — FastAPI ince katman: status/papers/upload/ingest/ask/card/backtest + `/api/docs`; `security.py` (token auth `secrets.compare_digest`, IP rate-limit, CSP+güvenlik başlıkları, PDF magic-byte+boyut doğrulama, path-traversal koruması); terminal-estetik static UI (CSP-uyumlu); `SECURITY.md`. `pip install -e ".[web]"` → `achilles-web` (yalnız localhost). Denetim: 2 "ares" regresyonu (`achilles_lora_v1`, `achilles_test`) düzeltildi, `_consteq`→`secrets.compare_digest`, README canlı-durum+github+model bölümleri geri getirildi. **43 offline test geçiyor, ruff+mypy temiz.**
 
 ## Yapılmayacaklar (sabit sınırlar)
 

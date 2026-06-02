@@ -3,7 +3,7 @@
 
 UV := $(shell command -v uv 2> /dev/null)
 
-.PHONY: help install test lint format typecheck run clean gen-data ci
+.PHONY: help install test lint format typecheck run clean gen-data ci web
 
 help:
 	@echo "Hedefler:"
@@ -18,10 +18,10 @@ help:
 
 install:
 ifdef UV
-	uv sync
+	uv sync --extra web
 	-uv run pre-commit install
 else
-	python -m pip install -e ".[dev]"
+	python -m pip install -e ".[dev,web]"
 	-pre-commit install
 endif
 
@@ -60,6 +60,13 @@ ifdef UV
 	uv run achilles gen-data
 else
 	achilles gen-data
+endif
+
+web:
+ifdef UV
+	uv run achilles-web
+else
+	achilles-web
 endif
 
 clean:
