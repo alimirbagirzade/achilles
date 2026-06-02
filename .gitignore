@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+.venv311/
+.python-version
+
+# uv
+uv.lock
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Data & generated artifacts (keep dir structure via .gitkeep)
+data/papers/raw_pdf/*
+data/papers/extracted_text/*
+data/papers/metadata/*
+data/training/raw/*
+data/training/cleaned/*
+data/training/jsonl/*
+data/market/raw/*
+data/market/processed/*
+vector_db/chroma/*
+storage/sqlite/*.db
+storage/sqlite/*.db-*
+models/adapters/*
+models/evals/*
+reports/papers/*
+reports/training/*
+reports/backtests/*
+reports/evals/*
+
+# But keep the .gitkeep placeholders
+!**/.gitkeep
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

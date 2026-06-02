@@ -1,0 +1,147 @@
+"""End-to-end ingestion orchestration.
+
+Pipeline:  discover PDF -> parse -> metadata -> chunk -> SQLite -> embed -> Chroma
+
+Idempotent: a PDF already present (matched by file_hash) is skipped unless
+``force=True``.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from app.config import get_settings
+from app.ingestion.chunker import chunk_parsed_pdf
+from app.ingestion.metadata_extractor import extract_metadata
+from app.ingestion.paper_loader import DiscoveredPaper, discover_pdfs
+from app.ingestion.pdf_parser import parse_pdf
+from app.memory.chroma_store import ChromaStore
+from app.memory.embedding_service import EmbeddingService
+from app.memory.sqlite_store import SqliteStore
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class IngestResult:
+    paper_id: str
+    title: str | None
+    n_chunks: int
+    skipped: bool = False
+    notes: list[str] = field(default_factory=list)
+
+
+class PaperIndexer:
+    def __init__(
+        self,
+        store: SqliteStore | None = None,
+        chroma: ChromaStore | None = None,
+        embedder: EmbeddingService | None = None,
+    ) -> None:
+        self.settings = get_settings()
+        self.settings.ensure_dirs()
+        self.store = store or SqliteStore()
+        self.chroma = chroma or ChromaStore()
+        self.embedder = embedder or EmbeddingService()
+
+    def ingest_one(self, disc: DiscoveredPaper, *, force: bool = False) -> IngestResult:
+        existing = self.store.get_paper_by_hash(disc.file_hash)
+        if existing and not force:
+            logger.info("Zaten var, atlanıyor: %s", disc.path.name)
+            return IngestResult(
+                paper_id=existing.paper_id,
+                title=existing.title,
+                n_chunks=0,
+                skipped=True,
+                notes=["already ingested"],
+            )
+
+        parsed = parse_pdf(disc.path)
+        meta = extract_metadata(parsed.text)
+
+        # save extracted text + metadata to disk
+        (self.settings.extracted_text_dir / f"{disc.paper_id}.txt").write_text(
+            parsed.text, encoding="utf-8"
+        )
+        (self.settings.metadata_dir / f"{disc.paper_id}.json").write_text(
+            json.dumps(
+                {
+                    "paper_id": disc.paper_id,
+                    "file_hash": disc.file_hash,
+                    "title": meta.title,
+                    "authors": meta.authors,
+                    "year": meta.year,
+                    "source": meta.source,
+                    "n_pages": parsed.n_pages,
+                    "n_chars": parsed.n_chars,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        self.store.upsert_paper(
+            paper_id=disc.paper_id,
+            file_hash=disc.file_hash,
+            source_path=str(disc.path),
+            title=meta.title,
+            authors=json.dumps(meta.authors, ensure_ascii=False),
+            year=meta.year,
+            source=meta.source,
+            n_pages=parsed.n_pages,
+            n_chars=parsed.n_chars,
+        )
+
+        chunks = chunk_parsed_pdf(disc.paper_id, parsed)
+        self.store.add_chunks(
+            [
+                {
+                    "chunk_id": c.chunk_id,
+                    "paper_id": c.paper_id,
+                    "chunk_index": c.chunk_index,
+                    "section_name": c.section_name,
+                    "page_number": c.page_number,
+                    "text": c.text,
+                    "char_count": c.char_count,
+                    "token_estimate": c.token_estimate,
+                    "embedded": 1,
+                }
+                for c in chunks
+            ]
+        )
+
+        # embed + write to chroma
+        embeddings = self.embedder.embed([c.text for c in chunks])
+        self.chroma.add(
+            ids=[c.chunk_id for c in chunks],
+            embeddings=embeddings,
+            documents=[c.text for c in chunks],
+            metadatas=[
+                {
+                    "paper_id": c.paper_id,
+                    "chunk_index": c.chunk_index,
+                    "page_number": c.page_number if c.page_number is not None else -1,
+                    "section_name": c.section_name or "",
+                    "title": meta.title or "",
+                }
+                for c in chunks
+            ],
+        )
+
+        logger.info("Indexlendi: %s (%d chunk)", disc.paper_id, len(chunks))
+        return IngestResult(
+            paper_id=disc.paper_id,
+            title=meta.title,
+            n_chunks=len(chunks),
+            notes=[f"embedding_mode={self.embedder.mode}"],
+        )
+
+    def ingest_directory(self, directory: str | Path | None = None, *, force: bool = False):
+        results = []
+        for disc in discover_pdfs(directory):
+            results.append(self.ingest_one(disc, force=force))
+        return results

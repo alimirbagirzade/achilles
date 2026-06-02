@@ -1,0 +1,70 @@
+"""Load OHLCV market data from CSV (and generate synthetic data for testing).
+
+Expected CSV columns (case-insensitive): time/date, open, high, low, close, volume.
+The synthetic generator lets you run the full backtest pipeline without sourcing
+real data first.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+_REQUIRED = ["open", "high", "low", "close"]
+
+
+def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.rename(columns={c: c.strip().lower() for c in df.columns})
+    time_col = next((c for c in ("time", "date", "datetime", "timestamp") if c in df.columns), None)
+    if time_col:
+        df[time_col] = pd.to_datetime(df[time_col], errors="coerce", utc=True)
+        df = df.set_index(time_col)
+        df.index.name = "time"
+    if "volume" not in df.columns:
+        df["volume"] = 0.0
+    return df
+
+
+def load_ohlcv(path: str | Path) -> pd.DataFrame:
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(path)
+    df = pd.read_csv(path)
+    df = _normalize_columns(df)
+    missing = [c for c in _REQUIRED if c not in df.columns]
+    if missing:
+        raise ValueError(f"CSV eksik kolonlar: {missing}")
+    df = df[[*_REQUIRED, "volume"]].dropna(subset=_REQUIRED)
+    df = df.astype(dict.fromkeys([*_REQUIRED, "volume"], "float64"))
+    return df
+
+
+def generate_synthetic_ohlcv(
+    n: int = 2000,
+    start_price: float = 2000.0,
+    seed: int = 42,
+    freq: str = "15min",
+) -> pd.DataFrame:
+    """Geometric-Brownian-ish synthetic series with a mild regime shift."""
+    rng = np.random.default_rng(seed)
+    drift = np.where(np.arange(n) < n // 2, 0.0001, -0.00005)
+    rets = drift + rng.normal(0, 0.004, n)
+    close = start_price * np.exp(np.cumsum(rets))
+    high = close * (1 + np.abs(rng.normal(0, 0.002, n)))
+    low = close * (1 - np.abs(rng.normal(0, 0.002, n)))
+    open_ = np.concatenate([[start_price], close[:-1]])
+    vol = rng.uniform(100, 1000, n)
+    idx = pd.date_range("2023-01-01", periods=n, freq=freq, tz="UTC")
+    return pd.DataFrame(
+        {"open": open_, "high": high, "low": low, "close": close, "volume": vol}, index=idx
+    )
+
+
+def write_synthetic_csv(path: str | Path, **kwargs) -> Path:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df = generate_synthetic_ohlcv(**kwargs)
+    df.to_csv(path, index_label="time")
+    return path
