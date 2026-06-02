@@ -162,6 +162,7 @@ Tarayıcıda `http://127.0.0.1:8765` aç. Sekmeler: **Araştırma** (RAG soru-ce
 | POST | `/api/ask` | RAG sorusu (kaynaklı) |
 | POST | `/api/card/{paper_id}` | Bilgi kartı üret |
 | POST | `/api/backtest` | Sentetik veri üzerinde backtest |
+| POST | `/api/backtest/csv` | **Gerçek OHLCV CSV** yükle → backtest (doğrulanır) |
 | GET | `/api/docs` | OpenAPI (Swagger) arayüzü |
 
 ### Güvenlik (özet — tamamı `SECURITY.md`)

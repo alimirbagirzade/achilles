@@ -293,6 +293,25 @@ input:focus {
   width: 140px;
 }
 
+/* sentetik / gerçek-veri ayıracı */
+.bt-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 24px 0 14px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.bt-divider::before,
+.bt-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
 /* ---------- buttons ---------- */
 .btn {
   background: var(--panel);

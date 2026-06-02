@@ -100,8 +100,9 @@
         <div class="panel-head">
           <h2>Strateji Backtest</h2>
           <p class="muted">
-            Sentetik veri üzerinde örnek strateji. Motor look-ahead'siz, maliyetli
-            ve örneklem-dışı denetimli. Zayıf strateji <b>FAIL</b> alır.
+            Sentetik <b>veya gerçek OHLCV CSV</b> üzerinde örnek strateji. Motor
+            look-ahead'siz, maliyetli ve örneklem-dışı denetimli. Zayıf strateji
+            <b>FAIL</b> alır.
           </p>
         </div>
         <form id="btForm" class="bt-form">
@@ -113,8 +114,23 @@
             seed
             <input type="number" id="seed" min="0" max="9999999" value="42" />
           </label>
-          <button type="submit" class="btn btn-primary" id="btBtn">ÇALIŞTIR →</button>
+          <button type="submit" class="btn btn-primary" id="btBtn">SENTETİK ÇALIŞTIR →</button>
         </form>
+
+        <div class="bt-divider"><span>veya gerçek veri</span></div>
+
+        <div class="upload-zone" id="csvZone">
+          <input type="file" id="csvInput" accept=".csv,text/csv" hidden />
+          <div class="upload-inner">
+            <span class="upload-icon">⇪</span>
+            <p>OHLCV <b>.csv</b>'yi buraya bırak veya
+              <button class="link" id="csvBrowse" type="button">dosya seç</button></p>
+            <p class="muted small">
+              kolonlar: time, open, high, low, close[, volume] · maks 50&nbsp;MB · içerik doğrulanır
+            </p>
+          </div>
+        </div>
+
         <div id="btResult" class="result hidden"></div>
       </section>
 

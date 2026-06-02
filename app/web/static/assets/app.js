@@ -338,9 +338,66 @@
       })
       .finally(function () {
         btn.disabled = false;
-        btn.textContent = "ÇALIŞTIR →";
+        btn.textContent = "SENTETİK ÇALIŞTIR →";
       });
   });
+
+  // ---------- backtest: gerçek veri (CSV) ----------
+  var csvZone = document.getElementById("csvZone");
+  var csvInput = document.getElementById("csvInput");
+  if (csvZone && csvInput) {
+    document.getElementById("csvBrowse").addEventListener("click", function (e) {
+      e.stopPropagation();
+      csvInput.click();
+    });
+    csvZone.addEventListener("click", function () {
+      csvInput.click();
+    });
+    csvZone.addEventListener("dragover", function (e) {
+      e.preventDefault();
+      csvZone.classList.add("drag");
+    });
+    csvZone.addEventListener("dragleave", function () {
+      csvZone.classList.remove("drag");
+    });
+    csvZone.addEventListener("drop", function (e) {
+      e.preventDefault();
+      csvZone.classList.remove("drag");
+      if (e.dataTransfer.files && e.dataTransfer.files.length) {
+        runCsvBacktest(e.dataTransfer.files[0]);
+      }
+    });
+    csvInput.addEventListener("change", function () {
+      if (csvInput.files && csvInput.files.length) runCsvBacktest(csvInput.files[0]);
+    });
+  }
+
+  function runCsvBacktest(file) {
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      toast("Yalnız .csv kabul edilir.", true);
+      return;
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      toast("Dosya 50 MB sınırını aşıyor.", true);
+      return;
+    }
+    var res = document.getElementById("btResult");
+    res.className = "result";
+    res.innerHTML =
+      '<div class="result-section"><span class="spinner"></span> gerçek veri backtest: ' +
+      esc(file.name) +
+      " …</div>";
+    var fd = new FormData();
+    fd.append("file", file);
+    api("/backtest/csv", { method: "POST", body: fd })
+      .then(function (data) {
+        renderBacktest(res, data);
+      })
+      .catch(function (err) {
+        res.innerHTML =
+          '<div class="result-section result-body">Hata: ' + esc(err.message) + "</div>";
+      });
+  }
 
   function renderBacktest(res, data) {
     var m = data.metrics || {};
@@ -391,6 +448,12 @@
       '<div class="result-section"><div class="result-label">strateji</div>' +
       '<div class="result-body">' +
       esc(data.strategy_name) +
+      (data.data_source
+        ? '  <span class="muted small">· veri: ' +
+          esc(data.data_source) +
+          (data.n_bars ? " (" + data.n_bars + " bar)" : "") +
+          "</span>"
+        : "") +
       (data.backtest_id ? '  <span class="muted small">(' + esc(data.backtest_id) + ")</span>" : "") +
       "</div></div>" +
       '<div class="result-section"><div class="result-label">metrikler</div>' +

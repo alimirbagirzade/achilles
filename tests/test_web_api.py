@@ -94,6 +94,63 @@ def test_sanitize_filename_blocks_traversal() -> None:
     assert safe.endswith(".pdf")
 
 
+def test_validate_csv_accepts_ohlcv_header() -> None:
+    name = security.validate_csv_upload(
+        "data.csv", b"time,open,high,low,close,volume\n2020-01-01,1,2,0.5,1.5,10\n"
+    )
+    assert name.endswith(".csv")
+
+
+def test_validate_csv_rejects_missing_columns() -> None:
+    with pytest.raises(fastapi.HTTPException):
+        security.validate_csv_upload("bad.csv", b"a,b,c\n1,2,3\n")
+
+
+def test_validate_csv_rejects_non_csv() -> None:
+    with pytest.raises(fastapi.HTTPException):
+        security.validate_csv_upload("x.txt", b"time,open,high,low,close\n")
+
+
+def _make_ohlcv_csv(n: int = 150) -> bytes:
+    import datetime as dt
+
+    base = dt.datetime(2021, 1, 1, tzinfo=dt.UTC)
+    lines = ["time,open,high,low,close,volume"]
+    price = 100.0
+    for i in range(n):
+        price *= 1.004 if i % 3 == 0 else 0.998
+        o, h, lo = price, price * 1.01, price * 0.99
+        c = price * (1.006 if i % 2 else 0.996)
+        ts = (base + dt.timedelta(days=i)).isoformat()
+        lines.append(f"{ts},{o:.4f},{h:.4f},{lo:.4f},{c:.4f},{100 + i}")
+    return ("\n".join(lines) + "\n").encode()
+
+
+def test_backtest_csv_real_runs(client: TestClient) -> None:
+    import os
+
+    from app.config import get_settings
+
+    csv = _make_ohlcv_csv(150)
+    r = client.post("/api/backtest/csv", files={"file": ("webtest_ohlcv.csv", csv, "text/csv")})
+    try:
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["verdict"] in {"pass", "fail", "inconclusive"}
+        assert body["n_bars"] >= 50
+        assert body["data_source"]
+        assert "n_trades" in body["metrics"]
+    finally:
+        p = get_settings().market_raw_dir / "webtest_ohlcv.csv"
+        if p.exists():
+            os.remove(p)
+
+
+def test_backtest_csv_rejects_bad_columns(client: TestClient) -> None:
+    r = client.post("/api/backtest/csv", files={"file": ("bad.csv", b"a,b,c\n1,2,3\n", "text/csv")})
+    assert r.status_code == 400
+
+
 def test_rate_limiter_blocks_after_limit() -> None:
     rl = security.RateLimiter(per_minute=3)
     for _ in range(3):

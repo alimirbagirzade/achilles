@@ -261,6 +261,56 @@ def api_backtest(req: BacktestRequest) -> BacktestResponse:
         verdict=verdict.verdict,
         reasons=verdict.reasons,
         backtest_id=bt_id,
+        data_source=data_file,
+        n_bars=len(df),
+    )
+
+
+@app.post("/api/backtest/csv", response_model=BacktestResponse, dependencies=[api_auth])
+async def api_backtest_csv(file: UploadFile = File(...)) -> BacktestResponse:
+    """Yüklenen gerçek OHLCV CSV üzerinde backtest (katı doğrulama + look-ahead-safe)."""
+    from fastapi import HTTPException
+
+    from app.trading.backtester import persist_backtest, run_backtest
+    from app.trading.evaluator import evaluate as eval_strategy
+    from app.trading.market_data_loader import load_ohlcv
+    from app.trading.strategy_ir import example_ir
+
+    content = await file.read()
+    safe_name = security.validate_csv_upload(file.filename or "", content)
+
+    s = get_settings()
+    dest = security.safe_destination(s.market_raw_dir, safe_name)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(content)
+    logger.info("CSV yüklendi: %s (%d bayt)", dest.name, len(content))
+
+    try:
+        df = load_ohlcv(dest)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"CSV okunamadı: {exc}") from exc
+    if len(df) < 50:
+        raise HTTPException(status_code=400, detail="Yetersiz veri (en az ~50 bar gerekli).")
+
+    ir = example_ir()
+    result = run_backtest(df, ir)
+    verdict = eval_strategy(df, ir)
+    bt_id = None
+    try:
+        bt_id = persist_backtest(
+            result, dest.name, verdict=verdict.verdict, notes="; ".join(verdict.reasons)
+        )
+    except Exception as exc:
+        logger.warning("Backtest kaydı başarısız: %s", exc)
+
+    return BacktestResponse(
+        strategy_name=ir.name,
+        metrics=result.metrics.to_dict(),
+        verdict=verdict.verdict,
+        reasons=verdict.reasons,
+        backtest_id=bt_id,
+        data_source=dest.name,
+        n_bars=len(df),
     )
 
 

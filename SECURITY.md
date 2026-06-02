@@ -10,7 +10,8 @@ dışarı kapalı, katmanlı savunma.**
 |--------|--------|---------|
 | Yerel makine | İstemeden ağa açılma | Varsayılan bind `127.0.0.1`; `0.0.0.0` değil |
 | API uçları | Yetkisiz erişim (ağa açılırsa) | İsteğe bağlı bearer token (`ACHILLES_API_TOKEN`), sabit-zamanlı karşılaştırma |
-| Upload | Kötü amaçlı/sahte dosya | Uzantı + `%PDF-` sihirli bayt + boyut limiti |
+| Upload (PDF) | Kötü amaçlı/sahte dosya | Uzantı + `%PDF-` sihirli bayt + boyut limiti |
+| Upload (CSV) | Sahte/ikili veri, enjeksiyon | Uzantı + metin çözme + başlık sniff (open/high/low/close) + boyut limiti; kural çalıştırma YOK |
 | Dosya sistemi | Path traversal (`../`) | `sanitize_filename` + `safe_destination` (hedef dizin doğrulaması) |
 | Tarayıcı | XSS / clickjacking | CSP (`script-src 'self'`, inline yok), `X-Frame-Options: DENY`, `nosniff` |
 | Servis | DoS / brute force | IP başına hız sınırı (kayan pencere) |
@@ -23,7 +24,7 @@ dışarı kapalı, katmanlı savunma.**
 - Sunucu yalnız **localhost**'a bağlanır (`ACHILLES_WEB_HOST=127.0.0.1`).
 - Token boşsa kimlik doğrulama atlanır — **çünkü dışarıdan erişilemez.**
 - Tüm yanıtlara güvenlik başlıkları eklenir.
-- Yüklenen PDF'ler `data/papers/raw_pdf/` içinde temizlenmiş adla saklanır.
+- Yüklenen PDF'ler `data/papers/raw_pdf/`, CSV'ler `data/market/raw/` içinde temizlenmiş adla saklanır (path-traversal korumalı).
 
 ## Sunucuyu ağa/uzağa açacaksan (zorunlu adımlar)
 

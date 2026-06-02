@@ -29,6 +29,8 @@ from app.config import get_settings
 # --- Sabitler ---
 _PDF_MAGIC = b"%PDF-"
 _ALLOWED_UPLOAD_SUFFIX = ".pdf"
+_ALLOWED_CSV_SUFFIX = ".csv"
+_CSV_REQUIRED_COLS = ("open", "high", "low", "close")
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 # Güvenlik başlıkları. CSP yalnız kendi kaynaklarımıza + Google Fonts'a izin verir.
@@ -109,15 +111,15 @@ def client_ip(request: Request) -> str:
 
 
 # --- PDF upload doğrulama ---
-def sanitize_filename(name: str) -> str:
+def sanitize_filename(name: str, *, suffix: str = ".pdf", fallback: str = "paper") -> str:
     """Dosya adını güvenli bir tabana indirger (yol-aşımı / kontrol karakteri yok)."""
     name = unicodedata.normalize("NFKD", name)
     stem = Path(name).name  # dizin bileşenlerini at
     stem = _SAFE_NAME_RE.sub("_", stem).strip("._-")
     if not stem:
-        stem = "paper"
-    if not stem.lower().endswith(".pdf"):
-        stem = f"{stem}.pdf"
+        stem = fallback
+    if not stem.lower().endswith(suffix):
+        stem = f"{stem}{suffix}"
     return stem[:128]
 
 
@@ -141,6 +143,41 @@ def validate_pdf_upload(filename: str, content: bytes) -> str:
     if not content.startswith(_PDF_MAGIC):
         raise HTTPException(status_code=400, detail="Dosya içeriği geçerli bir PDF değil.")
     return sanitize_filename(filename)
+
+
+def validate_csv_upload(filename: str, content: bytes) -> str:
+    """OHLCV CSV upload'ını doğrular (uzantı + boyut + metin + başlık sniff).
+
+    Başlık satırında open/high/low/close kolonlarını arar (load_ohlcv'nin
+    zorunlu kıldıkları). Hatada HTTPException (400/413) fırlatır; temiz adı döner.
+    """
+    settings = get_settings()
+    max_bytes = settings.max_upload_mb * 1024 * 1024
+
+    if not filename or not filename.lower().endswith(_ALLOWED_CSV_SUFFIX):
+        raise HTTPException(status_code=400, detail="Yalnız .csv dosyaları kabul edilir.")
+    if len(content) == 0:
+        raise HTTPException(status_code=400, detail="Boş dosya.")
+    if len(content) > max_bytes:
+        raise HTTPException(
+            status_code=413, detail=f"Dosya çok büyük (> {settings.max_upload_mb} MB)."
+        )
+    try:
+        head = content[:8192].decode("utf-8")
+    except UnicodeDecodeError:
+        try:
+            head = content[:8192].decode("latin-1")
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400, detail="CSV metin olarak çözülemedi (ikili dosya?)."
+            ) from exc
+    first_line = next((ln for ln in head.splitlines() if ln.strip()), "").lower()
+    if not all(col in first_line for col in _CSV_REQUIRED_COLS):
+        raise HTTPException(
+            status_code=400,
+            detail="CSV başlığında open/high/low/close kolonları bulunamadı.",
+        )
+    return sanitize_filename(filename, suffix=".csv", fallback="ohlcv")
 
 
 def safe_destination(dest_dir: Path, filename: str) -> Path:

@@ -62,6 +62,8 @@ class BacktestResponse(BaseModel):
     verdict: str
     reasons: list[str]
     backtest_id: str | None = None
+    data_source: str | None = None
+    n_bars: int | None = None
 
 
 class CardResponse(BaseModel):
