@@ -178,59 +178,91 @@ Tarayıcıda `http://127.0.0.1:8765` aç. Sekmeler: **Araştırma** (RAG soru-ce
 
 ---
 
+## ⚙️ Sekmeler Nasıl Çalışır? (motorun içi)
+
+### 🔎 RAG Araştırma — _soru-cevap_
+
+```
+Soru ─▶ embedding ─▶ ChromaDB'de EN YAKIN 6 parça (top_k)
+                              │  (senin yüklediğin makalelerin metni)
+                              ▼
+        Model: "SADECE bu kaynaklara dayan, uydurma"
+                              ▼
+   Cevap = kısa cevap · kaynaklar · akademik bulgu · trading hipotezi · test noktaları
+```
+
+- **Ne yapar:** sorunla **en alakalı bölümleri bulur**, onları **okuyup dayanarak** cevaplar.
+- **Ne yapmaz:** tüm makaleyi baştan sona özetlemez · kendi kafasından serbest yorum üretmez · kaynak yoksa **"Kaynak bulunamadı"** der (uydurmaz).
+- **Ayar:** geniş cevap için `top_k`'yı artır (6 → 12–20). Tüm makale özeti için **Bilgi Kartı**'nı kullan.
+
+### 📈 Strateji Backtest — _şüpheci denetçi_
+
+```
+Veri (sentetik VEYA gerçek CSV) ─▶ indikatörler (EMA/RSI/ATR) ─▶ Strateji IR (kurallar)
+   ─▶ Backtest motoru (look-ahead-safe + komisyon/slippage dahil)
+   ─▶ metrikler ─▶ in/out-of-sample bölme + overfit kontrolü
+   ─▶ EVALUATOR → ✓ GEÇTİ / ✕ BAŞARISIZ / ≈ SONUÇSUZ ─▶ SQLite'a kayıt
+```
+
+- Strateji **test edilmeden "başarılı" sayılmaz**; örneklem-dışı (OOS) pozitif değilse **FAIL**.
+- Maliyetler her zaman dahil, pozisyon **bir bar gecikmeli** (look-ahead yok), az işlemde "istatistiksel anlam zayıf".
+- Yüksek getiri görünse bile overfit varsa sistem **reddeder** — bu sistemin kalbidir.
+
+### 🛡️ Sistem & Disiplin — _kontrol paneli_
+
+İşlem yapılmaz; sistemin **nasıl düşündüğünü ve sınırlarını** gösterir: katman mimarisi,
+değişmez disiplin kuralları, güvenlik özeti ve (gerekiyorsa) **API token** girişi.
+"Sağlık tablosu" gibi düşün — model bağlı mı, embedding modu ne, kaç makale var.
+
+### 📚 Makaleler — _hafıza_
+
+PDF yükle → otomatik **ingestion** (metin çıkar → parçala → SQLite + ChromaDB).
+Buradaki makaleler RAG'in "okuduğu" kaynaklardır. Her makaleden **Bilgi Kartı** üretilebilir.
+
+---
+
 ## 🧪 Web Arayüzü — Adım Adım Test Kılavuzu
 
-> Çok basit anlatım. Her adımda **ne yapacağın** ve **ne görmen gerektiği** (✔) yazıyor.
+> Sunucuyu aç, sonra tabloyu **yukarıdan aşağı** uygula. Her satırda **ne yaparsın** ve **✅ ne görmelisin** var.
 
-### 0) Sunucuyu aç
-1. **Terminal** uygulamasını aç.
-2. Şunu yaz ve Enter'a bas:
-   ```bash
-   cd ~/Development/Achilles
-   uv run achilles-web
-   ```
-3. Tarayıcıda şu adresi aç: **http://127.0.0.1:8765**
-4. ✔ Sağ üstte küçük bir **nokta + "ollama bağlı"** yazısı görmelisin. (Karanlık görünüyorsa **Cmd+Shift+R** ile yenile.)
+### ▶️ Başlat
+```bash
+cd ~/Development/Achilles
+uv run achilles-web        # → http://127.0.0.1:8765
+```
+Tarayıcıda aç → **Cmd+Shift+R** (yenile). Sağ üstte **🟢 yeşil "ollama bağlı"** görmelisin.
 
-### 1) SİSTEM sekmesi (ısınma turu)
-1. Üstte **"04 · SİSTEM"**e tıkla.
-2. ✔ Kutular açılır, hata yok. (Token kutusunu boş bırak — yerelde gerekmez.)
+### ✅ Ana akış (sırayla)
 
-### 2) MAKALELER — bir PDF yükle
-1. **"02 · MAKALELER"**e tıkla.
-2. Bir akademik **.pdf**'i kutunun içine **sürükle-bırak** ya da **"dosya seç"**e tıkla.
-3. ✔ Birkaç saniye sonra altta makale satırı + **"… chunk"** yazısı belirir.
-4. **Yaramazlık testi:** bir **.txt** dosyası sürükle → ✔ *"Yalnız .pdf kabul edilir"* uyarısı çıkar (reddetmesi **iyi**).
+| # | Sekme | Ne yaparsın | ✅ Ne görmelisin |
+|:-:|-------|-------------|------------------|
+| 1 | **SİSTEM** | sekmeye tıkla | katman / disiplin / güvenlik kutuları, hata yok |
+| 2 | **MAKALELER** | PDF sürükle-bırak _(birden çok olur)_ | "Yükleniyor 1/N…" → makale satırı + **"… chunk"** |
+| 3 | **MAKALELER** | satırda **BİLGİ KARTI**'na bas | **◌ ÜRETİLİYOR** → ~1 dk → yeşil **✓ KART HAZIR** |
+| 4 | **ARAŞTIRMA** | soru yaz → **SORGULA →** | kaynaklı cevap + altta **kaynaklar** listesi |
+| 5 | **BACKTEST** | **SENTETİK ÇALIŞTIR →** | metrik tablosu + **YARGI** kutusu (✓ / ✕ / ≈) |
+| 6 | **BACKTEST** | "veya gerçek veri"ye **CSV** bırak | metrikler + **"veri: dosya.csv (… bar)"** |
 
-### 3) MAKALELER — Bilgi Kartı üret
-1. Makale satırındaki **"BİLGİ KARTI"** düğmesine tıkla.
-2. ✔ ~1 dakika sonra **"Bilgi kartı üretildi"** bildirimi gelir. (Yerel model düşünüyor, sabırlı ol 🙂)
+### 🧨 "Yaramazlık" testleri — _reddetmesi = İYİ_
 
-### 4) ARAŞTIRMA — soru sor (RAG)
-1. **"01 · ARAŞTIRMA"**ya tıkla.
-2. Kutuya soru yaz (örn: *"Bu makalenin ana bulgusu nedir?"*), **"SORGULA →"**.
-3. ✔ Kaynaklı bir cevap + altta **"kaynaklar"** listesi gelir.
-4. Hiç makale yoksa ✔ *"Kaynak bulunamadı"* der — **uydurmaz** (bu **iyi**).
+| Dene | ✅ Beklenen (güvenli davranış) |
+|------|-------------------------------|
+| `.txt` dosya yükle | *"Yalnız .pdf kabul edilir"* |
+| kolonları bozuk CSV | *"open/high/low/close bulunamadı"* |
+| hiç makale yokken soru sor | *"Kaynak bulunamadı"* — **uydurmaz** |
+| zayıf stratejiyi backtest et | **✕ BAŞARISIZ** (overfit / OOS) |
 
-### 5) BACKTEST — sentetik (uydurma) veri
-1. **"03 · BACKTEST"**e tıkla → **"SENTETİK ÇALIŞTIR →"**.
-2. ✔ Metrik tablosu + büyük **YARGI** kutusu çıkar: **✓ GEÇTİ / ✕ BAŞARISIZ / ≈ SONUÇSUZ**.
-3. Zayıf strateji **✕ BAŞARISIZ** alır — bu **normal ve doğru** (sistem şüpheci).
+### 👓 Renk körü göz testi
+Yargı ve metriklerde **renge ek ikon** olmalı: **✓ / ✕ / ≈** ve **▲ / ▼** — anlam sadece renkle verilmez.
 
-### 6) BACKTEST — gerçek veri (CSV)
-1. Aynı sekmede aşağıda **"veya gerçek veri"** bölümüne bir **OHLCV .csv** bırak.
-   (Hazır örnek: `data/market/raw/BTCUSD_1d.csv` — varsa onu kullan.)
-2. ✔ Gerçek veriyle metrikler + yargı + **"veri: dosya.csv (… bar)"** görünür.
-3. **Yaramazlık testi:** kolonları yanlış bir csv → ✔ *"open/high/low/close bulunamadı"* reddi.
+### ❓ Sık sorulanlar
 
-### 7) Renk körü göz testi 👓
-- Yargı ve metriklerde **renge ek ikon** var mı bak: **✓ / ✕ / ≈** ve **▲ / ▼**.
-- ✔ Anlam sadece renkle değil, ikon+şekille de verilmeli.
-
-### Sık sorulanlar
-- **"50 MB az geldi"** → `.env` dosyasına `ACHILLES_MAX_UPLOAD_MB=200` yaz, sunucuyu yeniden başlat. Arayüz limiti **otomatik** günceller.
-- **"Yetkisiz" hatası** → yalnız token ayarlıysa olur; SİSTEM sekmesinden token gir.
-- **Sayfa karanlık** → tarayıcı eski stili önbelleğe almış: **Cmd+Shift+R**.
+| Sorun | Çözüm |
+|-------|-------|
+| Sayfa **karanlık** görünüyor | **Cmd+Shift+R** (tarayıcı önbelleği) |
+| **"Bu siteye ulaşılamıyor"** | sunucu kapalı → `uv run achilles-web` ile başlat |
+| **50 MB az geldi** | `.env` → `ACHILLES_MAX_UPLOAD_MB=200` → yeniden başlat (arayüz otomatik güncellenir) |
+| **"Yetkisiz"** hatası | yalnız token ayarlıysa; **SİSTEM** sekmesinden token gir |
 
 ---
 
