@@ -48,3 +48,6 @@ reports/evals/*
 .DS_Store
 .idea/
 .vscode/
+
+# büyük kaynak logo (optimize sürüm app/web/static/assets/achilles-logo.jpg)
+/achilles trading logo.png

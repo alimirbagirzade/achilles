@@ -101,7 +101,10 @@
           var pdfH = document.getElementById("pdfHint");
           var csvH = document.getElementById("csvHint");
           if (pdfH)
-            pdfH.innerHTML = "yalnız .pdf · maks " + MAX_UPLOAD_MB + "&nbsp;MB · içerik doğrulanır";
+            pdfH.innerHTML =
+              "yalnız .pdf · maks " +
+              MAX_UPLOAD_MB +
+              "&nbsp;MB · birden çok seçebilirsin · içerik doğrulanır";
           if (csvH)
             csvH.innerHTML =
               "kolonlar: time, open, high, low, close[, volume] · maks " +
@@ -306,34 +309,53 @@
     e.preventDefault();
     zone.classList.remove("drag");
     if (e.dataTransfer.files && e.dataTransfer.files.length) {
-      uploadFile(e.dataTransfer.files[0]);
+      uploadFiles(e.dataTransfer.files);
     }
   });
   input.addEventListener("change", function () {
-    if (input.files && input.files.length) uploadFile(input.files[0]);
+    if (input.files && input.files.length) uploadFiles(input.files);
+    input.value = ""; // aynı dosyaları tekrar seçebilmek için sıfırla
   });
 
-  function uploadFile(file) {
-    if (!file.name.toLowerCase().endsWith(".pdf")) {
+  // Birden çok PDF'i SIRAYLA yükler (8GB'ı zorlamamak için paralel DEĞİL).
+  function uploadFiles(fileList) {
+    var files = [];
+    for (var k = 0; k < fileList.length; k++) {
+      if (fileList[k].name.toLowerCase().endsWith(".pdf")) files.push(fileList[k]);
+    }
+    if (!files.length) {
       toast("Yalnız .pdf kabul edilir.", true);
       return;
     }
-    if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
-      toast("Dosya " + MAX_UPLOAD_MB + " MB sınırını aşıyor.", true);
-      return;
-    }
-    var fd = new FormData();
-    fd.append("file", file);
-    toast("Yükleniyor: " + file.name + " …");
-    api("/papers/upload", { method: "POST", body: fd })
-      .then(function (r) {
-        toast(file.name + " → " + r.message);
+    var i = 0,
+      ok = 0,
+      fail = 0;
+    function next() {
+      if (i >= files.length) {
+        toast(ok + " PDF yüklendi" + (fail ? ", " + fail + " atlandı/hata" : "") + ".");
         loadPapers();
         refreshStatus();
-      })
-      .catch(function (err) {
-        toast("Yükleme hatası: " + err.message, true);
-      });
+        return;
+      }
+      var f = files[i++];
+      if (f.size > MAX_UPLOAD_MB * 1024 * 1024) {
+        fail++;
+        toast(f.name + " > " + MAX_UPLOAD_MB + " MB, atlandı.", true);
+        return next();
+      }
+      toast("Yükleniyor (" + i + "/" + files.length + "): " + f.name + " …");
+      var fd = new FormData();
+      fd.append("file", f);
+      api("/papers/upload", { method: "POST", body: fd })
+        .then(function () {
+          ok++;
+        })
+        .catch(function () {
+          fail++;
+        })
+        .finally(next);
+    }
+    next();
   }
 
   // ---------- backtest ----------

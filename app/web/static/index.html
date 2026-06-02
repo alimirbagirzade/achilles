@@ -17,7 +17,7 @@
 
     <header class="topbar">
       <div class="brand">
-        <span class="brand-mark">▰▰▱</span>
+        <img class="brand-logo" src="/assets/achilles-logo.jpg" alt="Achilles logo" />
         <span class="brand-name">ACHILLES</span>
         <span class="brand-sub">trading research terminal</span>
       </div>
@@ -47,6 +47,13 @@
     <main>
       <!-- RESEARCH -->
       <section class="panel active" id="panel-research">
+        <div class="hero">
+          <img src="/assets/achilles-logo.jpg" alt="Achilles — trading research" />
+          <div class="hero-text">
+            <span class="hero-tag">FATE FAVORS THE FOCUSED</span>
+            <p>Akademik literatürü test edilebilir hipotezlere çevir; her stratejiyi disiplinle sına.</p>
+          </div>
+        </div>
         <div class="panel-head">
           <h2>RAG Araştırma</h2>
           <p class="muted">
@@ -81,11 +88,11 @@
           <p class="muted">PDF yükle → otomatik indekslenir (SQLite + ChromaDB).</p>
         </div>
         <div class="upload-zone" id="uploadZone">
-          <input type="file" id="pdfInput" accept="application/pdf" hidden />
+          <input type="file" id="pdfInput" accept="application/pdf" multiple hidden />
           <div class="upload-inner">
             <span class="upload-icon">⇪</span>
             <p>PDF'i buraya bırak veya <button class="link" id="browseBtn">dosya seç</button></p>
-            <p class="muted small" id="pdfHint">yalnız .pdf · maks 50&nbsp;MB · içerik doğrulanır</p>
+            <p class="muted small" id="pdfHint">yalnız .pdf · maks 50&nbsp;MB · birden çok seçebilirsin · içerik doğrulanır</p>
           </div>
         </div>
         <div class="toolbar">
