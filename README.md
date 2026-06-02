@@ -15,19 +15,22 @@
 
 **Kurulum & Ortam**
 - [x] uv ortamı (Python 3.13) + bağımlılıklar (`uv sync --extra dev --extra train`)
-- [x] Ollama kurulu + servis ayakta (`brew services start ollama`)
+- [x] Ollama kurulu + servis ayakta
 - [x] `nomic-embed-text` (embedding modeli) indirildi
-- [ ] `qwen2.5-coder:7b` (LLM) — ⏳ iniyor
+- [x] `qwen2.5-coder:7b` (LLM) indirildi — RAG ile **canlı doğrulandı** (ama 8GB için ağır, ~3dk/sorgu)
 - [x] `mlx-lm 0.31.3` (LoRA eğitim extra'sı, Apple Silicon)
+- [ ] `qwen2.5-coder:3b` (8GB profili, aktif model) — ⏳ iniyor
+
+> **RAM profilleri** (`.env` / `.env.example`): **8GB → `qwen2.5-coder:3b`** (aktif) · 16GB → `7b` · **32GB → `qwen2.5-coder:14b`** (gelecekte makine değişince). Bilgisayar yükseltilince `.env`'de `ACHILLES_LLM_MODEL`'i 14b yapıp `ollama pull qwen2.5-coder:14b` yeterli.
 
 **Çekirdek pipeline**
 - [x] PDF ingestion → SQLite + ChromaDB — **gerçek PDF ile doğrulandı** (arXiv `2606.01650`, 1 makale / 69 chunk / gerçek ollama embedding)
 - [x] Embedding servisi (ollama + deterministik fake fallback)
 - [x] RAG yanıtlama — mantık **çevrimdışı** test edildi (stub LLM/retriever)
+- [x] RAG **canlı LLM** doğrulandı — `achilles ask` qwen 7B ile kaynaklı, 5-bölümlü cevap üretti (`llm_used=True`, 3 kaynak, doğru citation)
 - [x] Backtest + evaluator — EMA/RSI çalıştı, **FAIL** yargısı SQLite'a yazıldı
 - [x] LoRA `train` dry-run — `mlx_lm.lora` komut kurulumu doğrulandı
-- [ ] RAG **canlı LLM** doğrulaması (`achilles ask`) — ⏳ qwen bekliyor
-- [ ] Knowledge card / dataset **canlı** üretimi — ⏳ qwen bekliyor
+- [ ] Knowledge card / dataset **canlı** üretimi — 3b aktif olunca doğrulanacak
 
 **Kalite & Test**
 - [x] 30 test geçti · 2 `@pytest.mark.ollama` entegrasyon testi atlandı (qwen bekliyor)
