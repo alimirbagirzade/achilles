@@ -9,6 +9,39 @@
 
 ---
 
+## 📊 Proje Durumu — _canlı_ (son güncelleme: 2026-06-02, branch `main`)
+
+> Repo: https://github.com/alimirbagirzade/achilles · Test: **30 passed, 2 skipped** · Kalite: ruff+mypy temiz
+
+**Kurulum & Ortam**
+- [x] uv ortamı (Python 3.13) + bağımlılıklar (`uv sync --extra dev --extra train`)
+- [x] Ollama kurulu + servis ayakta (`brew services start ollama`)
+- [x] `nomic-embed-text` (embedding modeli) indirildi
+- [ ] `qwen2.5-coder:7b` (LLM) — ⏳ iniyor
+- [x] `mlx-lm 0.31.3` (LoRA eğitim extra'sı, Apple Silicon)
+
+**Çekirdek pipeline**
+- [x] PDF ingestion → SQLite + ChromaDB — **gerçek PDF ile doğrulandı** (arXiv `2606.01650`, 1 makale / 69 chunk / gerçek ollama embedding)
+- [x] Embedding servisi (ollama + deterministik fake fallback)
+- [x] RAG yanıtlama — mantık **çevrimdışı** test edildi (stub LLM/retriever)
+- [x] Backtest + evaluator — EMA/RSI çalıştı, **FAIL** yargısı SQLite'a yazıldı
+- [x] LoRA `train` dry-run — `mlx_lm.lora` komut kurulumu doğrulandı
+- [ ] RAG **canlı LLM** doğrulaması (`achilles ask`) — ⏳ qwen bekliyor
+- [ ] Knowledge card / dataset **canlı** üretimi — ⏳ qwen bekliyor
+
+**Kalite & Test**
+- [x] 30 test geçti · 2 `@pytest.mark.ollama` entegrasyon testi atlandı (qwen bekliyor)
+- [x] ruff format + lint: 0 ihlal · mypy: 0 hata (37 dosya)
+- [x] Şartname bölüm-7'nin **8 test dosyası da mevcut**
+
+**Yapılacaklar (sıradaki)**
+- [ ] qwen gelince `ask` / `card` / `dataset` akışını uçtan uca doğrula
+- [ ] Gerçek OHLCV verisiyle backtest (sentetik yerine)
+- [ ] `uv.lock`'u versiyonlamaya alma kararı (tekrarlanabilirlik)
+- [ ] CI'da ollama-işaretli testleri ayır (`pytest -m "not ollama"`)
+
+---
+
 ## Ne işe yarar?
 
 Akademik finans/trading literatürünü (PDF) sindirir, kaynağa dayalı yanıtlar
@@ -74,10 +107,11 @@ cp .env.example .env
 # ACHILLES_OLLAMA_HOST, ACHILLES_LLM_MODEL, ACHILLES_EMBED_MODEL, ACHILLES_RAG_TOP_K ...
 ```
 
-### Ollama (opsiyonel)
+### Ollama (opsiyonel ama RAG/kart için gerekli)
 ```bash
-ollama pull llama3.1          # veya tercih ettiğin model
-ollama pull nomic-embed-text  # embedding modeli
+brew install ollama && brew services start ollama
+ollama pull qwen2.5-coder:7b   # LLM (varsayılan, ~4.7GB)
+ollama pull nomic-embed-text   # embedding modeli (~274MB)
 ```
 
 ---
@@ -146,15 +180,13 @@ CI (`.github/workflows/ci.yml`): her push/PR'da `uv sync` + `ruff` + `pytest`.
 
 ---
 
-## GitHub'a yükleme
+## GitHub
+
+Repo: **https://github.com/alimirbagirzade/achilles** (`main`). Klonlama:
 
 ```bash
-git init
-git add -A
-git commit -m "feat: Achilles Trader AI iskeleti (RAG + backtest + eğitim)"
-git branch -M main
-git remote add origin git@github.com:<kullanıcı>/achilles-trader-ai.git
-git push -u origin main
+git clone https://github.com/alimirbagirzade/achilles.git
+cd achilles && uv sync --extra dev && uv run achilles init
 ```
 
 ---
