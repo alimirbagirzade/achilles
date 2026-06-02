@@ -9,8 +9,7 @@ dist/
 .venv311/
 .python-version
 
-# uv
-uv.lock
+# uv — lock dosyası BİLEREK commit'lenir (tekrarlanabilirlik + CI cache).
 
 # Env / secrets
 .env
