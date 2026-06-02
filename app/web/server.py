@@ -103,6 +103,7 @@ def api_status() -> StatusResponse:
         embedding_mode=emb.mode,
         n_papers=len(store.list_papers()),
         n_chunks=n_chunks,
+        max_upload_mb=s.max_upload_mb,
     )
 
 

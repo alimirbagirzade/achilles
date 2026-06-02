@@ -3,6 +3,7 @@
   "use strict";
 
   var TOKEN_KEY = "achilles_api_token";
+  var MAX_UPLOAD_MB = 50; // /api/status'tan dinamik güncellenir
   // localStorage artifact ortamında engelli olabilir; güvenli sarmalayıcı:
   function getToken() {
     try {
@@ -94,6 +95,18 @@
         txt.textContent = s.ollama_available ? "ollama bağlı" : "ollama yok (RAG sınırlı)";
         document.getElementById("embedMode").textContent = "embed: " + s.embedding_mode;
         document.getElementById("paperCount").textContent = "papers: " + s.n_papers;
+        if (s.max_upload_mb) {
+          MAX_UPLOAD_MB = s.max_upload_mb;
+          var pdfH = document.getElementById("pdfHint");
+          var csvH = document.getElementById("csvHint");
+          if (pdfH)
+            pdfH.innerHTML = "yalnız .pdf · maks " + MAX_UPLOAD_MB + "&nbsp;MB · içerik doğrulanır";
+          if (csvH)
+            csvH.innerHTML =
+              "kolonlar: time, open, high, low, close[, volume] · maks " +
+              MAX_UPLOAD_MB +
+              "&nbsp;MB · içerik doğrulanır";
+        }
       })
       .catch(function () {
         dot.className = "dot dot-err";
@@ -293,8 +306,8 @@
       toast("Yalnız .pdf kabul edilir.", true);
       return;
     }
-    if (file.size > 50 * 1024 * 1024) {
-      toast("Dosya 50 MB sınırını aşıyor.", true);
+    if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      toast("Dosya " + MAX_UPLOAD_MB + " MB sınırını aşıyor.", true);
       return;
     }
     var fd = new FormData();
@@ -377,8 +390,8 @@
       toast("Yalnız .csv kabul edilir.", true);
       return;
     }
-    if (file.size > 50 * 1024 * 1024) {
-      toast("Dosya 50 MB sınırını aşıyor.", true);
+    if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      toast("Dosya " + MAX_UPLOAD_MB + " MB sınırını aşıyor.", true);
       return;
     }
     var res = document.getElementById("btResult");

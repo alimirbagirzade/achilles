@@ -178,6 +178,62 @@ Tarayıcıda `http://127.0.0.1:8765` aç. Sekmeler: **Araştırma** (RAG soru-ce
 
 ---
 
+## 🧪 Web Arayüzü — Adım Adım Test Kılavuzu
+
+> Çok basit anlatım. Her adımda **ne yapacağın** ve **ne görmen gerektiği** (✔) yazıyor.
+
+### 0) Sunucuyu aç
+1. **Terminal** uygulamasını aç.
+2. Şunu yaz ve Enter'a bas:
+   ```bash
+   cd ~/Development/Achilles
+   uv run achilles-web
+   ```
+3. Tarayıcıda şu adresi aç: **http://127.0.0.1:8765**
+4. ✔ Sağ üstte küçük bir **nokta + "ollama bağlı"** yazısı görmelisin. (Karanlık görünüyorsa **Cmd+Shift+R** ile yenile.)
+
+### 1) SİSTEM sekmesi (ısınma turu)
+1. Üstte **"04 · SİSTEM"**e tıkla.
+2. ✔ Kutular açılır, hata yok. (Token kutusunu boş bırak — yerelde gerekmez.)
+
+### 2) MAKALELER — bir PDF yükle
+1. **"02 · MAKALELER"**e tıkla.
+2. Bir akademik **.pdf**'i kutunun içine **sürükle-bırak** ya da **"dosya seç"**e tıkla.
+3. ✔ Birkaç saniye sonra altta makale satırı + **"… chunk"** yazısı belirir.
+4. **Yaramazlık testi:** bir **.txt** dosyası sürükle → ✔ *"Yalnız .pdf kabul edilir"* uyarısı çıkar (reddetmesi **iyi**).
+
+### 3) MAKALELER — Bilgi Kartı üret
+1. Makale satırındaki **"BİLGİ KARTI"** düğmesine tıkla.
+2. ✔ ~1 dakika sonra **"Bilgi kartı üretildi"** bildirimi gelir. (Yerel model düşünüyor, sabırlı ol 🙂)
+
+### 4) ARAŞTIRMA — soru sor (RAG)
+1. **"01 · ARAŞTIRMA"**ya tıkla.
+2. Kutuya soru yaz (örn: *"Bu makalenin ana bulgusu nedir?"*), **"SORGULA →"**.
+3. ✔ Kaynaklı bir cevap + altta **"kaynaklar"** listesi gelir.
+4. Hiç makale yoksa ✔ *"Kaynak bulunamadı"* der — **uydurmaz** (bu **iyi**).
+
+### 5) BACKTEST — sentetik (uydurma) veri
+1. **"03 · BACKTEST"**e tıkla → **"SENTETİK ÇALIŞTIR →"**.
+2. ✔ Metrik tablosu + büyük **YARGI** kutusu çıkar: **✓ GEÇTİ / ✕ BAŞARISIZ / ≈ SONUÇSUZ**.
+3. Zayıf strateji **✕ BAŞARISIZ** alır — bu **normal ve doğru** (sistem şüpheci).
+
+### 6) BACKTEST — gerçek veri (CSV)
+1. Aynı sekmede aşağıda **"veya gerçek veri"** bölümüne bir **OHLCV .csv** bırak.
+   (Hazır örnek: `data/market/raw/BTCUSD_1d.csv` — varsa onu kullan.)
+2. ✔ Gerçek veriyle metrikler + yargı + **"veri: dosya.csv (… bar)"** görünür.
+3. **Yaramazlık testi:** kolonları yanlış bir csv → ✔ *"open/high/low/close bulunamadı"* reddi.
+
+### 7) Renk körü göz testi 👓
+- Yargı ve metriklerde **renge ek ikon** var mı bak: **✓ / ✕ / ≈** ve **▲ / ▼**.
+- ✔ Anlam sadece renkle değil, ikon+şekille de verilmeli.
+
+### Sık sorulanlar
+- **"50 MB az geldi"** → `.env` dosyasına `ACHILLES_MAX_UPLOAD_MB=200` yaz, sunucuyu yeniden başlat. Arayüz limiti **otomatik** günceller.
+- **"Yetkisiz" hatası** → yalnız token ayarlıysa olur; SİSTEM sekmesinden token gir.
+- **Sayfa karanlık** → tarayıcı eski stili önbelleğe almış: **Cmd+Shift+R**.
+
+---
+
 ## Geliştirme
 
 ```bash
