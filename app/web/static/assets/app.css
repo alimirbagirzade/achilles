@@ -16,7 +16,9 @@
   --amber-dim: #b8893a;
   --green: #3fd07f;
   --green-dim: #2a9d63;
-  --red: #ff5d5d;
+  /* vermilyon: kırmızı-yeşil körlüğünde (deuteranopi/protanopi) yeşilden
+     hem ton hem parlaklık olarak ayrışır. Anlam ayrıca ikon+şekille de verilir. */
+  --red: #ff6a45;
   --yellow: #ffd166;
   --cyan: #5fd0c8;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -122,17 +124,23 @@ body {
 .dot-idle {
   background: var(--muted);
 }
+/* Durum noktaları renge ek olarak ŞEKİL ile de kodlanır (renk körü dostu):
+   ok = daire · warn = baklava · err = kare. */
 .dot-ok {
   background: var(--green);
   box-shadow: 0 0 10px var(--green);
+  border-radius: 50%;
 }
 .dot-warn {
   background: var(--amber);
-  box-shadow: 0 0 10px var(--amber);
+  box-shadow: 0 0 8px var(--amber);
+  border-radius: 1px;
+  transform: rotate(45deg);
 }
 .dot-err {
   background: var(--red);
-  box-shadow: 0 0 10px var(--red);
+  box-shadow: 0 0 8px var(--red);
+  border-radius: 1px;
 }
 
 /* ---------- disclaimer ---------- */
@@ -501,11 +509,22 @@ input:focus {
   margin-top: 4px;
   color: var(--ink);
 }
+/* Pozitif/negatif değerler renge ek olarak OK yönü ile de gösterilir. */
 .metric .v.pos {
   color: var(--green);
 }
+.metric .v.pos::before {
+  content: "▲ ";
+  font-size: 0.7em;
+  vertical-align: 1px;
+}
 .metric .v.neg {
   color: var(--red);
+}
+.metric .v.neg::before {
+  content: "▼ ";
+  font-size: 0.7em;
+  vertical-align: 1px;
 }
 
 .verdict {
@@ -539,6 +558,16 @@ input:focus {
 }
 .verdict-inconclusive h4 {
   color: var(--amber);
+}
+/* Yargı, renge ek olarak İKON ile de işaretlenir (renk körü dostu). */
+.verdict-pass h4::before {
+  content: "✓ ";
+}
+.verdict-fail h4::before {
+  content: "✕ ";
+}
+.verdict-inconclusive h4::before {
+  content: "≈ ";
 }
 .verdict ul {
   margin: 0;
