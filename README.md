@@ -19,7 +19,7 @@
 - [x] **RAG canlı**: `ask` kaynaklı 5-bölümlü cevap (3b aktif, 8GB profili)
 - [x] **LoRA `train --run`**: uçtan uca (loss 1.21→0.029, adapter + registry, öğrenilmiş davranış)
 - [x] **Gerçek veri backtest**: BTC-USD 1g (5 yıl) → evaluator overfit'i **FAIL** ile yakaladı
-- [x] **Web arayüzü**: güvenlik-sertleştirilmiş FastAPI + terminal estetiği (`app/web/`, `SECURITY.md`)
+- [x] **Web arayüzü**: güvenlik-sertleştirilmiş FastAPI + **açık (light), renk-körü-dostu** temiz arayüz (`app/web/`, `SECURITY.md`)
 - [ ] 8GB'da güvenilir LLM bilgi-kartı (3b geçersiz JSON / 7b timeout) · intraday OHLCV kaynağı · çok-makaleli LoRA dataseti
 - [ ] 32GB makineye geçince `ACHILLES_LLM_MODEL=qwen2.5-coder:14b` (profil `.env.example`'da hazır)
 
@@ -140,7 +140,7 @@ achilles backtest data/market/raw/synthetic.csv
 
 ## Web arayüzü 🖥️
 
-Terminal estetiğinde, **güvenlik-sertleştirilmiş** yerel web arayüzü.
+Açık (light), temiz ve **renk-körü-dostu**, **güvenlik-sertleştirilmiş** yerel web arayüzü.
 
 ```bash
 pip install -e ".[web]"      # veya: uv sync --extra web
