@@ -121,6 +121,7 @@ def api_papers() -> list[PaperOut]:
                 year=p.year,
                 authors=p.authors,
                 n_chunks=len(store.list_chunks(p.paper_id)),
+                has_card=store.has_knowledge_card(p.paper_id),
             )
         )
     return out

@@ -115,8 +115,22 @@ body {
 }
 /* Durum: renge ek olarak ŞEKİL (ok=daire · warn=baklava · err=kare). */
 .dot-ok {
-  background: var(--pos);
+  background: #16a34a; /* canlı yeşil — bağlı olduğu net belli olsun */
   border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.18);
+}
+/* bağlantı durumu metni (renge ek olarak metin zaten durumu söyler) */
+.conn-ok {
+  color: #16a34a;
+  font-weight: 600;
+}
+.conn-warn {
+  color: var(--warn);
+  font-weight: 600;
+}
+.conn-err {
+  color: var(--neg);
+  font-weight: 600;
 }
 .dot-warn {
   background: var(--warn);
@@ -332,6 +346,23 @@ input:focus {
   text-decoration: underline;
   padding: 0;
 }
+/* kart üretildi / hata — kalıcı buton durumu */
+.btn-done {
+  background: var(--pos-soft);
+  border-color: var(--pos-border);
+  color: var(--pos);
+  cursor: default;
+}
+.btn-done:hover {
+  background: var(--pos-soft);
+  border-color: var(--pos-border);
+  color: var(--pos);
+}
+.btn-err {
+  background: var(--neg-soft);
+  border-color: var(--neg-border);
+  color: var(--neg);
+}
 
 /* ---------- results ---------- */
 .result {
@@ -455,6 +486,9 @@ input:focus {
   border-left: 3px solid var(--primary);
   border-radius: 8px;
   box-shadow: var(--shadow-sm);
+}
+.paper-row.has-card {
+  border-left-color: var(--pos); /* kartı olan makale: yeşil kenar */
 }
 .paper-meta {
   min-width: 0;

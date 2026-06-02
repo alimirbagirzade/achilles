@@ -248,6 +248,15 @@ class SqliteStore:
                 )
             )
 
+    def has_knowledge_card(self, paper_id: str) -> bool:
+        with self.session() as s:
+            return (
+                s.scalar(
+                    select(KnowledgeCard.card_id).where(KnowledgeCard.paper_id == paper_id).limit(1)
+                )
+                is not None
+            )
+
     def save_strategy(self, **fields: Any) -> None:
         with self.session() as s:
             s.merge(Strategy(**fields))

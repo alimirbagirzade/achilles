@@ -92,6 +92,7 @@
     api("/status", { method: "GET" })
       .then(function (s) {
         dot.className = "dot " + (s.ollama_available ? "dot-ok" : "dot-warn");
+        txt.className = s.ollama_available ? "conn-ok" : "conn-warn";
         txt.textContent = s.ollama_available ? "ollama bağlı" : "ollama yok (RAG sınırlı)";
         document.getElementById("embedMode").textContent = "embed: " + s.embedding_mode;
         document.getElementById("paperCount").textContent = "papers: " + s.n_papers;
@@ -110,6 +111,7 @@
       })
       .catch(function () {
         dot.className = "dot dot-err";
+        txt.className = "conn-err";
         txt.textContent = "sunucuya ulaşılamadı";
       });
   }
@@ -207,8 +209,13 @@
         }
         list.innerHTML = papers
           .map(function (p) {
+            var btn = p.has_card
+              ? '<button class="btn btn-done" disabled>✓ KART VAR</button>'
+              : '<button class="btn card-btn" data-id="' + esc(p.paper_id) + '">BİLGİ KARTI</button>';
             return (
-              '<div class="paper-row"><div class="paper-meta">' +
+              '<div class="paper-row' +
+              (p.has_card ? " has-card" : "") +
+              '"><div class="paper-meta">' +
               '<div class="paper-title">' +
               esc(p.title || "(başlıksız)") +
               "</div>" +
@@ -220,9 +227,8 @@
               (p.year ? " · " + esc(p.year) : "") +
               "</div></div>" +
               '<div class="paper-actions">' +
-              '<button class="btn card-btn" data-id="' +
-              esc(p.paper_id) +
-              '">BİLGİ KARTI</button></div></div>'
+              btn +
+              "</div></div>"
             );
           })
           .join("");
@@ -239,17 +245,23 @@
 
   function makeCard(paperId, btn) {
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span>';
+    btn.classList.remove("btn-err");
+    btn.innerHTML = '<span class="spinner"></span>ÜRETİLİYOR';
     api("/card/" + encodeURIComponent(paperId), { method: "POST" })
       .then(function () {
         toast("Bilgi kartı üretildi: " + paperId);
+        btn.classList.remove("card-btn");
+        btn.classList.add("btn-done");
+        btn.textContent = "✓ KART HAZIR";
+        btn.disabled = true;
+        var row = btn.closest(".paper-row");
+        if (row) row.classList.add("has-card");
       })
       .catch(function (err) {
         toast(err.message, true);
-      })
-      .finally(function () {
+        btn.classList.add("btn-err");
+        btn.textContent = "✕ HATA — TEKRAR DENE";
         btn.disabled = false;
-        btn.textContent = "BİLGİ KARTI";
       });
   }
 

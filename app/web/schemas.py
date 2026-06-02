@@ -20,6 +20,7 @@ class PaperOut(BaseModel):
     year: str | None = None
     authors: str | None = None
     n_chunks: int = 0
+    has_card: bool = False
 
 
 class IngestResponse(BaseModel):
