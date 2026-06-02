@@ -20,7 +20,8 @@
 - [x] **LoRA `train --run`**: uçtan uca (loss 1.21→0.029, adapter + registry, öğrenilmiş davranış)
 - [x] **Gerçek veri backtest**: BTC-USD 1g (5 yıl) → evaluator overfit'i **FAIL** ile yakaladı
 - [x] **Web arayüzü**: güvenlik-sertleştirilmiş FastAPI + **açık (light), renk-körü-dostu** temiz arayüz (`app/web/`, `SECURITY.md`)
-- [ ] 8GB'da güvenilir LLM bilgi-kartı (3b geçersiz JSON / 7b timeout) · intraday OHLCV kaynağı · çok-makaleli LoRA dataseti
+- [x] **8GB'da güvenilir LLM bilgi-kartı** — Ollama `format:"json"` + kısa girdi + num_predict cap + retry + esnek parse → 3b artık dolu/doğru kart üretiyor (~56s); card→dataset→LoRA döngüsü otomatik
+- [ ] intraday (15m/1h) OHLCV kaynağı · çok-makaleli LoRA dataseti · CI (GitHub Actions)
 - [ ] 32GB makineye geçince `ACHILLES_LLM_MODEL=qwen2.5-coder:14b` (profil `.env.example`'da hazır)
 
 ---

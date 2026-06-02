@@ -41,7 +41,14 @@ class LocalLLM:
         system: str | None = None,
         temperature: float = 0.2,
         max_tokens: int | None = None,
+        fmt: str | None = None,
+        timeout: int = 300,
     ) -> str:
+        """Tek seferlik üretim.
+
+        ``fmt="json"`` Ollama'nın yapılandırılmış çıktısını açar — model GEÇERLİ
+        JSON üretmeye zorlanır (küçük modellerde bozuk JSON'u önler).
+        """
         import requests
 
         if not self.available():
@@ -53,13 +60,15 @@ class LocalLLM:
         options: dict = {"temperature": temperature}
         if max_tokens:
             options["num_predict"] = max_tokens
-        payload = {
+        payload: dict = {
             "model": self.model,
             "prompt": prompt,
             "system": system or "",
             "stream": False,
             "options": options,
         }
-        r = requests.post(f"{self.host}/api/generate", json=payload, timeout=300)
+        if fmt:
+            payload["format"] = fmt
+        r = requests.post(f"{self.host}/api/generate", json=payload, timeout=timeout)
         r.raise_for_status()
         return r.json().get("response", "").strip()

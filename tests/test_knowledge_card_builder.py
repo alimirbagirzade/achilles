@@ -82,6 +82,14 @@ def test_extract_json_strips_fences_and_prose():
     assert data["methods"] == ["GARCH", "EMA crossover"]
 
 
+def test_extract_json_repairs_smart_quotes_and_trailing_commas():
+    # küçük modellerin tipik bozulmaları: akıllı tırnak + sondaki virgül
+    raw = "{“main_claim”: “x”, “methods”: [“a”, “b”,],}"
+    data = _extract_json(raw)
+    assert data["main_claim"] == "x"
+    assert data["methods"] == ["a", "b"]
+
+
 def test_build_parses_card_and_persists(tmp_path):
     store = _FakeStore(["chunk metni bir", "chunk metni iki"])
     builder = _builder(tmp_path, store, _StubLLM(_VALID_CARD_JSON))
