@@ -28,7 +28,8 @@
 - [x] Embedding servisi (ollama + deterministik fake fallback)
 - [x] RAG yanıtlama — mantık **çevrimdışı** test edildi (stub LLM/retriever)
 - [x] RAG **canlı LLM** doğrulandı — `achilles ask` qwen 7B ile kaynaklı, 5-bölümlü cevap üretti (`llm_used=True`, 3 kaynak, doğru citation)
-- [x] Backtest + evaluator — EMA/RSI çalıştı, **FAIL** yargısı SQLite'a yazıldı
+- [x] Backtest + evaluator — sentetik **ve gerçek veride** çalıştı
+- [x] **GERÇEK VERİ backtest** — BTC-USD 1g (Yahoo, 1827 bar/5yıl), EMA/RSI: getiri +%52 / Sharpe 4.0 görünse de evaluator **FAIL** verdi (örneklem-dışı negatif = overfit, az işlem) → disiplin gerçek veride kanıtlandı
 - [x] LoRA `train` dry-run — `mlx_lm.lora` komut kurulumu doğrulandı
 - [x] **LoRA `train --run` UÇTAN UCA** — `dataset` (10 örnek) → `mlx_lm.lora` (1.5B-4bit MLX) → adapter; train loss **1.21→0.029**, peak mem **3.8GB** (8GB'a sığdı), adapter registry'ye kaydedildi, çıkarımda **öğrenilmiş disiplin formatı** üretti
 - [x] Knowledge card **canlı** üretimi — `pytest -m ollama` ile 3b'de doğrulandı (kart üretildi + kaydedildi)
@@ -41,7 +42,7 @@
 **Yapılacaklar (sıradaki)**
 - [ ] Knowledge card'ı 8GB'da güvenilir üret (3b geçersiz JSON / 7b timeout) — daha kısa prompt + retry + lenient JSON parse, ya da 32GB'da çöz
 - [ ] LoRA datasetini gerçek (çok makaleli) kart havuzundan büyüt; daha fazla iter
-- [ ] Gerçek OHLCV verisiyle backtest (sentetik yerine)
+- [ ] Veri kaynağı: Binance/CryptoCompare/Kraken Türkiye'de bloklu → Yahoo Finance kullanıldı. İçeride bir `market_data_loader` fetch fonksiyonu + intraday (15m/1h) kaynağı eklenebilir
 - [ ] `uv.lock`'u versiyonlamaya alma kararı (tekrarlanabilirlik)
 - [ ] CI'da ollama-işaretli testleri ayır (`pytest -m "not ollama"`)
 - [ ] 32GB makineye geçince `ACHILLES_LLM_MODEL=qwen2.5-coder:14b` (profil hazır)

@@ -76,6 +76,8 @@ Sözleşmeler: `paper_id` içerik hash'inden türer (idempotent ingestion). Stra
 - [ ] **RAG / knowledge card / dataset / eval** komutları Ollama'sız çalışmadı (kod hazır, model bekliyor).
 - [ ] **MLX-LM LoRA**: `train` komutu varsayılan dry-run; gerçek eğitim `--run` ile (Apple Silicon + `uv sync --extra train`).
 
+- [x] **Gerçek OHLCV backtest YAPILDI** — BTC-USD günlük (Yahoo Finance, 1827 bar / 5 yıl; Binance+CryptoCompare+Kraken Türkiye'de bloklu, Stooq apikey istiyor). EMA/RSI: getiri +%52 / Sharpe 4.0 / DD -%52 ama evaluator **FAIL** (`bt_e22fbfde4b`): örneklem-dışı negatif (overfit) + az işlem. Gerçek veride disiplin doğrulandı. CSV: `data/market/raw/BTCUSD_1d.csv` (gitignored).
+
 ## Yapılmayacaklar (sabit sınırlar)
 
 Canlı emir/işlem yok · maliyetsiz backtest yok · look-ahead bias yok · `eval`/`exec` yok · test edilmeden "başarılı" denmez · sır/credential commit edilmez.
