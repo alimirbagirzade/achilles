@@ -1,6 +1,6 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-06-02 · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Son güncelleme: 2026-06-03 · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon).
 **Canlı bot değil, yatırım tavsiyesi değil.** Akış:
@@ -80,6 +80,13 @@ Sözleşmeler: `paper_id` içerik hash'inden türer (idempotent ingestion). Stra
 - [x] **Güvenlikli web arayüzü eklendi** (`app/web/`) — FastAPI ince katman: status/papers/upload/ingest/ask/card/backtest + `/api/docs`; `security.py` (token auth `secrets.compare_digest`, IP rate-limit, CSP+güvenlik başlıkları, PDF magic-byte+boyut doğrulama, path-traversal koruması); terminal-estetik static UI (CSP-uyumlu); `SECURITY.md`. `pip install -e ".[web]"` → `achilles-web` (yalnız localhost). Denetim: 2 "ares" regresyonu (`achilles_lora_v1`, `achilles_test`) düzeltildi, `_consteq`→`secrets.compare_digest`, README canlı-durum+github+model bölümleri geri getirildi. **43 offline test geçiyor, ruff+mypy temiz.**
 
 - [x] **8GB'da güvenilir bilgi-kartı ÇÖZÜLDÜ** — `knowledge_card_builder`: Ollama `format:"json"` (geçerli JSON garanti) + kısa girdi (14000→6000 krk) + `num_predict` cap + boşsa kısa retry + esnek `_extract_json` (akıllı tırnak/sondaki virgül onarımı); `local_llm.generate` artık `fmt`/`timeout` alıyor. 3b ile gerçek makaleden dolu+doğru kart (methods: polyhedral lemma, James-Stein shrinkage…) ~56s. Card→TrainingDataBuilder→dataset artık otomatik (elle seed gerekmez). 49 offline test geçiyor.
+
+- [x] **Bilgi kartı görüntüleme (2026-06-03)** — `GET /api/card/{paper_id}` endpoint'i (LLM gerektirmez); `SqliteStore.get_latest_knowledge_card()`; "KART VAR" butonu → tıklanabilir "KARTI GÖR"; kart içeriğini modal'da render eden UI (başlık, meta, tüm alanlar). 53 offline test.
+
+- [x] **LoRA Web UI + Kart→Backtest + Arama/Filtre (2026-06-03)** — Üç bağımsız özellik:
+  1. **04 · EĞİTİM sekmesi**: `GET /api/training/status` (örnek sayısı + adapter listesi), `POST /api/training/dataset` (DatasetBuilder), `POST /api/training/dry-run` (mlx_lm komutu önizle; çalıştırmaz). UI: dataset oluştur, dry-run formu, adapter tablosu.
+  2. **Kart→Backtest** (`POST /api/card/{paper_id}/backtest`): her `possible_strategy_hypotheses` için `generate_from_hypothesis` → `run_backtest` (sentetik 2000 bar) → `evaluate`; kart modalında "⚡ HİPOTEZLERİ BACKTEST ET" butonu + sonuç render.
+  3. **Makale arama/filtre/sıralama**: başlık arama inputu, Tümü/Kartlı/Kartsız filtresi, A→Z/Z→A/kartlı önce sıralama (client-side). **59 offline test, ruff+mypy temiz.**
 
 ## Yapılmayacaklar (sabit sınırlar)
 
