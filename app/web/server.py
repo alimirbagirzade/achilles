@@ -28,6 +28,8 @@ from app.web.schemas import (
     BacktestRecord,
     BacktestRequest,
     BacktestResponse,
+    BatchCardResponse,
+    BatchCardResult,
     CardResponse,
     DatasetBuildResponse,
     HypothesisBacktestResponse,
@@ -241,6 +243,43 @@ def api_card(paper_id: str) -> CardResponse:
             status_code=503,
             detail="Bilgi kartı üretilemedi (LLM gerekli olabilir).",
         ) from exc
+
+
+@app.post("/api/cards/batch", response_model=BatchCardResponse, dependencies=[api_auth])
+def api_cards_batch(skip_existing: bool = True) -> BatchCardResponse:
+    """Kartı olmayan tüm makaleler için sırayla bilgi kartı üret (LLM gerekli)."""
+    from app.brain.knowledge_card_builder import KnowledgeCardBuilder
+    from app.memory.sqlite_store import SqliteStore
+
+    store = SqliteStore()
+    papers = store.list_papers()
+    builder = KnowledgeCardBuilder()
+    results: list[BatchCardResult] = []
+
+    for paper in papers:
+        pid = paper.paper_id
+        if skip_existing and store.has_knowledge_card(pid):
+            results.append(
+                BatchCardResult(paper_id=pid, title=paper.title, status="skip", message="zaten var")
+            )
+            continue
+        try:
+            builder.build(pid)
+            results.append(
+                BatchCardResult(paper_id=pid, title=paper.title, status="ok", message="üretildi")
+            )
+        except Exception as exc:
+            logger.warning("Toplu kart — %s başarısız: %s", pid, exc)
+            results.append(
+                BatchCardResult(
+                    paper_id=pid, title=paper.title, status="error", message=str(exc)[:120]
+                )
+            )
+
+    produced = sum(1 for r in results if r.status == "ok")
+    skipped = sum(1 for r in results if r.status == "skip")
+    errors = sum(1 for r in results if r.status == "error")
+    return BatchCardResponse(produced=produced, skipped=skipped, errors=errors, results=results)
 
 
 @app.post(

@@ -625,6 +625,44 @@
     });
   }
 
+  // ---------- toplu kart üretimi ----------
+  var batchCardBtn = document.getElementById("batchCardBtn");
+  if (batchCardBtn) {
+    batchCardBtn.addEventListener("click", function () {
+      batchCardBtn.disabled = true;
+      batchCardBtn.innerHTML = '<span class="spinner"></span>ÜRETİLİYOR…';
+      var res = document.getElementById("batchCardResult");
+      res.className = "result";
+      res.innerHTML = '<div class="result-section"><span class="spinner"></span> Kartlar üretiliyor (LLM gerekli, her makale ~60s)…</div>';
+      api("/cards/batch", { method: "POST" })
+        .then(function (data) {
+          toast(data.produced + " kart üretildi, " + data.skipped + " atlandı, " + data.errors + " hata.");
+          var rows = (data.results || []).map(function (r) {
+            var cls = r.status === "ok" ? "pos" : r.status === "error" ? "neg" : "muted";
+            return (
+              '<div class="batch-row">' +
+              '<span class="' + cls + '">' + esc(r.status.toUpperCase()) + "</span> " +
+              "<b>" + esc(r.title || r.paper_id) + "</b> — " +
+              esc(r.message) +
+              "</div>"
+            );
+          }).join("");
+          res.innerHTML =
+            '<div class="result-section"><div class="result-label">sonuç</div>' +
+            "<div>" + rows + "</div></div>";
+          loadPapers();
+        })
+        .catch(function (err) {
+          toast(err.message, true);
+          res.innerHTML = '<div class="result-section result-body">Hata: ' + esc(err.message) + "</div>";
+        })
+        .finally(function () {
+          batchCardBtn.disabled = false;
+          batchCardBtn.textContent = "⚡ TÜM KARTLARI ÜRET";
+        });
+    });
+  }
+
   document.getElementById("refreshPapers").addEventListener("click", loadPapers);
   document.getElementById("reindexBtn").addEventListener("click", function () {
     var b = this;

@@ -1177,6 +1177,16 @@ code {
   color: var(--ink-dim);
 }
 
+/* ---------- toplu kart sonuç satırları ---------- */
+.batch-row {
+  font-size: 13px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+.batch-row:last-child {
+  border-bottom: none;
+}
+
 @media (max-width: 640px) {
   .topbar {
     flex-direction: column;

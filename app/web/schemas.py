@@ -162,3 +162,18 @@ class TrainingExampleOut(BaseModel):
 class TrainingExamplesResponse(BaseModel):
     examples: list[TrainingExampleOut]
     total: int
+
+
+# ---------- Toplu kart üretimi ----------
+class BatchCardResult(BaseModel):
+    paper_id: str
+    title: str | None = None
+    status: str  # ok | skip | error
+    message: str
+
+
+class BatchCardResponse(BaseModel):
+    produced: int
+    skipped: int
+    errors: int
+    results: list[BatchCardResult]
