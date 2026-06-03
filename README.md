@@ -23,14 +23,15 @@
 | **BTCUSD 1H backtest** | ✅ | **PASS** — 71k bar, 2017-2025, +2603%, Sharpe 2.17, DD -63.9% |
 | **Pine Script export** | ✅ | `achilles pine` → TradingView v5 taslak |
 | **Web arayüzü** | ✅ | 7 sekme · toplu kart · kart→backtest · eval UI |
-| **Araştırma döngüsü** | 🔄 | Çalışıyor; az-işlem sorunu üzerinde iterasyon yapılıyor |
+| **Araştırma döngüsü** | 🔄 | Gerçek 71k bar · 2400+ işlem üretiyor · drawdown optimizasyonu devam ediyor |
 | **arXiv otomatik çekme** | 📋 | Planlandı (arxiv-research skili) |
 | **Pine→TradingView push** | 📋 | Planlandı (TradingView MCP entegrasyonu) |
 
-### Son 3 aktivite
-- `2026-06-03` — BTCUSD 1H backtest: **PASS** (71k bar Binance, 2017-2025)
+### Son aktiviteler
+- `2026-06-03` — Araştırma döngüsü gerçek 71k bar ile çalışıyor; 2400+ işlem/iterasyon
+- `2026-06-03` — Web arayüzü kullanım kılavuzu 12 yaş seviyesinde yeniden yazıldı
+- `2026-06-03` — BTCUSD 1H backtest: **PASS** (71k bar Binance, 2017-2025, Sharpe 2.17)
 - `2026-06-03` — Pine Script export (`strategy_ir.to_pine()` + CLI `achilles pine`)
-- `2026-06-03` — Seans protokolü + 3 proje skili + tam HANDOFF güncellendi
 
 ---
 
@@ -153,166 +154,256 @@ achilles backtest data/market/raw/synthetic.csv
 
 ---
 
-## Web arayüzü 🖥️
+## Web Arayüzü 🖥️
 
-Açık (light), temiz ve **renk-körü-dostu**, **güvenlik-sertleştirilmiş** yerel web arayüzü.
+> **Kısaca:** Tarayıcından Achilles'e bağlanıp soru sorabilir, makale yükleyebilir,
+> strateji test edebilir ve modeli eğitebilirsin — komut satırına gerek yok.
+
+### Nasıl başlatırsın?
 
 ```bash
-pip install -e ".[web]"      # veya: uv sync --extra web
-achilles-web                 # http://127.0.0.1:8765 (yalnız localhost)
-# alternatif: uvicorn app.web.server:app
+cd ~/Development/Achilles
+uv run achilles-web
+# Terminal'de "Uvicorn running on http://127.0.0.1:8765" yazar
 ```
 
-Tarayıcıda `http://127.0.0.1:8765` aç. Altı sekme:
+Tarayıcında `http://127.0.0.1:8765` aç. **Cmd+Shift+R** ile yenile.
+Sağ üstte yeşil **"ollama bağlı"** yazıyorsa her şey hazır.
 
-| Sekme | İçerik |
-|-------|--------|
-| **01 · Araştırma** | RAG soru-cevap; model seçici (Ollama / MLX adapter) |
-| **02 · Makaleler** | PDF yükle/indeksle; bilgi kartı üret/gör; toplu kart; arama/filtre/sıralama |
-| **03 · Backtest** | Sentetik + gerçek CSV + özel strateji IR; backtest geçmişi |
-| **04 · Eğitim** | Dataset oluştur; dry-run komutu; eğitim örnekleri yönet; adapter listesi |
-| **05 · Değerlendirme** | Eval seti seç, adapter seç, çalıştır; skor + bayrak + yanıt detayı |
-| **06 · Sistem** | Durum, disiplin kuralları, API token |
+---
 
-### API uçları
+### Sekmeler — ne işe yarar?
+
+#### 01 · ARAŞTIRMA — "Akıllı kütüphaneci"
+
+Buraya bir soru yazarsın, sistem yüklediğin tüm PDF makaleleri tarar ve
+**sadece gerçekten orada yazana dayanarak** cevap verir. Uydurmaz.
+
+```
+Sen: "Momentum stratejisi yüksek volatilitede nasıl çalışır?"
+Achilles: [makale bölümlerini okur] → 5 bölümlü cevap
+  1. Kısa cevap
+  2. Kaynaklar (hangi makalenin kaçıncı sayfası)
+  3. Akademik bulgu
+  4. Trading hipotezi
+  5. Test etmek için ne yapmalı
+```
+
+**Model seçici:** Sağ üstte Ollama (varsayılan) veya eğittiğin LoRA adapter'ı seçebilirsin.
+LoRA adapter seçersen cevap eğitilmiş modelden gelir + üstünde badge çıkar.
+
+**Durum:** ✅ Tam çalışıyor · 7 PDF · 567 chunk taranıyor
+
+---
+
+#### 02 · MAKALELER — "Kütüphane rafı"
+
+Araştırma makalelerini buraya yüklersin. Sistem otomatik okur, parçalar ve arar hale getirir.
+
+**Yapabileceklerin:**
+
+| Buton | Ne yapar | Ne görürsün |
+|-------|----------|-------------|
+| PDF sürükle-bırak | Makaleyi sisteme yükler ve indeksler | Makale satırı + kaç parçaya bölündüğü |
+| **BİLGİ KARTI ÜRET** | LLM tüm makaleyi okur, yapısal özet çıkarır | ~1-3 dk bekle (3b model) |
+| **KARTI GÖR** | Daha önce üretilmiş kartı açar | Modal pencere: hipotezler, formüller, uyarılar |
+| **⚡ HİPOTEZLERİ BACKTEST ET** | Kartın önerdiği her stratejiyi otomatik test eder | Her hipotez için ✓/✕ verdict |
+| **⚡ TÜM KARTLARI ÜRET** | Kartı olmayan tüm makaleler için sırayla kart üretir | ok/skip/error listesi |
+| Arama kutusu | Makale başlığında filtrele | Anlık filtreleme |
+| Filtre: Tümü/Kartlı/Kartsız | Kartı olan/olmayan makaleleri ayır | — |
+
+**Durum:** ✅ Tam çalışıyor · 7 makale yüklü · kartlı olanlar mevcut
+
+---
+
+#### 03 · BACKTEST — "Şüpheci hakem"
+
+Bir stratejiyi test edersin. Sistem sana "geçti" veya "geçemedi" der ve **neden** açıklar.
+
+> Önemli: Sistem kasıtlı olarak katıdır. Yüksek getiri görmek yetmez —
+> gerçek verinin %80'inde öğrenip %20'sinde (görmediği veri) de iyi yapması lazım.
+
+**3 farklı test yöntemi:**
+
+| Yöntem | Kullanım | Açıklama |
+|--------|----------|----------|
+| **SENTETİK ÇALIŞTIR** | "Hızlı deneme" için | Sistem yapay BTC verisi üretir, mevcut stratejiyi test eder |
+| **CSV YÜKLE → TEST ET** | Gerçek piyasa verisi için | Binance/Coinbase CSV dosyanı yükle, test et |
+| **ÖZEL IR ÇALIŞTIR** | Kendi stratejini dene | JSON formatında kendi kurallarını yaz |
+
+**Backtest sonuç metrikleri:**
+
+| Metrik | Ne demek |
+|--------|----------|
+| `n_trades` | Kaç kez alım/satım yapıldı (30'dan az → istatistik zayıf) |
+| `total_return_pct` | Toplam kazanç/kayıp yüzdesi |
+| `sharpe` | Risk'e göre düzeltilmiş getiri (2+ iyi, 1+ kabul edilebilir) |
+| `max_drawdown_pct` | En kötü düşüş (örn. -63% = peak'ten -63% düştü) |
+| `profit_factor` | Kazanç/kayıp oranı (1+ = kârlı) |
+| `win_rate_pct` | Kazanılan işlem yüzdesi |
+
+**Verdict (yargı):**
+- ✓ **PASS** — Gerçek verinin görmediği kısımda da iyi. Güvenilir aday.
+- ✕ **FAIL** — Az işlem, OOS negatif veya overfit. Henüz hazır değil.
+- ≈ **INCONCLUSIVE** — Yeterli veri yok, karar verilemiyor.
+
+**Geçmiş:** Tüm backtest'ler listede kalır, karşılaştırabilirsin.
+
+**Durum:** ✅ Çalışıyor · 14 backtest kayıtlı · 2 PASS (BTCUSD 1H Binance) · 12 FAIL
+
+**Yakında:** Pine Script export butonu (stratejiyi TradingView'e gönder)
+
+---
+
+#### 04 · EĞİTİM — "Model okulu"
+
+Achilles'in kendi LoRA modelini eğitirsin. Bu modeli sonraki sorularda kullanabilirsin.
+
+**Nasıl çalışır (adım adım):**
+
+```
+1. Bilgi kartları (makalelerden) → otomatik eğitim örnekleri üretir
+2. "DATASET OLUŞTUR" → train + validation JSONL dosyaları
+3. "KOMUT ÖNIZLE" → mlx_lm lora komutunu gösterir (çalıştırmaz)
+4. Terminalde: achilles train --run  (gerçekten eğitir, macOS Apple Silicon gerekli)
+5. Adapter registry'e kaydedilir → ARAŞTIRMA sekmesinde seçilebilir
+```
+
+| Buton | Ne yapar |
+|-------|----------|
+| **DATASET OLUŞTUR** | Tüm kartlardan train/valid JSONL üretir |
+| **KOMUT ÖNIZLE** | Eğitim komutunu gösterir (çalıştırmaz — önce görmek için) |
+| Eğitim örnekleri listesi | Hangi örnek var, hangisini silmek istiyorsun |
+| Adapter tablosu | Kaç adapter var, ne zaman eğitildi, hangi base model |
+
+**Şu anki eğitilmiş model:** `achilles_lora_v2` — 300 iterasyon, loss 0.028, peak 2GB RAM
+
+**Durum:** ✅ Çalışıyor · achilles_lora_v2 mevcut · Apple Silicon MLX
+
+---
+
+#### 05 · DEĞERLENDİRME — "Sınav salonu"
+
+Eğittiğin modeli "tuzak sorularla" test edersin. Sistem cevapları puanlar.
+
+**Eval setleri** (`evals/` klasöründe):
+- `discipline_core.jsonl` — "Garanti kazandırır mı?" gibi tuzak sorular (hayır demeli)
+- `overfit_traps.jsonl` — Overfit, look-ahead gibi yasaklara dair sorular
+- `risk_scenarios.jsonl` — Risk yönetimi soruları
+
+```
+Adapter seç + Eval seti seç → DEĞERLENDİR →
+  Skor: %87 (13 sorudan 11'i doğru)
+  2 bayrak: [soru göster] [modelin cevabı göster] [doğru cevap göster]
+```
+
+**Durum:** ✅ Çalışıyor
+
+---
+
+#### 06 · SİSTEM — "Gösterge paneli"
+
+Bilgi amaçlı — işlem yapmazsın.
+
+| Kutu | Ne gösterir |
+|------|-------------|
+| Bağlantı durumu | Ollama bağlı mı, embedding modu ne, kaç makale var |
+| Mimari diyagramı | PDF'ten backtest'e kadar tüm katmanlar |
+| Disiplin kuralları | Sistemin değişmez 7 kuralı (kaynak uydurma yok, look-ahead yok…) |
+| Güvenlik özeti | Token zorunlu mu, CSP aktif mi |
+| API token girişi | Token gerektiriyorsa buradan girilir |
+
+**Durum:** ✅ Çalışıyor
+
+---
+
+### API Uçları (tam liste)
+
+<details>
+<summary>Geliştiriciler için — tıkla aç</summary>
+
 | Yöntem | Uç | Açıklama |
 |--------|-----|----------|
-| GET | `/api/status` | Sistem durumu |
+| GET | `/api/status` | Sistem durumu (Ollama, model, sayımlar) |
 | GET | `/api/papers` | İndekslenmiş makaleler |
-| POST | `/api/papers/upload` | PDF yükle (doğrulanır) → indeksle |
+| POST | `/api/papers/upload` | PDF yükle (sihirli bayt + boyut doğrulama) → indeksle |
 | POST | `/api/ingest` | Tüm PDF'leri yeniden indeksle |
 | POST | `/api/ask` | RAG sorusu; `adapter_version` ile MLX inference |
 | GET | `/api/card/{paper_id}` | Kaydedilmiş kartı getir (LLM gerektirmez) |
-| POST | `/api/card/{paper_id}` | Bilgi kartı üret (LLM gerekli) |
+| POST | `/api/card/{paper_id}` | Bilgi kartı üret (Ollama gerekli) |
 | POST | `/api/cards/batch` | Kartı olmayan tüm makaleleri sırayla işle |
 | POST | `/api/card/{paper_id}/backtest` | Kart hipotezlerini sentetik veride test et |
 | GET | `/api/backtests` | Geçmiş backtest kayıtları |
 | POST | `/api/backtest` | Sentetik / özel IR backtest |
 | POST | `/api/backtest/csv` | Gerçek OHLCV CSV yükle → backtest |
+| POST | `/api/backtest/{id}/pine` | *(yakında)* Backtest'i Pine Script'e çevir |
+| GET | `/api/research/formulas` | Çıkarılan formüller |
+| GET | `/api/research/graph` | Kavram grafiği |
+| POST | `/api/research/extract` | Formül çıkarımı çalıştır |
+| POST | `/api/research/run` | Araştırma döngüsü çalıştır |
+| GET | `/api/research/sessions` | Araştırma oturumları + öğrenme geçmişi |
+| POST | `/api/research/chain-dataset` | Zincir → LoRA eğitim verisi |
 | GET | `/api/training/status` | Eğitim örnek sayısı + adapter listesi |
 | POST | `/api/training/dataset` | Train/valid JSONL oluştur |
-| POST | `/api/training/dry-run` | mlx_lm komutu önizle |
+| POST | `/api/training/dry-run` | mlx_lm komutunu önizle (çalıştırmaz) |
 | GET | `/api/training/examples` | Eğitim örneklerini listele |
 | DELETE | `/api/training/examples/{id}` | Örnek sil |
-| GET | `/api/eval/sets` | Eval seti listesi |
-| POST | `/api/eval/run` | Eval çalıştır (Ollama gerekli) |
-| GET | `/api/docs` | OpenAPI (Swagger) arayüzü |
+| GET | `/api/eval/sets` | Eval seti listesi (`evals/*.jsonl`) |
+| POST | `/api/eval/run` | Modeli değerlendir |
+| GET | `/api/docs` | OpenAPI / Swagger arayüzü |
 
-### Güvenlik (özet — tamamı `SECURITY.md`)
-- **Yalnız localhost'a bağlanır** (`127.0.0.1`); ağa açmak için token zorunlu.
-- İsteğe bağlı **bearer token** (`ACHILLES_API_TOKEN`), sabit-zamanlı karşılaştırma.
-- **CSP + güvenlik başlıkları** her yanıtta; frontend'de inline script yok.
-- **Katı PDF doğrulama** (uzantı + sihirli bayt + 50 MB limit) + path-traversal koruması.
-- IP başına **hız sınırı**. Kullanıcı girdisi asla çalıştırılmaz.
-
-> Sunucuyu internete açacaksan **mutlaka** `ACHILLES_API_TOKEN` ata ve TLS'li bir
-> reverse proxy arkasına koy. Ayrıntılar: [`SECURITY.md`](./SECURITY.md).
-
-### 🌐 Arkadaşların bağlanabilir mi? (paylaşım)
-
-Varsayılan: **yalnız senin makinende** (`127.0.0.1`) — başkası bağlanamaz (güvenli). Paylaşmak için:
-
-**A) Aynı Wi-Fi / yerel ağ:**
-```bash
-echo 'ACHILLES_API_TOKEN=uzun-gizli-bir-parola' >> .env   # ZORUNLU (ağa açıyorsun)
-echo 'ACHILLES_WEB_HOST=0.0.0.0' >> .env
-uv run achilles-web
-```
-- IP'ni öğren: `ipconfig getifaddr en0` → arkadaşların `http://<o-IP>:8765` açar.
-- **SİSTEM** sekmesinden token'ı girerler. macOS güvenlik duvarı sorarsa **İzin Ver**.
-
-**B) İnternet üzerinden (geçici tünel):**
-```bash
-ngrok http 8765        # veya: cloudflared tunnel --url http://localhost:8765
-```
-Sana `https://…` bir adres verir; arkadaşların oradan (token ile) girer.
-
-> ⚠️ Açınca kendi makinendeki modele + dosya yükleme/backtest'e erişim verirsin.
-> **Güçlü token şart**, işin bitince kapat. Detay: [`SECURITY.md`](./SECURITY.md).
+</details>
 
 ---
 
-## ⚙️ Sekmeler Nasıl Çalışır? (motorun içi)
+### Güvenlik (kısa özet)
 
-### 🔎 RAG Araştırma — _soru-cevap_
+- **Yalnız kendi bilgisayarında çalışır** (`127.0.0.1`) — internetten erişilemez.
+- İstersen **şifre (token)** koyabilirsin: `.env` dosyasına `ACHILLES_API_TOKEN=güçlü-şifre`.
+- PDF doğrulaması var — sadece gerçek PDF kabul edilir, sahte dosya geçemez.
+- IP başına **hız sınırı** var.
 
+**Arkadaşına açmak istersen:**
+```bash
+# .env dosyasına ekle:
+ACHILLES_API_TOKEN=uzun-rastgele-bir-sifre
+ACHILLES_WEB_HOST=0.0.0.0
+# Kendi IP'ni bul:
+ipconfig getifaddr en0
+# Arkadaşın: http://<o-IP>:8765 (token gerekli)
 ```
-Soru ─▶ embedding ─▶ ChromaDB'de EN YAKIN 6 parça (top_k)
-                              │  (senin yüklediğin makalelerin metni)
-                              ▼
-        Model: "SADECE bu kaynaklara dayan, uydurma"
-                              ▼
-   Cevap = kısa cevap · kaynaklar · akademik bulgu · trading hipotezi · test noktaları
-```
-
-- **Ne yapar:** sorunla **en alakalı bölümleri bulur**, onları **okuyup dayanarak** cevaplar.
-- **Ne yapmaz:** tüm makaleyi baştan sona özetlemez · kendi kafasından serbest yorum üretmez · kaynak yoksa **"Kaynak bulunamadı"** der (uydurmaz).
-- **Ayar:** geniş cevap için `top_k`'yı artır (6 → 12–20). Tüm makale özeti için **Bilgi Kartı**'nı kullan.
-
-### 📈 Strateji Backtest — _şüpheci denetçi_
-
-```
-Veri (sentetik VEYA gerçek CSV) ─▶ indikatörler (EMA/RSI/ATR) ─▶ Strateji IR (kurallar)
-   ─▶ Backtest motoru (look-ahead-safe + komisyon/slippage dahil)
-   ─▶ metrikler ─▶ in/out-of-sample bölme + overfit kontrolü
-   ─▶ EVALUATOR → ✓ GEÇTİ / ✕ BAŞARISIZ / ≈ SONUÇSUZ ─▶ SQLite'a kayıt
-```
-
-- Strateji **test edilmeden "başarılı" sayılmaz**; örneklem-dışı (OOS) pozitif değilse **FAIL**.
-- Maliyetler her zaman dahil, pozisyon **bir bar gecikmeli** (look-ahead yok), az işlemde "istatistiksel anlam zayıf".
-- Yüksek getiri görünse bile overfit varsa sistem **reddeder** — bu sistemin kalbidir.
-
-### 🛡️ Sistem & Disiplin — _kontrol paneli_
-
-İşlem yapılmaz; sistemin **nasıl düşündüğünü ve sınırlarını** gösterir: katman mimarisi,
-değişmez disiplin kuralları, güvenlik özeti ve (gerekiyorsa) **API token** girişi.
-"Sağlık tablosu" gibi düşün — model bağlı mı, embedding modu ne, kaç makale var.
-
-### 📚 Makaleler — _hafıza_
-
-PDF yükle → otomatik **ingestion** (metin çıkar → parçala → SQLite + ChromaDB).
-Buradaki makaleler RAG'in "okuduğu" kaynaklardır. Her makaleden **Bilgi Kartı** üretilebilir.
 
 ---
 
-## 🧪 Web Arayüzü — Adım Adım Test Kılavuzu
+### Adım Adım Test Rehberi (ilk açılışta uygula)
 
-> Sunucuyu aç, sonra tabloyu **yukarıdan aşağı** uygula. Her satırda **ne yaparsın** ve **✅ ne görmelisin** var.
-
-### ▶️ Başlat
 ```bash
 cd ~/Development/Achilles
-uv run achilles-web        # → http://127.0.0.1:8765
+uv run achilles-web
+# http://127.0.0.1:8765 aç, Cmd+Shift+R
 ```
-Tarayıcıda aç → **Cmd+Shift+R** (yenile). Sağ üstte **🟢 yeşil "ollama bağlı"** görmelisin.
 
-### ✅ Ana akış (sırayla)
+| Sıra | Sekme | Ne yaparsın | Ne görmelisin |
+|:----:|-------|-------------|---------------|
+| 1 | **SİSTEM** | Sekmeye tıkla | Ollama yeşil, makale sayısı doğru |
+| 2 | **MAKALELER** | Makale listesine bak | 7 makale görünmeli |
+| 3 | **MAKALELER** | Bir makale → **BİLGİ KARTI ÜRET** | ~1-3 dk, kart oluştu mesajı |
+| 4 | **MAKALELER** | **KARTI GÖR** butonuna bas | Modal açılır: hipotezler, formüller |
+| 5 | **MAKALELER** | Modal içinde **⚡ HİPOTEZLERİ BACKTEST ET** | Her hipotez için ✓/✕ |
+| 6 | **ARAŞTIRMA** | "Momentum filtresi nasıl çalışır?" yaz → **SORGULA** | 5 bölümlü cevap + kaynak |
+| 7 | **BACKTEST** | **SENTETİK ÇALIŞTIR** | Metrik tablosu + YARGI |
+| 8 | **BACKTEST** | CSV yükle butonu → `BTCUSD_1h_Binance.csv` → test | PASS: +2603%, Sharpe 2.17 |
+| 9 | **EĞİTİM** | **DATASET OLUŞTUR** | Satır sayısı + hash |
+| 10 | **DEĞERLENDİRME** | Eval seti seç → adapter seç → **DEĞERLENDİR** | Skor % + detaylar |
 
-| # | Sekme | Ne yaparsın | ✅ Ne görmelisin |
-|:-:|-------|-------------|------------------|
-| 1 | **SİSTEM** | sekmeye tıkla | katman / disiplin / güvenlik kutuları |
-| 2 | **MAKALELER** | PDF sürükle-bırak | makale satırı + chunk sayısı |
-| 3 | **MAKALELER** | **BİLGİ KARTI ÜRET** → kart oluştuktan sonra **KARTI GÖR** | kart modalı (başlık, hipotezler, uyarılar…) |
-| 4 | **MAKALELER** | kart modalında **⚡ HİPOTEZLERİ BACKTEST ET** | her hipotez için metrikler + verdict |
-| 5 | **MAKALELER** | **⚡ TÜM KARTLARI ÜRET** (tüm PDF'ler için) | ok/skip/error listesi |
-| 6 | **ARAŞTIRMA** | soru yaz → model seç (Ollama / adapter) → **SORGULA →** | kaynaklı cevap + adapter badge |
-| 7 | **BACKTEST** | **SENTETİK ÇALIŞTIR →** | metrik tablosu + YARGI (✓/✕/≈) + geçmişe eklendi |
-| 8 | **BACKTEST** | "Özel strateji IR" aç → JSON yapıştır → **ÖZEL IR ÇALIŞTIR →** | özel strateji adıyla sonuç |
-| 9 | **EĞİTİM** | **DATASET OLUŞTUR** | train/valid satır sayısı + hash |
-| 10 | **EĞİTİM** | **KOMUT ÖNIZLE →** | `python -m mlx_lm lora …` komutu |
-| 11 | **DEĞERLENDİRME** | eval seti + model seç → **DEĞERLENDİR →** | skor % + bayrak sayısı + soru/cevap listesi |
+**Yaramazlık testleri (reddetmesi = iyi çalışıyor demek):**
 
-### 🧨 "Yaramazlık" testleri — _reddetmesi = İYİ_
-
-| Dene | ✅ Beklenen (güvenli davranış) |
-|------|-------------------------------|
-| `.txt` dosya yükle | *"Yalnız .pdf kabul edilir"* |
-| kolonları bozuk CSV | *"open/high/low/close bulunamadı"* |
-| hiç makale yokken soru sor | *"Kaynak bulunamadı"* — **uydurmaz** |
-| zayıf stratejiyi backtest et | **✕ BAŞARISIZ** (overfit / OOS) |
-
-### 👓 Renk körü göz testi
-Yargı ve metriklerde **renge ek ikon** olmalı: **✓ / ✕ / ≈** ve **▲ / ▼** — anlam sadece renkle verilmez.
+| Dene | Beklenen |
+|------|---------|
+| `.txt` dosya yükle | "Yalnız PDF kabul edilir" hatası |
+| Boş CSV yükle | "Gerekli kolonlar bulunamadı" hatası |
+| Makale yokken soru sor | "Kaynak bulunamadı" — uydurmaz |
+| Çok kısa backtest | FAIL — "az işlem" |
 
 ### ❓ Sık sorulanlar
 

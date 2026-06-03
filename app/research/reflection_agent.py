@@ -19,7 +19,8 @@ from app.brain.local_llm import LLMUnavailable, LocalLLM
 logger = logging.getLogger(__name__)
 
 _REFLECTION_PROMPT = """\
-Bir trading araştırmacısısın. Aşağıdaki backtest sonucunu analiz et ve daha iyi bir versiyon öner.
+Bir trading araştırmacısısın. Aşağıdaki backtest başarısız oldu. Nedeni analiz et ve \
+iyileştirilmiş bir strateji öner.
 
 ━━━ ÖNCEKİ İNDİKATÖR ━━━
 {indicator_summary}
@@ -27,36 +28,56 @@ Bir trading araştırmacısısın. Aşağıdaki backtest sonucunu analiz et ve d
 ━━━ BACKTEST SONUÇLARI ━━━
 Yargı: {verdict}
 Sebepler: {reasons}
+İşlem sayısı: {n_trades}  ← 30'dan az ise kurallar ÇOK KISITLAYICI demektir
+Toplam getiri: {total_return:.4f}%
+Sharpe: {sharpe}
+Max Drawdown: {max_dd:.4f}%
 
-Metrikler:
-  İşlem sayısı: {n_trades}
-  Toplam getiri: {total_return:.4f}%
-  Sharpe: {sharpe}
-  Max Drawdown: {max_dd:.4f}%
-  Örneklem-dışı getiri: {oos_return}
+━━━ İYİLEŞTİRME KURALLARI — sebepler listesine göre uygula ━━━
 
-━━━ ANALİZ VE İYİLEŞTİRME ━━━
-Şunları yap:
-1. Başarısızlık sebebini analiz et (1-3 cümle)
-2. Spesifik neyi değiştireceğini belirt
-3. Yeni StrategyIR ver (sadece değişen kısımları değil, tam IR)
+EĞER "az işlem" veya işlem sayısı < 30 ise:
+  → RSI eşiğini DÜŞÜR: rsi > 55 → rsi > 50 (ya da RSI kuralını kaldır)
+  → EMA crossover yerine sadece tek EMA kural kullan
+  → Periyotları KÜÇÜLT (50 → 20, 20 → 14)
+  → Kural SILME, EKLEME yok
 
-Yanıtı JSON formatında ver:
+EĞER "aşırı drawdown" veya drawdown < -60% ise:
+  → RSI eşiğini ARTIR: rsi > 50 → rsi > 55 (daha seçici giriş)
+  → EMA trend filtresi EKLE: ema_20 > ema_50 (sadece yükseliş trendinde long)
+  → Çıkış kuralını hızlandır: rsi < 45 yerine rsi < 48
+
+EĞER işlem sayısı > 2000 ise (çok fazla işlem = gürültü):
+  → RSI eşiğini artır: rsi > 50 → rsi > 55
+  → İki koşullu entry: rsi > 55 VE ema_20 > ema_50
+  → Çıkışı da katılaştır
+
+EĞER Sharpe < -1 ve işlem sayısı > 500 ise:
+  → Yön mantığını tersine çevir: rsi > eşik → rsi < eşik (mean-reversion → trend)
+
+TEMEL KURAL: Bir iterasyonda sadece BİR şeyi değiştir. Hepsini birden değiştirme.
+
+━━━ ÇIKTI FORMATI ━━━
 {{
-  "failure_analysis": "Neden başarısız oldu...",
-  "changes": ["period 14→20 değiştirildi", "hacim filtresi eklendi"],
-  "improvement_reasoning": "Bu değişiklikler neden yardımcı olacak...",
+  "failure_analysis": "Kısa sebep analizi...",
+  "changes": ["kural X silindi", "periyot Y→Z küçültüldü"],
+  "improvement_reasoning": "Bu değişiklikler işlem sayısını nasıl artıracak...",
   "strategy_ir": {{
     "name": "..._v2",
     "market": "XAUUSD",
-    "timeframe": "15m",
-    "indicators": [...],
-    "entry_rules": [...],
-    "exit_rules": [...],
+    "timeframe": "1h",
+    "indicators": [
+      {{"name": "RSI", "period": 14}},
+      {{"name": "EMA", "period": 20}}
+    ],
+    "entry_rules": ["rsi_14 > 50"],
+    "exit_rules": ["rsi_14 < 50"],
     "risk": {{"stop_loss": "2 * ATR"}},
     "costs": {{"commission": 0.0005, "slippage": 0.0005}}
   }}
 }}
+
+Yalnız JSON döndür. Giriş/çıkış kuralları MEVCUT indikatör kolonlarını kullanmalı \
+(ör. ema_20, rsi_14, atr_14). Hayali kolon adı yazma.
 """
 
 

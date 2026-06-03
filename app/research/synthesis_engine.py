@@ -58,22 +58,27 @@ daha önce denenmemiş yaratıcı bir trading indikatörü veya algoritma kombin
   "expected_edge": "Hangi piyasa koşulunda avantaj bekleniyor?",
   "failure_conditions": ["Trend piyasasında sinyal üretemez", "Düşük hacimde gürültü artar"],
   "strategy_ir": {{
-    "name": "volume_adj_momentum_v1",
+    "name": "momentum_volatility_filter_v1",
     "market": "XAUUSD",
-    "timeframe": "15m",
+    "timeframe": "1h",
     "indicators": [
       {{"name": "RSI", "period": 14}},
       {{"name": "ATR", "period": 14}},
       {{"name": "EMA", "period": 20}}
     ],
-    "entry_rules": ["rsi_14 > 55", "ema_20 > ema_50"],
-    "exit_rules": ["rsi_14 < 45"],
+    "entry_rules": ["rsi_14 > 52"],
+    "exit_rules": ["rsi_14 < 48"],
     "risk": {{"stop_loss": "2 * ATR"}},
     "costs": {{"commission": 0.0005, "slippage": 0.0005}}
   }}
 }}
 
-Yalnız JSON döndür, başka açıklama ekleme.
+ÖNEMLİ KURALLAR:
+- entry_rules ve exit_rules listesinde SADECE indicators listesinde tanımlı kolonları kullan
+  (ör. indicators'da RSI period=14 varsa "rsi_14" kullanabilirsin, "rsi_20" değil)
+- Başlangıçta SADECE 1-2 kural yaz (daha az kural = daha fazla işlem = daha iyi istatistik)
+- timeframe "1h" kullan
+- Yalnız JSON döndür, başka açıklama ekleme.
 """
 
 

@@ -15,15 +15,26 @@ import json
 import logging
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
+
+import pandas as pd
 
 from app.memory.sqlite_store import SqliteStore
 from app.research.reflection_agent import ReflectionAgent
 from app.research.synthesis_engine import SynthesisEngine, SynthesisResult
 from app.trading.backtester import run_backtest
 from app.trading.evaluator import evaluate as eval_strategy
-from app.trading.market_data_loader import generate_synthetic_ohlcv
+from app.trading.market_data_loader import generate_synthetic_ohlcv, load_ohlcv
 from app.trading.strategy_ir import StrategyIR
+
+# Gerçek veri varsa onu kullan — çok daha fazla bar = daha güvenilir istatistik
+_REAL_DATA_CANDIDATES = [
+    "data/market/raw/BTCUSD_1h_Binance.csv",
+    "data/market/raw/BTCUSD_1h_Coinbase.csv",
+    "data/market/raw/BTCUSD_1h_Combined_Index.csv",
+    "data/market/raw/BTCUSD_1d.csv",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -83,11 +94,28 @@ class ResearchOrchestrator:
         self.market = market
         self.timeframe = timeframe
 
+    def _load_data(self) -> tuple[pd.DataFrame, str]:
+        """Mevcut en iyi veri setini yükle. Gerçek CSV varsa onu tercih et."""
+
+        for path_str in _REAL_DATA_CANDIDATES:
+            path = Path(path_str)
+            if path.exists():
+                try:
+                    df = load_ohlcv(path)
+                    if len(df) >= 500:
+                        logger.info("Gerçek veri kullanılıyor: %s (%d bar)", path.name, len(df))
+                        return df, path.name
+                except Exception as exc:
+                    logger.debug("CSV yüklenemedi %s: %s", path, exc)
+        logger.info("Gerçek veri bulunamadı — sentetik %d bar kullanılıyor", self.n_bars)
+        label = f"synthetic(n={self.n_bars})"
+        return generate_synthetic_ohlcv(n=self.n_bars, seed=self.seed), label
+
     def run(self, question: str, paper_ids: list[str] | None = None) -> ResearchResult:
         """Bir araştırma sorusu için tam döngüyü çalıştır."""
         logger.info("Araştırma başladı: %s", question)
         result = ResearchResult(question=question)
-        df = generate_synthetic_ohlcv(n=self.n_bars, seed=self.seed)
+        df, data_source = self._load_data()
 
         current_indicator: SynthesisResult | None = None
         parent_session_id: str | None = None
@@ -121,10 +149,20 @@ class ResearchOrchestrator:
 
                 ir = example_ir()
 
-            # ---- Backtest ----
+            # ---- Backtest (gerçek veri kaynağını timeframe'e göre ayarla) ----
+            if len(df) > 10000:
+                # Uzun veri → 1h timeframe varsay; IR'daki timeframe geçersiz kılınmaz
+                ir = ir.model_copy(update={"timeframe": "1h"})
             bt = run_backtest(df, ir)
             ev = eval_strategy(df, ir)
             metrics = bt.metrics.to_dict()
+            logger.info(
+                "Backtest: %s → %s işlem, Sharpe=%.2f (%s)",
+                ir.name,
+                metrics.get("n_trades", 0),
+                metrics.get("sharpe", 0),
+                data_source,
+            )
 
             # ---- Session kaydet ----
             self.store.save_research_session(
