@@ -70,6 +70,56 @@ class StrategyIR(BaseModel):
                     cols.add(rhs)
         return cols
 
+    def to_pine(self) -> str:
+        """StrategyIR → TradingView Pine Script v5 (taslak)."""
+        commission_pct = self.costs.commission * 100
+        lines: list[str] = [
+            "//@version=5",
+            f'strategy("{self.name}", overlay=true, commission_value={commission_pct:.4f})',
+            "",
+        ]
+        # Indikatör tanımları
+        ind_map: dict[str, str] = {}
+        for ind in self.indicators:
+            col = ind.column
+            n = ind.name.upper()
+            if n == "EMA":
+                lines.append(f"{col} = ta.ema(close, {ind.period})")
+            elif n == "SMA":
+                lines.append(f"{col} = ta.sma(close, {ind.period})")
+            elif n == "RSI":
+                lines.append(f"{col} = ta.rsi(close, {ind.period})")
+            elif n == "ATR":
+                lines.append(f"{col} = ta.atr({ind.period})")
+            elif n == "MACD":
+                lines.append(f"{col}_line = ta.macd(close, 12, 26, 9).macd")
+            elif n in ("BB", "BOLLINGER"):
+                lines.append(
+                    f"[{col}_upper, {col}_mid, {col}_lower] = ta.bb(close, {ind.period}, 2)"
+                )
+            else:
+                lines.append(f"// {col} = ???  /* {n} desteklenmiyor */")
+            ind_map[col] = col
+        lines.append("")
+
+        def _rule_to_pine(rule: str) -> str:
+            lhs, op, rhs = parse_rule(rule)
+            return f"{lhs} {op} {rhs}"
+
+        entry_cond = " and ".join(_rule_to_pine(r) for r in self.entry_rules) or "false"
+        exit_cond = " and ".join(_rule_to_pine(r) for r in self.exit_rules) or "false"
+
+        lines += [
+            f"entryCondition = {entry_cond}",
+            f"exitCondition  = {exit_cond}",
+            "",
+            "if entryCondition",
+            '    strategy.entry("Long", strategy.long)',
+            "if exitCondition",
+            '    strategy.close("Long")',
+        ]
+        return "\n".join(lines)
+
 
 def parse_rule(rule: str) -> tuple[str, str, str]:
     m = _RULE_RE.match(rule)

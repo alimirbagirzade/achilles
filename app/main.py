@@ -394,5 +394,38 @@ def chain_dataset(only_successful: bool = typer.Option(False)) -> None:
     )
 
 
+@app.command("pine")
+def pine_export(
+    strategy_name: str = typer.Argument(default="", help="Strateji adı (boşsa varsayılan örnek)"),
+    output: str = typer.Option("", help="Çıktı dosyası (.pine). Boşsa stdout."),
+) -> None:
+    """StrategyIR → TradingView Pine Script v5 olarak dışa aktar."""
+    from app.memory.sqlite_store import SqliteStore
+    from app.trading.strategy_ir import StrategyIR, example_ir
+
+    if strategy_name:
+        from sqlalchemy import select
+
+        from app.memory.sqlite_store import SqliteStore, Strategy
+
+        store = SqliteStore()
+        with store.session() as s:
+            row = s.scalars(select(Strategy).where(Strategy.name == strategy_name)).first()
+        if not row:
+            console.print(f"[red]Strateji bulunamadı: {strategy_name}[/red]")
+            raise typer.Exit(1)
+        ir = StrategyIR.model_validate_json(row.ir_json)
+    else:
+        ir = example_ir()
+
+    pine_code = ir.to_pine()
+
+    if output:
+        Path(output).write_text(pine_code, encoding="utf-8")
+        console.print(f"[green]Kaydedildi:[/green] {output}")
+    else:
+        console.print(pine_code)
+
+
 if __name__ == "__main__":  # pragma: no cover
     app()

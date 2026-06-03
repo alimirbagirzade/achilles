@@ -17,6 +17,11 @@ _REQUIRED = ["open", "high", "low", "close"]
 
 def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     df = df.rename(columns={c: c.strip().lower() for c in df.columns})
+    # Binance CSV'si "open time" kullanır; "close time" gerekmez
+    if "open time" in df.columns:
+        df = df.rename(columns={"open time": "time"})
+        if "close time" in df.columns:
+            df = df.drop(columns=["close time"])
     time_col = next((c for c in ("time", "date", "datetime", "timestamp") if c in df.columns), None)
     if time_col:
         df[time_col] = pd.to_datetime(df[time_col], errors="coerce", utc=True)

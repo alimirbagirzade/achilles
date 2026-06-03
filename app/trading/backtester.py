@@ -60,8 +60,20 @@ class BacktestMetrics:
 
 def _compute_columns(df: pd.DataFrame, ir: StrategyIR) -> pd.DataFrame:
     out = df.copy()
+    # Explicitly listed indicators
+    computed = {ind.column for ind in ir.indicators}
     for ind in ir.indicators:
         out[ind.column] = compute_indicator(ind.name, df, ind.period)
+    # Auto-compute any indicator column referenced in rules but not listed
+    for col in ir.required_columns() - computed - set(df.columns):
+        # col format: "{name}_{period}" e.g. ema_50 → EMA period 50
+        parts = col.rsplit("_", 1)
+        if len(parts) == 2 and parts[1].isdigit():
+            name, period = parts[0].upper(), int(parts[1])
+            try:
+                out[col] = compute_indicator(name, df, period)
+            except Exception:
+                out[col] = np.nan
     return out
 
 

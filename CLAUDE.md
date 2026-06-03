@@ -38,6 +38,49 @@ gerektiren testler `@pytest.mark.ollama` / `@pytest.mark.slow` ile işaretli.
 - Yeni indikatör → `app/trading/indicators.py` registry'sine ekle + test yaz.
 - Yeni CLI komutu → `app/main.py` + README tablosu güncelle.
 
+## ⚡ YENİ SEANS BAŞLANGICI — ZORUNLU PROTOKOL
+
+Her yeni oturumda Claude şunu yapmalı (sırayla):
+
+### 1. HANDOFF'u oku
+```
+HANDOFF.md → "YENİ SEANS BAŞLANGICI" bölümünü oku → bekleyen görevleri listele
+```
+
+### 2. Ruflo başlat (otomatik)
+Ruflo araçları erişilebilir durumdaysa `memory_search` ile son oturum durumunu sorgula:
+- namespace: `patterns` — önceki ajan çıktıları
+- namespace: `sessions` — oturum geçmişi
+Ruflo yoksa: ToolSearch ile `ruflo` araçlarını yükle, `swarm_init` çalıştır.
+
+### 3. Aktif skil'leri hatırlat
+Kullanıcıya şu proje skillerini öner (içerik `.claude/skills/` dizininde):
+
+| Skill | Ne zaman | Komut |
+|-------|----------|-------|
+| `/trading-research` | Araştırma döngüsü başlatılacaksa | formül çıkar → sentez → backtest |
+| `/backtest-auditor` | Backtest sonucu değerlendirilecekse | look-ahead + OOS + overfit denetle |
+| `/codegen-review` | Yeni indikatör/strateji kodu yazıldıysa | ruff+mypy+test kontrol |
+| `/health` | Genel kod kalitesi | ruff, mypy, test özeti |
+| `/investigate` | Hata/bug ayıklama | kök neden analizi |
+| `/deep-research` | Yeni makale/konsept araştırması | web → kaynak → sentez |
+| `/claude-mem:make-plan` | Çok adımlı özellik planı | alt ajan destekli plan |
+| `/claude-mem:do` | Planı çalıştır | ajan swarm ile uygula |
+| `/claude-mem:mem-search` | Önceki oturumda ne yapıldı | geçmiş sorgu |
+
+### 4. Sistem durumu kontrol et
+```bash
+curl -sf http://localhost:11434/api/tags && echo "Ollama OK" || echo "Ollama KAPALI"
+uv run achilles status
+```
+
+### 5. /login hakkında
+`/login` → claude.ai OAuth MCP sunucularını (Figma/Gmail/Notion) yeniler.
+Bu proje için **gerekli değil** (lokal-öncelikli). O serverler kullanılmıyorsa
+`/login` atlansa da olur. Gerekli olursa yalnızca ilk komut olarak çalıştır.
+
+---
+
 ## İlgili skill'ler
 `.claude/skills/trading-research`, `backtest-auditor`, `codegen-review` —
 ilgili görevde bunlara danış.

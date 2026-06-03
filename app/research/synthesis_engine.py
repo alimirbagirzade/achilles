@@ -207,6 +207,19 @@ class SynthesisEngine:
         ir.setdefault("exit_rules", ["rsi_14 < 45"])
         ir.setdefault("risk", {"stop_loss": "2 * ATR"})
         ir.setdefault("costs", {"commission": 0.0005, "slippage": 0.0005})
+        # LLM bazen indikatörü "RSI_20" string olarak döndürür → dict'e çevir
+        fixed_inds = []
+        for ind in ir.get("indicators", []):
+            if isinstance(ind, str):
+                parts = ind.rsplit("_", 1)
+                if len(parts) == 2 and parts[1].isdigit():
+                    fixed_inds.append({"name": parts[0], "period": int(parts[1])})
+                else:
+                    fixed_inds.append({"name": ind, "period": 14})
+            elif isinstance(ind, dict):
+                fixed_inds.append(ind)
+        if fixed_inds:
+            ir["indicators"] = fixed_inds
 
         return SynthesisResult(
             indicator_name=data.get("indicator_name", "unnamed_indicator"),

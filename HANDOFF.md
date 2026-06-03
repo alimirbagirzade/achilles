@@ -19,33 +19,46 @@ LLM'i **"trader gibi düşünen"** bir araştırma motoru yapmak:
 5. Tüm zinciri **LoRA eğitim verisi** olarak kullan
 6. 3B model mimiriyi test eder; gerçek çıktı için 120B kullanılacak
 
-### Mevcut durum (commit: `b1edd58`)
+### Mevcut durum (commit: `d4e8ab9` + bu oturum)
 - **140 test** geçiyor · ruff+mypy temiz · Python 3.12
 - **7 sekme** web UI: Araştırma · Makaleler · Trader Beyin · Backtest · Eğitim · Değerlendirme · Sistem
 - **`app/research/`** modülü TAMAMLANDI (bkz. aşağıdaki tablo)
 - **LoRA:** `achilles_lora_v2` eğitildi (300 iter, loss 0.028, 2GB peak)
 - **Ollama aktif:** qwen2.5-coder:3b + nomic-embed-text · 7 PDF · 567 chunk
 
+### Bu seansta TAMAMLANANLAR ✅
+
+1. **✅ BTCUSD 1H CSV → backtest bağlandı**
+   - `market_data_loader.py`: Binance `Open time` kolonunu tanır, 71.328 bar
+   - `uv run achilles backtest data/market/raw/BTCUSD_1h_Binance.csv`
+   - Sonuç: **PASS** — 588 işlem, +2603% getiri, Sharpe 2.17, DD -%63.9
+
+2. **✅ `extract-formulas` çalıştırıldı** — 5 formül (ATR, EMA, RSI x2, Stochastic)
+
+3. **✅ Araştırma döngüsü çalıştırıldı**
+   - "Momentum göstergeleri yüksek volatilitede nasıl filtrelenir?"
+   - VolumeAdjustedMomentum x3 → FAIL (az işlem — beklenen sonuç, döngü disiplinli)
+   - Düzeltmeler: backtester eksik kolonu auto-compute eder, LLM string indicator'ı dict'e çevirir
+
+4. **✅ Pine Script export eklendi**
+   - `StrategyIR.to_pine()` → Pine v5 taslak kod
+   - CLI: `uv run achilles pine [strateji-adı] [--output dosya.pine]`
+
 ### Bir sonraki seansta YAPILACAKLAR (öncelik sırasıyla)
-1. **Gerçek `BTCUSD 1H` CSV'lerini backtest motoruna bağla**
-   - `BTCUSD 1H/` klasöründe Binance, Coinbase, OKX vs. CSV'ler var (gitignored)
-   - `load_ohlcv()` ile doğrudan okunabilir, web UI'a "CSV yükle" ile de çalışır
-   - Trader Beyin'in önerdiği IR'ı gerçek veriyle test et
 
-2. **`extract-formulas` komutunu çalıştır** (Ollama aktif olduğunda)
+1. **Araştırma döngüsü iyileştirme** — az işlem sorununu çöz
+   - Synthesis engine'in ürettiği IR'daki entry/exit kuralları çok kısıtlayıcı
+   - Çözüm: `reflection_agent.py`'da "işlem sayısı artır" geri bildirimi
+
+2. **LoRA eğitim zincirine bağla**
    ```bash
-   uv run achilles extract-formulas   # 7 makaleden formül çıkar
+   uv run achilles chain-dataset
+   uv run achilles train --run
    ```
 
-3. **İlk araştırma döngüsünü çalıştır**
-   ```bash
-   uv run achilles research "Momentum göstergeleri yüksek volatilitede nasıl filtrelenir?"
-   ```
-   Sonra: `uv run achilles chain-dataset` → LoRA eğitimi
+3. **Web UI'ya Pine Script export butonu** — kart/strateji modalına ekle
 
-4. **Pine Script export** (`strategy_ir.py`'a `to_pine()` metodu ekle)
-
-5. **120B model hazırlığı** — aynı kod, farklı `--base-model` parametresi
+4. **120B model hazırlığı** — aynı kod, farklı `--base-model` parametresi
 
 ---
 
@@ -202,6 +215,11 @@ Sözleşmeler: `paper_id` içerik hash'inden türer (idempotent ingestion). Stra
   - ARAŞTIRMA sekmesinde model seçici dropdown (Ollama / adapter versiyonları)
   - `test_mlx_llm` (10 test) + `test_eval_api` (5 test) → **128 toplam test**
 
+- [x] **BTCUSD 1H Binance backtest YAPILDI (2026-06-03)** — 71.328 bar, 2017-2025; EMA/RSI: +2603%/Sharpe 2.17/DD -%63.9; evaluator **PASS** (`bt_cd00c55600`). `market_data_loader` Binance `Open time` formatını destekler.
+- [x] **Pine Script export eklendi (2026-06-03)** — `StrategyIR.to_pine()` → Pine v5 taslak; CLI `achilles pine [strateji] [--output]`.
+- [x] **Backtester auto-column fix (2026-06-03)** — rule'larda referans edilen ama `indicators` listesinde olmayan kolonlar (ör. `ema_50`) otomatik hesaplanır.
+- [x] **Synthesis engine string indicator fix (2026-06-03)** — LLM `"RSI_20"` string döndürünce `IndicatorSpec`'e dönüştürülür.
+- [x] **Oturum protokolü + skill sistemi kuruldu (2026-06-03)** — CLAUDE.md seans başlangıç protokolü; 3 proje skili dolduruldu; HANDOFF'a tam skill haritası eklendi.
 - [x] **Gerçek OHLCV backtest YAPILDI** — BTC-USD günlük (Yahoo Finance, 1827 bar / 5 yıl; Binance+CryptoCompare+Kraken Türkiye'de bloklu, Stooq apikey istiyor). EMA/RSI: getiri +%52 / Sharpe 4.0 / DD -%52 ama evaluator **FAIL** (`bt_e22fbfde4b`): örneklem-dışı negatif (overfit) + az işlem. Gerçek veride disiplin doğrulandı. CSV: `data/market/raw/BTCUSD_1d.csv` (gitignored).
 - [x] **Güvenlikli web arayüzü eklendi** (`app/web/`) — FastAPI ince katman: status/papers/upload/ingest/ask/card/backtest + `/api/docs`; `security.py` (token auth `secrets.compare_digest`, IP rate-limit, CSP+güvenlik başlıkları, PDF magic-byte+boyut doğrulama, path-traversal koruması); terminal-estetik static UI (CSP-uyumlu); `SECURITY.md`. `pip install -e ".[web]"` → `achilles-web` (yalnız localhost). Denetim: 2 "ares" regresyonu (`achilles_lora_v1`, `achilles_test`) düzeltildi, `_consteq`→`secrets.compare_digest`, README canlı-durum+github+model bölümleri geri getirildi. **43 offline test geçiyor, ruff+mypy temiz.**
 
@@ -213,6 +231,64 @@ Sözleşmeler: `paper_id` içerik hash'inden türer (idempotent ingestion). Stra
   1. **04 · EĞİTİM sekmesi**: `GET /api/training/status` (örnek sayısı + adapter listesi), `POST /api/training/dataset` (DatasetBuilder), `POST /api/training/dry-run` (mlx_lm komutu önizle; çalıştırmaz). UI: dataset oluştur, dry-run formu, adapter tablosu.
   2. **Kart→Backtest** (`POST /api/card/{paper_id}/backtest`): her `possible_strategy_hypotheses` için `generate_from_hypothesis` → `run_backtest` (sentetik 2000 bar) → `evaluate`; kart modalında "⚡ HİPOTEZLERİ BACKTEST ET" butonu + sonuç render.
   3. **Makale arama/filtre/sıralama**: başlık arama inputu, Tümü/Kartlı/Kartsız filtresi, A→Z/Z→A/kartlı önce sıralama (client-side). **59 offline test, ruff+mypy temiz.**
+
+---
+
+## SEANS BAŞLANGIÇ PROTOKOLÜ
+
+### /login neden gerekiyor?
+`/login` yalnızca **claude.ai OAuth MCP sunucuları** (Figma, Gmail, Google Calendar, Notion) için gereklidir. Bu sunucuların token'ları periyodik olarak sona erer. Bu proje **lokal-öncelikli** olduğundan o sunuculara ihtiyaç yoktur. `/login` atlansa da olur; ancak Notion/Gmail entegrasyonu kullanılacaksa ilk komut olarak çalıştır.
+
+### Ruflo — Otomatik Başlatma
+Her seansta Claude, ruflo araçlarını (ToolSearch ile yükleyerek) başlatmalı:
+```
+ToolSearch → "ruflo memory_search" → son `patterns` namespace'ini yükle
+```
+Ruflo swarm'ı yoksa: `swarm_init` → `code-analyzer` + `backend-dev` ajanlarını başlat.
+
+---
+
+## LOKAL SKİLLLER — TAM LİSTE
+
+### Proje Skiller (`.claude/skills/` bu repoda)
+
+| Skill | Amaç | Ne zaman çalıştır |
+|-------|------|-------------------|
+| `/trading-research` | Araştırma döngüsü: formül çıkar → sentez → backtest → yansıt | Yeni hipotez test edilecekse |
+| `/backtest-auditor` | Look-ahead bias, OOS split, overfit, komisyon denetimi | Her backtest sonrasında |
+| `/codegen-review` | Yeni indikatör/strateji kodu kalite denetimi | Kod commit öncesi |
+
+### Global Skiller (`~/.claude/skills/`) — Bu projede kullanılanlar
+
+| Skill | Amaç |
+|-------|------|
+| `/health` | Ruff+mypy+test özet raporu |
+| `/investigate` | Hata kök neden analizi |
+| `/code-review` | PR diff denetimi (--fix ile otomatik düzelt) |
+| `/security-review` | Güvenlik açığı taraması |
+| `/deep-research` | Çok kaynaklı web araştırması → sentez raporu |
+| `/qa` | Uygulama QA testi ve hata düzeltme |
+| `/ship` | Test→lint→commit→push→PR otomasyonu |
+| `/spec` | Belirsiz isteği → çalıştırılabilir spesifikasyon |
+| `/claude-mem:make-plan` | Çok adımlı plan oluştur |
+| `/claude-mem:do` | Planı ajanlarla çalıştır |
+| `/claude-mem:mem-search` | Geçmiş seansları ara |
+| `/claude-mem:learn-codebase` | Repoyu belleğe tam al (yeni seans) |
+| `/claude-mem:timeline-report` | Proje geçmişi özet raporu |
+
+### Geliştirme Roadmap Skilleri (kurulacak)
+
+Bu projeyi ilerletmek için eklenmesi planlanan skiller:
+
+| Skill (hedef) | Amaç | Öncelik |
+|---------------|------|---------|
+| `arxiv-research` | arXiv'den makale ara/indir/ingest et | YÜKSEK |
+| `pine-export` | StrategyIR → TradingView Pine Script | YÜKSEK |
+| `factor-analysis` | Çok faktörlü strateji analizi (Fama-French vb.) | ORTA |
+| `risk-manager` | Pozisyon büyüklüğü + Kelly + max-drawdown hesabı | ORTA |
+| `data-fetch` | Binance/CCXT ile canlı OHLCV çekme | DÜŞÜK |
+
+---
 
 ## Yapılmayacaklar (sabit sınırlar)
 
