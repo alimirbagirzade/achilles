@@ -21,15 +21,22 @@ from fastapi.staticfiles import StaticFiles
 from app.config import configure_logging, get_settings
 from app.web import security
 from app.web.schemas import (
+    AdapterOut,
     AskRequest,
     AskResponse,
     BacktestRequest,
     BacktestResponse,
     CardResponse,
+    DatasetBuildResponse,
+    HypothesisBacktestResponse,
+    HypothesisResult,
     IngestResponse,
     PaperOut,
     SourceOut,
     StatusResponse,
+    TrainDryRunRequest,
+    TrainDryRunResponse,
+    TrainingStatusResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -230,6 +237,116 @@ def api_card(paper_id: str) -> CardResponse:
             status_code=503,
             detail="Bilgi kartı üretilemedi (LLM gerekli olabilir).",
         ) from exc
+
+
+@app.post(
+    "/api/card/{paper_id}/backtest",
+    response_model=HypothesisBacktestResponse,
+    dependencies=[api_auth],
+)
+def api_card_backtest(paper_id: str) -> HypothesisBacktestResponse:
+    """Bilgi kartındaki strateji hipotezlerini sentetik veride backtest et."""
+    from fastapi import HTTPException
+
+    from app.memory.sqlite_store import SqliteStore
+    from app.trading.backtester import run_backtest
+    from app.trading.evaluator import evaluate as eval_strategy
+    from app.trading.market_data_loader import generate_synthetic_ohlcv
+    from app.trading.strategy_generator import generate_from_hypothesis
+
+    card = SqliteStore().get_latest_knowledge_card(paper_id)
+    if card is None:
+        raise HTTPException(status_code=404, detail="Bu makale için henüz kart yok.")
+
+    hypotheses: list[str] = card.get("possible_strategy_hypotheses") or []
+    if not hypotheses:
+        raise HTTPException(status_code=422, detail="Kart test edilebilir hipotez içermiyor.")
+
+    df = generate_synthetic_ohlcv(n=2000, seed=42)
+    results: list[HypothesisResult] = []
+    for i, hyp in enumerate(hypotheses):
+        ir = generate_from_hypothesis(hyp, name=f"hyp_{i + 1}", market="XAUUSD", timeframe="15m")
+        bt = run_backtest(df, ir)
+        ev = eval_strategy(df, ir)
+        results.append(
+            HypothesisResult(
+                hypothesis=hyp,
+                strategy_name=ir.name,
+                verdict=ev.verdict,
+                reasons=ev.reasons,
+                metrics=bt.metrics.to_dict(),
+            )
+        )
+
+    return HypothesisBacktestResponse(
+        paper_id=paper_id,
+        n_hypotheses=len(results),
+        results=results,
+    )
+
+
+# ---------- Eğitim ----------
+@app.get("/api/training/status", response_model=TrainingStatusResponse, dependencies=[api_auth])
+def api_training_status() -> TrainingStatusResponse:
+    """Eğitim örneği sayısı + kayıtlı adapter listesi."""
+    from sqlalchemy import func, select
+
+    from app.memory.sqlite_store import SqliteStore, TrainingExample
+    from app.training.adapter_registry import AdapterRegistry
+
+    store = SqliteStore()
+    with store.session() as s:
+        n = s.scalar(select(func.count()).select_from(TrainingExample)) or 0
+    adapters = AdapterRegistry(store).list_all()
+    return TrainingStatusResponse(
+        n_examples=n,
+        adapters=[AdapterOut(**a) for a in adapters],
+    )
+
+
+@app.post("/api/training/dataset", response_model=DatasetBuildResponse, dependencies=[api_auth])
+def api_training_dataset() -> DatasetBuildResponse:
+    """DatasetBuilder ile train/valid JSONL oluştur."""
+    from app.training.dataset_builder import DatasetBuilder
+
+    r = DatasetBuilder().build()
+    return DatasetBuildResponse(
+        n_train=r.n_train,
+        n_valid=r.n_valid,
+        content_hash=r.content_hash,
+        message=f"{r.n_train} eğitim + {r.n_valid} doğrulama kaydı yazıldı.",
+    )
+
+
+@app.post("/api/training/dry-run", response_model=TrainDryRunResponse, dependencies=[api_auth])
+def api_training_dry_run(req: TrainDryRunRequest) -> TrainDryRunResponse:
+    """Eğitim komutunu oluştur (çalıştırmaz — CLI'da --run ile başlatılır)."""
+    import datetime as dt
+
+    from app.config import get_settings
+    from app.training.dataset_builder import DatasetBuilder
+    from app.training.mlx_lora_train import TrainConfig, build_command
+
+    r = DatasetBuilder().build()
+    s = get_settings()
+    ts = dt.datetime.now(dt.UTC).strftime("%Y%m%d_%H%M%S")
+    cfg = TrainConfig(
+        base_model=req.base_model,
+        train_jsonl=r.train_path,
+        valid_jsonl=r.valid_path,
+        adapter_output_path=s.adapters_dir / f"adapter_{ts}",
+        iterations=req.iterations,
+        batch_size=req.batch_size,
+        learning_rate=req.learning_rate,
+        num_layers=req.num_layers,
+    )
+    return TrainDryRunResponse(
+        command=" ".join(build_command(cfg)),
+        n_train=r.n_train,
+        n_valid=r.n_valid,
+        content_hash=r.content_hash,
+        message="Dry-run: gerçek eğitim için terminalden --run ile çalıştırın.",
+    )
 
 
 @app.post("/api/backtest", response_model=BacktestResponse, dependencies=[api_auth])

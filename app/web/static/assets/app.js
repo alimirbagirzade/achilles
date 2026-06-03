@@ -82,6 +82,7 @@
       });
       document.getElementById("panel-" + name).classList.add("active");
       if (name === "papers") loadPapers();
+      if (name === "training") loadTrainingStatus();
     });
   });
 
@@ -201,55 +202,106 @@
   }
 
   // ---------- papers ----------
+  var _allPapers = [];
+
   function loadPapers() {
     var list = document.getElementById("papersList");
     list.innerHTML = '<div class="empty"><span class="spinner"></span> yükleniyor…</div>';
     api("/papers", { method: "GET" })
       .then(function (papers) {
-        if (!papers.length) {
-          list.innerHTML = '<div class="empty">Henüz makale yok. Yukarıdan PDF yükle.</div>';
-          return;
-        }
-        list.innerHTML = papers
-          .map(function (p) {
-            var btn = p.has_card
-              ? '<button class="btn card-view" data-id="' + esc(p.paper_id) + '">✓ KARTI GÖR</button>'
-              : '<button class="btn card-btn" data-id="' + esc(p.paper_id) + '">BİLGİ KARTI ÜRET</button>';
-            return (
-              '<div class="paper-row' +
-              (p.has_card ? " has-card" : "") +
-              '"><div class="paper-meta">' +
-              '<div class="paper-title">' +
-              esc(p.title || "(başlıksız)") +
-              "</div>" +
-              '<div class="paper-id">' +
-              esc(p.paper_id) +
-              " · " +
-              (p.n_chunks || 0) +
-              " chunk" +
-              (p.year ? " · " + esc(p.year) : "") +
-              "</div></div>" +
-              '<div class="paper-actions">' +
-              btn +
-              "</div></div>"
-            );
-          })
-          .join("");
-        list.querySelectorAll(".card-btn").forEach(function (b) {
-          b.addEventListener("click", function () {
-            makeCard(b.getAttribute("data-id"), b);
-          });
-        });
-        list.querySelectorAll(".card-view").forEach(function (b) {
-          b.addEventListener("click", function () {
-            viewCard(b.getAttribute("data-id"));
-          });
-        });
+        _allPapers = papers || [];
+        renderPapers();
       })
       .catch(function (err) {
-        list.innerHTML = '<div class="empty">Hata: ' + esc(err.message) + "</div>";
+        document.getElementById("papersList").innerHTML =
+          '<div class="empty">Hata: ' + esc(err.message) + "</div>";
       });
   }
+
+  function renderPapers() {
+    var list = document.getElementById("papersList");
+    var query = (document.getElementById("paperSearch").value || "").toLowerCase();
+    var filter = (document.querySelector(".filter-btn.active") || {}).getAttribute("data-filter") || "all";
+    var sort = (document.getElementById("paperSort") || {}).value || "default";
+
+    var visible = _allPapers.filter(function (p) {
+      if (filter === "card" && !p.has_card) return false;
+      if (filter === "nocard" && p.has_card) return false;
+      if (query) {
+        var title = (p.title || "").toLowerCase();
+        var id = (p.paper_id || "").toLowerCase();
+        if (title.indexOf(query) < 0 && id.indexOf(query) < 0) return false;
+      }
+      return true;
+    });
+
+    if (sort === "title-asc") {
+      visible.sort(function (a, b) { return (a.title || "").localeCompare(b.title || ""); });
+    } else if (sort === "title-desc") {
+      visible.sort(function (a, b) { return (b.title || "").localeCompare(a.title || ""); });
+    } else if (sort === "card-first") {
+      visible.sort(function (a, b) { return (b.has_card ? 1 : 0) - (a.has_card ? 1 : 0); });
+    } else if (sort === "nocard-first") {
+      visible.sort(function (a, b) { return (a.has_card ? 1 : 0) - (b.has_card ? 1 : 0); });
+    }
+
+    if (!_allPapers.length) {
+      list.innerHTML = '<div class="empty">Henüz makale yok. Yukarıdan PDF yükle.</div>';
+      return;
+    }
+    if (!visible.length) {
+      list.innerHTML = '<div class="empty">Filtreye uyan makale bulunamadı.</div>';
+      return;
+    }
+
+    list.innerHTML = visible
+      .map(function (p) {
+        var btn = p.has_card
+          ? '<button class="btn card-view" data-id="' + esc(p.paper_id) + '">✓ KARTI GÖR</button>'
+          : '<button class="btn card-btn" data-id="' + esc(p.paper_id) + '">BİLGİ KARTI ÜRET</button>';
+        return (
+          '<div class="paper-row' +
+          (p.has_card ? " has-card" : "") +
+          '"><div class="paper-meta">' +
+          '<div class="paper-title">' +
+          esc(p.title || "(başlıksız)") +
+          "</div>" +
+          '<div class="paper-id">' +
+          esc(p.paper_id) +
+          " · " +
+          (p.n_chunks || 0) +
+          " chunk" +
+          (p.year ? " · " + esc(p.year) : "") +
+          "</div></div>" +
+          '<div class="paper-actions">' +
+          btn +
+          "</div></div>"
+        );
+      })
+      .join("");
+
+    list.querySelectorAll(".card-btn").forEach(function (b) {
+      b.addEventListener("click", function () {
+        makeCard(b.getAttribute("data-id"), b);
+      });
+    });
+    list.querySelectorAll(".card-view").forEach(function (b) {
+      b.addEventListener("click", function () {
+        viewCard(b.getAttribute("data-id"));
+      });
+    });
+  }
+
+  // filtre/sıralama olayları
+  document.getElementById("paperSearch").addEventListener("input", renderPapers);
+  document.getElementById("paperSort").addEventListener("change", renderPapers);
+  document.getElementById("cardFilter").addEventListener("click", function (e) {
+    var btn = e.target.closest(".filter-btn");
+    if (!btn) return;
+    document.querySelectorAll(".filter-btn").forEach(function (b) { b.classList.remove("active"); });
+    btn.classList.add("active");
+    renderPapers();
+  });
 
   function makeCard(paperId, btn) {
     btn.disabled = true;
@@ -258,7 +310,7 @@
     api("/card/" + encodeURIComponent(paperId), { method: "POST" })
       .then(function (data) {
         toast("Bilgi kartı üretildi: " + paperId);
-        if (data && data.card) renderCard(data.card); // hemen göster
+        if (data && data.card) renderCard(data.card, paperId); // hemen göster
         loadPapers(); // liste yenilensin → 'KARTI GÖR'
       })
       .catch(function (err) {
@@ -292,7 +344,7 @@
     showCardModal();
     api("/card/" + encodeURIComponent(paperId), { method: "GET" })
       .then(function (data) {
-        renderCard(data.card);
+        renderCard(data.card, paperId);
       })
       .catch(function (err) {
         cardBody.innerHTML = '<div class="result-body">Hata: ' + esc(err.message) + "</div>";
@@ -325,9 +377,13 @@
     );
   }
 
-  function renderCard(c) {
+  function renderCard(c, paperId) {
     c = c || {};
     var meta = [c.year, c.domain].filter(Boolean).map(esc).join(" · ");
+    var hasHyps = c.possible_strategy_hypotheses && c.possible_strategy_hypotheses.length;
+    var btBtn = paperId && hasHyps
+      ? '<button class="btn btn-hyp-bt" id="hypBtBtn" data-id="' + esc(paperId) + '">⚡ HİPOTEZLERİ BACKTEST ET</button>'
+      : "";
     cardBody.innerHTML =
       '<h3 class="kc-title">' +
       esc(c.title || "(başlıksız)") +
@@ -340,8 +396,175 @@
       _kcList("Strateji hipotezleri", c.possible_strategy_hypotheses) +
       _kcList("Risk uyarıları", c.risk_warnings) +
       _kcList("Sınırlamalar", c.limitations) +
-      _kcList("Uygulama notları", c.implementation_notes);
+      _kcList("Uygulama notları", c.implementation_notes) +
+      (btBtn ? '<div class="kc-bt-bar">' + btBtn + '<div id="hypBtResult"></div></div>' : "");
     showCardModal();
+
+    if (paperId && hasHyps) {
+      document.getElementById("hypBtBtn").addEventListener("click", function () {
+        backtestFromCard(paperId);
+      });
+    }
+  }
+
+  function backtestFromCard(paperId) {
+    var btn = document.getElementById("hypBtBtn");
+    var res = document.getElementById("hypBtResult");
+    if (!btn || !res) return;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>ÇALIŞIYOR';
+    res.innerHTML = "";
+    api("/card/" + encodeURIComponent(paperId) + "/backtest", { method: "POST" })
+      .then(function (data) {
+        btn.textContent = "✓ TAMAMLANDI";
+        res.innerHTML = renderHypBacktest(data);
+      })
+      .catch(function (err) {
+        btn.disabled = false;
+        btn.textContent = "⚡ HİPOTEZLERİ BACKTEST ET";
+        res.innerHTML = '<div class="kc-bt-err">Hata: ' + esc(err.message) + "</div>";
+      });
+  }
+
+  function renderHypBacktest(data) {
+    if (!data.results || !data.results.length) return '<div class="muted">Sonuç yok.</div>';
+    return data.results
+      .map(function (r) {
+        var m = r.metrics || {};
+        var vClass = "verdict-" + (r.verdict || "inconclusive");
+        var vLabel = { pass: "GEÇTİ", fail: "BAŞARISIZ", inconclusive: "SONUÇSUZ" }[r.verdict] || r.verdict;
+        var reasons = (r.reasons || []).map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("");
+        var keyMetrics = ["total_return_pct", "sharpe", "max_drawdown_pct", "win_rate_pct", "n_trades"];
+        var metricHtml = keyMetrics
+          .filter(function (k) { return k in m; })
+          .map(function (k) {
+            var labels = { total_return_pct: "getiri%", sharpe: "sharpe", max_drawdown_pct: "maxDD%", win_rate_pct: "win%", n_trades: "işlem" };
+            var v = Number(m[k]).toFixed(k === "n_trades" ? 0 : 3);
+            var cls = (k === "total_return_pct" || k === "sharpe") ? (m[k] > 0 ? " pos" : " neg") : (k === "max_drawdown_pct" ? " neg" : "");
+            return '<div class="metric"><div class="k">' + (labels[k] || k) + '</div><div class="v' + cls + '">' + esc(v) + "</div></div>";
+          })
+          .join("");
+        return (
+          '<div class="hyp-row">' +
+          '<div class="hyp-text">' + esc(r.hypothesis) + "</div>" +
+          '<div class="metrics-grid">' + metricHtml + "</div>" +
+          '<div class="verdict ' + vClass + '"><b>' + vLabel + "</b><ul>" + reasons + "</ul></div>" +
+          "</div>"
+        );
+      })
+      .join("");
+  }
+
+  // ---------- eğitim sekmesi ----------
+  function loadTrainingStatus() {
+    var el = document.getElementById("trainingStatus");
+    el.innerHTML = '<span class="spinner"></span> yükleniyor…';
+    api("/training/status", { method: "GET" })
+      .then(function (data) {
+        el.innerHTML =
+          '<div class="training-stat">' +
+          '<span class="kc-label">Eğitim örnekleri</span> ' +
+          '<strong>' + data.n_examples + '</strong>' +
+          '</div>';
+        renderAdapters(data.adapters || []);
+      })
+      .catch(function (err) {
+        el.innerHTML = '<span class="conn-err">Hata: ' + esc(err.message) + "</span>";
+      });
+  }
+
+  function renderAdapters(adapters) {
+    var el = document.getElementById("adaptersList");
+    if (!el) return;
+    if (!adapters.length) {
+      el.innerHTML = '<div class="empty">Henüz kayıtlı adapter yok.</div>';
+      return;
+    }
+    el.innerHTML = adapters
+      .map(function (a) {
+        return (
+          '<div class="adapter-row">' +
+          '<div class="adapter-version">' + esc(a.version) + "</div>" +
+          '<div class="adapter-meta">' +
+          esc(a.base_model) +
+          (a.created_at ? " · " + esc(a.created_at.slice(0, 10)) : "") +
+          (a.notes ? " · " + esc(a.notes) : "") +
+          "</div></div>"
+        );
+      })
+      .join("");
+  }
+
+  var buildDatasetBtn = document.getElementById("buildDatasetBtn");
+  if (buildDatasetBtn) {
+    buildDatasetBtn.addEventListener("click", function () {
+      buildDatasetBtn.disabled = true;
+      buildDatasetBtn.innerHTML = '<span class="spinner"></span>OLUŞTURULUYOR';
+      var res = document.getElementById("datasetResult");
+      res.className = "result";
+      res.innerHTML = '<div class="result-section"><span class="spinner"></span></div>';
+      api("/training/dataset", { method: "POST" })
+        .then(function (data) {
+          toast(data.message);
+          res.innerHTML =
+            '<div class="result-section"><div class="result-label">sonuç</div>' +
+            '<div class="result-body">' +
+            esc(data.message) +
+            " · hash: " + esc(data.content_hash) +
+            "</div></div>";
+          loadTrainingStatus();
+        })
+        .catch(function (err) {
+          toast(err.message, true);
+          res.innerHTML = '<div class="result-section result-body">Hata: ' + esc(err.message) + "</div>";
+        })
+        .finally(function () {
+          buildDatasetBtn.disabled = false;
+          buildDatasetBtn.textContent = "DATASET OLUŞTUR";
+        });
+    });
+  }
+
+  var dryRunForm = document.getElementById("dryRunForm");
+  if (dryRunForm) {
+    dryRunForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var btn = document.getElementById("dryRunBtn");
+      var res = document.getElementById("dryRunResult");
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>HAZIRLANYOR';
+      res.className = "result";
+      res.innerHTML = '<div class="result-section"><span class="spinner"></span></div>';
+      var payload = {
+        base_model: document.getElementById("drBaseModel").value.trim(),
+        iterations: parseInt(document.getElementById("drIterations").value, 10) || 600,
+        batch_size: parseInt(document.getElementById("drBatch").value, 10) || 4,
+        num_layers: parseInt(document.getElementById("drLayers").value, 10) || 16,
+        learning_rate: 1e-4,
+      };
+      api("/training/dry-run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+        .then(function (data) {
+          res.innerHTML =
+            '<div class="result-section"><div class="result-label">komut</div>' +
+            '<pre class="dry-run-cmd">' + esc(data.command) + "</pre></div>" +
+            '<div class="result-section result-body">' +
+            esc(data.message) +
+            " (" + data.n_train + " eğitim / " + data.n_valid + " doğrulama)" +
+            "</div>";
+        })
+        .catch(function (err) {
+          toast(err.message, true);
+          res.innerHTML = '<div class="result-section result-body">Hata: ' + esc(err.message) + "</div>";
+        })
+        .finally(function () {
+          btn.disabled = false;
+          btn.textContent = "KOMUT ÖNIZLE →";
+        });
+    });
   }
 
   document.getElementById("refreshPapers").addEventListener("click", loadPapers);

@@ -91,6 +91,77 @@ def test_get_card_after_save(client: TestClient) -> None:
     assert r.json()["card"]["title"] == "T"
 
 
+# ---- eğitim endpoint testleri ----
+def test_training_status_ok(client: TestClient) -> None:
+    r = client.get("/api/training/status")
+    assert r.status_code == 200
+    body = r.json()
+    assert "n_examples" in body
+    assert isinstance(body["adapters"], list)
+
+
+def test_training_dataset_build(client: TestClient) -> None:
+    r = client.post("/api/training/dataset")
+    assert r.status_code == 200
+    body = r.json()
+    assert "n_train" in body
+    assert "content_hash" in body
+
+
+def test_training_dry_run_ok(client: TestClient) -> None:
+    r = client.post(
+        "/api/training/dry-run",
+        json={"base_model": "test-model", "iterations": 100, "batch_size": 2, "num_layers": 4},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert "command" in body
+    assert "test-model" in body["command"]
+
+
+# ---- hipotez backtest testleri ----
+def test_card_backtest_no_card_404(client: TestClient) -> None:
+    r = client.post("/api/card/paper_hayali/backtest")
+    assert r.status_code == 404
+
+
+def test_card_backtest_no_hypotheses_422(client: TestClient) -> None:
+    from app.memory.sqlite_store import SqliteStore
+
+    s = SqliteStore()
+    s.upsert_paper(paper_id="paper_nohyp", file_hash="hnohyp", source_path="/tmp/z.pdf", title="Z")
+    s.save_knowledge_card(
+        card_id="card_nohyp",
+        paper_id="paper_nohyp",
+        model="test",
+        card={"paper_id": "paper_nohyp", "title": "Z", "main_claim": "x"},
+    )
+    r = client.post("/api/card/paper_nohyp/backtest")
+    assert r.status_code == 422
+
+
+def test_card_backtest_runs(client: TestClient) -> None:
+    from app.memory.sqlite_store import SqliteStore
+
+    s = SqliteStore()
+    s.upsert_paper(paper_id="paper_hyp1", file_hash="hhyp1", source_path="/tmp/h.pdf", title="H")
+    s.save_knowledge_card(
+        card_id="card_hyp1",
+        paper_id="paper_hyp1",
+        model="test",
+        card={
+            "paper_id": "paper_hyp1",
+            "title": "H",
+            "possible_strategy_hypotheses": ["trend following with EMA crossover"],
+        },
+    )
+    r = client.post("/api/card/paper_hyp1/backtest")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["n_hypotheses"] == 1
+    assert body["results"][0]["verdict"] in {"pass", "fail", "inconclusive"}
+
+
 # ---- güvenlik birim testleri ----
 def test_validate_pdf_rejects_non_pdf() -> None:
     with pytest.raises(fastapi.HTTPException):

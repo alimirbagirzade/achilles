@@ -72,3 +72,55 @@ class CardResponse(BaseModel):
     paper_id: str
     card: dict
     message: str
+
+
+# ---------- Eğitim ----------
+class AdapterOut(BaseModel):
+    version: str
+    base_model: str
+    adapter_path: str
+    created_at: str
+    notes: str | None = None
+
+
+class TrainingStatusResponse(BaseModel):
+    n_examples: int
+    adapters: list[AdapterOut]
+
+
+class DatasetBuildResponse(BaseModel):
+    n_train: int
+    n_valid: int
+    content_hash: str
+    message: str
+
+
+class TrainDryRunRequest(BaseModel):
+    base_model: str = "mlx-community/Mistral-7B-Instruct-v0.3-4bit"
+    iterations: int = Field(default=600, ge=50, le=5000)
+    batch_size: int = Field(default=4, ge=1, le=16)
+    learning_rate: float = Field(default=1e-4, gt=0)
+    num_layers: int = Field(default=16, ge=1, le=64)
+
+
+class TrainDryRunResponse(BaseModel):
+    command: str
+    n_train: int
+    n_valid: int
+    content_hash: str
+    message: str
+
+
+# ---------- Hipotez backtest ----------
+class HypothesisResult(BaseModel):
+    hypothesis: str
+    strategy_name: str
+    verdict: str
+    reasons: list[str]
+    metrics: dict
+
+
+class HypothesisBacktestResponse(BaseModel):
+    paper_id: str
+    n_hypotheses: int
+    results: list[HypothesisResult]

@@ -41,7 +41,8 @@
       <button class="tab active" data-tab="research">01 · ARAŞTIRMA</button>
       <button class="tab" data-tab="papers">02 · MAKALELER</button>
       <button class="tab" data-tab="backtest">03 · BACKTEST</button>
-      <button class="tab" data-tab="about">04 · SİSTEM</button>
+      <button class="tab" data-tab="training">04 · EĞİTİM</button>
+      <button class="tab" data-tab="about">05 · SİSTEM</button>
     </nav>
 
     <main>
@@ -99,6 +100,21 @@
           <button class="btn" id="refreshPapers">↻ YENİLE</button>
           <button class="btn" id="reindexBtn">⟳ TÜMÜNÜ İNDEKSLE</button>
         </div>
+        <div class="filter-bar">
+          <input type="search" id="paperSearch" placeholder="başlık ara…" autocomplete="off" />
+          <div class="filter-group" id="cardFilter" role="group" aria-label="Kart filtresi">
+            <button class="filter-btn active" data-filter="all">Tümü</button>
+            <button class="filter-btn" data-filter="card">Kartlı</button>
+            <button class="filter-btn" data-filter="nocard">Kartsız</button>
+          </div>
+          <select id="paperSort" aria-label="Sıralama">
+            <option value="default">Varsayılan sıra</option>
+            <option value="title-asc">Başlık A→Z</option>
+            <option value="title-desc">Başlık Z→A</option>
+            <option value="card-first">Kartlı önce</option>
+            <option value="nocard-first">Kartsız önce</option>
+          </select>
+        </div>
         <div id="papersList" class="papers-list"></div>
       </section>
 
@@ -139,6 +155,58 @@
         </div>
 
         <div id="btResult" class="result hidden"></div>
+      </section>
+
+      <!-- TRAINING -->
+      <section class="panel" id="panel-training">
+        <div class="panel-head">
+          <h2>LoRA Eğitimi</h2>
+          <p class="muted">
+            Bilgi kartlarından eğitim seti oluştur, MLX-LM komutunu önizle.
+            Gerçek eğitim yalnızca terminalden <code>--run</code> ile başlatılır.
+          </p>
+        </div>
+
+        <div class="training-status" id="trainingStatus">
+          <span class="spinner"></span> yükleniyor…
+        </div>
+
+        <div class="training-section">
+          <h3>Veri Seti</h3>
+          <p class="muted small">Kayıtlı eğitim örneklerinden train/valid JSONL üretir.</p>
+          <button class="btn btn-primary" id="buildDatasetBtn">DATASET OLUŞTUR</button>
+          <div id="datasetResult" class="result hidden"></div>
+        </div>
+
+        <div class="training-section">
+          <h3>Eğitim Komutu (Dry-Run)</h3>
+          <p class="muted small">Komutu gösterir; Apple Silicon'da mlx-lm gerektirir.</p>
+          <form id="dryRunForm" class="dry-run-form">
+            <label>
+              Temel model
+              <input type="text" id="drBaseModel" value="mlx-community/Mistral-7B-Instruct-v0.3-4bit" />
+            </label>
+            <label>
+              İterasyon
+              <input type="number" id="drIterations" min="50" max="5000" value="600" />
+            </label>
+            <label>
+              Batch
+              <input type="number" id="drBatch" min="1" max="16" value="4" />
+            </label>
+            <label>
+              Katman
+              <input type="number" id="drLayers" min="1" max="64" value="16" />
+            </label>
+            <button type="submit" class="btn btn-primary" id="dryRunBtn">KOMUT ÖNIZLE →</button>
+          </form>
+          <div id="dryRunResult" class="result hidden"></div>
+        </div>
+
+        <div class="training-section" id="adaptersSection">
+          <h3>Kayıtlı Adapter'lar</h3>
+          <div id="adaptersList" class="adapters-list"></div>
+        </div>
       </section>
 
       <!-- ABOUT -->
