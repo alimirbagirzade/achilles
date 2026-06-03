@@ -3,10 +3,122 @@
 _Son güncelleme: 2026-06-03 · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon).
-**Canlı bot değil, yatırım tavsiyesi değil.** Akış:
-`PDF → metin → chunk → SQLite + ChromaDB → RAG → knowledge card → training JSONL → MLX-LM LoRA hazırlık → backtest`
+**Canlı bot değil, yatırım tavsiyesi değil.** Tam akış:
+`PDF → metin → chunk → SQLite + ChromaDB → RAG → knowledge card → formül çıkarımı → kavram grafiği → sentez → agentic döngü → backtest → reasoning zinciri → LoRA eğitimi → MLX inference`
 
 ---
+
+## 🚨 YENİ SEANS BAŞLANGICI — BUNU OKU
+
+### Proje amacı (asıl hedef)
+LLM'i **"trader gibi düşünen"** bir araştırma motoru yapmak:
+1. Makalelerden formül ve kavramları hafızaya al
+2. Bunları birleştirip **daha önce denenmemiş** indikatör/algoritma öner
+3. Otomatik backtest et
+4. Sonuçtan öğren (yansıt → iyileştir → tekrar)
+5. Tüm zinciri **LoRA eğitim verisi** olarak kullan
+6. 3B model mimiriyi test eder; gerçek çıktı için 120B kullanılacak
+
+### Mevcut durum (commit: `b1edd58`)
+- **140 test** geçiyor · ruff+mypy temiz · Python 3.12
+- **7 sekme** web UI: Araştırma · Makaleler · Trader Beyin · Backtest · Eğitim · Değerlendirme · Sistem
+- **`app/research/`** modülü TAMAMLANDI (bkz. aşağıdaki tablo)
+- **LoRA:** `achilles_lora_v2` eğitildi (300 iter, loss 0.028, 2GB peak)
+- **Ollama aktif:** qwen2.5-coder:3b + nomic-embed-text · 7 PDF · 567 chunk
+
+### Bir sonraki seansta YAPILACAKLAR (öncelik sırasıyla)
+1. **Gerçek `BTCUSD 1H` CSV'lerini backtest motoruna bağla**
+   - `BTCUSD 1H/` klasöründe Binance, Coinbase, OKX vs. CSV'ler var (gitignored)
+   - `load_ohlcv()` ile doğrudan okunabilir, web UI'a "CSV yükle" ile de çalışır
+   - Trader Beyin'in önerdiği IR'ı gerçek veriyle test et
+
+2. **`extract-formulas` komutunu çalıştır** (Ollama aktif olduğunda)
+   ```bash
+   uv run achilles extract-formulas   # 7 makaleden formül çıkar
+   ```
+
+3. **İlk araştırma döngüsünü çalıştır**
+   ```bash
+   uv run achilles research "Momentum göstergeleri yüksek volatilitede nasıl filtrelenir?"
+   ```
+   Sonra: `uv run achilles chain-dataset` → LoRA eğitimi
+
+4. **Pine Script export** (`strategy_ir.py`'a `to_pine()` metodu ekle)
+
+5. **120B model hazırlığı** — aynı kod, farklı `--base-model` parametresi
+
+---
+
+## Tam modül haritası (güncel)
+
+```
+app/
+├── brain/
+│   ├── knowledge_card_builder.py  # PDF → yapısal bilgi kartı (Ollama JSON mode)
+│   ├── local_llm.py               # Ollama HTTP client (fmt/timeout/max_tokens)
+│   ├── mlx_llm.py                 # MLX adapter inference (subprocess, LoRA)
+│   ├── model_router.py            # görev→model/adapter yönlendirme
+│   ├── paper_summarizer.py        # makale özeti
+│   ├── prompt_loader.py           # prompts/ dizininden şablon yükle
+│   ├── rag_answerer.py            # RAG + 5-bölümlü disiplinli cevap
+│   └── training_data_builder.py   # kart → training_examples tablosu
+├── config/settings.py             # pydantic-settings, tüm path'ler buradan
+├── ingestion/
+│   ├── chunker.py                 # metin → chunk (overlap)
+│   ├── metadata_extractor.py      # başlık/yıl/yazar çıkarımı
+│   ├── paper_loader.py            # ham PDF yükle
+│   └── pdf_parser.py              # pymupdf/pdfplumber
+├── memory/
+│   ├── chroma_store.py            # ChromaDB vektör deposu
+│   ├── embedding_service.py       # Ollama embed + fake fallback
+│   ├── paper_indexer.py           # PDF → SQLite + ChromaDB pipeline
+│   ├── retrieval_service.py       # semantic search → RetrievedChunk
+│   └── sqlite_store.py            # SQLAlchemy 2.0 (tüm tablolar + metotlar)
+├── research/                      # 🆕 TRADER BEYİN
+│   ├── formula_extractor.py       # chunk → formül JSON (LLM + kural yedek)
+│   ├── concept_graph.py           # kavram bağlantıları (extends/measures/limits)
+│   ├── synthesis_engine.py        # ★ tüm formüller → yeni indikatör öneri
+│   ├── reflection_agent.py        # backtest sonucu → iyileştirilmiş IR
+│   ├── orchestrator.py            # ★ tam döngü: sentezle→test→yansıt→iyileştir
+│   └── chain_data_builder.py      # araştırma zincirleri → LoRA JSONL
+├── trading/
+│   ├── backtester.py              # look-ahead-safe backtest + persist
+│   ├── evaluator.py               # OOS split → pass/fail/inconclusive
+│   ├── indicators.py              # EMA/SMA/RSI/ATR/MACD/Bollinger registry
+│   ├── market_data_loader.py      # CSV yükle + sentetik üret
+│   ├── overfit_checks.py          # static checks + in/out-of-sample
+│   ├── strategy_generator.py      # hipotez keyword → StrategyIR template
+│   └── strategy_ir.py             # Pydantic StrategyIR (güvenli regex parse)
+├── training/
+│   ├── adapter_registry.py        # LoRA adapter versiyonları SQLite+JSON
+│   ├── dataset_builder.py         # training_examples → train/valid JSONL
+│   ├── evaluate_model.py          # red-flag eval (guardrail testleri)
+│   └── mlx_lora_train.py          # mlx_lm lora launcher (dry-run default)
+└── web/
+    ├── schemas.py                 # Pydantic request/response modelleri
+    ├── security.py                # token auth, rate-limit, CSP, PDF doğrulama
+    └── server.py                  # FastAPI: 20+ endpoint
+
+SQLite tabloları:
+  papers, chunks, summaries, knowledge_cards, training_examples,
+  strategies, backtests, model_evaluations, adapters,
+  formulas, concept_links, research_sessions   ← 🆕
+
+CLI komutları (achilles --help):
+  init, status, ingest, papers, ask, card, dataset, train, evaluate,
+  gen-data, backtest, extract-formulas, formulas, research,
+  research-sessions, chain-dataset                ← 🆕
+
+Web API endpoint'leri (/api/...):
+  status, papers, papers/upload, ingest, ask,
+  card/{id} (GET/POST), cards/batch, card/{id}/backtest,
+  backtests, backtest (POST), backtest/csv,
+  training/status, training/dataset, training/dry-run,
+  training/examples (GET/DELETE),
+  research/formulas, research/graph, research/extract,
+  research/run, research/sessions, research/chain-dataset,  ← 🆕
+  eval/sets, eval/run
+```
 
 ## Bu oturumda yapılanlar
 
