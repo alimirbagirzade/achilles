@@ -11,19 +11,26 @@
 
 ## 📊 Proje Durumu — _canlı_ (2026-06-03, branch `main`)
 
-> Repo: https://github.com/alimirbagirzade/achilles · Test: **128 geçti** (offline) · Kalite: ruff+mypy temiz
+> Repo: https://github.com/alimirbagirzade/achilles · Test: **140 geçti** (offline) · Kalite: ruff+mypy temiz
 
-- [x] **Ortam**: uv (Python 3.12) · Ollama · `nomic-embed-text` · `qwen2.5-coder:3b` · `mlx-lm 0.31.3`
-- [x] **Ingestion**: 7 gerçek arXiv PDF → SQLite + ChromaDB (567 chunk, Ollama embedding)
-- [x] **RAG canlı**: `ask` kaynaklı 5-bölümlü cevap; **adapter_version** ile MLX LoRA bypass da çalışır
-- [x] **LoRA `train --run`**: `achilles_lora_v2` — 300 iter, loss 0.028, **peak 2.0 GB** (8GB-safe), adapter registry
-- [x] **MLX adapter inference**: `MlxLLM` + web'de model seçici dropdown
-- [x] **Web arayüzü** (6 sekme): Araştırma · Makaleler · Backtest · Eğitim · Değerlendirme · Sistem
-  - Toplu kart üretimi, backtest geçmişi, özel IR, eğitim örnekleri yönetimi, model eval UI
-- [x] **Gerçek veri backtest**: BTC-USD 5 yıl → evaluator OOS overfit'i **FAIL** ile yakaladı
-- [x] **128 test**: indicators · evaluator · overfit · strategy_generator · dataset_builder · mlx_llm · eval_api…
-- [ ] intraday (15m/1h) OHLCV kaynağı · çok-makaleli LoRA dataseti
-- [ ] 32GB makineye geçince `ACHILLES_LLM_MODEL=qwen2.5-coder:14b` (profil `.env.example`'da hazır)
+| Bileşen | Durum | Detay |
+|---------|-------|-------|
+| **Ortam** | ✅ | Python 3.12 · uv · Ollama · `qwen2.5-coder:3b` · `mlx-lm 0.31.3` |
+| **Ingestion** | ✅ | 7 arXiv PDF · 567 chunk · Ollama embedding |
+| **RAG** | ✅ | `ask` 5-bölümlü cevap; MLX adapter bypass destekli |
+| **LoRA eğitimi** | ✅ | `achilles_lora_v2` — 300 iter, loss 0.028, 2GB peak |
+| **Trader Beyin** | ✅ | Formül çıkarımı → kavram grafiği → sentez → backtest → yansıma |
+| **BTCUSD 1H backtest** | ✅ | **PASS** — 71k bar, 2017-2025, +2603%, Sharpe 2.17, DD -63.9% |
+| **Pine Script export** | ✅ | `achilles pine` → TradingView v5 taslak |
+| **Web arayüzü** | ✅ | 7 sekme · toplu kart · kart→backtest · eval UI |
+| **Araştırma döngüsü** | 🔄 | Çalışıyor; az-işlem sorunu üzerinde iterasyon yapılıyor |
+| **arXiv otomatik çekme** | 📋 | Planlandı (arxiv-research skili) |
+| **Pine→TradingView push** | 📋 | Planlandı (TradingView MCP entegrasyonu) |
+
+### Son 3 aktivite
+- `2026-06-03` — BTCUSD 1H backtest: **PASS** (71k bar Binance, 2017-2025)
+- `2026-06-03` — Pine Script export (`strategy_ir.to_pine()` + CLI `achilles pine`)
+- `2026-06-03` — Seans protokolü + 3 proje skili + tam HANDOFF güncellendi
 
 ---
 
@@ -117,6 +124,12 @@ ollama pull nomic-embed-text   # embedding modeli
 | `achilles evaluate <eval.jsonl>` | Modeli failure-mode eval setiyle dener |
 | `achilles gen-data` | Test için sentetik OHLCV CSV üretir |
 | `achilles backtest <csv>` | Strateji IR'i backtest eder + yargılar + kaydeder |
+| `achilles extract-formulas` | Tüm makalelerden formülleri çıkar |
+| `achilles formulas` | Çıkarılan formülleri listele |
+| `achilles research "soru"` | Tam araştırma döngüsü (sentez→backtest→yansıma) |
+| `achilles research-sessions` | Araştırma oturumlarını listele |
+| `achilles chain-dataset` | Araştırma zincirleri → LoRA JSONL |
+| `achilles pine [strateji]` | StrategyIR → TradingView Pine Script v5 |
 
 ### Tipik uçtan uca akış
 ```bash
@@ -346,9 +359,11 @@ ollama-işaretli testler hariç). Ubuntu + Python 3.12; `mlx-lm` (Apple-Silicon)
 - [ ] Strateji IR'i web'den düzenleyip backtest etme
 
 **Çıktı & Altyapı**
-- [ ] Pine Script / MQL5 strateji çıktısı (spec)
+- [x] ~~Pine Script / MQL5 strateji çıktısı~~ — **eklendi** (`achilles pine`)
 - [x] CI (GitHub Actions) — kuruldu
-- [ ] `uv.lock`'u versiyonlama kararı (tekrarlanabilirlik)
+- [ ] TradingView MCP entegrasyonu (doğrudan Pine yükle)
+- [ ] arXiv otomatik makale çekme skili
+- [ ] Araştırma döngüsünde az-işlem sorunu çözümü (reflection_agent iyileştirme)
 - [ ] 32GB makineye geçince `ACHILLES_LLM_MODEL=qwen2.5-coder:14b` (profil hazır)
 
 ---
