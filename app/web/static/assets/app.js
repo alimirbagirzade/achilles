@@ -84,8 +84,29 @@
       if (name === "papers") loadPapers();
       if (name === "backtest") loadBacktestHistory();
       if (name === "training") loadTrainingStatus();
+      if (name === "eval") loadEvalSets();
     });
   });
+
+  // ---------- adapter listesi (global, status'dan yüklenir) ----------
+  var _adapters = [];
+
+  function populateAdapterSelects(adapters) {
+    _adapters = adapters || [];
+    ["adapterSelect", "evalAdapterSelect"].forEach(function (id) {
+      var sel = document.getElementById(id);
+      if (!sel) return;
+      var current = sel.value;
+      while (sel.options.length > 1) sel.remove(1); // ilk "Ollama" seçeneği kalsın
+      _adapters.forEach(function (a) {
+        var opt = document.createElement("option");
+        opt.value = a.version;
+        opt.textContent = a.version + " (" + a.base_model.split("/").pop() + ")";
+        sel.appendChild(opt);
+      });
+      sel.value = current;
+    });
+  }
 
   // ---------- status ----------
   function refreshStatus() {
@@ -119,6 +140,10 @@
         txt.className = "conn-err";
         txt.textContent = "sunucuya ulaşılamadı";
       });
+    // adapter listesini de yükle
+    api("/training/status", { method: "GET" })
+      .then(function (d) { populateAdapterSelects(d.adapters || []); })
+      .catch(function () {});
   }
 
   // ---------- ask (RAG) ----------
@@ -139,10 +164,12 @@
     res.innerHTML =
       '<div class="result-section"><span class="spinner"></span> indeksten getiriliyor…</div>';
 
+    var adapterSel = document.getElementById("adapterSelect");
+    var adapterVersion = adapterSel ? (adapterSel.value || null) : null;
     api("/ask", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question: q, top_k: topk }),
+      body: JSON.stringify({ question: q, top_k: topk, adapter_version: adapterVersion }),
     })
       .then(function (data) {
         renderAsk(res, data);
@@ -158,7 +185,9 @@
   });
 
   function renderAsk(res, data) {
-    var badge = data.llm_used
+    var badge = data.adapter_used
+      ? '<span class="badge badge-adapter">LoRA: ' + esc(data.adapter_used) + "</span>"
+      : data.llm_used
       ? '<span class="badge badge-llm">LLM cevabı</span>'
       : '<span class="badge badge-rag">yalnız kaynaklar (LLM yok)</span>';
 
@@ -911,6 +940,87 @@
       "</h4><ul>" +
       reasons +
       "</ul></div></div>";
+  }
+
+  // ---------- model değerlendirme ----------
+  function loadEvalSets() {
+    var sel = document.getElementById("evalSetSelect");
+    if (!sel) return;
+    api("/eval/sets", { method: "GET" })
+      .then(function (sets) {
+        while (sel.options.length > 0) sel.remove(0);
+        if (!sets.length) {
+          var opt = document.createElement("option");
+          opt.value = "";
+          opt.textContent = "Eval seti bulunamadı";
+          sel.appendChild(opt);
+          return;
+        }
+        sets.forEach(function (s) {
+          var opt = document.createElement("option");
+          opt.value = s.name;
+          opt.textContent = s.name + " (" + s.n_items + " soru)";
+          sel.appendChild(opt);
+        });
+      })
+      .catch(function () {});
+  }
+
+  var runEvalBtn = document.getElementById("runEvalBtn");
+  if (runEvalBtn) {
+    runEvalBtn.addEventListener("click", function () {
+      var evalSet = document.getElementById("evalSetSelect").value;
+      var adapterV = document.getElementById("evalAdapterSelect").value || null;
+      if (!evalSet) { toast("Eval seti seç.", true); return; }
+      runEvalBtn.disabled = true;
+      runEvalBtn.innerHTML = '<span class="spinner"></span>ÇALIŞIYOR';
+      var res = document.getElementById("evalResult");
+      res.className = "result";
+      res.innerHTML = '<div class="result-section"><span class="spinner"></span> LLM yanıtları alınıyor…</div>';
+      api("/eval/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eval_set: evalSet, adapter_version: adapterV }),
+      })
+        .then(function (data) {
+          renderEvalResult(res, data);
+        })
+        .catch(function (err) {
+          res.innerHTML = '<div class="result-section result-body">Hata: ' + esc(err.message) + "</div>";
+        })
+        .finally(function () {
+          runEvalBtn.disabled = false;
+          runEvalBtn.textContent = "DEĞERLENDİR →";
+        });
+    });
+  }
+
+  function renderEvalResult(res, data) {
+    var scorePct = Math.round(data.score * 100);
+    var scoreClass = scorePct >= 80 ? "pos" : scorePct >= 60 ? "" : "neg";
+    var rows = (data.rows || []).map(function (r) {
+      var flagHtml = r.flags.length
+        ? r.flags.map(function (f) { return '<span class="eval-flag">' + esc(f) + "</span>"; }).join(" ")
+        : '<span class="muted small">temiz</span>';
+      return (
+        '<div class="eval-row">' +
+        '<div class="eval-q"><b>S:</b> ' + esc(r.question) + "</div>" +
+        '<div class="eval-a"><b>C:</b> ' + esc(r.answer.slice(0, 200)) + (r.answer.length > 200 ? "…" : "") + "</div>" +
+        '<div class="eval-flags">' + flagHtml + "</div>" +
+        "</div>"
+      );
+    }).join("");
+    res.innerHTML =
+      '<div class="result-section"><div class="result-label">özet</div>' +
+      '<div class="metrics-grid">' +
+      '<div class="metric"><div class="k">skor</div><div class="v ' + scoreClass + '">' + scorePct + '%</div></div>' +
+      '<div class="metric"><div class="k">soru</div><div class="v">' + data.n_items + "</div></div>" +
+      '<div class="metric"><div class="k">bayrak</div><div class="v' + (data.total_flags > 0 ? " neg" : " pos") + '">' + data.total_flags + "</div></div>" +
+      "</div>" +
+      (data.adapter_version ? '<div class="muted small">adapter: ' + esc(data.adapter_version) + "</div>" : "") +
+      "</div>" +
+      '<div class="result-section"><div class="result-label">sorular</div>' +
+      '<div class="eval-rows">' + rows + "</div></div>";
   }
 
   // ---------- backtest geçmişi ----------

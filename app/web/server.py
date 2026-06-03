@@ -32,6 +32,10 @@ from app.web.schemas import (
     BatchCardResult,
     CardResponse,
     DatasetBuildResponse,
+    EvalResultRow,
+    EvalRunRequest,
+    EvalRunResponse,
+    EvalSetOut,
     HypothesisBacktestResponse,
     HypothesisResult,
     IngestResponse,
@@ -185,6 +189,57 @@ def api_ask(req: AskRequest) -> AskResponse:
     from app.brain.rag_answerer import RagAnswerer
     from app.memory.embedding_service import EmbeddingService
 
+    adapter_used: str | None = None
+
+    if req.adapter_version:
+        # MLX adapter ile yanıtla (Ollama bypass)
+        from app.brain.mlx_llm import MlxLLM, MlxLLMUnavailable
+        from app.memory.retrieval_service import RetrievalService
+        from app.training.adapter_registry import AdapterRegistry
+
+        entry = AdapterRegistry().get(req.adapter_version)
+        if entry is None:
+            from fastapi import HTTPException
+
+            raise HTTPException(
+                status_code=404, detail=f"Adapter bulunamadı: {req.adapter_version}"
+            )
+
+        mlx = MlxLLM(base_model=entry["base_model"], adapter_path=entry["adapter_path"])
+        retriever = RetrievalService()
+        chunks = retriever.retrieve(req.question, top_k=req.top_k)
+        context = "\n\n".join(c.text[:600] for c in chunks) if chunks else "(kaynak yok)"
+        prompt = (
+            f"Aşağıdaki akademik bağlamı kullanarak soruyu yanıtla.\n\n"
+            f"BAĞLAM:\n{context}\n\n"
+            f"SORU: {req.question}\n\nYANIT:"
+        )
+        try:
+            answer = mlx.generate(prompt)
+            llm_used = True
+            adapter_used = req.adapter_version
+        except MlxLLMUnavailable as exc:
+            answer = f"[MLX adapter kullanılamadı: {exc}]"
+            llm_used = False
+
+        sources = [
+            SourceOut(
+                paper_id=c.paper_id,
+                chunk_id=c.chunk_id,
+                title=c.title,
+                page=c.page_number,
+                distance=c.distance,
+            )
+            for c in chunks
+        ]
+        return AskResponse(
+            answer=answer,
+            sources=sources,
+            llm_used=llm_used,
+            embedding_mode=EmbeddingService().mode,
+            adapter_used=adapter_used,
+        )
+
     ans = RagAnswerer().answer(req.question, top_k=req.top_k)
     sources = [
         SourceOut(
@@ -329,6 +384,54 @@ def api_card_backtest(paper_id: str) -> HypothesisBacktestResponse:
 
 
 # ---------- Eğitim ----------
+@app.get("/api/eval/sets", response_model=list[EvalSetOut], dependencies=[api_auth])
+def api_eval_sets() -> list[EvalSetOut]:
+    """Kullanılabilir eval set listesi (evals/ dizini)."""
+
+    evals_dir = get_settings().root / "evals"
+    out: list[EvalSetOut] = []
+    if evals_dir.exists():
+        for p in sorted(evals_dir.glob("*.jsonl")):
+            try:
+                n = sum(1 for line in p.read_text(encoding="utf-8").splitlines() if line.strip())
+            except Exception:
+                n = 0
+            out.append(EvalSetOut(name=p.stem, path=str(p), n_items=n))
+    return out
+
+
+@app.post("/api/eval/run", response_model=EvalRunResponse, dependencies=[api_auth])
+def api_eval_run(req: EvalRunRequest) -> EvalRunResponse:
+    """Seçili eval setini çalıştır (Ollama gerekli, ~dakikalar sürebilir)."""
+    from fastapi import HTTPException
+
+    from app.training.evaluate_model import ModelEvaluator
+
+    evals_dir = get_settings().root / "evals"
+    eval_path = evals_dir / f"{req.eval_set}.jsonl"
+    if not eval_path.exists():
+        raise HTTPException(status_code=404, detail=f"Eval seti bulunamadı: {req.eval_set}")
+
+    evaluator = ModelEvaluator()
+    try:
+        results = evaluator.run_eval(eval_path, adapter_version=req.adapter_version)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Eval çalıştırılamadı: {exc}") from exc
+
+    return EvalRunResponse(
+        eval_set=results["eval_set"],
+        model=results["model"],
+        adapter_version=results.get("adapter_version"),
+        score=results["score"],
+        n_items=results["n_items"],
+        total_flags=results["total_flags"],
+        rows=[
+            EvalResultRow(question=r["q"], answer=r["a"], flags=r["flags"])
+            for r in results.get("rows", [])
+        ],
+    )
+
+
 @app.get("/api/training/status", response_model=TrainingStatusResponse, dependencies=[api_auth])
 def api_training_status() -> TrainingStatusResponse:
     """Eğitim örneği sayısı + kayıtlı adapter listesi."""

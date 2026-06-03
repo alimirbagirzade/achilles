@@ -80,6 +80,16 @@ Sözleşmeler: `paper_id` içerik hash'inden türer (idempotent ingestion). Stra
 
 - [x] **Toplu kart üretimi** — `POST /api/cards/batch` endpoint'i; "⚡ TÜM KARTLARI ÜRET" butonu (Makaleler sekmesi); kart olmayan tüm makaleleri sırayla işler, skip/ok/error raporlar.
 
+- [x] **MLX adapter inference + model eval UI (2026-06-03)** —
+  - `app/brain/mlx_llm.py`: `MlxLLM` sınıfı — subprocess ile `mlx_lm generate`, adapter_path desteği, timeout/hata yönetimi
+  - `AskRequest.adapter_version` — belirtilirse MLX adapter ile yanıt, Ollama bypass
+  - `AskResponse.adapter_used` — hangi adapter kullanıldı badge olarak gösterilir
+  - `GET /api/eval/sets` — `evals/` dizinindeki `.jsonl` eval setleri
+  - `POST /api/eval/run` — `ModelEvaluator` çalıştır, skor + bayrak + yanıt listesi
+  - 05 · DEĞERLENDİRME sekmesi — eval seti + adapter seçimi + sonuç render
+  - ARAŞTIRMA sekmesinde model seçici dropdown (Ollama / adapter versiyonları)
+  - `test_mlx_llm` (10 test) + `test_eval_api` (5 test) → **128 toplam test**
+
 - [x] **Gerçek OHLCV backtest YAPILDI** — BTC-USD günlük (Yahoo Finance, 1827 bar / 5 yıl; Binance+CryptoCompare+Kraken Türkiye'de bloklu, Stooq apikey istiyor). EMA/RSI: getiri +%52 / Sharpe 4.0 / DD -%52 ama evaluator **FAIL** (`bt_e22fbfde4b`): örneklem-dışı negatif (overfit) + az işlem. Gerçek veride disiplin doğrulandı. CSV: `data/market/raw/BTCUSD_1d.csv` (gitignored).
 - [x] **Güvenlikli web arayüzü eklendi** (`app/web/`) — FastAPI ince katman: status/papers/upload/ingest/ask/card/backtest + `/api/docs`; `security.py` (token auth `secrets.compare_digest`, IP rate-limit, CSP+güvenlik başlıkları, PDF magic-byte+boyut doğrulama, path-traversal koruması); terminal-estetik static UI (CSP-uyumlu); `SECURITY.md`. `pip install -e ".[web]"` → `achilles-web` (yalnız localhost). Denetim: 2 "ares" regresyonu (`achilles_lora_v1`, `achilles_test`) düzeltildi, `_consteq`→`secrets.compare_digest`, README canlı-durum+github+model bölümleri geri getirildi. **43 offline test geçiyor, ruff+mypy temiz.**
 

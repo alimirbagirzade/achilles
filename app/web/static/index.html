@@ -42,7 +42,8 @@
       <button class="tab" data-tab="papers">02 · MAKALELER</button>
       <button class="tab" data-tab="backtest">03 · BACKTEST</button>
       <button class="tab" data-tab="training">04 · EĞİTİM</button>
-      <button class="tab" data-tab="about">05 · SİSTEM</button>
+      <button class="tab" data-tab="eval">05 · DEĞERLENDİRME</button>
+      <button class="tab" data-tab="about">06 · SİSTEM</button>
     </nav>
 
     <main>
@@ -73,6 +74,12 @@
             <label class="topk">
               top_k
               <input type="number" id="topk" min="1" max="20" value="6" />
+            </label>
+            <label class="adapter-select-label">
+              model
+              <select id="adapterSelect">
+                <option value="">Ollama (varsayılan)</option>
+              </select>
             </label>
             <button type="submit" class="btn btn-primary" id="askBtn">
               SORGULA →
@@ -234,6 +241,31 @@
         <div class="training-section" id="adaptersSection">
           <h3>Kayıtlı Adapter'lar</h3>
           <div id="adaptersList" class="adapters-list"></div>
+        </div>
+      </section>
+
+      <!-- EVAL -->
+      <section class="panel" id="panel-eval">
+        <div class="panel-head">
+          <h2>Model Değerlendirme</h2>
+          <p class="muted">
+            Kural ihlali tespiti (kaynak uydurma, garanti kâr, test edilmeden başarılı deme…).
+            Ollama aktif olmalı.
+          </p>
+        </div>
+
+        <div class="training-section">
+          <h3>Eval Seti Seç</h3>
+          <div class="eval-run-row">
+            <select id="evalSetSelect" class="eval-select">
+              <option value="">Yükleniyor…</option>
+            </select>
+            <select id="evalAdapterSelect" class="eval-select">
+              <option value="">Ollama (varsayılan)</option>
+            </select>
+            <button class="btn btn-primary" id="runEvalBtn">DEĞERLENDİR →</button>
+          </div>
+          <div id="evalResult" class="result hidden"></div>
         </div>
       </section>
 

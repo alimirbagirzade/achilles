@@ -9,19 +9,20 @@
 
 ---
 
-## 📊 Proje Durumu — _canlı_ (2026-06-02, branch `main`)
+## 📊 Proje Durumu — _canlı_ (2026-06-03, branch `main`)
 
-> Repo: https://github.com/alimirbagirzade/achilles · Test: **43 geçti** (offline) + 2 ollama-entegrasyon · Kalite: ruff+mypy temiz
+> Repo: https://github.com/alimirbagirzade/achilles · Test: **128 geçti** (offline) · Kalite: ruff+mypy temiz
 
-- [x] **Ortam**: uv (Python 3.13) · Ollama (servis) · `nomic-embed-text` · `qwen2.5-coder:3b`+`7b` · `mlx-lm 0.31.3`
-- [x] **İsim**: tüm repo `Achilles` (sıfır "ares" kalıntısı)
-- [x] **Ingestion**: gerçek arXiv PDF → SQLite + ChromaDB (69 chunk, gerçek embedding)
-- [x] **RAG canlı**: `ask` kaynaklı 5-bölümlü cevap (3b aktif, 8GB profili)
-- [x] **LoRA `train --run`**: uçtan uca (loss 1.21→0.029, adapter + registry, öğrenilmiş davranış)
-- [x] **Gerçek veri backtest**: BTC-USD 1g (5 yıl) → evaluator overfit'i **FAIL** ile yakaladı
-- [x] **Web arayüzü**: güvenlik-sertleştirilmiş FastAPI + **açık (light), renk-körü-dostu** temiz arayüz (`app/web/`, `SECURITY.md`)
-- [x] **8GB'da güvenilir LLM bilgi-kartı** — Ollama `format:"json"` + kısa girdi + num_predict cap + retry + esnek parse → 3b artık dolu/doğru kart üretiyor (~56s); card→dataset→LoRA döngüsü otomatik
-- [ ] intraday (15m/1h) OHLCV kaynağı · çok-makaleli LoRA dataseti · CI (GitHub Actions)
+- [x] **Ortam**: uv (Python 3.12) · Ollama · `nomic-embed-text` · `qwen2.5-coder:3b` · `mlx-lm 0.31.3`
+- [x] **Ingestion**: 7 gerçek arXiv PDF → SQLite + ChromaDB (567 chunk, Ollama embedding)
+- [x] **RAG canlı**: `ask` kaynaklı 5-bölümlü cevap; **adapter_version** ile MLX LoRA bypass da çalışır
+- [x] **LoRA `train --run`**: `achilles_lora_v2` — 300 iter, loss 0.028, **peak 2.0 GB** (8GB-safe), adapter registry
+- [x] **MLX adapter inference**: `MlxLLM` + web'de model seçici dropdown
+- [x] **Web arayüzü** (6 sekme): Araştırma · Makaleler · Backtest · Eğitim · Değerlendirme · Sistem
+  - Toplu kart üretimi, backtest geçmişi, özel IR, eğitim örnekleri yönetimi, model eval UI
+- [x] **Gerçek veri backtest**: BTC-USD 5 yıl → evaluator OOS overfit'i **FAIL** ile yakaladı
+- [x] **128 test**: indicators · evaluator · overfit · strategy_generator · dataset_builder · mlx_llm · eval_api…
+- [ ] intraday (15m/1h) OHLCV kaynağı · çok-makaleli LoRA dataseti
 - [ ] 32GB makineye geçince `ACHILLES_LLM_MODEL=qwen2.5-coder:14b` (profil `.env.example`'da hazır)
 
 ---
@@ -149,9 +150,16 @@ achilles-web                 # http://127.0.0.1:8765 (yalnız localhost)
 # alternatif: uvicorn app.web.server:app
 ```
 
-Tarayıcıda `http://127.0.0.1:8765` aç. Sekmeler: **Araştırma** (RAG soru-cevap),
-**Makaleler** (PDF yükle/indeksle, bilgi kartı), **Backtest** (sentetik veri +
-örnek strateji + yargı), **Sistem** (durum + token).
+Tarayıcıda `http://127.0.0.1:8765` aç. Altı sekme:
+
+| Sekme | İçerik |
+|-------|--------|
+| **01 · Araştırma** | RAG soru-cevap; model seçici (Ollama / MLX adapter) |
+| **02 · Makaleler** | PDF yükle/indeksle; bilgi kartı üret/gör; toplu kart; arama/filtre/sıralama |
+| **03 · Backtest** | Sentetik + gerçek CSV + özel strateji IR; backtest geçmişi |
+| **04 · Eğitim** | Dataset oluştur; dry-run komutu; eğitim örnekleri yönet; adapter listesi |
+| **05 · Değerlendirme** | Eval seti seç, adapter seç, çalıştır; skor + bayrak + yanıt detayı |
+| **06 · Sistem** | Durum, disiplin kuralları, API token |
 
 ### API uçları
 | Yöntem | Uç | Açıklama |
@@ -160,10 +168,21 @@ Tarayıcıda `http://127.0.0.1:8765` aç. Sekmeler: **Araştırma** (RAG soru-ce
 | GET | `/api/papers` | İndekslenmiş makaleler |
 | POST | `/api/papers/upload` | PDF yükle (doğrulanır) → indeksle |
 | POST | `/api/ingest` | Tüm PDF'leri yeniden indeksle |
-| POST | `/api/ask` | RAG sorusu (kaynaklı) |
-| POST | `/api/card/{paper_id}` | Bilgi kartı üret |
-| POST | `/api/backtest` | Sentetik veri üzerinde backtest |
-| POST | `/api/backtest/csv` | **Gerçek OHLCV CSV** yükle → backtest (doğrulanır) |
+| POST | `/api/ask` | RAG sorusu; `adapter_version` ile MLX inference |
+| GET | `/api/card/{paper_id}` | Kaydedilmiş kartı getir (LLM gerektirmez) |
+| POST | `/api/card/{paper_id}` | Bilgi kartı üret (LLM gerekli) |
+| POST | `/api/cards/batch` | Kartı olmayan tüm makaleleri sırayla işle |
+| POST | `/api/card/{paper_id}/backtest` | Kart hipotezlerini sentetik veride test et |
+| GET | `/api/backtests` | Geçmiş backtest kayıtları |
+| POST | `/api/backtest` | Sentetik / özel IR backtest |
+| POST | `/api/backtest/csv` | Gerçek OHLCV CSV yükle → backtest |
+| GET | `/api/training/status` | Eğitim örnek sayısı + adapter listesi |
+| POST | `/api/training/dataset` | Train/valid JSONL oluştur |
+| POST | `/api/training/dry-run` | mlx_lm komutu önizle |
+| GET | `/api/training/examples` | Eğitim örneklerini listele |
+| DELETE | `/api/training/examples/{id}` | Örnek sil |
+| GET | `/api/eval/sets` | Eval seti listesi |
+| POST | `/api/eval/run` | Eval çalıştır (Ollama gerekli) |
 | GET | `/api/docs` | OpenAPI (Swagger) arayüzü |
 
 ### Güvenlik (özet — tamamı `SECURITY.md`)
@@ -258,12 +277,17 @@ Tarayıcıda aç → **Cmd+Shift+R** (yenile). Sağ üstte **🟢 yeşil "ollama
 
 | # | Sekme | Ne yaparsın | ✅ Ne görmelisin |
 |:-:|-------|-------------|------------------|
-| 1 | **SİSTEM** | sekmeye tıkla | katman / disiplin / güvenlik kutuları, hata yok |
-| 2 | **MAKALELER** | PDF sürükle-bırak _(birden çok olur)_ | "Yükleniyor 1/N…" → makale satırı + **"… chunk"** |
-| 3 | **MAKALELER** | satırda **BİLGİ KARTI**'na bas | **◌ ÜRETİLİYOR** → ~1 dk → yeşil **✓ KART HAZIR** |
-| 4 | **ARAŞTIRMA** | soru yaz → **SORGULA →** | kaynaklı cevap + altta **kaynaklar** listesi |
-| 5 | **BACKTEST** | **SENTETİK ÇALIŞTIR →** | metrik tablosu + **YARGI** kutusu (✓ / ✕ / ≈) |
-| 6 | **BACKTEST** | "veya gerçek veri"ye **CSV** bırak | metrikler + **"veri: dosya.csv (… bar)"** |
+| 1 | **SİSTEM** | sekmeye tıkla | katman / disiplin / güvenlik kutuları |
+| 2 | **MAKALELER** | PDF sürükle-bırak | makale satırı + chunk sayısı |
+| 3 | **MAKALELER** | **BİLGİ KARTI ÜRET** → kart oluştuktan sonra **KARTI GÖR** | kart modalı (başlık, hipotezler, uyarılar…) |
+| 4 | **MAKALELER** | kart modalında **⚡ HİPOTEZLERİ BACKTEST ET** | her hipotez için metrikler + verdict |
+| 5 | **MAKALELER** | **⚡ TÜM KARTLARI ÜRET** (tüm PDF'ler için) | ok/skip/error listesi |
+| 6 | **ARAŞTIRMA** | soru yaz → model seç (Ollama / adapter) → **SORGULA →** | kaynaklı cevap + adapter badge |
+| 7 | **BACKTEST** | **SENTETİK ÇALIŞTIR →** | metrik tablosu + YARGI (✓/✕/≈) + geçmişe eklendi |
+| 8 | **BACKTEST** | "Özel strateji IR" aç → JSON yapıştır → **ÖZEL IR ÇALIŞTIR →** | özel strateji adıyla sonuç |
+| 9 | **EĞİTİM** | **DATASET OLUŞTUR** | train/valid satır sayısı + hash |
+| 10 | **EĞİTİM** | **KOMUT ÖNIZLE →** | `python -m mlx_lm lora …` komutu |
+| 11 | **DEĞERLENDİRME** | eval seti + model seç → **DEĞERLENDİR →** | skor % + bayrak sayısı + soru/cevap listesi |
 
 ### 🧨 "Yaramazlık" testleri — _reddetmesi = İYİ_
 

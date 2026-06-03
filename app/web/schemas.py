@@ -33,6 +33,7 @@ class IngestResponse(BaseModel):
 class AskRequest(BaseModel):
     question: str = Field(min_length=3, max_length=2000)
     top_k: int | None = Field(default=None, ge=1, le=20)
+    adapter_version: str | None = None  # belirtilirse MLX adapter ile yanıtla
 
 
 class SourceOut(BaseModel):
@@ -48,6 +49,35 @@ class AskResponse(BaseModel):
     sources: list[SourceOut] = Field(default_factory=list)
     llm_used: bool
     embedding_mode: str
+    adapter_used: str | None = None  # kullanılan adapter versiyonu
+
+
+# ---------- Model değerlendirme ----------
+class EvalSetOut(BaseModel):
+    name: str
+    path: str
+    n_items: int
+
+
+class EvalRunRequest(BaseModel):
+    eval_set: str  # evals/ içindeki .jsonl dosya adı (uzantısız)
+    adapter_version: str | None = None
+
+
+class EvalResultRow(BaseModel):
+    question: str
+    answer: str
+    flags: list[str]
+
+
+class EvalRunResponse(BaseModel):
+    eval_set: str
+    model: str
+    adapter_version: str | None = None
+    score: float
+    n_items: int
+    total_flags: int
+    rows: list[EvalResultRow]
 
 
 class BacktestRequest(BaseModel):

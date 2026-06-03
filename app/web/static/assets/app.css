@@ -867,6 +867,87 @@ code {
   margin: 3px 0;
 }
 
+/* ---------- adapter seçici (araştırma sekmesi) ---------- */
+.adapter-select-label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+}
+.adapter-select-label select {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  font-family: var(--mono);
+}
+.badge-adapter {
+  background: var(--primary);
+  color: #fff;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+/* ---------- eval sekmesi ---------- */
+.eval-run-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.eval-select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  font-family: var(--mono);
+  min-width: 160px;
+}
+.eval-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+.eval-row {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+.eval-q {
+  font-size: 13px;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+.eval-a {
+  font-size: 12px;
+  color: var(--ink-dim);
+  margin-bottom: 6px;
+}
+.eval-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.eval-flag {
+  font-size: 11px;
+  background: var(--neg-soft, #fff0f0);
+  color: var(--neg);
+  border: 1px solid var(--neg-border, #fca5a5);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: var(--mono);
+}
+
 /* ---------- makale filtre çubuğu ---------- */
 .filter-bar {
   display: flex;
