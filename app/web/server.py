@@ -31,15 +31,22 @@ from app.web.schemas import (
     BatchCardResponse,
     BatchCardResult,
     CardResponse,
+    ChainDatasetResponse,
+    ConceptLinkOut,
     DatasetBuildResponse,
     EvalResultRow,
     EvalRunRequest,
     EvalRunResponse,
     EvalSetOut,
+    FormulaOut,
     HypothesisBacktestResponse,
     HypothesisResult,
     IngestResponse,
     PaperOut,
+    ResearchIterationOut,
+    ResearchRequest,
+    ResearchRunResponse,
+    ResearchSessionOut,
     SourceOut,
     StatusResponse,
     TrainDryRunRequest,
@@ -381,6 +388,110 @@ def api_card_backtest(paper_id: str) -> HypothesisBacktestResponse:
         n_hypotheses=len(results),
         results=results,
     )
+
+
+# ---------- Araştırma (Trader Beyin) ----------
+@app.get("/api/research/formulas", response_model=list[FormulaOut], dependencies=[api_auth])
+def api_formulas(paper_id: str | None = None) -> list[FormulaOut]:
+    """Çıkarılmış formülleri listele."""
+    from app.memory.sqlite_store import SqliteStore
+
+    rows = SqliteStore().list_formulas(paper_id=paper_id)
+    return [FormulaOut(**r) for r in rows]
+
+
+@app.get("/api/research/graph", response_model=list[ConceptLinkOut], dependencies=[api_auth])
+def api_concept_graph() -> list[ConceptLinkOut]:
+    """Kavram grafiği bağlantılarını listele."""
+    from app.memory.sqlite_store import SqliteStore
+
+    rows = SqliteStore().list_concept_links()
+    return [ConceptLinkOut(**r) for r in rows]
+
+
+@app.post("/api/research/extract", dependencies=[api_auth])
+def api_extract_formulas(paper_id: str | None = None) -> dict:
+    """PDF'lerden formül çıkar ve kavram grafiği oluştur (LLM gerekli)."""
+    from app.research.concept_graph import ConceptGraph
+    from app.research.formula_extractor import FormulaExtractor
+
+    extractor = FormulaExtractor()
+    if paper_id:
+        formulas = extractor.extract_from_paper(paper_id)
+        n_formulas = len(formulas)
+    else:
+        results = extractor.extract_from_all_papers()
+        n_formulas = sum(len(v) for v in results.values())
+
+    n_links = ConceptGraph().build_from_papers()
+    return {
+        "n_formulas": n_formulas,
+        "n_links": n_links,
+        "message": f"{n_formulas} formül, {n_links} bağlantı",
+    }
+
+
+@app.post("/api/research/run", response_model=ResearchRunResponse, dependencies=[api_auth])
+def api_research_run(req: ResearchRequest) -> ResearchRunResponse:
+    """Agentic araştırma döngüsü: sentezle → backtest → yansıt → iyileştir."""
+    from app.research.orchestrator import ResearchOrchestrator
+
+    orchestrator = ResearchOrchestrator(max_iterations=req.max_iterations)
+    result = orchestrator.run(req.question, paper_ids=req.paper_ids)
+
+    return ResearchRunResponse(
+        question=result.question,
+        iterations=[
+            ResearchIterationOut(
+                session_id=it.session_id,
+                iteration=it.iteration,
+                indicator_name=it.indicator_name,
+                verdict=it.verdict,
+                reasons=it.reasons,
+                metrics=it.metrics,
+                reflection=it.reflection,
+                improvement_notes=it.improvement_notes,
+            )
+            for it in result.iterations
+        ],
+        final_verdict=result.final_verdict,
+        best_session_id=result.best_session_id,
+        summary=result.summary(),
+    )
+
+
+@app.get("/api/research/sessions", response_model=list[ResearchSessionOut], dependencies=[api_auth])
+def api_research_sessions(limit: int = 30) -> list[ResearchSessionOut]:
+    """Kayıtlı araştırma oturumlarını listele."""
+    from app.memory.sqlite_store import SqliteStore
+
+    rows = SqliteStore().list_research_sessions(limit=min(limit, 200))
+    out: list[ResearchSessionOut] = []
+    for r in rows:
+        ind = r.get("proposed_indicator") or {}
+        out.append(
+            ResearchSessionOut(
+                session_id=r["session_id"],
+                question=r["question"],
+                iteration=r["iteration"],
+                verdict=r.get("verdict"),
+                indicator_name=ind.get("indicator_name") if ind else None,
+                status=r["status"],
+                created_at=r["created_at"],
+            )
+        )
+    return out
+
+
+@app.post(
+    "/api/research/chain-dataset", response_model=ChainDatasetResponse, dependencies=[api_auth]
+)
+def api_chain_dataset(only_successful: bool = False) -> ChainDatasetResponse:
+    """Araştırma zincirlerinden LoRA eğitim verisi üret."""
+    from app.research.chain_data_builder import ChainDataBuilder
+
+    result = ChainDataBuilder().build(only_successful=only_successful)
+    return ChainDatasetResponse(**result)
 
 
 # ---------- Eğitim ----------

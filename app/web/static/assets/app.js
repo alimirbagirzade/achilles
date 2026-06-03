@@ -82,6 +82,7 @@
       });
       document.getElementById("panel-" + name).classList.add("active");
       if (name === "papers") loadPapers();
+      if (name === "trader") loadTraderBrain();
       if (name === "backtest") loadBacktestHistory();
       if (name === "training") loadTrainingStatus();
       if (name === "eval") loadEvalSets();
@@ -940,6 +941,182 @@
       "</h4><ul>" +
       reasons +
       "</ul></div></div>";
+  }
+
+  // ---------- trader beyin ----------
+  function loadTraderBrain() {
+    loadFormulas();
+    loadResearchSessions();
+  }
+
+  function loadFormulas() {
+    api("/research/formulas", { method: "GET" })
+      .then(function (formulas) {
+        var el = document.getElementById("formulasList");
+        if (!el) return;
+        if (!formulas.length) {
+          el.innerHTML = '<div class="empty muted small">Formül bulunamadı — "FORMÜL ÇIKAR" butonuna bas.</div>';
+          return;
+        }
+        var byCat = {};
+        formulas.forEach(function (f) {
+          var cat = f.category || "other";
+          if (!byCat[cat]) byCat[cat] = [];
+          byCat[cat].push(f);
+        });
+        var html = "";
+        Object.keys(byCat).sort().forEach(function (cat) {
+          html += '<div class="formula-cat"><span class="formula-cat-label">' + esc(cat.toUpperCase()) + "</span>";
+          byCat[cat].forEach(function (f) {
+            html += '<span class="formula-chip" title="' + esc(f.description || "") + '">' + esc(f.name) + "</span>";
+          });
+          html += "</div>";
+        });
+        el.innerHTML = html;
+      })
+      .catch(function () {});
+  }
+
+  var extractFormulasBtn = document.getElementById("extractFormulasBtn");
+  if (extractFormulasBtn) {
+    extractFormulasBtn.addEventListener("click", function () {
+      extractFormulasBtn.disabled = true;
+      extractFormulasBtn.innerHTML = '<span class="spinner"></span>ÇIKARILIYOR…';
+      var res = document.getElementById("extractResult");
+      res.className = "result";
+      res.innerHTML = '<div class="result-section"><span class="spinner"></span> LLM formülleri çıkarıyor (~dakikalar)…</div>';
+      api("/research/extract", { method: "POST" })
+        .then(function (data) {
+          toast(data.message);
+          res.innerHTML = '<div class="result-section result-body">' + esc(data.message) + "</div>";
+          loadFormulas();
+        })
+        .catch(function (err) {
+          toast(err.message, true);
+          res.innerHTML = '<div class="result-section result-body">Hata: ' + esc(err.message) + "</div>";
+        })
+        .finally(function () {
+          extractFormulasBtn.disabled = false;
+          extractFormulasBtn.textContent = "⚗ FORMÜL ÇIKAR";
+        });
+    });
+  }
+
+  var runResearchBtn = document.getElementById("runResearchBtn");
+  if (runResearchBtn) {
+    runResearchBtn.addEventListener("click", function () {
+      var q = (document.getElementById("researchQuestion").value || "").trim();
+      if (q.length < 10) { toast("Soru çok kısa (min 10 karakter).", true); return; }
+      var maxIter = parseInt(document.getElementById("researchIter").value, 10) || 2;
+      runResearchBtn.disabled = true;
+      runResearchBtn.innerHTML = '<span class="spinner"></span>ARAŞTIRILYOR…';
+      var res = document.getElementById("researchResult");
+      res.className = "result";
+      res.innerHTML = '<div class="result-section"><span class="spinner"></span> Sentezleniyor, backtest ediliyor… (her iterasyon ~2 dk)</div>';
+      api("/research/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: q, max_iterations: maxIter }),
+      })
+        .then(function (data) {
+          res.innerHTML = renderResearchResult(data);
+          loadResearchSessions();
+        })
+        .catch(function (err) {
+          res.innerHTML = '<div class="result-section result-body">Hata: ' + esc(err.message) + "</div>";
+        })
+        .finally(function () {
+          runResearchBtn.disabled = false;
+          runResearchBtn.textContent = "🧠 ARAŞTIR →";
+        });
+    });
+  }
+
+  function renderResearchResult(data) {
+    var vClass = "verdict-" + (data.final_verdict || "inconclusive");
+    var vLabel = { pass: "YAKINSADI ✓", fail: "BAŞARISIZ", inconclusive: "SONUÇSUZ" }[data.final_verdict] || data.final_verdict;
+    var iters = (data.iterations || []).map(function (it) {
+      var ivClass = "verdict-" + it.verdict;
+      var m = it.metrics || {};
+      var metHtml =
+        '<div class="metric"><div class="k">getiri%</div><div class="v">' + (m.total_return_pct != null ? Number(m.total_return_pct).toFixed(3) : "—") + "</div></div>" +
+        '<div class="metric"><div class="k">sharpe</div><div class="v">' + (m.sharpe != null ? Number(m.sharpe).toFixed(3) : "—") + "</div></div>" +
+        '<div class="metric"><div class="k">işlem</div><div class="v">' + (m.n_trades || 0) + "</div></div>";
+      return (
+        '<div class="research-iter">' +
+        '<div class="research-iter-head">' +
+        '<span class="research-iter-num">İter ' + it.iteration + "</span>" +
+        '<span class="research-ind-name">' + esc(it.indicator_name) + "</span>" +
+        '<span class="verdict ' + ivClass + ' hist-verdict">' + it.verdict.toUpperCase() + "</span>" +
+        "</div>" +
+        '<div class="metrics-grid">' + metHtml + "</div>" +
+        (it.reflection ? '<div class="research-reflection muted small">💭 ' + esc(it.reflection.slice(0, 200)) + "</div>" : "") +
+        (it.improvement_notes ? '<div class="research-improvement muted small">→ ' + esc(it.improvement_notes) + "</div>" : "") +
+        "</div>"
+      );
+    }).join("");
+    return (
+      '<div class="result-section"><div class="verdict ' + vClass + '"><b>' + vLabel + "</b></div></div>" +
+      '<div class="result-section">' + iters + "</div>"
+    );
+  }
+
+  function loadResearchSessions() {
+    var el = document.getElementById("sessionsList");
+    if (!el) return;
+    api("/research/sessions", { method: "GET" })
+      .then(function (rows) {
+        if (!rows.length) {
+          el.innerHTML = '<div class="empty">Henüz araştırma oturumu yok.</div>';
+          return;
+        }
+        el.innerHTML = rows.map(function (r) {
+          var vClass = "verdict-" + (r.verdict || "inconclusive");
+          return (
+            '<div class="hist-row">' +
+            '<div class="hist-head">' +
+            '<span class="hist-name">' + esc((r.indicator_name || "—")) + "</span>" +
+            '<span class="muted small">iter ' + r.iteration + "</span>" +
+            (r.verdict ? '<span class="verdict ' + vClass + ' hist-verdict">' + r.verdict + "</span>" : "") +
+            '<span class="muted small">' + esc((r.created_at || "").slice(0, 10)) + "</span>" +
+            "</div>" +
+            '<div class="muted small">' + esc((r.question || "").slice(0, 80)) + "</div>" +
+            "</div>"
+          );
+        }).join("");
+      })
+      .catch(function () {});
+  }
+
+  var refreshSessions = document.getElementById("refreshSessions");
+  if (refreshSessions) refreshSessions.addEventListener("click", loadResearchSessions);
+
+  var buildChainBtn = document.getElementById("buildChainBtn");
+  if (buildChainBtn) {
+    buildChainBtn.addEventListener("click", function () {
+      var onlySuccessful = document.getElementById("onlySuccessful").checked;
+      buildChainBtn.disabled = true;
+      buildChainBtn.innerHTML = '<span class="spinner"></span>OLUŞTURULUYOR…';
+      var res = document.getElementById("chainResult");
+      res.className = "result";
+      res.innerHTML = '<div class="result-section"><span class="spinner"></span></div>';
+      api("/research/chain-dataset?only_successful=" + onlySuccessful, { method: "POST" })
+        .then(function (data) {
+          toast(data.n_records + " zincir kaydı üretildi.");
+          res.innerHTML =
+            '<div class="result-section result-body">' +
+            data.n_records + " kayıt · hash: " + esc(data.content_hash) +
+            "</div>";
+        })
+        .catch(function (err) {
+          toast(err.message, true);
+          res.innerHTML = '<div class="result-section result-body">Hata: ' + esc(err.message) + "</div>";
+        })
+        .finally(function () {
+          buildChainBtn.disabled = false;
+          buildChainBtn.textContent = "⚡ ZİNCİR DATASET OLUŞTUR";
+        });
+    });
   }
 
   // ---------- model değerlendirme ----------

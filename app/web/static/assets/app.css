@@ -867,6 +867,125 @@ code {
   margin: 3px 0;
 }
 
+/* ---------- trader beyin ---------- */
+.formulas-list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.formula-cat {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.formula-cat-label {
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--muted);
+  min-width: 80px;
+}
+.formula-chip {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-family: var(--mono);
+  color: var(--ink);
+  cursor: default;
+}
+.formula-chip:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.research-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0;
+}
+.research-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  resize: vertical;
+}
+.research-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.research-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.research-row input[type="number"] {
+  width: 70px;
+}
+.research-iter {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 8px;
+}
+.research-iter-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.research-iter-num {
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--muted);
+}
+.research-ind-name {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.research-reflection {
+  margin-top: 6px;
+  padding: 4px 0;
+  border-top: 1px solid var(--border);
+  font-style: italic;
+}
+.research-improvement {
+  margin-top: 3px;
+  color: var(--primary);
+  font-size: 12px;
+}
+.sessions-list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.filter-btn-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink-dim);
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+
 /* ---------- adapter seçici (araştırma sekmesi) ---------- */
 .adapter-select-label {
   display: flex;

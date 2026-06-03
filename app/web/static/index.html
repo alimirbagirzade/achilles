@@ -40,10 +40,11 @@
     <nav class="tabs" id="tabs">
       <button class="tab active" data-tab="research">01 · ARAŞTIRMA</button>
       <button class="tab" data-tab="papers">02 · MAKALELER</button>
-      <button class="tab" data-tab="backtest">03 · BACKTEST</button>
-      <button class="tab" data-tab="training">04 · EĞİTİM</button>
-      <button class="tab" data-tab="eval">05 · DEĞERLENDİRME</button>
-      <button class="tab" data-tab="about">06 · SİSTEM</button>
+      <button class="tab" data-tab="trader">03 · TRADER BEYİN</button>
+      <button class="tab" data-tab="backtest">04 · BACKTEST</button>
+      <button class="tab" data-tab="training">05 · EĞİTİM</button>
+      <button class="tab" data-tab="eval">06 · DEĞERLENDİRME</button>
+      <button class="tab" data-tab="about">07 · SİSTEM</button>
     </nav>
 
     <main>
@@ -125,6 +126,63 @@
           </select>
         </div>
         <div id="papersList" class="papers-list"></div>
+      </section>
+
+      <!-- TRADER BEYİN -->
+      <section class="panel" id="panel-trader">
+        <div class="panel-head">
+          <h2>Trader Beyin</h2>
+          <p class="muted">
+            LLM makalelerden formül çıkarır, kavramları birleştirir ve yeni
+            indikatör hipotezleri önerir. Her öneri otomatik backtest edilir.
+          </p>
+        </div>
+
+        <!-- Formül Çıkarımı -->
+        <div class="training-section">
+          <h3>1 · Formül Çıkarımı</h3>
+          <p class="muted small">Yüklü makalelerden matematiksel formülleri çıkar ve kavram grafiğini kur.</p>
+          <button class="btn btn-primary" id="extractFormulasBtn">⚗ FORMÜL ÇIKAR</button>
+          <div id="extractResult" class="result hidden"></div>
+          <div id="formulasList" class="formulas-list"></div>
+        </div>
+
+        <!-- Araştırma Döngüsü -->
+        <div class="training-section">
+          <h3>2 · Agentic Araştırma</h3>
+          <p class="muted small">
+            LLM tüm formülleri sentezler → yeni indikatör önerir → backtest eder → yansıtır → iyileştirir.
+          </p>
+          <div class="research-form">
+            <textarea id="researchQuestion" rows="3"
+              placeholder="örn: Momentum göstergelerini yüksek volatilite dönemlerinde nasıl filtreleriz? RSI + ATR kombinasyonu çalışır mı?"></textarea>
+            <div class="research-row">
+              <label>Maksimum iterasyon
+                <input type="number" id="researchIter" min="1" max="5" value="2" />
+              </label>
+              <button class="btn btn-primary" id="runResearchBtn">🧠 ARAŞTIR →</button>
+            </div>
+          </div>
+          <div id="researchResult" class="result hidden"></div>
+        </div>
+
+        <!-- Araştırma Geçmişi -->
+        <div class="training-section">
+          <h3>3 · Araştırma Geçmişi</h3>
+          <button class="btn" id="refreshSessions">↻ YENİLE</button>
+          <div id="sessionsList" class="sessions-list"></div>
+        </div>
+
+        <!-- Zincir Veri Seti -->
+        <div class="training-section">
+          <h3>4 · Zincir Veri Seti (LoRA)</h3>
+          <p class="muted small">Araştırma oturumlarını reasoning-chain eğitim verisine çevir.</p>
+          <label class="filter-btn-label">
+            <input type="checkbox" id="onlySuccessful" /> Yalnız başarılı oturumlar
+          </label>
+          <button class="btn btn-primary" id="buildChainBtn">⚡ ZİNCİR DATASET OLUŞTUR</button>
+          <div id="chainResult" class="result hidden"></div>
+        </div>
       </section>
 
       <!-- BACKTEST -->

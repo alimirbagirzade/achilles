@@ -80,6 +80,66 @@ class EvalRunResponse(BaseModel):
     rows: list[EvalResultRow]
 
 
+# ---------- Araştırma (Research) ----------
+class FormulaOut(BaseModel):
+    formula_id: str
+    paper_id: str
+    name: str
+    latex: str | None = None
+    plain: str | None = None
+    description: str | None = None
+    variables: dict = Field(default_factory=dict)
+    category: str | None = None
+
+
+class ConceptLinkOut(BaseModel):
+    from_concept: str
+    relation: str
+    to_concept: str
+    source_paper_id: str | None = None
+
+
+class ResearchRequest(BaseModel):
+    question: str = Field(min_length=10, max_length=1000)
+    max_iterations: int = Field(default=2, ge=1, le=5)
+    paper_ids: list[str] | None = None
+
+
+class ResearchIterationOut(BaseModel):
+    session_id: str
+    iteration: int
+    indicator_name: str
+    verdict: str
+    reasons: list[str]
+    metrics: dict
+    reflection: str | None = None
+    improvement_notes: str | None = None
+
+
+class ResearchRunResponse(BaseModel):
+    question: str
+    iterations: list[ResearchIterationOut]
+    final_verdict: str
+    best_session_id: str | None = None
+    summary: str
+
+
+class ResearchSessionOut(BaseModel):
+    session_id: str
+    question: str
+    iteration: int
+    verdict: str | None = None
+    indicator_name: str | None = None
+    status: str
+    created_at: str
+
+
+class ChainDatasetResponse(BaseModel):
+    n_records: int
+    output_path: str
+    content_hash: str
+
+
 class BacktestRequest(BaseModel):
     # Boşsa örnek strateji + sentetik veri kullanılır.
     use_synthetic: bool = True

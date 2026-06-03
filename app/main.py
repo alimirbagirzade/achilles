@@ -3,7 +3,7 @@
 Run:  uv run achilles --help
 
 Pipeline order (per spec):
-  ingest -> ask (RAG) -> card -> dataset -> train -> eval -> backtest
+  ingest -> ask -> card -> extract-formulas -> research -> dataset -> train -> eval -> backtest
 """
 
 from __future__ import annotations
@@ -277,6 +277,119 @@ def backtest(
         Panel(
             "\n".join(f"- {r}" for r in verdict.reasons),
             title=f"[{color}]YARGI: {verdict.verdict.upper()}[/{color}]  (backtest_id={bt_id})",
+        )
+    )
+
+
+# --------------------------------------------------------------------------
+# research — trader beyin döngüsü
+# --------------------------------------------------------------------------
+@app.command("extract-formulas")
+def extract_formulas(
+    paper_id: str = typer.Argument(None, help="Belirli makale; yoksa tümü"),
+    force: bool = typer.Option(False, help="Zaten çıkarılmışları üzerine yaz"),
+) -> None:
+    """PDF'lerden matematiksel formülleri çıkar ve kavram grafiğini oluştur."""
+    from app.research.concept_graph import ConceptGraph
+    from app.research.formula_extractor import FormulaExtractor
+
+    extractor = FormulaExtractor()
+    graph = ConceptGraph()
+
+    if paper_id:
+        formulas = extractor.extract_from_paper(paper_id, force=force)
+        console.print(f"[green]{len(formulas)} formül çıkarıldı:[/green] {paper_id}")
+    else:
+        results = extractor.extract_from_all_papers()
+        total = sum(len(v) for v in results.values())
+        console.print(f"[green]Toplam {total} formül çıkarıldı ({len(results)} makale)[/green]")
+
+    n_links = graph.build_from_papers()
+    console.print(f"[green]Kavram grafiği: {n_links} bağlantı oluşturuldu[/green]")
+
+
+@app.command()
+def formulas(paper_id: str = typer.Argument(None)) -> None:
+    """Çıkarılmış formülleri listele."""
+    from app.memory.sqlite_store import SqliteStore
+
+    rows = SqliteStore().list_formulas(paper_id=paper_id)
+    if not rows:
+        console.print("[yellow]Formül bulunamadı — önce 'extract-formulas' çalıştır[/yellow]")
+        return
+    t = Table(title="Formüller")
+    t.add_column("Ad")
+    t.add_column("Kategori")
+    t.add_column("Açıklama")
+    t.add_column("Makale")
+    for f in rows:
+        t.add_row(
+            f["name"],
+            f.get("category") or "—",
+            (f.get("description") or "")[:60],
+            f["paper_id"][:16],
+        )
+    console.print(t)
+
+
+@app.command()
+def research(
+    question: str = typer.Argument(..., help="Araştırma sorusu"),
+    iterations: int = typer.Option(3, help="Maksimum iterasyon"),
+    paper_ids: str = typer.Option(None, help="Virgülle ayrılmış paper_id listesi (opsiyonel)"),
+) -> None:
+    """Agentic araştırma döngüsünü çalıştır: sentezle → backtest → yansıt → iyileştir."""
+    from app.research.orchestrator import ResearchOrchestrator
+
+    pid_list = [p.strip() for p in paper_ids.split(",")] if paper_ids else None
+    orchestrator = ResearchOrchestrator(max_iterations=iterations)
+    result = orchestrator.run(question, paper_ids=pid_list)
+
+    color = {"pass": "green", "fail": "red", "inconclusive": "yellow"}.get(
+        result.final_verdict, "white"
+    )
+    console.print(Panel(result.summary(), title=f"[{color}]Araştırma Tamamlandı[/{color}]"))
+
+
+@app.command("research-sessions")
+def research_sessions(limit: int = typer.Option(20)) -> None:
+    """Kayıtlı araştırma oturumlarını listele."""
+    from app.memory.sqlite_store import SqliteStore
+
+    rows = SqliteStore().list_research_sessions(limit=limit)
+    if not rows:
+        console.print("[yellow]Oturum bulunamadı — önce 'research' komutunu çalıştır[/yellow]")
+        return
+    t = Table(title="Araştırma Oturumları")
+    t.add_column("ID")
+    t.add_column("Soru")
+    t.add_column("İter")
+    t.add_column("Yargı")
+    t.add_column("Tarih")
+    for r in rows:
+        color = {"pass": "green", "fail": "red"}.get(r.get("verdict", ""), "yellow")
+        t.add_row(
+            r["session_id"][:16],
+            (r["question"] or "")[:50],
+            str(r["iteration"]),
+            f"[{color}]{r.get('verdict', '—')}[/{color}]",
+            (r["created_at"] or "")[:10],
+        )
+    console.print(t)
+
+
+@app.command("chain-dataset")
+def chain_dataset(only_successful: bool = typer.Option(False)) -> None:
+    """Araştırma zincirlerinden LoRA eğitim verisi üret."""
+    from app.research.chain_data_builder import ChainDataBuilder
+
+    result = ChainDataBuilder().build(only_successful=only_successful)
+    console.print(
+        Panel(
+            f"kayıt: {result['n_records']}\n"
+            f"dosya: {result['output_path']}\n"
+            f"hash: {result['content_hash']}",
+            title="[green]Zincir veri seti[/green]",
         )
     )
 

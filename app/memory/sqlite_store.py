@@ -177,6 +177,57 @@ class Adapter(Base):
     created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
 
 
+class Formula(Base):
+    """Bir makaleden çıkarılan matematiksel formül / gösterge."""
+
+    __tablename__ = "formulas"
+
+    formula_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    paper_id: Mapped[str] = mapped_column(ForeignKey("papers.paper_id"), index=True)
+    name: Mapped[str] = mapped_column(String(128), index=True)  # "RSI", "EMA"
+    latex: Mapped[str | None] = mapped_column(Text, default=None)  # LaTeX gösterim
+    plain: Mapped[str | None] = mapped_column(Text, default=None)  # okunabilir
+    description: Mapped[str | None] = mapped_column(Text, default=None)  # ne ölçüyor
+    variables_json: Mapped[str] = mapped_column(Text, default="{}")  # {"period": "..."}
+    category: Mapped[str | None] = mapped_column(String(48), default=None)  # momentum/vol/trend
+    created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+
+
+class ConceptLink(Base):
+    """Formüller / kavramlar arası ilişki (yönlü kenar)."""
+
+    __tablename__ = "concept_links"
+
+    link_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    from_concept: Mapped[str] = mapped_column(String(128), index=True)
+    relation: Mapped[str] = mapped_column(String(48))  # extends/measures/limits/combines
+    to_concept: Mapped[str] = mapped_column(String(128), index=True)
+    source_paper_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    weight: Mapped[float] = mapped_column(Float, default=1.0)
+    created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+
+
+class ResearchSession(Base):
+    """Bir araştırma döngüsünün tam kaydı (hipotez → öneri → test → yansıma)."""
+
+    __tablename__ = "research_sessions"
+
+    session_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    question: Mapped[str] = mapped_column(Text)  # araştırma sorusu
+    iteration: Mapped[int] = mapped_column(Integer, default=1)
+    parent_session_id: Mapped[str | None] = mapped_column(String(80), default=None)
+    source_paper_ids_json: Mapped[str] = mapped_column(Text, default="[]")
+    synthesis_reasoning: Mapped[str | None] = mapped_column(Text, default=None)
+    proposed_indicator_json: Mapped[str | None] = mapped_column(Text, default=None)
+    strategy_ir_json: Mapped[str | None] = mapped_column(Text, default=None)
+    backtest_result_json: Mapped[str | None] = mapped_column(Text, default=None)
+    verdict: Mapped[str | None] = mapped_column(String(32), default=None)
+    reflection: Mapped[str | None] = mapped_column(Text, default=None)
+    improvement_notes: Mapped[str | None] = mapped_column(Text, default=None)
+    status: Mapped[str] = mapped_column(String(32), default="pending")  # pending/done/failed
+    created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+
+
 class SqliteStore:
     """Thin wrapper around a SQLAlchemy engine + session factory."""
 
@@ -336,6 +387,104 @@ class SqliteStore:
                 return False
             s.delete(row)
             return True
+
+    # ---------- formüller ----------
+    def save_formula(self, **fields: Any) -> None:
+        with self.session() as s:
+            s.merge(Formula(**fields))
+
+    def list_formulas(self, paper_id: str | None = None) -> list[dict[str, Any]]:
+        with self.session() as s:
+            q = select(Formula)
+            if paper_id:
+                q = q.where(Formula.paper_id == paper_id)
+            rows = list(s.scalars(q.order_by(Formula.name)))
+            return [
+                {
+                    "formula_id": r.formula_id,
+                    "paper_id": r.paper_id,
+                    "name": r.name,
+                    "latex": r.latex,
+                    "plain": r.plain,
+                    "description": r.description,
+                    "variables": json.loads(r.variables_json or "{}"),
+                    "category": r.category,
+                }
+                for r in rows
+            ]
+
+    def formula_exists(self, paper_id: str, name: str) -> bool:
+        with self.session() as s:
+            return (
+                s.scalar(
+                    select(Formula.formula_id)
+                    .where(Formula.paper_id == paper_id, Formula.name == name)
+                    .limit(1)
+                )
+                is not None
+            )
+
+    # ---------- kavram grafiği ----------
+    def save_concept_link(self, **fields: Any) -> None:
+        with self.session() as s:
+            s.add(ConceptLink(**fields))
+
+    def list_concept_links(self, concept: str | None = None) -> list[dict[str, Any]]:
+        with self.session() as s:
+            q = select(ConceptLink)
+            if concept:
+                q = q.where(
+                    (ConceptLink.from_concept == concept) | (ConceptLink.to_concept == concept)
+                )
+            rows = list(s.scalars(q))
+            return [
+                {
+                    "from_concept": r.from_concept,
+                    "relation": r.relation,
+                    "to_concept": r.to_concept,
+                    "source_paper_id": r.source_paper_id,
+                }
+                for r in rows
+            ]
+
+    # ---------- araştırma oturumları ----------
+    def save_research_session(self, **fields: Any) -> None:
+        with self.session() as s:
+            s.merge(ResearchSession(**fields))
+
+    def get_research_session(self, session_id: str) -> dict[str, Any] | None:
+        with self.session() as s:
+            row = s.get(ResearchSession, session_id)
+            if row is None:
+                return None
+            return self._session_to_dict(row)
+
+    def list_research_sessions(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self.session() as s:
+            rows = list(
+                s.scalars(
+                    select(ResearchSession).order_by(ResearchSession.created_at.desc()).limit(limit)
+                )
+            )
+            return [self._session_to_dict(r) for r in rows]
+
+    def _session_to_dict(self, r: ResearchSession) -> dict[str, Any]:
+        return {
+            "session_id": r.session_id,
+            "question": r.question,
+            "iteration": r.iteration,
+            "parent_session_id": r.parent_session_id,
+            "source_paper_ids": json.loads(r.source_paper_ids_json or "[]"),
+            "synthesis_reasoning": r.synthesis_reasoning,
+            "proposed_indicator": json.loads(r.proposed_indicator_json or "null"),
+            "strategy_ir": json.loads(r.strategy_ir_json or "null"),
+            "backtest_result": json.loads(r.backtest_result_json or "null"),
+            "verdict": r.verdict,
+            "reflection": r.reflection,
+            "improvement_notes": r.improvement_notes,
+            "status": r.status,
+            "created_at": r.created_at,
+        }
 
 
 if __name__ == "__main__":  # pragma: no cover
