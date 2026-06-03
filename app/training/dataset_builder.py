@@ -56,9 +56,20 @@ class DatasetBuilder:
         records = self.collect()
         rng = random.Random(seed)
         rng.shuffle(records)
-        n_valid = max(1, int(len(records) * valid_ratio)) if records else 0
-        valid = records[:n_valid]
-        train = records[n_valid:]
+        # valid set en az 4 örnek içermeli (mlx_lm batch_size=4 zorunluluğu).
+        # Toplam < 8 ise tüm örnekler train, valid için ilk 4'ü kopyala (bootstrap).
+        if not records:
+            n_valid = 0
+            valid: list[dict] = []
+            train: list[dict] = []
+        elif len(records) < 8:
+            n_valid = 0
+            train = records
+            valid = records[: min(4, len(records))]  # bootstrap: kopyala
+        else:
+            n_valid = max(4, int(len(records) * valid_ratio))
+            valid = records[:n_valid]
+            train = records[n_valid:]
 
         out_dir = self.settings.jsonl_dir
         out_dir.mkdir(parents=True, exist_ok=True)

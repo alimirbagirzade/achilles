@@ -96,11 +96,11 @@ class DatasetBuildResponse(BaseModel):
 
 
 class TrainDryRunRequest(BaseModel):
-    base_model: str = "mlx-community/Mistral-7B-Instruct-v0.3-4bit"
-    iterations: int = Field(default=600, ge=50, le=5000)
-    batch_size: int = Field(default=4, ge=1, le=16)
+    base_model: str = "mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit"
+    iterations: int = Field(default=300, ge=50, le=5000)
+    batch_size: int = Field(default=2, ge=1, le=16)
     learning_rate: float = Field(default=1e-4, gt=0)
-    num_layers: int = Field(default=16, ge=1, le=64)
+    num_layers: int = Field(default=8, ge=1, le=64)
 
 
 class TrainDryRunResponse(BaseModel):

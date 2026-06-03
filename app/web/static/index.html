@@ -203,19 +203,19 @@
           <form id="dryRunForm" class="dry-run-form">
             <label>
               Temel model
-              <input type="text" id="drBaseModel" value="mlx-community/Mistral-7B-Instruct-v0.3-4bit" />
+              <input type="text" id="drBaseModel" value="mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit" />
             </label>
             <label>
               İterasyon
-              <input type="number" id="drIterations" min="50" max="5000" value="600" />
+              <input type="number" id="drIterations" min="50" max="5000" value="300" />
             </label>
             <label>
               Batch
-              <input type="number" id="drBatch" min="1" max="16" value="4" />
+              <input type="number" id="drBatch" min="1" max="16" value="2" />
             </label>
             <label>
               Katman
-              <input type="number" id="drLayers" min="1" max="64" value="16" />
+              <input type="number" id="drLayers" min="1" max="64" value="8" />
             </label>
             <button type="submit" class="btn btn-primary" id="dryRunBtn">KOMUT ÖNIZLE →</button>
           </form>

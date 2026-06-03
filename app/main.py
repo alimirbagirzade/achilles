@@ -169,7 +169,9 @@ def dataset() -> None:
 def train(
     base_model: str = typer.Option(None),
     adapter_name: str = typer.Option("achilles_lora_v1"),
-    iterations: int = typer.Option(600),
+    iterations: int = typer.Option(300, help="Eğitim iterasyon sayısı"),
+    batch_size: int = typer.Option(2, help="Batch büyüklüğü (8GB için 2 önerilir)"),
+    num_layers: int = typer.Option(8, help="LoRA adapter katman sayısı (8GB için 8 önerilir)"),
     run: bool = typer.Option(False, help="Eğitimi gerçekten başlat (Apple Silicon + mlx-lm)"),
 ) -> None:
     """MLX-LM LoRA eğitim komutunu hazırla (varsayılan dry-run)."""
@@ -184,6 +186,8 @@ def train(
         valid_jsonl=settings.jsonl_dir / "valid.jsonl",
         adapter_output_path=settings.adapters_dir / adapter_name,
         iterations=iterations,
+        batch_size=batch_size,
+        num_layers=num_layers,
     )
     if run:
         train_run(cfg)

@@ -26,18 +26,23 @@ class TrainConfig:
     train_jsonl: Path
     valid_jsonl: Path
     adapter_output_path: Path
-    iterations: int = 600
-    batch_size: int = 4
+    iterations: int = 300
+    # 8GB Apple Silicon için güvenli varsayılanlar:
+    batch_size: int = 2
     learning_rate: float = 1e-4
-    num_layers: int = 16
+    num_layers: int = 8
+    # Her iterasyonda değil, eğitim sonunda checkpoint al (OOM önleme)
+    save_every: int = 0  # 0 → iterations sonuna ertele
 
 
 def build_command(cfg: TrainConfig) -> list[str]:
     data_dir = cfg.train_jsonl.parent
+    save_every = cfg.save_every if cfg.save_every > 0 else cfg.iterations
     return [
         sys.executable,
         "-m",
-        "mlx_lm.lora",
+        "mlx_lm",
+        "lora",
         "--model",
         cfg.base_model,
         "--train",
@@ -53,6 +58,10 @@ def build_command(cfg: TrainConfig) -> list[str]:
         str(cfg.num_layers),
         "--adapter-path",
         str(cfg.adapter_output_path),
+        "--save-every",
+        str(save_every),
+        "--steps-per-eval",
+        str(save_every),
     ]
 
 
