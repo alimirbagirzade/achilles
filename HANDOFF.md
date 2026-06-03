@@ -290,6 +290,64 @@ Bu projeyi ilerletmek için eklenmesi planlanan skiller:
 
 ---
 
+---
+
+## LoRA EĞİTİM DÜZLEMİ — Sıradaki Büyük Görev
+
+> Araştırma: `~/Development/LoRAsetup/` — tüm detaylar orada
+> Yöntem: Claude ile otomatik, aşamalı curriculum eğitimi
+
+### Ana İlke (değişmez)
+```
+Önce sınıflandır → RAG'e koy → insan onayla → sonra LoRA.
+Ters sıra = çöp kalıcılaşır.
+```
+
+### Verim Tablosu (araştırmadan)
+| Yol | Uyum % |
+|-----|--------|
+| Kürasyon + sınıflandırma + RAG + geç LoRA | **93%** ← bu |
+| GraphRAG + önkoşul grafı (Faz 2) | 87% |
+| Ham web → doğrudan LoRA | 12% ← istenmeyen |
+
+### Seviye Sistemi ("küçük→büyük çocuk")
+```
+Seviye 0 → "RSI nedir?" (temel tanım)           → LoRA Faz 1
+Seviye 1 → "RSI nasıl hesaplanır?" (formül)     → LoRA Faz 1
+Seviye 2 → "RSI 70'te ne yapmalı?" (yorum)      → LoRA Faz 2
+Seviye 3 → "RSI+EMA nasıl backtest edilir?"     → LoRA Faz 3
+Seviye 4 → araştırma/sentez (PASS alan zincir)  → LoRA Faz 4
+```
+
+### Faz 1'de Yapılacaklar (ilk açılışta)
+1. `knowledge_cards` tablosuna ekle:
+   `trust_level`, `review_status`, `lora_eligible`, `difficulty`, `stage`
+2. Web UI'ya "Onay Bekleyen Notlar" listesi ekle
+3. `training_examples` → sadece `lora_eligible=1` alanlar girebilir
+4. `achilles_lora_v3` = ilk sınıflandırılmış, onaylı, seviyeli eğitim
+
+### Eğitim Politikası (özet)
+- Ham internet içeriği **asla** LoRA'ya girmez
+- `review_status = approved` olmadan **girmez**
+- Backtest FAIL olanlar **girmez**
+- LoRA davranış/format öğretir; bilgi RAG'den gelir
+
+### Referans Dosyalar
+```
+~/Development/LoRAsetup/
+  README.md              ← verim tablosu + özet
+  curriculum/levels.md   ← 5 seviye sistemi detayı
+  curriculum/note-schema.yaml ← metadata şeması
+  data-quality/classification.md ← sınıflandırma sistemi
+  data-quality/routing-rules.md  ← nereye gider kararı
+  methods/comparison.md  ← SFT/DPO/RAG/CPT karşılaştırma
+  impl/phase-plan.md     ← Achilles faz planı
+  impl/training-policy.md ← eğitim politikası kuralları
+  deep-research-report.md ← ham araştırma raporu (kaynaklı)
+```
+
+---
+
 ## Yapılmayacaklar (sabit sınırlar)
 
 Canlı emir/işlem yok · maliyetsiz backtest yok · look-ahead bias yok · `eval`/`exec` yok · test edilmeden "başarılı" denmez · sır/credential commit edilmez.
