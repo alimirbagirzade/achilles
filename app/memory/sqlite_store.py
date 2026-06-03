@@ -281,6 +281,62 @@ class SqliteStore:
         with self.session() as s:
             s.merge(Backtest(**fields))
 
+    def list_backtests(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Son `limit` adet backtest kaydını yeni→eski sırasıyla döndür."""
+        with self.session() as s:
+            rows = list(
+                s.scalars(select(Backtest).order_by(Backtest.created_at.desc()).limit(limit))
+            )
+            out = []
+            for r in rows:
+                strat = s.get(Strategy, r.strategy_id)
+                out.append(
+                    {
+                        "backtest_id": r.backtest_id,
+                        "strategy_name": strat.name if strat else r.strategy_id,
+                        "market": strat.market if strat else None,
+                        "timeframe": strat.timeframe if strat else None,
+                        "data_file": r.data_file,
+                        "n_trades": r.n_trades,
+                        "total_return_pct": r.total_return_pct,
+                        "sharpe": r.sharpe,
+                        "max_drawdown_pct": r.max_drawdown_pct,
+                        "win_rate_pct": r.win_rate_pct,
+                        "verdict": r.verdict,
+                        "notes": r.notes,
+                        "created_at": r.created_at,
+                    }
+                )
+            return out
+
+    def list_training_examples(self, limit: int = 200) -> list[dict[str, Any]]:
+        with self.session() as s:
+            rows = list(
+                s.scalars(
+                    select(TrainingExample).order_by(TrainingExample.created_at.desc()).limit(limit)
+                )
+            )
+            return [
+                {
+                    "example_id": r.example_id,
+                    "source_paper_id": r.source_paper_id,
+                    "example_type": r.example_type,
+                    "instruction": r.instruction,
+                    "input_text": r.input_text,
+                    "output_text": r.output_text,
+                    "created_at": r.created_at,
+                }
+                for r in rows
+            ]
+
+    def delete_training_example(self, example_id: str) -> bool:
+        with self.session() as s:
+            row = s.get(TrainingExample, example_id)
+            if row is None:
+                return False
+            s.delete(row)
+            return True
+
 
 if __name__ == "__main__":  # pragma: no cover
     store = SqliteStore()

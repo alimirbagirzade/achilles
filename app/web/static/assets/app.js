@@ -82,6 +82,7 @@
       });
       document.getElementById("panel-" + name).classList.add("active");
       if (name === "papers") loadPapers();
+      if (name === "backtest") loadBacktestHistory();
       if (name === "training") loadTrainingStatus();
     });
   });
@@ -467,6 +468,7 @@
           '<strong>' + data.n_examples + '</strong>' +
           '</div>';
         renderAdapters(data.adapters || []);
+        loadExamples();
       })
       .catch(function (err) {
         el.innerHTML = '<span class="conn-err">Hata: ' + esc(err.message) + "</span>";
@@ -494,6 +496,62 @@
       })
       .join("");
   }
+
+  // ---------- eğitim örnekleri ----------
+  function loadExamples() {
+    var el = document.getElementById("examplesList");
+    if (!el) return;
+    el.innerHTML = '<div class="empty"><span class="spinner"></span> yükleniyor…</div>';
+    api("/training/examples", { method: "GET" })
+      .then(function (data) {
+        var examples = data.examples || [];
+        if (!examples.length) {
+          el.innerHTML = '<div class="empty">Henüz eğitim örneği yok.</div>';
+          return;
+        }
+        el.innerHTML =
+          '<div class="examples-count">' + examples.length + " örnek</div>" +
+          examples
+            .map(function (ex) {
+              return (
+                '<div class="example-row" data-id="' + esc(ex.example_id) + '">' +
+                '<div class="example-header">' +
+                '<span class="example-type">' + esc(ex.example_type) + "</span>" +
+                (ex.source_paper_id ? '<span class="example-paper">' + esc(ex.source_paper_id) + "</span>" : "") +
+                '<span class="example-date muted">' + esc((ex.created_at || "").slice(0, 10)) + "</span>" +
+                '<button class="btn btn-del-example" data-id="' + esc(ex.example_id) + '" title="Sil">✕</button>' +
+                "</div>" +
+                '<div class="example-instruction">' + esc(ex.instruction.slice(0, 120)) + (ex.instruction.length > 120 ? "…" : "") + "</div>" +
+                "</div>"
+              );
+            })
+            .join("");
+        el.querySelectorAll(".btn-del-example").forEach(function (b) {
+          b.addEventListener("click", function (e) {
+            e.stopPropagation();
+            deleteExample(b.getAttribute("data-id"));
+          });
+        });
+      })
+      .catch(function (err) {
+        el.innerHTML = '<div class="empty">Hata: ' + esc(err.message) + "</div>";
+      });
+  }
+
+  function deleteExample(exampleId) {
+    api("/training/examples/" + encodeURIComponent(exampleId), { method: "DELETE" })
+      .then(function () {
+        toast("Örnek silindi.");
+        loadExamples();
+        loadTrainingStatus();
+      })
+      .catch(function (err) {
+        toast("Silinemedi: " + err.message, true);
+      });
+  }
+
+  var refreshExamples = document.getElementById("refreshExamples");
+  if (refreshExamples) refreshExamples.addEventListener("click", loadExamples);
 
   var buildDatasetBtn = document.getElementById("buildDatasetBtn");
   if (buildDatasetBtn) {
@@ -677,6 +735,7 @@
     })
       .then(function (data) {
         renderBacktest(res, data);
+        loadBacktestHistory();
       })
       .catch(function (err) {
         res.innerHTML =
@@ -738,6 +797,7 @@
     api("/backtest/csv", { method: "POST", body: fd })
       .then(function (data) {
         renderBacktest(res, data);
+        loadBacktestHistory();
       })
       .catch(function (err) {
         res.innerHTML =
@@ -813,6 +873,98 @@
       "</h4><ul>" +
       reasons +
       "</ul></div></div>";
+  }
+
+  // ---------- backtest geçmişi ----------
+  function loadBacktestHistory() {
+    var el = document.getElementById("btHistory");
+    if (!el) return;
+    el.innerHTML = '<div class="empty"><span class="spinner"></span> yükleniyor…</div>';
+    api("/backtests?limit=30", { method: "GET" })
+      .then(function (data) {
+        var recs = data.records || [];
+        if (!recs.length) {
+          el.innerHTML = '<div class="empty">Henüz kayıtlı backtest yok.</div>';
+          return;
+        }
+        el.innerHTML = recs
+          .map(function (r) {
+            var v = r.verdict || "inconclusive";
+            var vClass = "verdict-" + v;
+            var vLabel = { pass: "GEÇTİ", fail: "BAŞARISIZ", inconclusive: "SONUÇSUZ" }[v] || v;
+            var ret = r.total_return_pct != null ? Number(r.total_return_pct).toFixed(3) : "—";
+            var sh = r.sharpe != null ? Number(r.sharpe).toFixed(3) : "—";
+            var dd = r.max_drawdown_pct != null ? Number(r.max_drawdown_pct).toFixed(3) : "—";
+            var wr = r.win_rate_pct != null ? Number(r.win_rate_pct).toFixed(1) : "—";
+            return (
+              '<div class="hist-row">' +
+              '<div class="hist-head">' +
+              '<span class="hist-name">' + esc(r.strategy_name) + "</span>" +
+              (r.market ? '<span class="muted small">' + esc(r.market) + (r.timeframe ? "/" + esc(r.timeframe) : "") + "</span>" : "") +
+              '<span class="verdict ' + vClass + ' hist-verdict">' + vLabel + "</span>" +
+              '<span class="muted small">' + esc((r.created_at || "").slice(0, 10)) + "</span>" +
+              "</div>" +
+              '<div class="metrics-grid">' +
+              '<div class="metric"><div class="k">getiri%</div><div class="v' + (r.total_return_pct > 0 ? " pos" : r.total_return_pct < 0 ? " neg" : "") + '">' + esc(ret) + "</div></div>" +
+              '<div class="metric"><div class="k">sharpe</div><div class="v' + (r.sharpe > 0 ? " pos" : r.sharpe < 0 ? " neg" : "") + '">' + esc(sh) + "</div></div>" +
+              '<div class="metric"><div class="k">maxDD%</div><div class="v neg">' + esc(dd) + "</div></div>" +
+              '<div class="metric"><div class="k">win%</div><div class="v">' + esc(wr) + "</div></div>" +
+              '<div class="metric"><div class="k">işlem</div><div class="v">' + esc(r.n_trades) + "</div></div>" +
+              "</div>" +
+              (r.notes ? '<div class="hist-notes muted small">' + esc(r.notes) + "</div>" : "") +
+              "</div>"
+            );
+          })
+          .join("");
+      })
+      .catch(function (err) {
+        el.innerHTML = '<div class="empty">Hata: ' + esc(err.message) + "</div>";
+      });
+  }
+
+  var refreshHistory = document.getElementById("refreshHistory");
+  if (refreshHistory) {
+    refreshHistory.addEventListener("click", loadBacktestHistory);
+  }
+
+  // ---------- özel strateji IR backtest ----------
+  var customBtBtn = document.getElementById("customBtBtn");
+  if (customBtBtn) {
+    customBtBtn.addEventListener("click", function () {
+      var raw = document.getElementById("customIR").value.trim();
+      var n = parseInt(document.getElementById("customNBars").value, 10) || 2000;
+      var seed = parseInt(document.getElementById("customSeed").value, 10) || 42;
+      var strategyIr = null;
+      if (raw) {
+        try {
+          strategyIr = JSON.parse(raw);
+        } catch (e) {
+          toast("Geçersiz JSON: " + e.message, true);
+          return;
+        }
+      }
+      var res = document.getElementById("btResult");
+      customBtBtn.disabled = true;
+      customBtBtn.innerHTML = '<span class="spinner"></span>ÇALIŞIYOR';
+      res.className = "result";
+      res.innerHTML = '<div class="result-section"><span class="spinner"></span> özel IR backtest…</div>';
+      api("/backtest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ use_synthetic: true, n_bars: n, seed: seed, strategy_ir: strategyIr }),
+      })
+        .then(function (data) {
+          renderBacktest(res, data);
+          loadBacktestHistory();
+        })
+        .catch(function (err) {
+          res.innerHTML = '<div class="result-section result-body">Hata: ' + esc(err.message) + "</div>";
+        })
+        .finally(function () {
+          customBtBtn.disabled = false;
+          customBtBtn.textContent = "ÖZEL IR ÇALIŞTIR →";
+        });
+    });
   }
 
   // ---------- token ----------

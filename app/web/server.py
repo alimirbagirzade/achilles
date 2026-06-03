@@ -24,6 +24,8 @@ from app.web.schemas import (
     AdapterOut,
     AskRequest,
     AskResponse,
+    BacktestHistoryResponse,
+    BacktestRecord,
     BacktestRequest,
     BacktestResponse,
     CardResponse,
@@ -36,6 +38,8 @@ from app.web.schemas import (
     StatusResponse,
     TrainDryRunRequest,
     TrainDryRunResponse,
+    TrainingExampleOut,
+    TrainingExamplesResponse,
     TrainingStatusResponse,
 )
 
@@ -316,6 +320,42 @@ def api_training_dataset() -> DatasetBuildResponse:
         content_hash=r.content_hash,
         message=f"{r.n_train} eğitim + {r.n_valid} doğrulama kaydı yazıldı.",
     )
+
+
+@app.get("/api/backtests", response_model=BacktestHistoryResponse, dependencies=[api_auth])
+def api_backtest_history(limit: int = 50) -> BacktestHistoryResponse:
+    """Son backtest kayıtlarını listele (yeni → eski)."""
+    from app.memory.sqlite_store import SqliteStore
+
+    rows = SqliteStore().list_backtests(limit=min(limit, 200))
+    return BacktestHistoryResponse(
+        records=[BacktestRecord(**r) for r in rows],
+        total=len(rows),
+    )
+
+
+@app.get("/api/training/examples", response_model=TrainingExamplesResponse, dependencies=[api_auth])
+def api_training_examples(limit: int = 100) -> TrainingExamplesResponse:
+    """Kayıtlı eğitim örneklerini listele."""
+    from app.memory.sqlite_store import SqliteStore
+
+    rows = SqliteStore().list_training_examples(limit=min(limit, 500))
+    return TrainingExamplesResponse(
+        examples=[TrainingExampleOut(**r) for r in rows],
+        total=len(rows),
+    )
+
+
+@app.delete("/api/training/examples/{example_id}", dependencies=[api_auth])
+def api_delete_training_example(example_id: str) -> dict:
+    """Eğitim örneğini sil."""
+    from fastapi import HTTPException
+
+    from app.memory.sqlite_store import SqliteStore
+
+    if not SqliteStore().delete_training_example(example_id):
+        raise HTTPException(status_code=404, detail="Örnek bulunamadı.")
+    return {"ok": True}
 
 
 @app.post("/api/training/dry-run", response_model=TrainDryRunResponse, dependencies=[api_auth])

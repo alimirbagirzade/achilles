@@ -119,6 +119,53 @@ def test_training_dry_run_ok(client: TestClient) -> None:
     assert "test-model" in body["command"]
 
 
+# ---- backtest geçmişi ----
+def test_backtest_history_empty(client: TestClient) -> None:
+    r = client.get("/api/backtests")
+    assert r.status_code == 200
+    body = r.json()
+    assert "records" in body
+    assert isinstance(body["records"], list)
+
+
+def test_backtest_history_after_run(client: TestClient) -> None:
+    client.post("/api/backtest", json={"use_synthetic": True, "n_bars": 500, "seed": 1})
+    r = client.get("/api/backtests")
+    assert r.status_code == 200
+    assert r.json()["total"] >= 1
+
+
+def test_backtest_custom_ir(client: TestClient) -> None:
+    ir = {
+        "name": "test_custom",
+        "market": "XAUUSD",
+        "timeframe": "15m",
+        "indicators": [{"name": "RSI", "period": 14}],
+        "entry_rules": ["rsi_14 < 35"],
+        "exit_rules": ["rsi_14 > 55"],
+        "risk": {"stop_loss": "2 * ATR"},
+        "costs": {"commission": 0.0005, "slippage": 0.0005},
+    }
+    r = client.post(
+        "/api/backtest", json={"use_synthetic": True, "n_bars": 600, "seed": 5, "strategy_ir": ir}
+    )
+    assert r.status_code == 200
+    assert r.json()["strategy_name"] == "test_custom"
+
+
+# ---- eğitim örnekleri ----
+def test_training_examples_list(client: TestClient) -> None:
+    r = client.get("/api/training/examples")
+    assert r.status_code == 200
+    body = r.json()
+    assert "examples" in body
+
+
+def test_delete_training_example_404(client: TestClient) -> None:
+    r = client.delete("/api/training/examples/yok_example_id")
+    assert r.status_code == 404
+
+
 # ---- hipotez backtest testleri ----
 def test_card_backtest_no_card_404(client: TestClient) -> None:
     r = client.post("/api/card/paper_hayali/backtest")

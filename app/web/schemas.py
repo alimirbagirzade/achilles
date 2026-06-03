@@ -124,3 +124,41 @@ class HypothesisBacktestResponse(BaseModel):
     paper_id: str
     n_hypotheses: int
     results: list[HypothesisResult]
+
+
+# ---------- Backtest geçmişi ----------
+class BacktestRecord(BaseModel):
+    backtest_id: str
+    strategy_name: str
+    market: str | None = None
+    timeframe: str | None = None
+    data_file: str | None = None
+    n_trades: int = 0
+    total_return_pct: float = 0.0
+    sharpe: float | None = None
+    max_drawdown_pct: float | None = None
+    win_rate_pct: float | None = None
+    verdict: str | None = None
+    notes: str | None = None
+    created_at: str
+
+
+class BacktestHistoryResponse(BaseModel):
+    records: list[BacktestRecord]
+    total: int
+
+
+# ---------- Eğitim örneği ----------
+class TrainingExampleOut(BaseModel):
+    example_id: str
+    source_paper_id: str | None = None
+    example_type: str
+    instruction: str
+    input_text: str
+    output_text: str
+    created_at: str
+
+
+class TrainingExamplesResponse(BaseModel):
+    examples: list[TrainingExampleOut]
+    total: int

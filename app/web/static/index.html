@@ -155,6 +155,25 @@
         </div>
 
         <div id="btResult" class="result hidden"></div>
+
+        <details class="bt-custom-section">
+          <summary class="bt-custom-toggle">⚙ Özel strateji IR (JSON) ile backtest</summary>
+          <div class="bt-custom-body">
+            <p class="muted small">
+              Geçerli bir StrategyIR JSON'u yapıştır. Boş bırakırsan örnek EMA/RSI stratejisi kullanılır.
+            </p>
+            <textarea id="customIR" rows="8" placeholder='{"name":"my_strat","market":"XAUUSD","timeframe":"15m","indicators":[{"name":"EMA","period":20},{"name":"EMA","period":50},{"name":"RSI","period":14},{"name":"ATR","period":14}],"entry_rules":["ema_20 > ema_50","rsi_14 > 55"],"exit_rules":["ema_20 < ema_50","rsi_14 < 45"],"risk":{"stop_loss":"2 * ATR"},"costs":{"commission":0.0005,"slippage":0.0005}}'></textarea>
+            <div class="bt-custom-row">
+              <label>bar <input type="number" id="customNBars" min="200" max="20000" value="2000" /></label>
+              <label>seed <input type="number" id="customSeed" min="0" max="9999999" value="42" /></label>
+              <button class="btn btn-primary" id="customBtBtn">ÖZEL IR ÇALIŞTIR →</button>
+            </div>
+          </div>
+        </details>
+
+        <div class="bt-divider"><span>geçmiş</span></div>
+        <button class="btn" id="refreshHistory">↻ GEÇMİŞİ YENİLE</button>
+        <div id="btHistory" class="bt-history"></div>
       </section>
 
       <!-- TRAINING -->
@@ -201,6 +220,13 @@
             <button type="submit" class="btn btn-primary" id="dryRunBtn">KOMUT ÖNIZLE →</button>
           </form>
           <div id="dryRunResult" class="result hidden"></div>
+        </div>
+
+        <div class="training-section">
+          <h3>Eğitim Örnekleri</h3>
+          <p class="muted small">Bilgi kartlarından üretilen instruction/output çiftleri.</p>
+          <button class="btn" id="refreshExamples">↻ YENİLE</button>
+          <div id="examplesList" class="examples-list"></div>
         </div>
 
         <div class="training-section" id="adaptersSection">
