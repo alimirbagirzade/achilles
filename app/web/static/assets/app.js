@@ -213,8 +213,8 @@
         list.innerHTML = papers
           .map(function (p) {
             var btn = p.has_card
-              ? '<button class="btn btn-done" disabled>✓ KART VAR</button>'
-              : '<button class="btn card-btn" data-id="' + esc(p.paper_id) + '">BİLGİ KARTI</button>';
+              ? '<button class="btn card-view" data-id="' + esc(p.paper_id) + '">✓ KARTI GÖR</button>'
+              : '<button class="btn card-btn" data-id="' + esc(p.paper_id) + '">BİLGİ KARTI ÜRET</button>';
             return (
               '<div class="paper-row' +
               (p.has_card ? " has-card" : "") +
@@ -240,6 +240,11 @@
             makeCard(b.getAttribute("data-id"), b);
           });
         });
+        list.querySelectorAll(".card-view").forEach(function (b) {
+          b.addEventListener("click", function () {
+            viewCard(b.getAttribute("data-id"));
+          });
+        });
       })
       .catch(function (err) {
         list.innerHTML = '<div class="empty">Hata: ' + esc(err.message) + "</div>";
@@ -251,14 +256,10 @@
     btn.classList.remove("btn-err");
     btn.innerHTML = '<span class="spinner"></span>ÜRETİLİYOR';
     api("/card/" + encodeURIComponent(paperId), { method: "POST" })
-      .then(function () {
+      .then(function (data) {
         toast("Bilgi kartı üretildi: " + paperId);
-        btn.classList.remove("card-btn");
-        btn.classList.add("btn-done");
-        btn.textContent = "✓ KART HAZIR";
-        btn.disabled = true;
-        var row = btn.closest(".paper-row");
-        if (row) row.classList.add("has-card");
+        if (data && data.card) renderCard(data.card); // hemen göster
+        loadPapers(); // liste yenilensin → 'KARTI GÖR'
       })
       .catch(function (err) {
         toast(err.message, true);
@@ -266,6 +267,81 @@
         btn.textContent = "✕ HATA — TEKRAR DENE";
         btn.disabled = false;
       });
+  }
+
+  // ---------- bilgi kartı görüntüleme ----------
+  var cardModal = document.getElementById("cardModal");
+  var cardBody = document.getElementById("cardBody");
+
+  function showCardModal() {
+    cardModal.classList.remove("hidden");
+  }
+  function hideCardModal() {
+    cardModal.classList.add("hidden");
+  }
+  document.getElementById("cardClose").addEventListener("click", hideCardModal);
+  cardModal.addEventListener("click", function (e) {
+    if (e.target === cardModal) hideCardModal(); // dışına tıkla → kapat
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") hideCardModal();
+  });
+
+  function viewCard(paperId) {
+    cardBody.innerHTML = '<div class="muted"><span class="spinner"></span> kart yükleniyor…</div>';
+    showCardModal();
+    api("/card/" + encodeURIComponent(paperId), { method: "GET" })
+      .then(function (data) {
+        renderCard(data.card);
+      })
+      .catch(function (err) {
+        cardBody.innerHTML = '<div class="result-body">Hata: ' + esc(err.message) + "</div>";
+      });
+  }
+
+  function _kcText(label, val) {
+    if (!val) return "";
+    return (
+      '<div class="kc-field"><div class="kc-label">' +
+      esc(label) +
+      '</div><p>' +
+      esc(val) +
+      "</p></div>"
+    );
+  }
+  function _kcList(label, arr) {
+    if (!arr || !arr.length) return "";
+    var items = arr
+      .map(function (x) {
+        return "<li>" + esc(x) + "</li>";
+      })
+      .join("");
+    return (
+      '<div class="kc-field"><div class="kc-label">' +
+      esc(label) +
+      '</div><ul>' +
+      items +
+      "</ul></div>"
+    );
+  }
+
+  function renderCard(c) {
+    c = c || {};
+    var meta = [c.year, c.domain].filter(Boolean).map(esc).join(" · ");
+    cardBody.innerHTML =
+      '<h3 class="kc-title">' +
+      esc(c.title || "(başlıksız)") +
+      "</h3>" +
+      (meta ? '<div class="kc-meta">' + meta + "</div>" : "") +
+      _kcText("Ana bulgu", c.main_claim) +
+      _kcText("Trading ilgisi", c.trading_relevance) +
+      _kcList("Yöntemler", c.methods) +
+      _kcList("Veri setleri", c.datasets) +
+      _kcList("Strateji hipotezleri", c.possible_strategy_hypotheses) +
+      _kcList("Risk uyarıları", c.risk_warnings) +
+      _kcList("Sınırlamalar", c.limitations) +
+      _kcList("Uygulama notları", c.implementation_notes);
+    showCardModal();
   }
 
   document.getElementById("refreshPapers").addEventListener("click", loadPapers);

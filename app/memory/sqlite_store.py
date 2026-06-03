@@ -257,6 +257,22 @@ class SqliteStore:
                 is not None
             )
 
+    def get_latest_knowledge_card(self, paper_id: str) -> dict | None:
+        """En son üretilmiş kartın JSON içeriğini döndür (yoksa None)."""
+        with self.session() as s:
+            row = s.scalar(
+                select(KnowledgeCard)
+                .where(KnowledgeCard.paper_id == paper_id)
+                .order_by(KnowledgeCard.created_at.desc())
+                .limit(1)
+            )
+            if row is None:
+                return None
+            try:
+                return json.loads(row.card_json)
+            except (json.JSONDecodeError, TypeError):
+                return None
+
     def save_strategy(self, **fields: Any) -> None:
         with self.session() as s:
             s.merge(Strategy(**fields))

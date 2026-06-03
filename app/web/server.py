@@ -191,6 +191,19 @@ def api_ask(req: AskRequest) -> AskResponse:
     )
 
 
+@app.get("/api/card/{paper_id}", response_model=CardResponse, dependencies=[api_auth])
+def api_get_card(paper_id: str) -> CardResponse:
+    """Kaydedilmiş bilgi kartını getir (LLM gerektirmez). Yoksa 404."""
+    from fastapi import HTTPException
+
+    from app.memory.sqlite_store import SqliteStore
+
+    card = SqliteStore().get_latest_knowledge_card(paper_id)
+    if card is None:
+        raise HTTPException(status_code=404, detail="Bu makale için henüz kart yok.")
+    return CardResponse(paper_id=paper_id, card=card, message="ok")
+
+
 @app.post("/api/card/{paper_id}", response_model=CardResponse, dependencies=[api_auth])
 def api_card(paper_id: str) -> CardResponse:
     from fastapi import HTTPException

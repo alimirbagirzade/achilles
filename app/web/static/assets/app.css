@@ -772,6 +772,101 @@ code {
   }
 }
 
+/* ---------- bilgi kartı: 'KARTI GÖR' butonu + modal ---------- */
+.card-view {
+  color: var(--pos);
+  border-color: var(--pos-border);
+  background: var(--pos-soft);
+}
+.card-view:hover {
+  color: var(--pos);
+  border-color: var(--pos);
+  background: var(--pos-soft);
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(2px);
+}
+.modal.hidden {
+  display: none;
+}
+.modal-box {
+  position: relative;
+  width: 100%;
+  max-width: 680px;
+  max-height: 84vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 24px 26px;
+  animation: rise 0.25s ease both;
+}
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink-dim);
+  cursor: pointer;
+  font-size: 14px;
+}
+.modal-close:hover {
+  color: var(--neg);
+  border-color: var(--neg-border);
+}
+
+.kc-title {
+  font-family: var(--display);
+  font-size: 21px;
+  margin: 0 4px 2px 0;
+  color: var(--ink);
+  padding-right: 30px;
+}
+.kc-meta {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 16px;
+}
+.kc-field {
+  margin-bottom: 14px;
+}
+.kc-label {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--primary);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.kc-field p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+}
+.kc-field ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: var(--ink);
+  font-size: 13.5px;
+}
+.kc-field li {
+  margin: 3px 0;
+}
+
 @media (max-width: 640px) {
   .topbar {
     flex-direction: column;

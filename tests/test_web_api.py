@@ -70,6 +70,27 @@ def test_card_unknown_paper_404(client: TestClient) -> None:
     assert r.status_code == 404
 
 
+def test_get_card_unknown_404(client: TestClient) -> None:
+    r = client.get("/api/card/paper_yok")
+    assert r.status_code == 404
+
+
+def test_get_card_after_save(client: TestClient) -> None:
+    from app.memory.sqlite_store import SqliteStore
+
+    s = SqliteStore()
+    s.upsert_paper(paper_id="paper_t1", file_hash="hcard1", source_path="/tmp/x.pdf", title="T")
+    s.save_knowledge_card(
+        card_id="card_t1",
+        paper_id="paper_t1",
+        model="test",
+        card={"paper_id": "paper_t1", "title": "T", "main_claim": "x"},
+    )
+    r = client.get("/api/card/paper_t1")
+    assert r.status_code == 200
+    assert r.json()["card"]["title"] == "T"
+
+
 # ---- güvenlik birim testleri ----
 def test_validate_pdf_rejects_non_pdf() -> None:
     with pytest.raises(fastapi.HTTPException):
