@@ -22,6 +22,8 @@ from app.config import configure_logging, get_settings
 from app.web import security
 from app.web.schemas import (
     AdapterOut,
+    ApproveCardResponse,
+    ApprovedCardsResponse,
     AskRequest,
     AskResponse,
     BacktestHistoryResponse,
@@ -31,6 +33,7 @@ from app.web.schemas import (
     BatchCardResponse,
     BatchCardResult,
     CardResponse,
+    CardReviewOut,
     ChainDatasetResponse,
     ConceptLinkOut,
     DatasetBuildResponse,
@@ -42,7 +45,11 @@ from app.web.schemas import (
     HypothesisBacktestResponse,
     HypothesisResult,
     IngestResponse,
+    PackageCodeOut,
+    PackageExportResponse,
     PaperOut,
+    PendingCardsResponse,
+    PineExportResponse,
     ResearchIterationOut,
     ResearchRequest,
     ResearchRunResponse,
@@ -736,6 +743,186 @@ async def api_backtest_csv(file: UploadFile = File(...)) -> BacktestResponse:
         backtest_id=bt_id,
         data_source=dest.name,
         n_bars=len(df),
+    )
+
+
+# ---------- kart onay ----------
+@app.get("/api/cards/pending", response_model=PendingCardsResponse, dependencies=[api_auth])
+def api_cards_pending() -> PendingCardsResponse:
+    """review_status=pending olan kartları listele."""
+    from app.memory.sqlite_store import SqliteStore
+
+    store = SqliteStore()
+    cards = store.list_pending_cards()
+    out = []
+    for c in cards:
+        card_data = c.get("card_json") or {}
+        out.append(
+            CardReviewOut(
+                card_id=c["card_id"],
+                paper_id=c["paper_id"],
+                model=c["model"],
+                trust_level=c["trust_level"],
+                review_status=c["review_status"],
+                lora_eligible=c["lora_eligible"],
+                difficulty=c["difficulty"],
+                stage=c["stage"],
+                created_at=c["created_at"],
+                title=card_data.get("title"),
+                main_claim=card_data.get("main_claim", ""),
+            )
+        )
+    return PendingCardsResponse(cards=out, total=len(out))
+
+
+@app.post(
+    "/api/card/{card_id}/approve", response_model=ApproveCardResponse, dependencies=[api_auth]
+)
+def api_approve_card(card_id: str) -> ApproveCardResponse:
+    """Kartı onayla: review_status=approved, lora_eligible=1."""
+    from app.memory.sqlite_store import SqliteStore
+
+    ok = SqliteStore().approve_card(card_id)
+    if not ok:
+        return ApproveCardResponse(card_id=card_id, status="not_found", message="Kart bulunamadı")
+    return ApproveCardResponse(
+        card_id=card_id, status="approved", message="Kart onaylandı, LoRA'ya girilebilir"
+    )
+
+
+@app.post("/api/card/{card_id}/reject", response_model=ApproveCardResponse, dependencies=[api_auth])
+def api_reject_card(card_id: str) -> ApproveCardResponse:
+    """Kartı reddet: review_status=rejected, lora_eligible=0."""
+    from app.memory.sqlite_store import SqliteStore
+
+    ok = SqliteStore().reject_card(card_id)
+    if not ok:
+        return ApproveCardResponse(card_id=card_id, status="not_found", message="Kart bulunamadı")
+    return ApproveCardResponse(card_id=card_id, status="rejected", message="Kart reddedildi")
+
+
+@app.get("/api/cards/approved", response_model=ApprovedCardsResponse, dependencies=[api_auth])
+def api_cards_approved(
+    difficulty_min: float = 0.0,
+    difficulty_max: float = 1.0,
+) -> ApprovedCardsResponse:
+    """Onaylı kartları döndür (opsiyonel difficulty filtresi)."""
+    from app.memory.sqlite_store import SqliteStore
+
+    store = SqliteStore()
+    cards = store.list_approved_cards(difficulty_min=difficulty_min, difficulty_max=difficulty_max)
+    out = []
+    for c in cards:
+        card_data = c.get("card_json") or {}
+        out.append(
+            CardReviewOut(
+                card_id=c["card_id"],
+                paper_id=c["paper_id"],
+                model=c["model"],
+                trust_level=c["trust_level"],
+                review_status=c["review_status"],
+                lora_eligible=c["lora_eligible"],
+                difficulty=c["difficulty"],
+                stage=c["stage"],
+                created_at=c["created_at"],
+                title=card_data.get("title"),
+                main_claim=card_data.get("main_claim", ""),
+            )
+        )
+    return ApprovedCardsResponse(
+        cards=out,
+        total=len(out),
+        difficulty_min=difficulty_min,
+        difficulty_max=difficulty_max,
+    )
+
+
+# ---------- Pine Script export (backtest → TradingView) ----------
+@app.get(
+    "/api/backtest/{backtest_id}/pine",
+    response_model=PineExportResponse,
+    dependencies=[api_auth],
+)
+def api_backtest_pine(backtest_id: str) -> PineExportResponse:
+    """Backtest ID'ye ait StrategyIR'i Pine Script v5'e çevir (TradingView köprüsü için)."""
+    from fastapi import HTTPException
+    from sqlalchemy import select
+
+    from app.memory.sqlite_store import Backtest, SqliteStore, Strategy
+    from app.trading.strategy_ir import StrategyIR
+
+    store = SqliteStore()
+    with store.session() as s:
+        bt = s.scalars(select(Backtest).where(Backtest.backtest_id == backtest_id)).first()
+        if bt is None:
+            raise HTTPException(status_code=404, detail=f"Backtest bulunamadı: {backtest_id}")
+        strat = s.get(Strategy, bt.strategy_id)
+        if strat is None:
+            raise HTTPException(status_code=404, detail="Bu backtest'e ait strateji bulunamadı.")
+        ir = StrategyIR.model_validate_json(strat.ir_json)
+
+    return PineExportResponse(
+        backtest_id=backtest_id,
+        strategy_name=ir.name,
+        market=ir.market,
+        timeframe=ir.timeframe,
+        pine_code=ir.to_pine(),
+    )
+
+
+# ---------- package export (Entropia) ----------
+@app.get(
+    "/api/strategy/{strategy_name}/export",
+    response_model=PackageExportResponse,
+    dependencies=[api_auth],
+)
+def api_export_package(strategy_name: str) -> PackageExportResponse:
+    """StrategyIR → .achpkg formatında Entropia-uyumlu paket döndür."""
+    from sqlalchemy import select
+
+    from app.memory.sqlite_store import SqliteStore, Strategy
+    from app.trading.package_exporter import export_strategy
+    from app.trading.strategy_ir import StrategyIR
+
+    store = SqliteStore()
+    with store.session() as s:
+        row = s.scalars(select(Strategy).where(Strategy.name == strategy_name)).first()
+    if row is None:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail=f"Strateji bulunamadı: {strategy_name}")
+
+    ir = StrategyIR.model_validate_json(row.ir_json)
+    pkg = export_strategy(ir)
+    return PackageExportResponse(
+        name=pkg.name,
+        version=pkg.version,
+        type=pkg.package_type,
+        source=pkg.source,
+        created_at=pkg.created_at,
+        backtest_verdict=pkg.backtest_verdict,
+        backtest_metrics=pkg.backtest_metrics,
+        code=PackageCodeOut(pine=pkg.pine_code, python=pkg.python_code),
+    )
+
+
+@app.post("/api/package/export", response_model=PackageExportResponse, dependencies=[api_auth])
+def api_export_package_from_ir(ir_json: dict) -> PackageExportResponse:
+    """Ham StrategyIR JSON'ından .achpkg üret (strateji DB'de kayıtlı olmak zorunda değil)."""
+    from app.trading.package_exporter import export_strategy
+    from app.trading.strategy_ir import StrategyIR
+
+    ir = StrategyIR.model_validate(ir_json)
+    pkg = export_strategy(ir)
+    return PackageExportResponse(
+        name=pkg.name,
+        version=pkg.version,
+        type=pkg.package_type,
+        source=pkg.source,
+        created_at=pkg.created_at,
+        backtest_verdict=pkg.backtest_verdict,
+        backtest_metrics=pkg.backtest_metrics,
+        code=PackageCodeOut(pine=pkg.pine_code, python=pkg.python_code),
     )
 
 

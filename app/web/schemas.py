@@ -267,3 +267,62 @@ class BatchCardResponse(BaseModel):
     skipped: int
     errors: int
     results: list[BatchCardResult]
+
+
+# ---------- Kart Onay (Curriculum) ----------
+class CardReviewOut(BaseModel):
+    card_id: str
+    paper_id: str
+    model: str
+    trust_level: str
+    review_status: str
+    lora_eligible: int
+    difficulty: float
+    stage: str
+    created_at: str
+    title: str | None = None
+    main_claim: str = ""
+
+
+class PendingCardsResponse(BaseModel):
+    cards: list[CardReviewOut]
+    total: int
+
+
+class ApproveCardResponse(BaseModel):
+    card_id: str
+    status: str  # "approved" | "rejected" | "not_found"
+    message: str
+
+
+class ApprovedCardsResponse(BaseModel):
+    cards: list[CardReviewOut]
+    total: int
+    difficulty_min: float
+    difficulty_max: float
+
+
+# ---------- Achilles Package (Entropia export) ----------
+class PackageCodeOut(BaseModel):
+    pine: str
+    python: str
+
+
+class PackageExportResponse(BaseModel):
+    name: str
+    version: str
+    type: str
+    source: str
+    created_at: str
+    backtest_verdict: str | None = None
+    backtest_metrics: dict = Field(default_factory=dict)
+    code: PackageCodeOut
+
+
+# ---------- TradingView Pine export ----------
+class PineExportResponse(BaseModel):
+    backtest_id: str
+    strategy_name: str
+    market: str
+    timeframe: str
+    pine_code: str

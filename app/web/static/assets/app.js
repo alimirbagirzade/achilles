@@ -85,6 +85,7 @@
       if (name === "trader") loadTraderBrain();
       if (name === "backtest") loadBacktestHistory();
       if (name === "training") loadTrainingStatus();
+      if (name === "review") loadPendingCards();
       if (name === "eval") loadEvalSets();
     });
   });
@@ -1237,13 +1238,73 @@
               '<div class="metric"><div class="k">işlem</div><div class="v">' + esc(r.n_trades) + "</div></div>" +
               "</div>" +
               (r.notes ? '<div class="hist-notes muted small">' + esc(r.notes) + "</div>" : "") +
+              '<div class="hist-actions">' +
+              '<button class="btn btn-pine" data-btid="' + esc(r.backtest_id) + '" title="Pine Script\'i göster ve kopyala">🌲 Pine Kopyala</button>' +
+              "</div>" +
               "</div>"
             );
           })
           .join("");
+
+        el.querySelectorAll(".btn-pine").forEach(function (b) {
+          b.addEventListener("click", function () { openPineModal(b.getAttribute("data-btid")); });
+        });
       })
       .catch(function (err) {
         el.innerHTML = '<div class="empty">Hata: ' + esc(err.message) + "</div>";
+      });
+  }
+
+  // ---------- Pine Script modal ----------
+  var pineModal = null;
+
+  function openPineModal(btId) {
+    if (!pineModal) {
+      pineModal = document.createElement("div");
+      pineModal.id = "pineModal";
+      pineModal.className = "modal";
+      pineModal.innerHTML =
+        '<div class="modal-box" style="max-width:700px">' +
+        '<button class="modal-close" id="pineClose">✕</button>' +
+        '<div id="pineBody"></div>' +
+        "</div>";
+      document.body.appendChild(pineModal);
+      document.getElementById("pineClose").addEventListener("click", function () {
+        pineModal.className = "modal hidden";
+      });
+    }
+    var body = document.getElementById("pineBody");
+    body.innerHTML = '<div class="result-section"><span class="spinner"></span> yükleniyor…</div>';
+    pineModal.className = "modal";
+
+    api("/backtest/" + btId + "/pine", { method: "GET" })
+      .then(function (d) {
+        body.innerHTML =
+          '<div class="result-section">' +
+          '<div class="result-label">strateji</div>' +
+          '<b>' + esc(d.strategy_name) + '</b> · ' + esc(d.market) + '/' + esc(d.timeframe) +
+          '</div>' +
+          '<div class="result-section">' +
+          '<div class="result-label" style="display:flex;justify-content:space-between">' +
+          '<span>Pine Script v5</span>' +
+          '<button class="btn" id="copyPineBtn">📋 Panoya Kopyala</button>' +
+          '</div>' +
+          '<pre class="pine-code" id="pineCodePre" style="white-space:pre-wrap;font-size:12px;overflow:auto;max-height:400px">' +
+          esc(d.pine_code) + '</pre>' +
+          '</div>' +
+          '<p class="muted small" style="margin-top:8px">' +
+          'TradingView → Pine Script Editörü → Yeni → Kodu yapıştır → Derle → Strateji Tester' +
+          '</p>';
+        document.getElementById("copyPineBtn").addEventListener("click", function () {
+          navigator.clipboard.writeText(d.pine_code).then(function () {
+            toast("Pine Script panoya kopyalandı ✓");
+          }).catch(function () {
+            toast("Kopyalanamadı — kodu elle seç.", true);
+          });
+        });
+      })
+      .catch(function (err) {
+        body.innerHTML = '<div class="result-section result-body">Hata: ' + esc(err.message) + "</div>";
       });
   }
 
@@ -1290,6 +1351,78 @@
           customBtBtn.textContent = "ÖZEL IR ÇALIŞTIR →";
         });
     });
+  }
+
+  // ---------- kart onay ----------
+  function loadPendingCards() {
+    var container = document.getElementById("pending-cards-list");
+    if (!container) return;
+    container.innerHTML = '<div class="empty"><span class="spinner"></span> yükleniyor…</div>';
+    api("/cards/pending", { method: "GET" })
+      .then(function (data) {
+        if (!data.cards || data.cards.length === 0) {
+          container.innerHTML = '<p style="color:#94a3b8">Onay bekleyen kart yok.</p>';
+        } else {
+          var html = '<p style="color:#94a3b8;margin-bottom:8px">' + data.total + ' kart onay bekliyor</p>';
+          data.cards.forEach(function (card) {
+            var diffPct = Math.round(card.difficulty * 100);
+            var stageLabel = card.stage || "—";
+            html +=
+              '<div style="border:1px solid var(--border);border-radius:var(--radius);padding:10px;margin-bottom:8px">' +
+              '<div style="display:flex;justify-content:space-between;align-items:center">' +
+              '<div>' +
+              '<strong>' + esc(card.title || card.paper_id) + "</strong>" +
+              '<span class="badge badge-warning" style="margin-left:8px">' + esc(stageLabel) + "</span>" +
+              '<span class="badge badge-info" style="margin-left:4px">zorluk %' + diffPct + "</span>" +
+              "</div>" +
+              '<div style="display:flex;gap:8px">' +
+              '<button class="btn btn-success btn-approve" data-card-id="' + esc(card.card_id) + '" style="padding:4px 12px">✓ Onayla</button>' +
+              '<button class="btn btn-danger btn-reject" data-card-id="' + esc(card.card_id) + '" style="padding:4px 12px">✗ Reddet</button>' +
+              "</div></div>" +
+              '<p style="color:#94a3b8;margin-top:6px;font-size:12px">' + esc(card.main_claim || "") + "</p>" +
+              '<small style="color:#94a3b8">kart: ' + esc(card.card_id) + " · model: " + esc(card.model) + "</small>" +
+              "</div>";
+          });
+          container.innerHTML = html;
+          container.querySelectorAll(".btn-approve").forEach(function (btn) {
+            btn.addEventListener("click", function () {
+              var cid = btn.getAttribute("data-card-id");
+              api("/card/" + encodeURIComponent(cid) + "/approve", { method: "POST" })
+                .then(function (d) {
+                  toast(d.message);
+                  loadPendingCards();
+                })
+                .catch(function (err) { toast(err.message, true); });
+            });
+          });
+          container.querySelectorAll(".btn-reject").forEach(function (btn) {
+            btn.addEventListener("click", function () {
+              var cid = btn.getAttribute("data-card-id");
+              api("/card/" + encodeURIComponent(cid) + "/reject", { method: "POST" })
+                .then(function (d) {
+                  toast(d.message);
+                  loadPendingCards();
+                })
+                .catch(function (err) { toast(err.message, true); });
+            });
+          });
+        }
+        // Onaylananlar özeti
+        api("/cards/approved", { method: "GET" })
+          .then(function (d) {
+            var el = document.getElementById("approved-cards-summary");
+            if (el) el.textContent = d.total + " onaylı kart · LoRA'ya girebilir";
+          })
+          .catch(function () {});
+      })
+      .catch(function (err) {
+        container.innerHTML = '<div class="empty">Hata: ' + esc(err.message) + "</div>";
+      });
+  }
+
+  var btnLoadPending = document.getElementById("btn-load-pending");
+  if (btnLoadPending) {
+    btnLoadPending.addEventListener("click", loadPendingCards);
   }
 
   // ---------- token ----------
