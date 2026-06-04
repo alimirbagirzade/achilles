@@ -24,7 +24,7 @@
 | **Pine Script export** | ✅ | `achilles pine` → TradingView v5 taslak |
 | **Web arayüzü** | ✅ | 7 sekme · toplu kart · kart→backtest · eval UI |
 | **Araştırma döngüsü** | 🔄 | Gerçek 71k bar · 2400+ işlem üretiyor · drawdown optimizasyonu devam ediyor |
-| **arXiv otomatik çekme** | 📋 | Planlandı (arxiv-research skili) |
+| **arXiv otomatik çekme** | ✅ | `achilles arxiv "sorgu"` + web UI + `/api/arxiv/*` |
 | **Pine→TradingView push** | 📋 | Planlandı (TradingView MCP entegrasyonu) |
 
 ### Son aktiviteler
@@ -117,6 +117,8 @@ ollama pull nomic-embed-text   # embedding modeli
 | `achilles init` | Dizinleri ve SQLite şemasını oluşturur |
 | `achilles status` | Sistem durumu (Ollama, embedding modu, sayımlar) |
 | `achilles ingest` | `data/papers/raw_pdf/` içindeki PDF'leri indeksler (idempotent) |
+| `achilles arxiv "sorgu"` | arXiv'de ara → PDF'leri indir → otomatik indeksle |
+| `achilles arxiv "sorgu" --search-only` | Yalnız ara, indirme |
 | `achilles papers` | İndekslenmiş makaleleri listeler |
 | `achilles ask "soru"` | RAG ile kaynaklı yanıt (5 bölümlü disiplinli format) |
 | `achilles card <paper_id>` | Yapılandırılmış bilgi kartı üretir |
