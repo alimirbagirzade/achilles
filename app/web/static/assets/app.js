@@ -1325,6 +1325,7 @@
               (r.notes ? '<div class="hist-notes muted small">' + esc(r.notes) + "</div>" : "") +
               '<div class="hist-actions">' +
               '<button class="btn btn-pine" data-btid="' + esc(r.backtest_id) + '" title="Pine Script\'i göster ve kopyala">🌲 Pine Kopyala</button>' +
+              '<button class="btn btn-risk" data-btid="' + esc(r.backtest_id) + '" title="Kelly + drawdown risk analizi">⚖ Risk Analizi</button>' +
               "</div>" +
               "</div>"
             );
@@ -1333,6 +1334,9 @@
 
         el.querySelectorAll(".btn-pine").forEach(function (b) {
           b.addEventListener("click", function () { openPineModal(b.getAttribute("data-btid")); });
+        });
+        el.querySelectorAll(".btn-risk").forEach(function (b) {
+          b.addEventListener("click", function () { openRiskModal(b.getAttribute("data-btid")); });
         });
       })
       .catch(function (err) {
@@ -1390,6 +1394,68 @@
       })
       .catch(function (err) {
         body.innerHTML = '<div class="result-section result-body">Hata: ' + esc(err.message) + "</div>";
+      });
+  }
+
+  // ---------- Risk Analizi modal ----------
+  var riskModalEl = document.getElementById("riskModal");
+  if (riskModalEl) {
+    document.getElementById("riskClose").addEventListener("click", function () {
+      riskModalEl.className = "modal hidden";
+    });
+  }
+
+  function openRiskModal(btId) {
+    var body = document.getElementById("riskBody");
+    body.innerHTML = '<div class="result-section"><span class="spinner"></span> risk hesaplanıyor…</div>';
+    riskModalEl.className = "modal";
+
+    api("/backtest/" + btId + "/risk?equity_usd=10000&max_dd_pct=-20&risk_pct=1&stop_pct=2", { method: "GET" })
+      .then(function (d) {
+        var k = d.kelly;
+        var dd = d.drawdown_scale;
+        var fr = d.fixed_risk;
+        var warnHtml = d.warnings.length
+          ? '<div class="result-section"><div class="result-label">⚠ uyarılar</div>' +
+            d.warnings.map(function (w) { return '<div class="muted small">' + esc(w) + '</div>'; }).join("") +
+            '</div>'
+          : "";
+        body.innerHTML =
+          '<div class="result-section"><div class="result-label">strateji — risk analizi</div>' +
+          '<b>' + esc(d.strategy_name) + '</b>  ·  ' + d.n_trades + ' işlem' +
+          '</div>' +
+
+          '<div class="result-section"><div class="result-label">Kelly Kriteri</div>' +
+          '<div class="risk-grid">' +
+          '<div class="risk-item"><div class="k">Kazanma oranı</div><div class="v">' + (k.win_rate*100).toFixed(1) + '%</div></div>' +
+          '<div class="risk-item"><div class="k">Ort. kazanç</div><div class="v pos">' + (k.avg_win*100).toFixed(2) + '%</div></div>' +
+          '<div class="risk-item"><div class="k">Ort. kayıp</div><div class="v neg">-' + (k.avg_loss*100).toFixed(2) + '%</div></div>' +
+          '<div class="risk-item"><div class="k">Odds (b)</div><div class="v">' + k.odds.toFixed(2) + '</div></div>' +
+          '<div class="risk-item"><div class="k">Tam Kelly</div><div class="v">' + (k.full_kelly*100).toFixed(1) + '%</div></div>' +
+          '<div class="risk-item"><div class="k">Yarı Kelly</div><div class="v pos">' + (k.half_kelly*100).toFixed(1) + '%</div></div>' +
+          '<div class="risk-item"><div class="k">Çeyrek Kelly</div><div class="v">' + (k.quarter_kelly*100).toFixed(1) + '%</div></div>' +
+          '<div class="risk-item"><div class="k">Sınırlı Kelly</div><div class="v pos"><b>' + (k.capped_kelly*100).toFixed(1) + '%</b></div></div>' +
+          '</div></div>' +
+
+          '<div class="result-section"><div class="result-label">Drawdown Ölçekleme (eşik: ' + dd.max_allowed_pct + '%)</div>' +
+          '<div class="risk-grid">' +
+          '<div class="risk-item"><div class="k">Anlık DD</div><div class="v ' + (dd.in_drawdown_zone ? 'neg' : '') + '">' + dd.current_drawdown_pct.toFixed(1) + '%</div></div>' +
+          '<div class="risk-item"><div class="k">Ölçek faktörü</div><div class="v ' + (dd.scale_factor < 1 ? 'neg' : 'pos') + '">' + (dd.scale_factor*100).toFixed(0) + '%</div></div>' +
+          '<div class="risk-item"><div class="k">DD bölgesi</div><div class="v ' + (dd.in_drawdown_zone ? 'neg' : 'pos') + '">' + (dd.in_drawdown_zone ? '⚠ EVET' : '✓ HAYIR') + '</div></div>' +
+          '</div></div>' +
+
+          '<div class="result-section"><div class="result-label">Sabit Risk (sermaye: 10.000 $, risk: %1, stop: %2)</div>' +
+          '<div class="risk-grid">' +
+          '<div class="risk-item"><div class="k">Pozisyon %</div><div class="v">' + fr.position_size_pct.toFixed(1) + '%</div></div>' +
+          '<div class="risk-item"><div class="k">Pozisyon $</div><div class="v"><b>' + fr.position_size_usd.toLocaleString() + ' $</b></div></div>' +
+          '</div></div>' +
+
+          warnHtml +
+          '<div class="result-section"><div class="result-label">öneri</div>' +
+          '<div class="result-body muted small">' + esc(d.recommendation) + '</div></div>';
+      })
+      .catch(function (err) {
+        body.innerHTML = '<div class="result-section result-body">Hata: ' + esc(err.message) + '</div>';
       });
   }
 

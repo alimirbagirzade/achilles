@@ -328,6 +328,43 @@ class PineExportResponse(BaseModel):
     pine_code: str
 
 
+# ---------- Risk manager ----------
+class KellyOut(BaseModel):
+    win_rate: float
+    avg_win: float
+    avg_loss: float
+    odds: float
+    full_kelly: float
+    half_kelly: float
+    quarter_kelly: float
+    capped_kelly: float
+
+
+class DrawdownScaleOut(BaseModel):
+    current_drawdown_pct: float
+    max_allowed_pct: float
+    scale_factor: float
+    in_drawdown_zone: bool
+
+
+class FixedRiskOut(BaseModel):
+    equity: float
+    risk_per_trade_pct: float
+    stop_distance_pct: float
+    position_size_pct: float
+    position_size_usd: float
+
+
+class RiskReportResponse(BaseModel):
+    strategy_name: str
+    n_trades: int
+    kelly: KellyOut
+    drawdown_scale: DrawdownScaleOut
+    fixed_risk: FixedRiskOut
+    warnings: list[str] = Field(default_factory=list)
+    recommendation: str
+
+
 # ---------- arXiv ----------
 class ArxivEntryOut(BaseModel):
     arxiv_id: str

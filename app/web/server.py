@@ -42,14 +42,17 @@ from app.web.schemas import (
     ChainDatasetResponse,
     ConceptLinkOut,
     DatasetBuildResponse,
+    DrawdownScaleOut,
     EvalResultRow,
     EvalRunRequest,
     EvalRunResponse,
     EvalSetOut,
+    FixedRiskOut,
     FormulaOut,
     HypothesisBacktestResponse,
     HypothesisResult,
     IngestResponse,
+    KellyOut,
     PackageCodeOut,
     PackageExportResponse,
     PaperOut,
@@ -59,6 +62,7 @@ from app.web.schemas import (
     ResearchRequest,
     ResearchRunResponse,
     ResearchSessionOut,
+    RiskReportResponse,
     SourceOut,
     StatusResponse,
     TrainDryRunRequest,
@@ -839,6 +843,70 @@ def api_cards_approved(
         total=len(out),
         difficulty_min=difficulty_min,
         difficulty_max=difficulty_max,
+    )
+
+
+# ---------- Risk manager ----------
+@app.get(
+    "/api/backtest/{backtest_id}/risk",
+    response_model=RiskReportResponse,
+    dependencies=[api_auth],
+)
+def api_backtest_risk(
+    backtest_id: str,
+    equity_usd: float = 10_000.0,
+    max_dd_pct: float = -20.0,
+    risk_pct: float = 1.0,
+    stop_pct: float = 2.0,
+) -> RiskReportResponse:
+    """Backtest ID için Kelly + drawdown ölçekleme + sabit risk raporu üret."""
+    from fastapi import HTTPException
+    from sqlalchemy import select
+
+    from app.memory.sqlite_store import Backtest, SqliteStore, Strategy
+    from app.trading.backtester import _compute_columns, _position_series
+    from app.trading.market_data_loader import generate_synthetic_ohlcv
+    from app.trading.risk_manager import analyze_risk
+    from app.trading.strategy_ir import StrategyIR
+
+    store = SqliteStore()
+    with store.session() as s:
+        bt = s.scalars(select(Backtest).where(Backtest.backtest_id == backtest_id)).first()
+        if bt is None:
+            raise HTTPException(status_code=404, detail=f"Backtest bulunamadı: {backtest_id}")
+        strat = s.get(Strategy, bt.strategy_id)
+        if strat is None:
+            raise HTTPException(status_code=404, detail="Strateji bulunamadı.")
+        ir = StrategyIR.model_validate_json(strat.ir_json)
+
+    # Sentetik veriyle risk hesabı (gerçek CSV saklanmıyor, senkron hesaplama)
+    df = generate_synthetic_ohlcv(n=2000, seed=42)
+    enriched = _compute_columns(df, ir)
+    position = _position_series(enriched, ir)
+    bar_ret = enriched["close"].pct_change().fillna(0.0)
+    net_ret = position.shift(1).fillna(0.0) * bar_ret
+    equity_curve = (1 + net_ret).cumprod()
+
+    report = analyze_risk(
+        strategy_name=ir.name,
+        equity_curve=equity_curve,
+        position=position,
+        returns=net_ret,
+        equity_usd=equity_usd,
+        max_dd_threshold_pct=max_dd_pct,
+        risk_per_trade_pct=risk_pct,
+        atr_stop_pct=stop_pct,
+    )
+
+    d = report.to_dict()
+    return RiskReportResponse(
+        strategy_name=d["strategy_name"],
+        n_trades=d["n_trades"],
+        kelly=KellyOut(**d["kelly"]),
+        drawdown_scale=DrawdownScaleOut(**d["drawdown_scale"]),
+        fixed_risk=FixedRiskOut(**d["fixed_risk"]),
+        warnings=d["warnings"],
+        recommendation=d["recommendation"],
     )
 
 

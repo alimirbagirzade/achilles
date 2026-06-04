@@ -578,6 +578,80 @@ def export_package(
         console.print(pkg.to_json())
 
 
+@app.command("risk")
+def risk_analyze(
+    backtest_id: str = typer.Argument(..., help="Backtest ID (örn. bt_cd00c55600)"),
+    equity: float = typer.Option(10_000.0, help="Başlangıç sermayesi ($)"),
+    max_dd: float = typer.Option(-20.0, help="Max drawdown eşiği % (örn. -20)"),
+    risk_pct: float = typer.Option(1.0, help="İşlem başına risk %"),
+    stop_pct: float = typer.Option(2.0, help="Stop mesafesi %"),
+) -> None:
+    """Bir backtest için Kelly + drawdown ölçekleme + sabit risk raporu üret."""
+    from sqlalchemy import select
+
+    from app.memory.sqlite_store import Backtest, SqliteStore, Strategy
+    from app.trading.backtester import _compute_columns, _position_series
+    from app.trading.market_data_loader import generate_synthetic_ohlcv
+    from app.trading.risk_manager import analyze_risk
+    from app.trading.strategy_ir import StrategyIR
+
+    store = SqliteStore()
+    with store.session() as s:
+        bt = s.scalars(select(Backtest).where(Backtest.backtest_id == backtest_id)).first()
+        if bt is None:
+            console.print(f"[red]Backtest bulunamadı: {backtest_id}[/red]")
+            raise typer.Exit(1)
+        strat = s.get(Strategy, bt.strategy_id)
+        if strat is None:
+            console.print("[red]Strateji bulunamadı.[/red]")
+            raise typer.Exit(1)
+        ir = StrategyIR.model_validate_json(strat.ir_json)
+
+    df = generate_synthetic_ohlcv(n=2000, seed=42)
+    enriched = _compute_columns(df, ir)
+    position = _position_series(enriched, ir)
+    bar_ret = enriched["close"].pct_change().fillna(0.0)
+    net_ret = position.shift(1).fillna(0.0) * bar_ret
+    equity_curve = (1 + net_ret).cumprod()
+
+    report = analyze_risk(
+        strategy_name=ir.name,
+        equity_curve=equity_curve,
+        position=position,
+        returns=net_ret,
+        equity_usd=equity,
+        max_dd_threshold_pct=max_dd,
+        risk_per_trade_pct=risk_pct,
+        atr_stop_pct=stop_pct,
+    )
+
+    k = report.kelly
+    dd = report.drawdown_scale
+    fr = report.fixed_risk
+
+    t = Table(title=f"Risk Analizi — {ir.name}")
+    t.add_column("Metrik")
+    t.add_column("Değer")
+    t.add_row("İşlem sayısı", str(report.n_trades))
+    t.add_row("Kazanma oranı", f"{k.win_rate:.1%}")
+    t.add_row("Ort. kazanç / kayıp", f"+{k.avg_win:.2%} / -{k.avg_loss:.2%}")
+    t.add_row("Odds (b)", f"{k.odds:.2f}")
+    t.add_row("Tam Kelly", f"{k.full_kelly:.1%}")
+    t.add_row("Yarı Kelly (önerilen)", f"[green]{k.half_kelly:.1%}[/green]")
+    t.add_row("Sınırlı Kelly (max %25)", f"[cyan]{k.capped_kelly:.1%}[/cyan]")
+    t.add_row("Anlık drawdown", f"{dd.current_drawdown_pct:.1f}%")
+    t.add_row("Ölçek faktörü", f"{dd.scale_factor:.2f}")
+    t.add_row("Sabit risk pozisyonu %", f"{fr.position_size_pct:.1f}%")
+    t.add_row("Sabit risk pozisyonu $", f"${fr.position_size_usd:,.0f}")
+    console.print(t)
+
+    if report.warnings:
+        for w in report.warnings:
+            console.print(f"  [yellow]⚠[/yellow] {w}")
+
+    console.print(Panel(report.recommendation, title="Öneri", border_style="cyan"))
+
+
 @app.command("arxiv")
 def arxiv_fetch(
     query: str = typer.Argument(..., help="Arama sorgusu, örn: 'momentum trading volatility'"),
