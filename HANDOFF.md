@@ -1,6 +1,6 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-06-03 · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Son güncelleme: 2026-06-04 · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon).
 **Canlı bot değil, yatırım tavsiyesi değil.** Tam akış:
@@ -19,9 +19,9 @@ LLM'i **"trader gibi düşünen"** bir araştırma motoru yapmak:
 5. Tüm zinciri **LoRA eğitim verisi** olarak kullan
 6. 3B model mimiriyi test eder; gerçek çıktı için 120B kullanılacak
 
-### Mevcut durum (2026-06-04 — son commit)
-- **208 test** geçiyor · ruff+mypy temiz · Python 3.12
-- **7 sekme** web UI: Araştırma · Makaleler · Trader Beyin · Backtest · Eğitim · Değerlendirme · Sistem
+### Mevcut durum (2026-06-04 — son commit: d24cb1a)
+- **217 test** geçiyor · ruff+mypy temiz · Python 3.12
+- **8 sekme** web UI: Araştırma · Makaleler · Trader Beyin · Backtest · Eğitim · Onay · Değerlendirme · Sistem
 - **`app/research/`** modülü TAMAMLANDI (bkz. aşağıdaki tablo)
 - **Advanced RAG katmanı** EKLENDI — 37 yeni dosya (verification, evals, reliability)
 - **LoRA:** `achilles_lora_v2` eğitildi (300 iter, loss 0.028, 2GB peak)
@@ -111,6 +111,30 @@ LLM'i **"trader gibi düşünen"** bir araştırma motoru yapmak:
    - API: `GET /api/strategy/{name}/export` + `POST /api/package/export`
    - **176 test** — hepsi yeşil · ruff+mypy sıfır hata
 
+### Bu seansta TAMAMLANANLAR ✅ (2026-06-04 — oturum 3)
+
+16. **✅ README web kılavuzu tam güncelleme**
+    - 8 sekme (03·TRADER BEYİN + 06·ONAY eklendi), numaralar düzeltildi
+    - 12 yaş seviyesinde analoji+tablo formatı
+
+17. **✅ TradingView MCP köprüsü**
+    - `GET /api/backtest/{id}/pine` endpoint'i → Pine Script v5 döndürür
+    - `PineExportResponse` şeması
+    - Web UI: backtest geçmişinde **🌲 Pine Kopyala** butonu + modal
+    - `.claude/skills/tv-bridge/skill.md` → `/tv-bridge` skill'i
+
+18. **✅ arXiv otomatik makale çekme**
+    - `app/ingestion/arxiv_fetcher.py` (search + fetch, httpx, idempotent)
+    - CLI: `achilles arxiv "sorgu" --max 5 --search-only`
+    - API: `GET /api/arxiv/search` + `POST /api/arxiv/fetch`
+    - Web UI: MAKALELER sekmesinde "arXiv'den Makale Çek" bölümü
+
+19. **✅ Risk manager modülü**
+    - `app/trading/risk_manager.py`: Kelly kriteri, drawdown ölçekleme, sabit risk
+    - CLI: `achilles risk <backtest_id> [--equity 10000 --max-dd -20]`
+    - API: `GET /api/backtest/{id}/risk`
+    - Web UI: backtest geçmişinde **⚖ Risk Analizi** butonu + modal (Kelly grid)
+
 ### ⚡ YENİ SEANS BAŞLANGICI — KULLANICIYA SOR
 
 > **Claude: Bir sonraki seansta aşağıdaki listeden kullanıcıya seçim yaptır. Hemen koda girme.**
@@ -119,31 +143,32 @@ LLM'i **"trader gibi düşünen"** bir araştırma motoru yapmak:
 
 ## 🗺️ DEVAM SEÇENEKLERİ (kullanıcıya sor)
 
-### 🔴 Kalite borcu — core işlevlerde düzeltilmemiş şeyler
+### 🔴 Kalite borcu — düzeltilmemiş şeyler
 
-| # | Sorun | Dosya |
+| # | Sorun | Durum |
 |----|-------|-------|
-| ~~1~~ | ~~Araştırma döngüsü — az işlem FAIL döngüsü~~ | ✅ **DÜZELTILDI** |
-| ~~2~~ | ~~Pine Script — Stochastic, VWAP, Supertrend eksik~~ | ✅ **EKLENDI** |
-| ~~3~~ | ~~Package exporter — commission_value yüzde~~ | ✅ **DÜZELTILDI** |
+| ~~1~~ | Araştırma döngüsü — az işlem FAIL döngüsü | ✅ |
+| ~~2~~ | Pine Script — Stochastic, VWAP, Supertrend eksik | ✅ |
+| ~~3~~ | Package exporter — commission_value yüzde | ✅ |
 
-### 🟡 Eksik ama planlanmış özellikler
+### 🟡 Kalan planlanmış özellikler
 
 | # | Özellik | Neden önemli |
 |---|---------|--------------|
-| 4 | **TradingView MCP köprüsü** | Achilles Pine Script üretiyor → MCP ile direkt TradingView'a yükle → sonuçları al → araştırma döngüsü kapanır. **MCP araçları kurulu!** |
-| 5 | **arXiv otomatik çekme** | 7 PDF ile sınırlıyız; arXiv'den trading araştırması otomatik ingest edilmeli |
-| 6 | **Web UI paket/pine export butonu** | Strateji/backtest kartında "📦 .achpkg İndir" + "🌲 Pine'a Gönder" butonu yok |
-| 7 | **Risk manager modülü** | Kelly kriteri + max drawdown tabanlı pozisyon büyüklüğü |
+| ~~4~~ | ~~TradingView MCP köprüsü~~ | ✅ **TAMAMLANDI** |
+| ~~5~~ | ~~arXiv otomatik çekme~~ | ✅ **TAMAMLANDI** |
+| ~~6~~ | ~~Web UI pine export butonu~~ | ✅ **TAMAMLANDI** |
+| ~~7~~ | ~~Risk manager modülü~~ | ✅ **TAMAMLANDI** |
 | 8 | **Faz 4 DPO altyapısı** | 500+ onaylı not gerekiyor; önce kart biriktirmek lazım |
 
-### 🟢 Küçük / hızlı
+### 🟢 Yeni küçük / hızlı görevler
 
-| # | Görev | Süre |
-|---|-------|------|
-| ~~9~~ | ~~`achilles status` onay bekleyen kart~~ | ✅ |
-| ~~10~~ | ~~Backtest verdict → export-package~~ | ✅ |
-| ~~11~~ | ~~`.achpkg` TypeScript tip tanımı~~ | ✅ |
+| # | Görev | Süre tahmini |
+|---|-------|--------------|
+| 12 | **TV köprüsü canlı testi** | TV güncelleme sonrası `/tv-bridge` skill çalıştır |
+| 13 | **arXiv sorgu kütüphanesi** | Önerilen arama sorgularını kaydet, otomatik çalıştır |
+| 14 | **Risk raporu → SQLite kaydet** | `analyze_risk()` sonucunu DB'ye persist et |
+| 15 | **Web UI: .achpkg İndir butonu** | Backtest kartında `GET /api/strategy/{name}/export` tetikle |
 
 ### 🔵 Büyük / ileriki — şimdi yapılmaz
 
@@ -155,11 +180,11 @@ LLM'i **"trader gibi düşünen"** bir araştırma motoru yapmak:
 
 ---
 
-**Önerilen sıra:**
-- **A)** TradingView MCP köprüsü (4) — en yüksek etki
-- **B)** Araştırma döngüsü fix (1) — core kalite
-- **C)** arXiv otomatik çekme (5) — daha fazla bilgi
-- **D)** Küçük görevler (9, 10, 11) — hızlı kazanımlar
+**Önerilen sıra (sonraki seans):**
+- **A)** TradingView canlı test (TV güncellendikten sonra) — köprü hazır, test eksik
+- **B)** Risk raporu SQLite persist + backtest sonucuyla birlikte göster (14)
+- **C)** .achpkg İndir butonu (15) — web UI tamamlama
+- **D)** arXiv sorgu kütüphanesi (13) — otomatik literatür tarama
 
 ---
 
