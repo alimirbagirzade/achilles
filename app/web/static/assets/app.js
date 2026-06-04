@@ -233,6 +233,91 @@
       "</div></div>";
   }
 
+  // ---------- arXiv ----------
+  var arxivSearchBtn = document.getElementById("arxivSearchBtn");
+  var arxivFetchBtn  = document.getElementById("arxivFetchBtn");
+
+  function getArxivParams() {
+    var q = (document.getElementById("arxivQuery").value || "").trim();
+    var max = parseInt(document.getElementById("arxivMax").value, 10) || 5;
+    return { q: q, max: Math.min(Math.max(max, 1), 20) };
+  }
+
+  if (arxivSearchBtn) {
+    arxivSearchBtn.addEventListener("click", function () {
+      var p = getArxivParams();
+      if (p.q.length < 3) { toast("Sorgu çok kısa.", true); return; }
+      var res = document.getElementById("arxivResult");
+      arxivSearchBtn.disabled = true;
+      res.className = "result";
+      res.innerHTML = '<div class="result-section"><span class="spinner"></span> arXiv aranıyor…</div>';
+      api("/arxiv/search?q=" + encodeURIComponent(p.q) + "&max=" + p.max, { method: "GET" })
+        .then(function (d) {
+          if (!d.results || !d.results.length) {
+            res.innerHTML = '<div class="result-section muted">Sonuç bulunamadı.</div>';
+            return;
+          }
+          var rows = d.results.map(function (e) {
+            return (
+              '<div class="arxiv-row">' +
+              '<div class="arxiv-title">' + esc(e.title) + '</div>' +
+              '<div class="muted small">' + esc(e.arxiv_id) + ' · ' + esc(e.published) +
+              (e.authors.length ? ' · ' + esc(e.authors.slice(0, 2).join(", ")) + (e.authors.length > 2 ? ' et al.' : '') : '') +
+              '</div>' +
+              '<div class="arxiv-abstract muted small">' + esc((e.abstract || "").slice(0, 180)) + '…</div>' +
+              '</div>'
+            );
+          }).join("");
+          res.innerHTML =
+            '<div class="result-section"><div class="result-label">' + d.total + ' sonuç — "' + esc(d.query) + '"</div>' +
+            rows + '</div>';
+        })
+        .catch(function (err) {
+          res.innerHTML = '<div class="result-section">Hata: ' + esc(err.message) + '</div>';
+        })
+        .finally(function () { arxivSearchBtn.disabled = false; });
+    });
+  }
+
+  if (arxivFetchBtn) {
+    arxivFetchBtn.addEventListener("click", function () {
+      var p = getArxivParams();
+      if (p.q.length < 3) { toast("Sorgu çok kısa.", true); return; }
+      var res = document.getElementById("arxivResult");
+      arxivFetchBtn.disabled = true;
+      arxivFetchBtn.innerHTML = '<span class="spinner"></span>İNDİRİLİYOR';
+      res.className = "result";
+      res.innerHTML = '<div class="result-section"><span class="spinner"></span> PDF\'ler indiriliyor + indeksleniyor…</div>';
+      api("/arxiv/fetch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: p.q, max_results: p.max, auto_ingest: true }),
+      })
+        .then(function (d) {
+          var rows = (d.results || []).map(function (r) {
+            var badge = r.skipped
+              ? '<span class="badge badge-warn">zaten var</span>'
+              : '<span class="badge badge-success">indirildi</span>';
+            return '<div class="arxiv-row">' + badge + ' ' + esc(r.arxiv_id) + ' — ' + esc(r.title) + '</div>';
+          }).join("");
+          res.innerHTML =
+            '<div class="result-section"><div class="result-label">' + esc(d.message) + '</div>' +
+            rows + '</div>';
+          if (d.fetched > 0 || d.ingested > 0) {
+            toast("arXiv: " + d.fetched + " indirildi, " + d.ingested + " indekslendi ✓");
+            loadPapers(); // makale listesini yenile
+          }
+        })
+        .catch(function (err) {
+          res.innerHTML = '<div class="result-section">Hata: ' + esc(err.message) + '</div>';
+        })
+        .finally(function () {
+          arxivFetchBtn.disabled = false;
+          arxivFetchBtn.textContent = "⬇ İNDİR + İNDEKSLE";
+        });
+    });
+  }
+
   // ---------- papers ----------
   var _allPapers = [];
 

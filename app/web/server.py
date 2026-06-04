@@ -24,6 +24,11 @@ from app.web.schemas import (
     AdapterOut,
     ApproveCardResponse,
     ApprovedCardsResponse,
+    ArxivEntryOut,
+    ArxivFetchRequest,
+    ArxivFetchResponse,
+    ArxivFetchResult,
+    ArxivSearchResponse,
     AskRequest,
     AskResponse,
     BacktestHistoryResponse,
@@ -867,6 +872,64 @@ def api_backtest_pine(backtest_id: str) -> PineExportResponse:
         market=ir.market,
         timeframe=ir.timeframe,
         pine_code=ir.to_pine(),
+    )
+
+
+# ---------- arXiv makale arama ve indirme ----------
+@app.get("/api/arxiv/search", response_model=ArxivSearchResponse, dependencies=[api_auth])
+def api_arxiv_search(q: str, max_results: int = 10) -> ArxivSearchResponse:
+    """arXiv'de ara (indirme yok)."""
+    from app.ingestion.arxiv_fetcher import search_arxiv
+
+    n = max(1, min(max_results, 50))
+    entries = search_arxiv(q, max_results=n)
+    return ArxivSearchResponse(
+        query=q,
+        results=[
+            ArxivEntryOut(
+                arxiv_id=e.arxiv_id,
+                title=e.title,
+                authors=e.authors,
+                abstract=e.abstract[:400],
+                pdf_url=e.pdf_url,
+                published=e.published,
+            )
+            for e in entries
+        ],
+        total=len(entries),
+    )
+
+
+@app.post("/api/arxiv/fetch", response_model=ArxivFetchResponse, dependencies=[api_auth])
+def api_arxiv_fetch(req: ArxivFetchRequest) -> ArxivFetchResponse:
+    """arXiv'de ara → PDF'leri indir → (opsiyonel) otomatik indeksle."""
+    from app.ingestion.arxiv_fetcher import fetch_arxiv_papers
+
+    fetch_results = fetch_arxiv_papers(req.query, max_results=req.max_results)
+    downloaded = [r for r in fetch_results if not r.skipped]
+    skipped_count = sum(1 for r in fetch_results if r.skipped)
+
+    ingested = 0
+    if req.auto_ingest and downloaded:
+        from app.memory.paper_indexer import PaperIndexer
+
+        ingest_res = PaperIndexer().ingest_directory()
+        ingested = sum(1 for r in ingest_res if not r.skipped)
+
+    return ArxivFetchResponse(
+        query=req.query,
+        fetched=len(downloaded),
+        skipped=skipped_count,
+        results=[
+            ArxivFetchResult(arxiv_id=r.arxiv_id, title=r.title, skipped=r.skipped)
+            for r in fetch_results
+        ],
+        ingested=ingested,
+        message=(
+            f"{len(downloaded)} PDF indirildi, {skipped_count} atlandı"
+            + (f", {ingested} indekslendi" if req.auto_ingest else "")
+            + "."
+        ),
     )
 
 

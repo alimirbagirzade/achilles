@@ -43,8 +43,9 @@
       <button class="tab" data-tab="trader">03 · TRADER BEYİN</button>
       <button class="tab" data-tab="backtest">04 · BACKTEST</button>
       <button class="tab" data-tab="training">05 · EĞİTİM</button>
-      <button class="tab" data-tab="eval">06 · DEĞERLENDİRME</button>
-      <button class="tab" data-tab="about">07 · SİSTEM</button>
+      <button class="tab" data-tab="review">06 · ONAY</button>
+      <button class="tab" data-tab="eval">07 · DEĞERLENDİRME</button>
+      <button class="tab" data-tab="about">08 · SİSTEM</button>
     </nav>
 
     <main>
@@ -110,6 +111,22 @@
           <button class="btn" id="batchCardBtn">⚡ TÜM KARTLARI ÜRET</button>
         </div>
         <div id="batchCardResult" class="result hidden"></div>
+
+        <!-- arXiv arama kutusu -->
+        <div class="arxiv-section">
+          <h3 class="arxiv-heading">arXiv'den Makale Çek</h3>
+          <p class="muted small">Anahtar kelime gir → arXiv'de ara → PDF'i indir → otomatik indeksle</p>
+          <div class="arxiv-form">
+            <input type="search" id="arxivQuery" placeholder="örn: momentum trading volatility RSI" maxlength="200" autocomplete="off" />
+            <label class="arxiv-max">
+              maks
+              <input type="number" id="arxivMax" min="1" max="20" value="5" />
+            </label>
+            <button class="btn" id="arxivSearchBtn">🔍 ARA</button>
+            <button class="btn btn-primary" id="arxivFetchBtn">⬇ İNDİR + İNDEKSLE</button>
+          </div>
+          <div id="arxivResult" class="result hidden"></div>
+        </div>
         <div class="filter-bar">
           <input type="search" id="paperSearch" placeholder="başlık ara…" autocomplete="off" />
           <div class="filter-group" id="cardFilter" role="group" aria-label="Kart filtresi">
@@ -299,6 +316,31 @@
         <div class="training-section" id="adaptersSection">
           <h3>Kayıtlı Adapter'lar</h3>
           <div id="adaptersList" class="adapters-list"></div>
+        </div>
+      </section>
+
+      <!-- ONAY -->
+      <section class="panel" id="panel-review">
+        <div class="panel-head">
+          <h2>Kart Onay Ekranı</h2>
+          <p class="muted">
+            Bekleyen bilgi kartlarını incele; LoRA eğitimine girmesine izin ver veya reddet.
+          </p>
+        </div>
+
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <span class="badge badge-info">ONAY BEKLEYENLERİ YÜKLE</span>
+            <button class="btn" id="btn-load-pending">Yenile</button>
+          </div>
+          <div id="pending-cards-list">
+            <p style="color:#94a3b8">Yüklemek için "Yenile" butonuna tıklayın.</p>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:12px">
+          <span class="badge badge-success">ONAYLANANLAR</span>
+          <div id="approved-cards-summary" style="margin-top:8px;color:#94a3b8">—</div>
         </div>
       </section>
 

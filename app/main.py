@@ -578,5 +578,68 @@ def export_package(
         console.print(pkg.to_json())
 
 
+@app.command("arxiv")
+def arxiv_fetch(
+    query: str = typer.Argument(..., help="Arama sorgusu, örn: 'momentum trading volatility'"),
+    max_results: int = typer.Option(5, help="İndirilecek maksimum makale sayısı (1-20)"),
+    search_only: bool = typer.Option(False, help="Yalnız ara, indirme yapma"),
+    auto_ingest: bool = typer.Option(True, help="İndirdikten sonra otomatik indeksle"),
+) -> None:
+    """arXiv'den trading araştırması ara → indir → otomatik indeksle."""
+    from app.ingestion.arxiv_fetcher import fetch_arxiv_papers, search_arxiv
+
+    max_results = max(1, min(max_results, 20))
+
+    if search_only:
+        console.print(f"[cyan]arXiv aranıyor:[/cyan] {query!r} (max {max_results})")
+        entries = search_arxiv(query, max_results=max_results)
+        if not entries:
+            console.print("[yellow]Sonuç bulunamadı.[/yellow]")
+            raise typer.Exit()
+        t = Table(title=f"arXiv sonuçları — '{query}'")
+        t.add_column("ID")
+        t.add_column("Başlık")
+        t.add_column("Tarih")
+        t.add_column("PDF")
+        for e in entries:
+            t.add_row(e.arxiv_id, e.title[:60], e.published, e.pdf_url)
+        console.print(t)
+        return
+
+    console.print(f"[cyan]arXiv indiriliyor:[/cyan] {query!r} (max {max_results})")
+    with console.status("PDF'ler indiriliyor…"):
+        results = fetch_arxiv_papers(query, max_results=max_results)
+
+    if not results:
+        console.print("[yellow]İndirilecek makale bulunamadı.[/yellow]")
+        raise typer.Exit()
+
+    downloaded = [r for r in results if not r.skipped]
+    skipped = [r for r in results if r.skipped]
+    n_dl, n_sk = len(downloaded), len(skipped)
+    console.print(f"[green]İndirilen:[/green] {n_dl}  [yellow]Atlanan:[/yellow] {n_sk}")
+
+    if auto_ingest and downloaded:
+        from app.memory.paper_indexer import PaperIndexer
+
+        console.print("[cyan]İndeksleniysor…[/cyan]")
+        ingest_results = PaperIndexer().ingest_directory()
+        t = Table(title="İndirme + İndeksleme sonucu")
+        t.add_column("arxiv_id")
+        t.add_column("Başlık")
+        t.add_column("Durum")
+        for r in results:
+            status = "skip (zaten vardı)" if r.skipped else "indirildi"
+            t.add_row(r.arxiv_id, r.title[:55], status)
+        for ir in ingest_results:
+            if not ir.skipped:
+                console.print(f"  ✓ {ir.paper_id} — {ir.n_chunks} chunk")
+        console.print(t)
+    else:
+        for r in results:
+            status = "[yellow]skip[/yellow]" if r.skipped else "[green]ok[/green]"
+            console.print(f"  {status}  {r.arxiv_id}  {r.title[:55]}")
+
+
 if __name__ == "__main__":  # pragma: no cover
     app()

@@ -1412,6 +1412,52 @@ code {
   border-bottom: none;
 }
 
+/* ---------- arXiv bölümü ---------- */
+.arxiv-section {
+  margin-top: 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.04);
+}
+.arxiv-heading {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 4px;
+  color: var(--ink-dim);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.arxiv-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+.arxiv-form input[type="search"] {
+  flex: 1;
+  min-width: 180px;
+}
+.arxiv-max {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+.arxiv-max input {
+  width: 52px;
+}
+.arxiv-row {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.arxiv-row:last-child { border-bottom: none; }
+.arxiv-title { font-weight: 600; margin-bottom: 2px; }
+.arxiv-abstract { margin-top: 2px; line-height: 1.45; }
+
 /* ---------- Pine Script butonu ---------- */
 .hist-actions {
   padding: 6px 0 2px;

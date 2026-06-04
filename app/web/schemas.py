@@ -326,3 +326,40 @@ class PineExportResponse(BaseModel):
     market: str
     timeframe: str
     pine_code: str
+
+
+# ---------- arXiv ----------
+class ArxivEntryOut(BaseModel):
+    arxiv_id: str
+    title: str
+    authors: list[str] = Field(default_factory=list)
+    abstract: str = ""
+    pdf_url: str = ""
+    published: str = ""
+
+
+class ArxivSearchResponse(BaseModel):
+    query: str
+    results: list[ArxivEntryOut]
+    total: int
+
+
+class ArxivFetchRequest(BaseModel):
+    query: str = Field(min_length=3, max_length=300)
+    max_results: int = Field(default=5, ge=1, le=20)
+    auto_ingest: bool = True
+
+
+class ArxivFetchResult(BaseModel):
+    arxiv_id: str
+    title: str
+    skipped: bool
+
+
+class ArxivFetchResponse(BaseModel):
+    query: str
+    fetched: int
+    skipped: int
+    results: list[ArxivFetchResult]
+    ingested: int = 0
+    message: str
