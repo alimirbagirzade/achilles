@@ -119,6 +119,7 @@ class ResearchOrchestrator:
 
         current_indicator: SynthesisResult | None = None
         parent_session_id: str | None = None
+        prev_failures: list[dict] = []
 
         for iteration in range(1, self.max_iterations + 1):
             logger.info("İterasyon %d/%d", iteration, self.max_iterations)
@@ -126,11 +127,13 @@ class ResearchOrchestrator:
 
             # ---- Sentez / İyileştirme ----
             if iteration == 1 or current_indicator is None:
+                # Önceki başarısızlık bilgisini synthesis motoruna ilet
                 synthesized = self.synthesis.synthesize(
                     question,
                     paper_ids=paper_ids,
                     market=self.market,
                     timeframe=self.timeframe,
+                    prev_failures=prev_failures or None,
                 )
             else:
                 synthesized = current_indicator  # yansıma zaten IR'ı güncelledi
@@ -194,6 +197,16 @@ class ResearchOrchestrator:
                 reasons=ev.reasons,
                 metrics=metrics,
             )
+
+            # Başarısızlık geçmişini güncelle (synthesis motoruna iletmek için)
+            if ev.verdict != "pass":
+                prev_failures.append(
+                    {
+                        "n_trades": metrics.get("n_trades", 0),
+                        "verdict": ev.verdict,
+                        "reasons": ev.reasons,
+                    }
+                )
 
             # ---- Yansıma (son iterasyon değilse ve pass değilse) ----
             if ev.verdict != "pass" and iteration < self.max_iterations:

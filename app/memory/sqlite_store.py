@@ -26,6 +26,7 @@ from sqlalchemy import (
     UniqueConstraint,
     create_engine,
     select,
+    text,
 )
 from sqlalchemy.orm import (
     DeclarativeBase,
@@ -98,8 +99,16 @@ class KnowledgeCard(Base):
     card_id: Mapped[str] = mapped_column(String(80), primary_key=True)
     paper_id: Mapped[str] = mapped_column(ForeignKey("papers.paper_id"), index=True)
     model: Mapped[str] = mapped_column(String(64))
-    card_json: Mapped[str] = mapped_column(Text)  # full JSON document
+    card_json: Mapped[str] = mapped_column(Text)  # tam JSON belgesi
     created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+    trust_level: Mapped[str] = mapped_column(String(32), default="draft")
+    # canonical / verified / draft / unreviewed
+    review_status: Mapped[str] = mapped_column(String(32), default="pending")
+    # pending / approved / rejected
+    lora_eligible: Mapped[int] = mapped_column(Integer, default=0)  # 0/1
+    difficulty: Mapped[float] = mapped_column(Float, default=0.0)  # 0.0–1.0
+    stage: Mapped[str] = mapped_column(String(32), default="")
+    # lora_phase_1 / lora_phase_2 / lora_phase_3 / lora_phase_4 / ""
 
 
 class TrainingExample(Base):
@@ -228,6 +237,155 @@ class ResearchSession(Base):
     created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
 
 
+# ---------------------------------------------------------------------------
+# Advanced RAG tracking models
+# ---------------------------------------------------------------------------
+
+
+class RagQuery(Base):
+    """Records a user query and its expanded variants."""
+
+    __tablename__ = "rag_queries"
+
+    query_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    original_query: Mapped[str] = mapped_column(Text)
+    expanded_queries_json: Mapped[str] = mapped_column(Text, default="[]")
+    created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+
+
+class RetrievalRun(Base):
+    """Metadata for a single retrieval run."""
+
+    __tablename__ = "retrieval_runs"
+
+    retrieval_run_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    query_id: Mapped[str] = mapped_column(ForeignKey("rag_queries.query_id"), index=True)
+    retrieval_method: Mapped[str] = mapped_column(String(64), default="semantic")
+    top_k: Mapped[int] = mapped_column(Integer, default=5)
+    rerank_used: Mapped[int] = mapped_column(Integer, default=0)  # 0/1
+    self_refinement_used: Mapped[int] = mapped_column(Integer, default=0)  # 0/1
+    created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+
+
+class RetrievalResult(Base):
+    """A single chunk result from a retrieval run."""
+
+    __tablename__ = "retrieval_results"
+
+    result_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    retrieval_run_id: Mapped[str] = mapped_column(
+        ForeignKey("retrieval_runs.retrieval_run_id"), index=True
+    )
+    paper_id: Mapped[str] = mapped_column(String(64), index=True)
+    chunk_id: Mapped[str] = mapped_column(String(80), index=True)
+    semantic_score: Mapped[float | None] = mapped_column(Float, default=None)
+    rerank_score: Mapped[float | None] = mapped_column(Float, default=None)
+    final_rank: Mapped[int | None] = mapped_column(Integer, default=None)
+    reason: Mapped[str | None] = mapped_column(Text, default=None)
+
+
+class ChunkQualityFlag(Base):
+    """Quality flags for a chunk (formula, table, incomplete argument, etc.)."""
+
+    __tablename__ = "chunk_quality_flags"
+
+    flag_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    chunk_id: Mapped[str] = mapped_column(String(80), index=True)
+    has_formula: Mapped[int] = mapped_column(Integer, default=0)
+    has_incomplete_formula: Mapped[int] = mapped_column(Integer, default=0)
+    has_incomplete_argument: Mapped[int] = mapped_column(Integer, default=0)
+    has_table: Mapped[int] = mapped_column(Integer, default=0)
+    has_definition: Mapped[int] = mapped_column(Integer, default=0)
+    has_theorem: Mapped[int] = mapped_column(Integer, default=0)
+    needs_adjacent_context: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class KnowledgeEntity(Base):
+    """Knowledge graph entity (ORM version)."""
+
+    __tablename__ = "knowledge_entities"
+
+    entity_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), index=True)
+    entity_type: Mapped[str] = mapped_column(String(48))
+    description: Mapped[str | None] = mapped_column(Text, default=None)
+    source_paper_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    source_chunk_id: Mapped[str | None] = mapped_column(String(80), default=None)
+
+
+class KnowledgeRelation(Base):
+    """Knowledge graph relation (ORM version)."""
+
+    __tablename__ = "knowledge_relations"
+
+    relation_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    source_entity_id: Mapped[str] = mapped_column(
+        ForeignKey("knowledge_entities.entity_id"), index=True
+    )
+    relation_type: Mapped[str] = mapped_column(String(48))
+    target_entity_id: Mapped[str] = mapped_column(
+        ForeignKey("knowledge_entities.entity_id"), index=True
+    )
+    confidence: Mapped[float] = mapped_column(Float, default=1.0)
+    source_paper_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    source_chunk_id: Mapped[str | None] = mapped_column(String(80), default=None)
+
+
+# ---------------------------------------------------------------------------
+# Reliability / verification models
+# ---------------------------------------------------------------------------
+
+
+class GoldenQuestion(Base):
+    """Golden set question for retrieval and answer quality evaluation."""
+
+    __tablename__ = "golden_questions"
+
+    question_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    question_text: Mapped[str] = mapped_column(Text)
+    domain: Mapped[str] = mapped_column(String(48), default="general")
+    expected_answer: Mapped[str | None] = mapped_column(Text, default=None)
+    expected_source_ids_json: Mapped[str] = mapped_column(Text, default="[]")
+    expected_chunk_ids_json: Mapped[str] = mapped_column(Text, default="[]")
+    answer_type: Mapped[str] = mapped_column(String(32), default="factual")
+    difficulty: Mapped[str] = mapped_column(String(16), default="medium")
+    created_by: Mapped[str] = mapped_column(String(64), default="system")
+    reviewed: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+
+
+class FailureLog(Base):
+    """RAG answer failure record."""
+
+    __tablename__ = "failure_logs"
+
+    failure_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    question_text: Mapped[str] = mapped_column(Text)
+    answer_text: Mapped[str] = mapped_column(Text, default="")
+    failure_type: Mapped[str] = mapped_column(String(48))
+    root_cause: Mapped[str | None] = mapped_column(Text, default=None)
+    hallucination: Mapped[int] = mapped_column(Integer, default=0)
+    wrong_citation: Mapped[int] = mapped_column(Integer, default=0)
+    suggested_fix: Mapped[str | None] = mapped_column(Text, default=None)
+    created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+
+
+class VerificationRun(Base):
+    """Record of a verification pass run for a single answer."""
+
+    __tablename__ = "verification_runs"
+
+    verification_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    answer_id: Mapped[str] = mapped_column(String(80), index=True)
+    citation_passed: Mapped[int] = mapped_column(Integer, default=0)
+    grounding_passed: Mapped[int] = mapped_column(Integer, default=0)
+    contradiction_passed: Mapped[int] = mapped_column(Integer, default=0)
+    formula_passed: Mapped[int] = mapped_column(Integer, default=0)
+    confidence_score: Mapped[float] = mapped_column(Float, default=0.0)
+    final_decision: Mapped[str] = mapped_column(String(16), default="warn")
+    created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+
+
 class SqliteStore:
     """Thin wrapper around a SQLAlchemy engine + session factory."""
 
@@ -238,9 +396,33 @@ class SqliteStore:
         self.engine = create_engine(f"sqlite:///{self.db_path}", future=True)
         self._Session = sessionmaker(bind=self.engine, expire_on_commit=False, future=True)
         self.create_all()
+        self._migrate()
 
     def create_all(self) -> None:
         Base.metadata.create_all(self.engine)
+
+    def _migrate(self) -> None:
+        """Eksik kolonları SQLite'a ekle (idempotent)."""
+        with self.engine.connect() as conn:
+            existing = {
+                row[1]
+                for row in conn.execute(text("PRAGMA table_info(knowledge_cards)")).fetchall()
+            }
+            new_cols = [
+                ("trust_level", "VARCHAR(32)", "'draft'"),
+                ("review_status", "VARCHAR(32)", "'pending'"),
+                ("lora_eligible", "INTEGER", "0"),
+                ("difficulty", "REAL", "0.0"),
+                ("stage", "VARCHAR(32)", "''"),
+            ]
+            for col, typ, default in new_cols:
+                if col not in existing:
+                    conn.execute(
+                        text(
+                            f"ALTER TABLE knowledge_cards ADD COLUMN {col} {typ} DEFAULT {default}"
+                        )
+                    )
+            conn.commit()
 
     @contextmanager
     def session(self) -> Iterator[Session]:
@@ -288,7 +470,19 @@ class SqliteStore:
                 )
             )
 
-    def save_knowledge_card(self, card_id: str, paper_id: str, model: str, card: dict) -> None:
+    def save_knowledge_card(
+        self,
+        card_id: str,
+        paper_id: str,
+        model: str,
+        card: dict,
+        *,
+        trust_level: str = "draft",
+        review_status: str = "pending",
+        lora_eligible: int = 0,
+        difficulty: float = 0.0,
+        stage: str = "",
+    ) -> None:
         with self.session() as s:
             s.merge(
                 KnowledgeCard(
@@ -296,6 +490,11 @@ class SqliteStore:
                     paper_id=paper_id,
                     model=model,
                     card_json=json.dumps(card, ensure_ascii=False),
+                    trust_level=trust_level,
+                    review_status=review_status,
+                    lora_eligible=lora_eligible,
+                    difficulty=difficulty,
+                    stage=stage,
                 )
             )
 
@@ -323,6 +522,89 @@ class SqliteStore:
                 return json.loads(row.card_json)
             except (json.JSONDecodeError, TypeError):
                 return None
+
+    def approve_card(self, card_id: str) -> bool:
+        """Kartı onayla: review_status=approved, lora_eligible=1."""
+        with self.session() as s:
+            row = s.get(KnowledgeCard, card_id)
+            if row is None:
+                return False
+            row.review_status = "approved"
+            row.lora_eligible = 1
+            return True
+
+    def reject_card(self, card_id: str) -> bool:
+        """Kartı reddet: review_status=rejected, lora_eligible=0."""
+        with self.session() as s:
+            row = s.get(KnowledgeCard, card_id)
+            if row is None:
+                return False
+            row.review_status = "rejected"
+            row.lora_eligible = 0
+            return True
+
+    def list_pending_cards(self) -> list[dict]:
+        """review_status=pending olan kartları döndür.
+
+        Her dict: card_id, paper_id, model, trust_level, review_status,
+                   lora_eligible, difficulty, stage, created_at, card_json (parsed)
+        """
+        with self.session() as s:
+            rows = list(
+                s.scalars(
+                    select(KnowledgeCard)
+                    .where(KnowledgeCard.review_status == "pending")
+                    .order_by(KnowledgeCard.created_at.desc())
+                )
+            )
+            return [self._card_to_dict(r) for r in rows]
+
+    def list_approved_cards(
+        self,
+        difficulty_min: float = 0.0,
+        difficulty_max: float = 1.0,
+    ) -> list[dict]:
+        """Onaylı (approved) kartları difficulty aralığına göre filtrele."""
+        with self.session() as s:
+            rows = list(
+                s.scalars(
+                    select(KnowledgeCard)
+                    .where(
+                        KnowledgeCard.review_status == "approved",
+                        KnowledgeCard.difficulty >= difficulty_min,
+                        KnowledgeCard.difficulty <= difficulty_max,
+                    )
+                    .order_by(KnowledgeCard.difficulty)
+                )
+            )
+            return [self._card_to_dict(r) for r in rows]
+
+    def get_card_by_id(self, card_id: str) -> dict | None:
+        """Tek kartı card_id ile döndür (review metadata dahil)."""
+        with self.session() as s:
+            row = s.get(KnowledgeCard, card_id)
+            if row is None:
+                return None
+            return self._card_to_dict(row)
+
+    def _card_to_dict(self, row: KnowledgeCard) -> dict:
+        """KnowledgeCard ORM satırını dict'e dönüştür."""
+        try:
+            parsed = json.loads(row.card_json)
+        except (json.JSONDecodeError, TypeError):
+            parsed = {}
+        return {
+            "card_id": row.card_id,
+            "paper_id": row.paper_id,
+            "model": row.model,
+            "trust_level": row.trust_level,
+            "review_status": row.review_status,
+            "lora_eligible": row.lora_eligible,
+            "difficulty": row.difficulty,
+            "stage": row.stage,
+            "created_at": row.created_at,
+            "card_json": parsed,
+        }
 
     def save_strategy(self, **fields: Any) -> None:
         with self.session() as s:

@@ -76,10 +76,11 @@ daha önce denenmemiş yaratıcı bir trading indikatörü veya algoritma kombin
 ÖNEMLİ KURALLAR:
 - entry_rules ve exit_rules listesinde SADECE indicators listesinde tanımlı kolonları kullan
   (ör. indicators'da RSI period=14 varsa "rsi_14" kullanabilirsin, "rsi_20" değil)
-- Başlangıçta SADECE 1-2 kural yaz (daha az kural = daha fazla işlem = daha iyi istatistik)
+- Başlangıçta SADECE 1 KURAL yaz (tek kural = daha fazla işlem = daha iyi istatistik)
+- RSI giriş kuralı için eşik OLABILDIĞINCE GENIŞ olsun: rsi_14 > 50 (52 değil)
 - timeframe "1h" kullan
 - Yalnız JSON döndür, başka açıklama ekleme.
-"""
+{failure_hint}"""
 
 
 @dataclass
@@ -123,8 +124,15 @@ class SynthesisEngine:
         paper_ids: list[str] | None = None,
         market: str = "XAUUSD",
         timeframe: str = "15m",
+        prev_failures: list[dict] | None = None,
     ) -> SynthesisResult | None:
-        """Araştırma sorusuna göre yeni indikatör öner."""
+        """Araştırma sorusuna göre yeni indikatör öner.
+
+        Args:
+            prev_failures: Önceki iterasyonların başarısızlık özetleri.
+                Her eleman: {"n_trades": int, "verdict": str, "reasons": list[str]}
+                Varsa prompt'a eklenir; "az işlem" döngüsünü kırar.
+        """
         formulas = self.store.list_formulas()
         if paper_ids:
             formulas = [f for f in formulas if f["paper_id"] in paper_ids]
@@ -136,10 +144,13 @@ class SynthesisEngine:
         formulas_text = self._format_formulas(formulas)
         concept_graph = self._format_concept_graph()
 
+        failure_hint = self._build_failure_hint(prev_failures)
+
         prompt = _SYNTHESIS_PROMPT.format(
             formulas_text=formulas_text,
             concept_graph=concept_graph,
             question=question,
+            failure_hint=failure_hint,
         )
 
         try:
@@ -175,6 +186,25 @@ class SynthesisEngine:
                 lines.append(line)
         return "\n".join(lines) if lines else "(formül yok)"
 
+    def _build_failure_hint(self, prev_failures: list[dict] | None) -> str:
+        """Önceki başarısızlıkları prompt'a eklenecek uyarıya dönüştür."""
+        if not prev_failures:
+            return ""
+        lines = ["\n━━━ ÖNCEKİ BAŞARISIZLIKLAR — BUNLARI TEKRARLAMA ━━━"]
+        for i, f in enumerate(prev_failures[-3:], 1):
+            n = f.get("n_trades", 0)
+            verdict = f.get("verdict", "fail")
+            reasons = "; ".join(f.get("reasons", []))
+            lines.append(f"  {i}. {verdict} | {n} işlem | {reasons}")
+        if any(f.get("n_trades", 0) < 30 for f in prev_failures):
+            lines.append(
+                "\n⚠️  AZ İŞLEM SORUNU TESPİT EDİLDİ:"
+                "\n  → Sadece TEK giriş kuralı yaz"
+                "\n  → RSI eşiği: > 50 (daha geniş)"
+                "\n  → EMA crossover kullanma (işlem sayısını düşürür)"
+            )
+        return "\n".join(lines)
+
     def _format_concept_graph(self) -> str:
         links = self.store.list_concept_links()
         if not links:
@@ -208,8 +238,8 @@ class SynthesisEngine:
         ir.setdefault("timeframe", timeframe)
         ir.setdefault("name", "synthesized_v1")
         ir.setdefault("indicators", [{"name": "RSI", "period": 14}, {"name": "ATR", "period": 14}])
-        ir.setdefault("entry_rules", ["rsi_14 > 55"])
-        ir.setdefault("exit_rules", ["rsi_14 < 45"])
+        ir.setdefault("entry_rules", ["rsi_14 > 50"])
+        ir.setdefault("exit_rules", ["rsi_14 < 50"])
         ir.setdefault("risk", {"stop_loss": "2 * ATR"})
         ir.setdefault("costs", {"commission": 0.0005, "slippage": 0.0005})
         # LLM bazen indikatörü "RSI_20" string olarak döndürür → dict'e çevir
@@ -225,6 +255,23 @@ class SynthesisEngine:
                 fixed_inds.append(ind)
         if fixed_inds:
             ir["indicators"] = fixed_inds
+
+        # "Az işlem" koruması: entry 2'den fazla kurala sahipse en az kısıtlayıcı olanı tut
+        entry_rules: list[str] = ir.get("entry_rules", [])
+        if len(entry_rules) > 2:
+            ir["entry_rules"] = entry_rules[:1]  # tek kural bırak
+        # RSI eşiği çok sıkıysa genişlet (örn. rsi_14 > 57 → > 50)
+        loosened: list[str] = []
+        for rule in ir.get("entry_rules", []):
+            import re as _re
+
+            m = _re.match(r"(rsi_\d+)\s*>\s*(\d+(?:\.\d+)?)", rule)
+            if m and float(m.group(2)) > 53:
+                loosened.append(f"{m.group(1)} > 50")
+            else:
+                loosened.append(rule)
+        if loosened:
+            ir["entry_rules"] = loosened
 
         return SynthesisResult(
             indicator_name=data.get("indicator_name", "unnamed_indicator"),

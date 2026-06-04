@@ -72,10 +72,16 @@ class StrategyIR(BaseModel):
 
     def to_pine(self) -> str:
         """StrategyIR → TradingView Pine Script v5 (taslak)."""
+        # commission_value in Pine expects percent; strip trailing zeros for readability
         commission_pct = self.costs.commission * 100
+        commission_str = f"{commission_pct:.4f}".rstrip("0").rstrip(".")
         lines: list[str] = [
             "//@version=5",
-            f'strategy("{self.name}", overlay=true, commission_value={commission_pct:.4f})',
+            (
+                f'strategy("{self.name}", overlay=true,'
+                f" commission_type=strategy.commission.percent,"
+                f" commission_value={commission_str})"
+            ),
             "",
         ]
         # Indikatör tanımları
@@ -97,6 +103,17 @@ class StrategyIR(BaseModel):
                 lines.append(
                     f"[{col}_upper, {col}_mid, {col}_lower] = ta.bb(close, {ind.period}, 2)"
                 )
+            elif n in ("STOCH", "STOCHASTIC"):
+                k = ind.period
+                smooth_k = getattr(ind, "smooth_k", 3)
+                smooth_d = getattr(ind, "smooth_d", 3)
+                lines.append(f"{col}_k = ta.sma(ta.stoch(close, high, low, {k}), {smooth_k})")
+                lines.append(f"{col}_d = ta.sma({col}_k, {smooth_d})")
+            elif n == "VWAP":
+                lines.append(f"{col} = ta.vwap(hlc3)")
+            elif n in ("SUPERTREND", "ST"):
+                mult = getattr(ind, "multiplier", 3.0)
+                lines.append(f"[{col}, {col}_dir] = ta.supertrend({mult}, {ind.period})")
             else:
                 lines.append(f"// {col} = ???  /* {n} desteklenmiyor */")
             ind_map[col] = col

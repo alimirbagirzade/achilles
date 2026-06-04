@@ -1,11 +1,15 @@
 """RAG answerer.
 
-Produces the project-mandated answer structure:
-1. Kısa cevap (short answer)
-2. Kullanılan kaynaklar (sources used)
-3. Akademik bulgu (academic finding)
-4. Trading hipotezi (trading hypothesis)
-5. Test edilmesi gereken noktalar (what to test)
+Produces a bilingual (English + Turkish) answer structure:
+1. Short Answer / Kısa Cevap
+2. Sources Used / Kullanılan Kaynaklar
+3. Context Quality / Bağlam Kalitesi
+4. Academic Finding / Akademik Bulgu
+5. Formula or Argument Analysis / Formül veya Argüman Analizi
+6. Trading Hypothesis / Trading Hipotezi
+7. Test Plan / Test Planı
+8. Risks / Riskler
+9. Next Step / Sonraki Adım
 
 The model is explicitly instructed NOT to invent sources. If no chunks are
 retrieved, it must say so rather than hallucinate.
@@ -18,6 +22,36 @@ from dataclasses import dataclass
 from app.brain.local_llm import LLMUnavailable, LocalLLM
 from app.brain.prompt_loader import load_prompt
 from app.memory.retrieval_service import RetrievalService, RetrievedChunk
+
+_BILINGUAL_FORMAT = """\
+Answer using the following bilingual format (English first, Turkish below each section):
+
+1. Short Answer / Kısa Cevap
+2. Sources Used / Kullanılan Kaynaklar
+   - paper_id, chunk_id, section, page_number (if available)
+3. Context Quality / Bağlam Kalitesi
+   - Is the context complete? / Bağlam tam mı?
+   - Any cut formula or argument? / Formül veya argüman kesilmiş mi?
+4. Academic Finding / Akademik Bulgu
+5. Formula or Argument Analysis / Formül veya Argüman Analizi
+   - Formula / Formül
+   - Variable meanings / Değişkenlerin anlamı
+   - Context / Bağlam
+   - Limitations / Sınırlamalar
+6. Trading Hypothesis / Trading Hipotezi
+   - Only if applicable / Yalnızca uygulanabilirse
+   - If not applicable, write: "This finding cannot be directly converted to a trading rule."
+     / "Bu bulgu doğrudan trading kuralına çevrilemez."
+7. Test Plan / Test Planı
+   - Market, timeframe, data, indicator, backtest method, out-of-sample, costs
+   / Piyasa, zaman dilimi, veri, indikatör, backtest yöntemi, OOS, maliyetler
+8. Risks / Riskler
+   - Overfit, data leakage, look-ahead bias, survivorship bias, spread/slippage
+9. Next Step / Sonraki Adım
+
+Do NOT invent any source, formula, dataset, or conclusion not present in the retrieved context.
+Kaynaklarda olmayan herhangi bir kaynak, formül, veri seti veya sonuç uydurmayın.
+"""
 
 
 @dataclass
@@ -54,8 +88,11 @@ class RagAnswerer:
             return RagAnswer(
                 question=question,
                 answer=(
-                    "Kaynak bulunamadı. Hafızada bu soruya dayanak oluşturacak "
-                    "makale chunk'ı yok. Önce ilgili PDF'leri ingest edin."
+                    "No sources found. No article chunks in memory to support this query.\n"
+                    "Please ingest the relevant PDFs first.\n\n"
+                    "---\n\n"
+                    "Kaynak bulunamadı. Hafızada bu soruya dayanak oluşturacak chunk yok.\n"
+                    "Önce ilgili PDF'leri ingest edin."
                 ),
                 sources=[],
                 llm_used=False,
@@ -65,15 +102,15 @@ class RagAnswerer:
         try:
             system = load_prompt("rag_answer")
         except FileNotFoundError:
-            system = "Sadece verilen kaynaklara dayan; kaynak yoksa uydurma."
+            system = (
+                "Answer ONLY from the provided sources. Do not invent facts. "
+                "Use bilingual format (English + Turkish).\n"
+                "Yalnızca verilen kaynaklara dayan. Gerçek uydurmayın. "
+                "İki dilli format kullan (İngilizce + Türkçe)."
+            )
 
         prompt = (
-            f"KAYNAKLAR:\n{context}\n\n"
-            f"SORU: {question}\n\n"
-            "Yukarıdaki kaynaklara DAYANARAK cevap ver. Şu formatı kullan:\n"
-            "1. Kısa cevap\n2. Kullanılan kaynaklar (paper_id:chunk_id)\n"
-            "3. Akademik bulgu\n4. Trading hipotezi\n5. Test edilmesi gereken noktalar\n"
-            "Kaynaklarda olmayan bir şey iddia etme."
+            f"SOURCES / KAYNAKLAR:\n{context}\n\nQUESTION / SORU: {question}\n\n{_BILINGUAL_FORMAT}"
         )
 
         try:
@@ -83,7 +120,8 @@ class RagAnswerer:
             # Graceful degradation: still return retrieved sources.
             cites = "\n".join(f"- {c.citation} {c.title or ''}".strip() for c in chunks)
             text = (
-                "[LLM çevrimdışı — yalnızca retrieval sonuçları gösteriliyor]\n\n"
-                "Kullanılabilir kaynaklar:\n" + cites
+                "[LLM offline — retrieval results only"
+                " / LLM çevrimdışı — yalnızca retrieval sonuçları]\n\n"
+                "Available sources / Kullanılabilir kaynaklar:\n" + cites
             )
             return RagAnswer(question=question, answer=text, sources=chunks, llm_used=False)

@@ -19,10 +19,11 @@ LLM'i **"trader gibi düşünen"** bir araştırma motoru yapmak:
 5. Tüm zinciri **LoRA eğitim verisi** olarak kullan
 6. 3B model mimiriyi test eder; gerçek çıktı için 120B kullanılacak
 
-### Mevcut durum (commit: `d4e8ab9` + bu oturum)
-- **140 test** geçiyor · ruff+mypy temiz · Python 3.12
+### Mevcut durum (2026-06-04 — son commit)
+- **208 test** geçiyor · ruff+mypy temiz · Python 3.12
 - **7 sekme** web UI: Araştırma · Makaleler · Trader Beyin · Backtest · Eğitim · Değerlendirme · Sistem
 - **`app/research/`** modülü TAMAMLANDI (bkz. aşağıdaki tablo)
+- **Advanced RAG katmanı** EKLENDI — 37 yeni dosya (verification, evals, reliability)
 - **LoRA:** `achilles_lora_v2` eğitildi (300 iter, loss 0.028, 2GB peak)
 - **Ollama aktif:** qwen2.5-coder:3b + nomic-embed-text · 7 PDF · 567 chunk
 
@@ -44,21 +45,121 @@ LLM'i **"trader gibi düşünen"** bir araştırma motoru yapmak:
    - `StrategyIR.to_pine()` → Pine v5 taslak kod
    - CLI: `uv run achilles pine [strateji-adı] [--output dosya.pine]`
 
-### Bir sonraki seansta YAPILACAKLAR (öncelik sırasıyla)
+### Bu seansta TAMAMLANANLAR ✅ (2026-06-04 — oturum 2)
 
-1. **Araştırma döngüsü iyileştirme** — az işlem sorununu çöz
-   - Synthesis engine'in ürettiği IR'daki entry/exit kuralları çok kısıtlayıcı
-   - Çözüm: `reflection_agent.py`'da "işlem sayısı artır" geri bildirimi
+9. **✅ Görev 9 — `achilles status` onay kart sayısı**
+   - `status` komutu artık "X bekliyor / Y onaylı" satırı gösteriyor
 
-2. **LoRA eğitim zincirine bağla**
-   ```bash
-   uv run achilles chain-dataset
-   uv run achilles train --run
-   ```
+10. **✅ Görev 10 — `export-package` backtest verdict otomatik**
+    - SQLite'tan en son backtest çekilip pakete ekleniyor (verdict + sharpe + return + n_trades)
+    - CLI çıktısında `[green]pass[/green]` / `[red]fail[/red]` rengi
 
-3. **Web UI'ya Pine Script export butonu** — kart/strateji modalına ekle
+11. **✅ Görev 11 — `.achpkg` TypeScript tip tanımı**
+    - `achilles_package.d.ts` oluşturuldu (kök dizin)
+    - `AchillesPackage`, `CodeBundle`, `BacktestMetrics`, `IndicatorSpec`, `CostSpec` interface'leri
 
-4. **120B model hazırlığı** — aynı kod, farklı `--base-model` parametresi
+12. **✅ Advanced RAG entegrasyonu (RAGsetup dokümantasyonundan)**
+    - 37 yeni modül: `app/brain/`, `app/memory/`, `app/ingestion/`, `app/verification/`, `app/evals/`, `app/reliability/`
+    - 4 yeni Claude skill: `scientific-rag-reasoning`, `advanced-rag-optimizer`, `formula-and-argument-integrity`, `rag-reliability-engineer`
+    - `rag_answerer.py`: cevaplar artık **hem İngilizce hem Türkçe** (9 başlık)
+    - RAG modülleri **İngilizce** docstring
+    - 9 yeni SQLite tablosu + 10 test
+
+13. **✅ Synthesis engine "az işlem" düzeltmesi**
+    - `prev_failures` parametresi eklendi → önceki FAIL bilgisi prompt'a giriyor
+    - `_parse_result`: RSI eşiği > 53 ise otomatik > 50'ye indir; entry rule > 2 ise 1'e kısalt
+    - `_build_failure_hint`: "az işlem" tespitinde prompt'a açık uyarı ekle
+    - Orchestrator `prev_failures` listesini doldurarak synthesis'e iletiyor
+
+14. **✅ Pine Script: Stochastic, VWAP, Supertrend eklendi**
+    - `strategy_ir.py` `to_pine()` → 3 yeni indikatör (Pine v5 `ta.*` syntax)
+    - `package_exporter.py` `_ir_to_python()` → pandas implementasyonları
+
+15. **✅ Pine Script commission fix**
+    - `commission_value=0.0500` → `0.05` (trailing zero temizlendi)
+    - `commission_type=strategy.commission.percent` açıkça belirtildi
+
+### Bu seansta TAMAMLANANLAR ✅ (2026-06-04)
+
+5. **✅ Faz 1 — Bilgi Mimarisi + Sınıflandırma Backend**
+   - `knowledge_cards` tablosuna 5 yeni kolon: `trust_level`, `review_status`, `lora_eligible`, `difficulty`, `stage`
+   - DB migration: idempotent ALTER TABLE (`_migrate()`)
+   - `KnowledgeCardBuilder._classify_card()`: kural tabanlı otomatik sınıflandırma
+   - Yeni store metodları: `approve_card`, `reject_card`, `list_pending_cards`, `list_approved_cards`
+   - CLI: `achilles cards pending | approve <id> | reject <id>`
+
+6. **✅ Faz 1 — Web UI Onay Ekranı**
+   - `GET /api/cards/pending` → bekleyen kartlar
+   - `POST /api/card/{id}/approve` / `reject` → onay/red
+   - `GET /api/cards/approved` → onaylı kartlar (difficulty filtresi)
+   - Web UI: **06 · ONAY** sekmesi (Onayla/Reddet butonları)
+
+7. **✅ Faz 2 — Curriculum-Aware Dataset Builder**
+   - `DatasetBuilder.collect(phase=1-4, lora_eligible_only=True)`
+   - Curriculum pacing: %60 mevcut + %30 alt + %10 üst faz
+   - CLI: `achilles dataset --phase 1` / `--all`
+
+8. **✅ Faz 3 — Structured LoRA Training**
+   - `TrainConfig.lora_phase` + `from_phase`
+   - Faz-tabanlı adlandırma: `achilles_lora_v3_phase1` → `_phase2`
+   - `--resume-adapter-file` ile kademeli eğitim desteği
+
+9. **✅ Achilles Package (Entropia export)**
+   - `app/trading/package_exporter.py`: StrategyIR → `.achpkg` (JSON)
+   - İçerik: Pine Script v5 + Python `compute_signals()` modülü
+   - CLI: `achilles export-package [strateji-adı] [--output dosya.achpkg]`
+   - API: `GET /api/strategy/{name}/export` + `POST /api/package/export`
+   - **176 test** — hepsi yeşil · ruff+mypy sıfır hata
+
+### ⚡ YENİ SEANS BAŞLANGICI — KULLANICIYA SOR
+
+> **Claude: Bir sonraki seansta aşağıdaki listeden kullanıcıya seçim yaptır. Hemen koda girme.**
+
+---
+
+## 🗺️ DEVAM SEÇENEKLERİ (kullanıcıya sor)
+
+### 🔴 Kalite borcu — core işlevlerde düzeltilmemiş şeyler
+
+| # | Sorun | Dosya |
+|----|-------|-------|
+| ~~1~~ | ~~Araştırma döngüsü — az işlem FAIL döngüsü~~ | ✅ **DÜZELTILDI** |
+| ~~2~~ | ~~Pine Script — Stochastic, VWAP, Supertrend eksik~~ | ✅ **EKLENDI** |
+| ~~3~~ | ~~Package exporter — commission_value yüzde~~ | ✅ **DÜZELTILDI** |
+
+### 🟡 Eksik ama planlanmış özellikler
+
+| # | Özellik | Neden önemli |
+|---|---------|--------------|
+| 4 | **TradingView MCP köprüsü** | Achilles Pine Script üretiyor → MCP ile direkt TradingView'a yükle → sonuçları al → araştırma döngüsü kapanır. **MCP araçları kurulu!** |
+| 5 | **arXiv otomatik çekme** | 7 PDF ile sınırlıyız; arXiv'den trading araştırması otomatik ingest edilmeli |
+| 6 | **Web UI paket/pine export butonu** | Strateji/backtest kartında "📦 .achpkg İndir" + "🌲 Pine'a Gönder" butonu yok |
+| 7 | **Risk manager modülü** | Kelly kriteri + max drawdown tabanlı pozisyon büyüklüğü |
+| 8 | **Faz 4 DPO altyapısı** | 500+ onaylı not gerekiyor; önce kart biriktirmek lazım |
+
+### 🟢 Küçük / hızlı
+
+| # | Görev | Süre |
+|---|-------|------|
+| ~~9~~ | ~~`achilles status` onay bekleyen kart~~ | ✅ |
+| ~~10~~ | ~~Backtest verdict → export-package~~ | ✅ |
+| ~~11~~ | ~~`.achpkg` TypeScript tip tanımı~~ | ✅ |
+
+### 🔵 Büyük / ileriki — şimdi yapılmaz
+
+| | Neden bekler |
+|--|-------------|
+| Faz 4 DPO + GraphRAG | 500+ onaylı not gerekiyor (şu an 0) |
+| 120B model | Donanım hazır değil |
+| CCXT/Binance canlı veri | Türkiye'de bloklu |
+
+---
+
+**Önerilen sıra:**
+- **A)** TradingView MCP köprüsü (4) — en yüksek etki
+- **B)** Araştırma döngüsü fix (1) — core kalite
+- **C)** arXiv otomatik çekme (5) — daha fazla bilgi
+- **D)** Küçük görevler (9, 10, 11) — hızlı kazanımlar
 
 ---
 

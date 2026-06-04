@@ -74,6 +74,15 @@ def status() -> None:
         t.add_row("Chroma chunk sayısı", str(ChromaStore().count()))
     except Exception:
         t.add_row("Chroma chunk sayısı", "0")
+    try:
+        pending = store.list_pending_cards()
+        approved = store.list_approved_cards()
+        t.add_row(
+            "Bilgi kartları (onay / onaylı)",
+            f"[yellow]{len(pending)} bekliyor[/yellow] / [green]{len(approved)} onaylı[/green]",
+        )
+    except Exception:
+        t.add_row("Bilgi kartları", "—")
     console.print(t)
 
 
@@ -149,12 +158,78 @@ def card(paper_id: str) -> None:
     console.print_json(json.dumps(kc.model_dump(), ensure_ascii=False))
 
 
+@app.command("cards")
+def cards_cmd(
+    action: str = typer.Argument(..., help="pending | approve | reject"),
+    card_id: str = typer.Argument("", help="approve/reject için kart ID'si"),
+) -> None:
+    """Kart onay yönetimi: pending listesi / approve / reject."""
+    from app.memory.sqlite_store import SqliteStore
+
+    store = SqliteStore()
+
+    if action == "pending":
+        rows = store.list_pending_cards()
+        if not rows:
+            console.print("[yellow]Onay bekleyen kart yok.[/yellow]")
+            return
+        t = Table(title="Onay bekleyen kartlar")
+        t.add_column("card_id")
+        t.add_column("paper_id")
+        t.add_column("difficulty")
+        t.add_column("stage")
+        t.add_column("created_at")
+        for r in rows:
+            t.add_row(
+                r["card_id"][:20],
+                r["paper_id"][:20],
+                f"{r['difficulty']:.2f}",
+                r["stage"] or "—",
+                (r["created_at"] or "")[:10],
+            )
+        console.print(t)
+
+    elif action == "approve":
+        if not card_id:
+            console.print("[red]approve için card_id gereklidir.[/red]")
+            raise typer.Exit(1)
+        ok = store.approve_card(card_id)
+        if ok:
+            console.print(f"[green]Onaylandı:[/green] {card_id}")
+        else:
+            console.print(f"[red]Kart bulunamadı:[/red] {card_id}")
+            raise typer.Exit(1)
+
+    elif action == "reject":
+        if not card_id:
+            console.print("[red]reject için card_id gereklidir.[/red]")
+            raise typer.Exit(1)
+        ok = store.reject_card(card_id)
+        if ok:
+            console.print(f"[yellow]Reddedildi:[/yellow] {card_id}")
+        else:
+            console.print(f"[red]Kart bulunamadı:[/red] {card_id}")
+            raise typer.Exit(1)
+
+    else:
+        console.print(f"[red]Bilinmeyen eylem: {action!r}. pending | approve | reject[/red]")
+        raise typer.Exit(1)
+
+
 @app.command()
-def dataset() -> None:
+def dataset(
+    phase: int = typer.Option(0, help="1-4: sadece o fazın örnekleri. 0=tümü"),
+    all_examples: bool = typer.Option(
+        False, "--all", help="lora_eligible filtresi olmadan tümünü al"
+    ),
+) -> None:
     """Saklanan training örneklerinden train/valid JSONL üret."""
     from app.training.dataset_builder import DatasetBuilder
 
-    res = DatasetBuilder().build()
+    res = DatasetBuilder().build(
+        phase=phase if phase > 0 else None,
+        lora_eligible_only=not all_examples,
+    )
     console.print(
         Panel.fit(
             f"train: {res.train_path} ({res.n_train})\n"
@@ -425,6 +500,82 @@ def pine_export(
         console.print(f"[green]Kaydedildi:[/green] {output}")
     else:
         console.print(pine_code)
+
+
+@app.command("export-package")
+def export_package(
+    strategy_name: str = typer.Argument(
+        default="", help="Strateji adı (boşsa varsayılan örnek kullanılır)"
+    ),
+    output: str = typer.Option("", help="Çıktı dosyası (.achpkg). Boşsa stdout."),
+) -> None:
+    """StrategyIR → Entropia-uyumlu .achpkg paketi olarak dışa aktar (Pine + Python kodu içerir).
+
+    En son backtest verdict ve metrikleri otomatik olarak pakete eklenir.
+    """
+    from sqlalchemy import desc, select
+
+    from app.memory.sqlite_store import Backtest, SqliteStore, Strategy
+    from app.trading.package_exporter import export_strategy
+    from app.trading.strategy_ir import StrategyIR, example_ir
+
+    store = SqliteStore()
+    ir: StrategyIR
+    strategy_id: str | None = None
+
+    if strategy_name:
+        with store.session() as s:
+            row = s.scalars(select(Strategy).where(Strategy.name == strategy_name)).first()
+        if not row:
+            console.print(f"[red]Strateji bulunamadı: {strategy_name}[/red]")
+            raise typer.Exit(1)
+        ir = StrategyIR.model_validate_json(row.ir_json)
+        strategy_id = row.strategy_id
+    else:
+        ir = example_ir()
+
+    # En son backtest'i otomatik çek
+    verdict: str | None = None
+    metrics: dict = {}
+    if strategy_id:
+        with store.session() as s:
+            bt = s.scalars(
+                select(Backtest)
+                .where(Backtest.strategy_id == strategy_id)
+                .order_by(desc(Backtest.created_at))
+                .limit(1)
+            ).first()
+        if bt:
+            verdict = bt.verdict
+            try:
+                import json as _json
+
+                metrics = _json.loads(bt.metrics_json or "{}")
+            except Exception:
+                metrics = {}
+            if bt.total_return_pct:
+                metrics.setdefault("total_return_pct", bt.total_return_pct)
+            if bt.sharpe is not None:
+                metrics.setdefault("sharpe", bt.sharpe)
+            if bt.max_drawdown_pct is not None:
+                metrics.setdefault("max_drawdown_pct", bt.max_drawdown_pct)
+            if bt.n_trades:
+                metrics.setdefault("n_trades", bt.n_trades)
+
+    pkg = export_strategy(ir, backtest_verdict=verdict, backtest_metrics=metrics)
+
+    if output:
+        out_path = Path(output)
+        pkg.save(out_path)
+        console.print(f"[green]Paket kaydedildi:[/green] {out_path}")
+        console.print(f"  İsim    : {pkg.name}")
+        console.print(f"  Tip     : {pkg.package_type}")
+        color = "green" if verdict == "pass" else "red" if verdict == "fail" else "yellow"
+        verdict_str = f"[{color}]{verdict or '—'}[/]"
+        console.print(f"  Backtest: {verdict_str}")
+        console.print(f"  Boyut   : {len(pkg.to_json())} karakter")
+    else:
+        console.print(pkg.to_json())
 
 
 if __name__ == "__main__":  # pragma: no cover
