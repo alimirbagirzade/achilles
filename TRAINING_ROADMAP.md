@@ -32,7 +32,7 @@
 - 7 PDF / 567 chunk indeksli, `rag_answerer.py` aktif
 
 ### Bekleyen
-- [ ] **Görev D** — arXiv sorgu kütüphanesi (otomatik literatür tarama)
+- [x] **Görev D** ✅ — arXiv sorgu kütüphanesi (`achilles arxiv-sync`, 2026-06-07)
 - [ ] Scheduled RAG güncelleme (yeni makale → otomatik ingest)
 
 ---
@@ -54,7 +54,7 @@
 - 11 birim testi
 
 ### Bekleyen
-- [ ] tool_use SFT → LoRA faz 2 besleme pipeline'ı
+- [x] tool_use SFT → LoRA faz 2 besleme pipeline'ı ✅ (`achilles unified-dataset`, 2026-06-07)
 
 ---
 
@@ -122,6 +122,12 @@ Finans'ta doğrulanabilir görevler:
 
 ---
 
+
+### Achilles ✅ (2026-06-07)
+- Paper Mastery Agent — 0-100 RAG kalite skoru
+- `achilles mastery-run/queue/score/report` CLI komutları
+- `achilles mastery-to-sft` — mastery → SFT eğitim verisi
+
 ## 7. Agentic Training
 
 **Ne yapar:** Modeli tek cevap vermekten çıkarır, adım adım görev yürütmeyi öğretir.
@@ -141,9 +147,9 @@ Finans'ta doğrulanabilir görevler:
 
 ```
 Şu an aktif:
-  RAG ✅        → Görev D: sorgu otomasyonu
+  RAG ✅        → Görev D ✅ tamamlandı
   Tool Use 🟡   → backtest aracı LLM döngüsüne bağla
-  SFT/LoRA 🟡  → faz 2 veri seti
+  SFT/LoRA ✅  → unified-dataset pipeline tamamlandı
 
 Orta vadeli (1-3 ay):
   DPO 🔴          → önce 500+ kart biriktir
