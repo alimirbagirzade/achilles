@@ -945,9 +945,7 @@ def tool_use_train(
 
 @app.command("tool-use-dataset")
 def tool_use_dataset(
-    output: str = typer.Option(
-        "data/training/tool_use_sft.jsonl", "--output", "-o"
-    ),
+    output: str = typer.Option("data/training/tool_use_sft.jsonl", "--output", "-o"),
     only_verdict: str = typer.Option("", "--only-verdict", help="pass | fail | (boş=hepsi)"),
 ) -> None:
     """tool_use_examples → SFT JSONL veri seti oluştur."""
@@ -994,8 +992,9 @@ def auto_research(
             console.print(f"  [red]✗[/red] {e}")
     if dry_run:
         console.print(f"\n[dim]Üretilen sorular ({run.n_questions}):[/dim]")
-        from app.pipeline.auto_researcher import _extract_questions
         from app.memory.sqlite_store import SqliteStore
+        from app.pipeline.auto_researcher import _extract_questions
+
         for q in _extract_questions(SqliteStore(), max_questions, not all_cards):
             console.print(f"  • {q}")
 
@@ -1045,8 +1044,8 @@ def reward_analyze(
     stats = get_dpo_stats()
     console.print(
         f"Toplam sinyal: {stats['n_signals']} | "
-        f"chosen: {stats['label_distribution'].get('chosen',0)} | "
-        f"rejected: {stats['label_distribution'].get('rejected',0)} | "
+        f"chosen: {stats['label_distribution'].get('chosen', 0)} | "
+        f"rejected: {stats['label_distribution'].get('rejected', 0)} | "
         f"DPO çifti potansiyeli: {stats['dpo_eligible_pairs']}"
     )
 
@@ -1096,8 +1095,7 @@ def oss_rules_update(
         for p in pending:
             patch = _json.loads(p.proposed_patch)
             console.print(
-                f"  [dim]{p.suggestion_id[:8]}[/dim]  "
-                f"{patch.get('action', '?')} → {p.rule_file}"
+                f"  [dim]{p.suggestion_id[:8]}[/dim]  {patch.get('action', '?')} → {p.rule_file}"
             )
             console.print(f"    {p.reason[:100]}")
         console.print("\n[dim]Onaylamak: achilles rules-update --approve <id>[/dim]")
@@ -1112,6 +1110,7 @@ if __name__ == "__main__":  # pragma: no cover
 # ---------------------------------------------------------------------------
 # mastery commands
 # ---------------------------------------------------------------------------
+
 
 @app.command("mastery-run")
 def mastery_run(
@@ -1167,9 +1166,7 @@ def mastery_queue(
             return
         console.print(f"[bold]Mastery kuyruğu ({len(entries)} makale):[/bold]")
         for e in entries:
-            console.print(
-                f"  [{e['status']}] {e['paper_id']}  öncelik={e['priority']}"
-            )
+            console.print(f"  [{e['status']}] {e['paper_id']}  öncelik={e['priority']}")
 
 
 @app.command("mastery-score")
@@ -1206,18 +1203,19 @@ def mastery_report(
         raise typer.Exit(1)
     data = _json2.loads(report_path.read_text())
     score = data.get("score", {})
-    ts = score.get('total_score', 0)
-    fs = score.get('final_status', '?')
+    ts = score.get("total_score", 0)
+    fs = score.get("final_status", "?")
     console.print(f"[bold]{paper_id}[/bold]  total={ts:.1f}  status={fs}")
-    q_total = data.get('questions', 0)
-    q_pass = data.get('passed', 0)
-    q_fail = data.get('failed', 0)
+    q_total = data.get("questions", 0)
+    q_pass = data.get("passed", 0)
+    q_fail = data.get("failed", 0)
     console.print(f"Sorular: {q_total}  Geçti: {q_pass}  Kaldı: {q_fail}")
 
 
 # ---------------------------------------------------------------------------
 # arxiv-sync (Görev D: kayıtlı sorguları otomatik yeniden çalıştır)
 # ---------------------------------------------------------------------------
+
 
 @app.command("arxiv-sync")
 def arxiv_sync(
@@ -1232,7 +1230,7 @@ def arxiv_sync(
     queries = store.list_arxiv_saved_queries()
     if not queries:
         console.print("[yellow]Kayıtlı arXiv sorgusu yok. Önce:[/yellow]")
-        console.print("  uv run achilles arxiv \"sorgu terimi\"")
+        console.print('  uv run achilles arxiv "sorgu terimi"')
         return
 
     console.print(f"[bold]{len(queries)} kayıtlı sorgu bulundu.[/bold]")
@@ -1255,11 +1253,8 @@ def arxiv_sync(
             new_count = sum(1 for r in results if r.status == "downloaded")
             total_new += new_count
             store.mark_arxiv_query_ran(q["query_id"])
-            console.print(
-                f"     [green]✓[/green] {new_count} yeni makale / "
-                f"{len(results)} toplam"
-            )
-        except Exception as exc:  # noqa: BLE001
+            console.print(f"     [green]✓[/green] {new_count} yeni makale / {len(results)} toplam")
+        except Exception as exc:
             console.print(f"     [red]✗[/red] Hata: {exc}")
 
     if not dry_run:
@@ -1271,6 +1266,7 @@ def arxiv_sync(
 # ---------------------------------------------------------------------------
 # mastery-to-sft (Mastery cevaplarını SFT eğitim verisi olarak dışa aktar)
 # ---------------------------------------------------------------------------
+
 
 @app.command("mastery-to-sft")
 def mastery_to_sft(
@@ -1298,9 +1294,7 @@ def mastery_to_sft(
             "achilles mastery-queue --enqueue-all && achilles mastery-queue --run-all"
         )
     else:
-        console.print(
-            f"[green]✓[/green] {n} SFT örneği → [bold]{path}[/bold]"
-        )
+        console.print(f"[green]✓[/green] {n} SFT örneği → [bold]{path}[/bold]")
 
 
 @app.command("unified-dataset")
@@ -1310,8 +1304,9 @@ def unified_dataset(
     output: str = typer.Option("", help="Çıktı JSONL dosya yolu"),
 ) -> None:
     """Tüm SFT kaynaklarını birleştirip unified_sft.jsonl üret (LoRA faz 2)."""
-    from app.training.unified_dataset import UnifiedDatasetBuilder
     from pathlib import Path as _P
+
+    from app.training.unified_dataset import UnifiedDatasetBuilder
 
     builder = UnifiedDatasetBuilder()
     stats = builder.build(
@@ -1324,7 +1319,134 @@ def unified_dataset(
     console.print(f"  → [bold]{stats.output_path}[/bold]")
     console.print()
     console.print("[dim]LoRA eğitimi için:[/dim]")
+    console.print(f"  uv run achilles train --run --data {stats.output_path}")
+
+
+# ---------------------------------------------------------------------------
+# LoRA Training Control Plane (Gate 0-8 denetim hattı)
+# ---------------------------------------------------------------------------
+
+
+@app.command("lora-audit")
+def lora_audit(
+    dry_run: bool = typer.Option(
+        True, "--dry-run/--run", help="Yalnız denetle (varsayılan); --run ile tam hat."
+    ),
+) -> None:
+    """LoRA dataset denetim hattını (Gate 0-7, --run ile 0-8) çalıştır."""
+    from app.lora.control_plane import LoRAControlPlane
+    from app.memory.sqlite_store import SqliteStore
+
+    plane = LoRAControlPlane(store=SqliteStore())
+    report = plane.run_audit() if dry_run else plane.run_full(dry_run=False)
+
+    table = Table(title="LoRA Denetim — Kapılar")
+    table.add_column("Gate", justify="right")
+    table.add_column("Ad")
+    table.add_column("Sonuç")
+    table.add_column("Red", justify="right")
+    table.add_column("İnceleme", justify="right")
+    for stage in report.stages:
+        status = "[green]PASS[/green]" if stage.passed else "[red]FAIL[/red]"
+        table.add_row(
+            str(stage.gate_id),
+            stage.name,
+            status,
+            str(stage.rejected_count),
+            str(stage.review_count),
+        )
+    console.print(table)
     console.print(
-        f"  uv run achilles train --run "
-        f"--data {stats.output_path}"
+        f"Girdi: {report.total_input} | Onaylanan: {report.total_approved} | "
+        f"Reddedilen: {report.total_rejected} | İnceleme: {report.total_review_needed}"
     )
+    verdict = "[green]GEÇTİ[/green]" if report.passed else "[red]BAŞARISIZ[/red]"
+    console.print(f"Genel sonuç: {verdict}")
+
+    settings = get_settings()
+    report_path = settings.root / "reports" / "lora" / "audit_report.md"
+    plane.generate_report(report, output_path=report_path)
+    console.print(f"[dim]Rapor:[/dim] {report_path}")
+
+
+@app.command("lora-dataset")
+def lora_dataset(
+    output: Path = typer.Option(
+        Path("datasets/lora"), "--output", help="Çıktı dizini (JSONL buraya yazılır)."
+    ),
+) -> None:
+    """Onaylı kartlardan LoRA SFT JSONL veri seti üret."""
+    from app.lora.dataset_builder import build_dataset, export_jsonl
+    from app.memory.sqlite_store import SqliteStore
+
+    store = SqliteStore()
+    cards = store.list_approved_cards()
+    examples = build_dataset(cards)
+    out_dir = output if output.is_absolute() else (get_settings().root / output)
+    out_path = out_dir / "lora_sft.jsonl"
+    n = export_jsonl(examples, out_path)
+    if n == 0:
+        console.print(
+            "[yellow]Uygun (approved + eligible) kart bulunamadı. Önce kartları onayla.[/yellow]"
+        )
+    else:
+        console.print(f"[green]✓[/green] {n} LoRA örneği → [bold]{out_path}[/bold]")
+
+
+@app.command("lora-registry")
+def lora_registry() -> None:
+    """Adapter kayıt defterini listele."""
+    from app.lora.adapter_registry import AdapterRegistry
+
+    registry = AdapterRegistry()
+    records = registry.list_adapters()
+    if not records:
+        console.print("[yellow]Kayıtlı adapter yok.[/yellow]")
+        return
+
+    table = Table(title="LoRA Adapter Kayıt Defteri")
+    table.add_column("ID")
+    table.add_column("Ad")
+    table.add_column("Base Model")
+    table.add_column("Durum")
+    table.add_column("Eval", justify="right")
+    for r in records:
+        score = "-" if r.eval_score is None else f"{r.eval_score:.3f}"
+        table.add_row(r.adapter_id, r.adapter_name, r.base_model, r.status.value, score)
+    console.print(table)
+
+    production = registry.get_production()
+    if production:
+        console.print(f"[green]Production:[/green] {production.adapter_name}")
+
+
+@app.command("lora-status")
+def lora_status() -> None:
+    """LoRA hattının genel durumunu göster (eligible kart sayısı, aşamalar)."""
+    from app.lora.adapter_registry import AdapterRegistry
+    from app.memory.sqlite_store import SqliteStore
+
+    store = SqliteStore()
+    approved = store.list_approved_cards()
+    pending = store.list_pending_cards()
+    eligible = [c for c in approved if c.get("lora_eligible")]
+
+    stage_counts: dict[str, int] = {}
+    for card in eligible:
+        stage = str(card.get("stage") or "(atanmamış)")
+        stage_counts[stage] = stage_counts.get(stage, 0) + 1
+
+    table = Table(title="LoRA Durum")
+    table.add_column("Metrik")
+    table.add_column("Değer", justify="right")
+    table.add_row("Onaylı kart", str(len(approved)))
+    table.add_row("Eligible kart", str(len(eligible)))
+    table.add_row("Bekleyen (pending) kart", str(len(pending)))
+    for stage, count in sorted(stage_counts.items()):
+        table.add_row(f"stage: {stage}", str(count))
+
+    registry = AdapterRegistry()
+    table.add_row("Kayıtlı adapter", str(len(registry.list_adapters())))
+    production = registry.get_production()
+    table.add_row("Production adapter", production.adapter_name if production else "yok")
+    console.print(table)

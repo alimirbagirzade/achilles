@@ -1,0 +1,33 @@
+# LoRA kontrol düzlemi yapılandırması.
+# Kapıları, yolları, eşikleri ve onay gerektiren işleri tanımlar.
+
+gates:
+  gate_0_source: true
+  gate_1_schema: true
+  gate_2_curriculum: true
+  gate_3_domain: true
+  gate_4_quality: true
+  gate_5_math: true
+  gate_6_philosophy: true
+  gate_7_safety: true     # BLOCKER — kapatılamaz
+  gate_8_split: true
+
+paths:
+  data_dir: data/lora
+  dataset_dir: datasets/lora
+  report_dir: reports/lora
+  registry_dir: registry/adapters
+
+thresholds:
+  math_correctness: 0.90
+  statistics_correctness: 0.85
+  logic_consistency: 0.85
+  hallucination_risk: 0.05
+  suspicious_annual_return_pct: 1000
+
+# Bu işlemler kullanıcı onayı olmadan yapılamaz.
+approval_required:
+  - big_training
+  - model_merge
+  - production_promotion
+  - gguf_export

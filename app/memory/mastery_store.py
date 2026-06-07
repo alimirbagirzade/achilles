@@ -127,7 +127,7 @@ class MasteryStore:
     """Paper Mastery verilerine erişim sağlayan depo sınıfı."""
 
     def __init__(self, db_path: str | Path | None = None) -> None:
-        path = db_path or get_settings().sqlite_db
+        path = db_path or get_settings().sqlite_file
         self.db_path = Path(path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._engine = create_engine(f"sqlite:///{self.db_path}", echo=False)

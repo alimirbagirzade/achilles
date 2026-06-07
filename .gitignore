@@ -43,6 +43,25 @@ reports/evals/*
 # But keep the .gitkeep placeholders
 !**/.gitkeep
 
+# LoRA — büyük çıktılar commit edilmez
+data/lora/raw/
+data/lora/approved/
+data/lora/review_needed/
+data/lora/rejected/
+datasets/lora/*.jsonl
+outputs/
+checkpoints/
+adapters/
+*.safetensors
+*.bin
+*.gguf
+*.pt
+*.pth
+wandb/
+mlruns/
+reports/lora/private/
+registry/adapters/*.jsonl
+
 # OS / editor
 .DS_Store
 .idea/

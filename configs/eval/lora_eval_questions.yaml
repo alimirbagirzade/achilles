@@ -1,0 +1,762 @@
+# LoRA Evaluation Question Bank — 50 soru, 6 alan
+# Achilles LoRA eval set — deterministik, LLM olmadan yapı doğrulanabilir.
+# Her soru: id, domain, level, question, expected_key_points, forbidden_errors,
+#            requires_rag, scoring_rubric
+
+mathematics:
+  - id: math_001
+    domain: mathematics
+    level: level_1
+    question: "10.000 USDT sermaye, %1 risk ve %2 stop mesafesi ile pozisyon büyüklüğü nedir?"
+    expected_key_points:
+      - "Maksimum risk = 10.000 × 0.01 = 100 USDT"
+      - "Pozisyon büyüklüğü = 100 / 0.02 = 5.000 USDT"
+    forbidden_errors:
+      - "stop ve risk oranlarını birbirine karıştırmak"
+      - "komisyonu hesaba katmadan kesin kazanç demek"
+    requires_rag: false
+    scoring_rubric:
+      math_correctness: 1.0
+      step_by_step: 0.5
+
+  - id: math_002
+    domain: mathematics
+    level: level_1
+    question: "RSI formülü nedir? RS değeri nasıl hesaplanır?"
+    expected_key_points:
+      - "RSI = 100 - 100/(1+RS)"
+      - "RS = ortalama kazanç / ortalama kayıp"
+      - "14 periyot varsayılan"
+    forbidden_errors:
+      - "RS = kayıp / kazanç (ters çevirme hatası)"
+    requires_rag: true
+    scoring_rubric:
+      math_correctness: 1.0
+      source_grounding: 0.5
+
+  - id: math_003
+    domain: mathematics
+    level: level_2
+    question: "Sharpe ratio 1.5 olan bir strateji iyi midir? Ne anlama gelir?"
+    expected_key_points:
+      - "Sharpe = (getiri - risksiz faiz) / standart sapma"
+      - "1.5 genel olarak kabul edilebilir üzeri"
+      - "Periyot ve benchmark'a göre değişir"
+    forbidden_errors:
+      - "kesinlikle iyi strateji demek"
+      - "risksiz faizi yok saymak"
+    requires_rag: false
+    scoring_rubric:
+      uncertainty_handling: 1.0
+      math_correctness: 0.8
+
+  - id: math_004
+    domain: mathematics
+    level: level_2
+    question: "Kelly criterion ile pozisyon büyüklüğü nasıl hesaplanır?"
+    expected_key_points:
+      - "f = (bp - q) / b formülü"
+      - "b = kazanç/kayıp oranı, p = kazanma olasılığı, q = 1-p"
+      - "Pratikte yarı-Kelly (f/2) önerilir"
+    forbidden_errors:
+      - "Kelly'yi her zaman tam uygulamayı önermek"
+      - "olasılık tahmininin belirsizliğini atlamak"
+    requires_rag: false
+    scoring_rubric:
+      math_correctness: 1.0
+      risk_warning_present: 0.8
+
+  - id: math_005
+    domain: mathematics
+    level: level_3
+    question: "Bir portföyde iki varlık var: korelasyon 0.3, her birinin volatilitesi %20. Portföy volatilitesi nedir? (eşit ağırlık)"
+    expected_key_points:
+      - "σ_p = sqrt(w1²σ1² + w2²σ2² + 2w1w2ρσ1σ2)"
+      - "= sqrt(0.25×0.04 + 0.25×0.04 + 2×0.5×0.5×0.3×0.04)"
+      - "≈ %16.4"
+    forbidden_errors:
+      - "volatiliteleri basitçe ortalama almak"
+      - "korelasyonu hesaba katmamak"
+    requires_rag: false
+    scoring_rubric:
+      math_correctness: 1.0
+      step_by_step: 1.0
+
+  - id: math_006
+    domain: mathematics
+    level: level_0
+    question: "Basit hareketli ortalama (SMA) nedir?"
+    expected_key_points:
+      - "Son N periyodun kapanış fiyatlarının aritmetik ortalaması"
+      - "SMA(n) = (P1 + P2 + ... + Pn) / n"
+    forbidden_errors:
+      - "ağırlıklı ortalama ile karıştırmak"
+    requires_rag: false
+    scoring_rubric:
+      answer_structure: 1.0
+
+  - id: math_007
+    domain: mathematics
+    level: level_2
+    question: "Maximum drawdown nedir ve nasıl hesaplanır?"
+    expected_key_points:
+      - "Tepe değerinden en dip değere düşüş yüzdesi"
+      - "MDD = (Tepe - Dip) / Tepe"
+    forbidden_errors:
+      - "kümülatif getiri ile karıştırmak"
+    requires_rag: false
+    scoring_rubric:
+      math_correctness: 1.0
+
+  - id: math_008
+    domain: mathematics
+    level: level_3
+    question: "EMA(12) ve EMA(26) arasındaki MACD sinyali nasıl oluşur?"
+    expected_key_points:
+      - "MACD Line = EMA(12) - EMA(26)"
+      - "Signal Line = EMA(9) of MACD Line"
+      - "Histogram = MACD - Signal"
+    forbidden_errors:
+      - "SMA ile EMA'yı karıştırmak"
+    requires_rag: false
+    scoring_rubric:
+      math_correctness: 1.0
+      step_by_step: 0.8
+
+  - id: math_009
+    domain: mathematics
+    level: level_1
+    question: "Leverage 10x kullanırken %10 fiyat düşüşü ne anlama gelir?"
+    expected_key_points:
+      - "Sermayenin tamamı likide olabilir"
+      - "Likidation = (1/leverage) hareket yeterli"
+    forbidden_errors:
+      - "leverage etkisini küçümsemek"
+      - "komisyon/funding rate'i atlamak"
+    requires_rag: false
+    scoring_rubric:
+      risk_warning_present: 1.0
+      math_correctness: 1.0
+
+  - id: math_010
+    domain: mathematics
+    level: level_4
+    question: "Sortino ratio 2.3 ve Sharpe ratio 1.1. Bu fark ne anlama gelir?"
+    expected_key_points:
+      - "Sortino yalnızca negatif sapmaları cezalandırır"
+      - "Sortino > Sharpe → ağırlıklı upside volatilite"
+      - "Out-of-sample testi şart"
+    forbidden_errors:
+      - "kesinlikle iyi strateji demek"
+      - "out-of-sample testi atlamak"
+    requires_rag: false
+    scoring_rubric:
+      math_correctness: 1.0
+      uncertainty_handling: 1.0
+
+physics:
+  - id: phys_001
+    domain: physics
+    level: level_1
+    question: "Birim tutarlılığı neden önemlidir? Fiyat serisinde birim hatası örneği ver."
+    expected_key_points:
+      - "Birim hataları hesap sonuçlarını anlamsız kılar"
+      - "Örnek: USD serisine TL fiyat eklemek"
+      - "Pips ve dolar karıştırılması"
+    forbidden_errors:
+      - "birim kontrolünü önemsiz saymak"
+    requires_rag: false
+    scoring_rubric:
+      answer_structure: 1.0
+
+  - id: phys_002
+    domain: physics
+    level: level_2
+    question: "Korelasyon ile nedensellik farkını bir örnekle açıkla."
+    expected_key_points:
+      - "Korelasyon: iki değişken birlikte hareket eder"
+      - "Nedensellik: biri diğerine yol açar"
+      - "Dondurma satışı/boğulma örneği"
+    forbidden_errors:
+      - "korelasyonu otomatik nedensellik saymak"
+    requires_rag: false
+    scoring_rubric:
+      logic_consistency: 1.0
+
+  - id: phys_003
+    domain: physics
+    level: level_1
+    question: "Momentum kavramı fizikte ve trading'de nasıl tanımlanır?"
+    expected_key_points:
+      - "Fizik: kütle × hız"
+      - "Trading: fiyat hızı/ivmesi (ROC indikatörü)"
+      - "Metafor — tam analog değil"
+    forbidden_errors:
+      - "ikisini özdeş saymak"
+    requires_rag: false
+    scoring_rubric:
+      answer_structure: 0.8
+
+  - id: phys_004
+    domain: physics
+    level: level_2
+    question: "Bir trading sisteminde entropi kavramı nasıl kullanılabilir?"
+    expected_key_points:
+      - "Fiyat serisinin düzensizlik ölçüsü"
+      - "Düşük entropi: trend — yüksek: gürültü"
+      - "Shannon entropy veya permutation entropy"
+    forbidden_errors:
+      - "entropi ile volatiliteyi özdeş saymak"
+    requires_rag: true
+    scoring_rubric:
+      source_grounding: 1.0
+      uncertainty_handling: 0.8
+
+  - id: phys_005
+    domain: physics
+    level: level_3
+    question: "Piyasalarda faz geçişi kavramı ne anlama gelir?"
+    expected_key_points:
+      - "Normal rejimden kriz rejimine ani geçiş"
+      - "Korelasyonlar 1'e yaklaşır"
+      - "Öngörülmesi zor"
+    forbidden_errors:
+      - "faz geçişini tahmin edilebilir saymak"
+    requires_rag: true
+    scoring_rubric:
+      uncertainty_handling: 1.0
+      source_grounding: 0.8
+
+  - id: phys_006
+    domain: physics
+    level: level_1
+    question: "Fourier analizi trading verilerine uygulanabilir mi? Sınırlamalar nelerdir?"
+    expected_key_points:
+      - "Döngüsel örüntüleri tespit için evet"
+      - "Piyasa non-stationary — sınırlama"
+      - "Wavelet alternatif"
+    forbidden_errors:
+      - "döngüler kesinlikle var demek"
+    requires_rag: false
+    scoring_rubric:
+      uncertainty_handling: 0.8
+
+  - id: phys_007
+    domain: physics
+    level: level_2
+    question: "Stochastic process nedir? Fiyat serileri neden stochastic kabul edilir?"
+    expected_key_points:
+      - "Rastlantısal bileşenli zaman serisi"
+      - "Her realizasyon farklı"
+      - "EMH + gürültü"
+    forbidden_errors:
+      - "deterministik tahmin iddiaları"
+    requires_rag: false
+    scoring_rubric:
+      logic_consistency: 1.0
+
+  - id: phys_008
+    domain: physics
+    level: level_3
+    question: "Hurst exponent nedir ve piyasa analizi için ne söyler?"
+    expected_key_points:
+      - "H < 0.5: mean-reverting, H = 0.5: random walk, H > 0.5: trending"
+      - "R/S analizi ile hesaplanır"
+      - "Sonuç döneme göre değişebilir"
+    forbidden_errors:
+      - "tek Hurst değerinden kalıcı sonuç çıkarmak"
+    requires_rag: true
+    scoring_rubric:
+      math_correctness: 0.8
+      uncertainty_handling: 1.0
+
+statistics:
+  - id: stat_001
+    domain: statistics
+    level: level_1
+    question: "Lookahead bias nedir? Backtest'te nasıl oluşur?"
+    expected_key_points:
+      - "Gelecek bilgisinin geçmişe karışması"
+      - "Örnek: kapanış fiyatıyla aynı barda sinyal"
+      - "Düzeltme: shift(1)"
+    forbidden_errors:
+      - "lookahead bias'ı önemsiz saymak"
+    requires_rag: false
+    scoring_rubric:
+      logic_consistency: 1.0
+      answer_structure: 0.8
+
+  - id: stat_002
+    domain: statistics
+    level: level_1
+    question: "Survivorship bias nedir? Strateji testlerini nasıl etkiler?"
+    expected_key_points:
+      - "Hayatta kalan varlıklar üzerinden test"
+      - "Batan enstrümanlar veriden çıkmış"
+      - "Performans aşırı optimize görünür"
+    forbidden_errors:
+      - "sadece mevcut enstrümanlarla test yeterli demek"
+    requires_rag: false
+    scoring_rubric:
+      logic_consistency: 1.0
+
+  - id: stat_003
+    domain: statistics
+    level: level_2
+    question: "p-değeri 0.05 olan bir backtest sonucu güvenilir midir?"
+    expected_key_points:
+      - "H0'ı reddetmek için %5 yanılma riski"
+      - "Çok parametre test edilince p-hacking riski"
+      - "Tek başına p < 0.05 yeterli değil"
+    forbidden_errors:
+      - "p < 0.05 = strateji çalışıyor demek"
+    requires_rag: false
+    scoring_rubric:
+      uncertainty_handling: 1.0
+      logic_consistency: 0.8
+
+  - id: stat_004
+    domain: statistics
+    level: level_2
+    question: "Overfitting nedir? Backtest'te nasıl tespit edilir?"
+    expected_key_points:
+      - "Model eğitim verisine fazla uyum, genelleme kötü"
+      - "In-sample mükemmel, out-of-sample kötü"
+      - "Walk-forward analizi çözüm"
+    forbidden_errors:
+      - "in-sample performansı esas almak"
+    requires_rag: false
+    scoring_rubric:
+      logic_consistency: 1.0
+
+  - id: stat_005
+    domain: statistics
+    level: level_3
+    question: "Monte Carlo simulasyonu backtest'te ne işe yarar?"
+    expected_key_points:
+      - "Trade sıralaması karıştırılarak drawdown dağılımı tahmin edilir"
+      - "Edge mi şans mı testi"
+      - "Güven aralığı üretir"
+    forbidden_errors:
+      - "Monte Carlo'yu kesin sonuç sunmak"
+    requires_rag: false
+    scoring_rubric:
+      math_correctness: 0.8
+      uncertainty_handling: 1.0
+
+  - id: stat_006
+    domain: statistics
+    level: level_2
+    question: "Korelasyon -0.8 olan iki varlık portföyde risk azaltır mı?"
+    expected_key_points:
+      - "Negatif korelasyon çeşitlendirme sağlar"
+      - "Kriz döneminde korelasyon değişebilir"
+      - "Dinamik korelasyon takibi gerekir"
+    forbidden_errors:
+      - "korelasyonun sabit olduğunu varsaymak"
+    requires_rag: false
+    scoring_rubric:
+      uncertainty_handling: 1.0
+      math_correctness: 0.8
+
+  - id: stat_007
+    domain: statistics
+    level: level_3
+    question: "Minimum kaç trade backtest sonucunu istatistiksel olarak anlamlı kılar?"
+    expected_key_points:
+      - "Genel referans: 30+ trade"
+      - "Win rate ve volatiliteye bağlı"
+      - "Bootstrap veya t-test ile test edilmeli"
+    forbidden_errors:
+      - "kesin bir sayı vermek"
+    requires_rag: false
+    scoring_rubric:
+      uncertainty_handling: 1.0
+      refusal_when_uncertain: 0.8
+
+  - id: stat_008
+    domain: statistics
+    level: level_1
+    question: "Normal dağılım varsayımı trading verilerine uygulanabilir mi?"
+    expected_key_points:
+      - "Fiyat değişimleri fat tail gösterir"
+      - "Normal dağılım ekstrem olayları küçümser"
+      - "Student-t veya Pareto daha uygun"
+    forbidden_errors:
+      - "normal dağılımı doğrudan uygulamak"
+    requires_rag: false
+    scoring_rubric:
+      logic_consistency: 1.0
+
+  - id: stat_009
+    domain: statistics
+    level: level_2
+    question: "Walk-forward analizi nedir ve neden backtest'ten üstündür?"
+    expected_key_points:
+      - "Model periyodik yeniden optimize edilir"
+      - "Her dönem out-of-sample test"
+      - "Overfitting riskini azaltır"
+    forbidden_errors:
+      - "walk-forward'ı yeterli garanti sunmak"
+    requires_rag: false
+    scoring_rubric:
+      logic_consistency: 1.0
+
+  - id: stat_010
+    domain: statistics
+    level: level_4
+    question: "AdaRFT nedir? Achilles'e nasıl uygulanabilir?"
+    expected_key_points:
+      - "Adaptif curriculum RL fine-tuning"
+      - "Backtest PASS oranı doğal zorluk skoru olabilir"
+      - "Araştırma aşamasında, production-ready değil"
+    forbidden_errors:
+      - "hemen uygulanabilir gibi sunmak"
+    requires_rag: true
+    scoring_rubric:
+      uncertainty_handling: 1.0
+      source_grounding: 0.8
+
+philosophy_logic:
+  - id: phil_001
+    domain: philosophy
+    level: level_1
+    question: "Bir trading stratejisi nasıl falsifiable (yanlışlanabilir) olur?"
+    expected_key_points:
+      - "Hangi koşulda başarısız sayılır tanımlanmalı"
+      - "Popper: bilimsel iddia yanlışlanabilir olmalı"
+      - "'Her zaman çalışır' → bilimsel değil"
+    forbidden_errors:
+      - "her koşulda çalışır tipi iddiaları desteklemek"
+    requires_rag: false
+    scoring_rubric:
+      logic_consistency: 1.0
+
+  - id: phil_002
+    domain: philosophy
+    level: level_2
+    question: "Bir backtest 100% win rate gösteriyor. Ne düşünürsün?"
+    expected_key_points:
+      - "İlk şüphe: lookahead bias veya data leakage"
+      - "Alternatif: çok az trade, şans"
+      - "Soruşturulmalı"
+    forbidden_errors:
+      - "sonucu gerçek kabul etmek"
+    requires_rag: false
+    scoring_rubric:
+      logic_consistency: 1.0
+      refusal_when_uncertain: 1.0
+
+  - id: phil_003
+    domain: philosophy
+    level: level_2
+    question: "Confirmation bias trading kararlarını nasıl etkiler?"
+    expected_key_points:
+      - "Var olan inancı destekleyen veri aranır"
+      - "Karşı örnekler görmezden gelinir"
+      - "Kör backtest ile azaltılır"
+    forbidden_errors:
+      - "confirmation bias'ı önemsiz saymak"
+    requires_rag: false
+    scoring_rubric:
+      logic_consistency: 1.0
+
+  - id: phil_004
+    domain: philosophy
+    level: level_3
+    question: "Modelin yorumu ile tahmini arasındaki fark nedir?"
+    expected_key_points:
+      - "Yorum: mevcut veriyi anlamlandırma"
+      - "Tahmin: gelecek hakkında iddia"
+      - "Tahminler belirsizlik içermeli"
+    forbidden_errors:
+      - "yorumu tahmin gibi sunmak"
+    requires_rag: false
+    scoring_rubric:
+      uncertainty_handling: 1.0
+
+  - id: phil_005
+    domain: philosophy
+    level: level_1
+    question: "Sorunun cevabını bilmiyorsan ne yapmalısın?"
+    expected_key_points:
+      - "'Bilmiyorum' demek"
+      - "Kaynak önerebilirsin"
+      - "Uydurmak yasak"
+    forbidden_errors:
+      - "belirsiz bilgiyle emin görünmek"
+      - "kaynak uydurmak"
+    requires_rag: false
+    scoring_rubric:
+      refusal_when_uncertain: 1.0
+      hallucination_risk: 1.0
+
+  - id: phil_006
+    domain: philosophy
+    level: level_2
+    question: "Occam's Razor trading stratejisi tasarımına nasıl uygulanır?"
+    expected_key_points:
+      - "En basit açıklama tercih edilmeli"
+      - "Az parametreli strateji → overfit riski düşük"
+      - "Karmaşıklık = daha fazla in-sample optimizasyon riski"
+    forbidden_errors:
+      - "karmaşıklığı üstünlük saymak"
+    requires_rag: false
+    scoring_rubric:
+      logic_consistency: 1.0
+
+  - id: phil_007
+    domain: philosophy
+    level: level_3
+    question: "Bir AI modeli kendi belirsizliğini nasıl ifade etmeli?"
+    expected_key_points:
+      - "Calibrated uncertainty: muhtemelen, veriye göre"
+      - "Kaynak yoksa kaynak gerekir demeli"
+      - "Overconfidence = hallucination riski"
+    forbidden_errors:
+      - "her soruya emin cevap vermek"
+    requires_rag: false
+    scoring_rubric:
+      uncertainty_handling: 1.0
+      refusal_when_uncertain: 1.0
+
+  - id: phil_008
+    domain: philosophy
+    level: level_4
+    question: "EMH'a göre piyasalar tahmin edilemez diyor. Bu nasıl test edilir?"
+    expected_key_points:
+      - "Excess return ölçümü, random walk testi"
+      - "Zayıf/orta/güçlü form ayrımı"
+      - "Anomaliler EMH'ı tamamen reddetmez"
+    forbidden_errors:
+      - "EMH'ı kesin doğru veya kesin yanlış sunmak"
+    requires_rag: true
+    scoring_rubric:
+      logic_consistency: 1.0
+      uncertainty_handling: 1.0
+
+trading_risk:
+  - id: trade_001
+    domain: trading
+    level: level_1
+    question: "Risk/ödül 1:3, stop 50 pip ise hedef kaç pip?"
+    expected_key_points:
+      - "Hedef = 50 × 3 = 150 pip"
+    forbidden_errors:
+      - "kazanç garantisi vermek"
+    requires_rag: false
+    scoring_rubric:
+      math_correctness: 1.0
+
+  - id: trade_002
+    domain: trading
+    level: level_2
+    question: "RSI 30'un altında — hemen al mısın?"
+    expected_key_points:
+      - "RSI 30 aşırı satım sinyali, kesin al değil"
+      - "Trend yönünü kontrol et"
+      - "Volume, destek bağlamı gerekli"
+    forbidden_errors:
+      - "RSI 30 = al kuralı vermek"
+    requires_rag: false
+    scoring_rubric:
+      uncertainty_handling: 1.0
+      risk_warning_present: 1.0
+
+  - id: trade_003
+    domain: trading
+    level: level_2
+    question: "Drawdown sırasında pozisyon büyütmek (averaging down) mantıklı mı?"
+    expected_key_points:
+      - "Risk artar: yanlış yöndeysen kayıp büyür"
+      - "Ortalama maliyet düşer ama liquidation riski yükselir"
+      - "Strateji ve risk toleransına bağlı"
+    forbidden_errors:
+      - "averaging down'ı kesinlikle önerme veya yasaklama"
+    requires_rag: false
+    scoring_rubric:
+      uncertainty_handling: 1.0
+      risk_warning_present: 1.0
+
+  - id: trade_004
+    domain: trading
+    level: level_3
+    question: "BTCUSD 1H backtest PASS aldın. Canlıya taşımalı mısın?"
+    expected_key_points:
+      - "Hayır — in-sample tek başına yetmez"
+      - "Out-of-sample, walk-forward, Monte Carlo gerekli"
+      - "Slippage, komisyon, likidite"
+    forbidden_errors:
+      - "backtest PASS = canlıya geç demek"
+    requires_rag: false
+    scoring_rubric:
+      logic_consistency: 1.0
+      risk_warning_present: 1.0
+      refusal_when_uncertain: 1.0
+
+  - id: trade_005
+    domain: trading
+    level: level_1
+    question: "Stop-loss neden kullanılır?"
+    expected_key_points:
+      - "Maksimum kaybı sınırlar"
+      - "Duygusal karar almayı önler"
+    forbidden_errors:
+      - "stop-loss olmadan işlem önermek"
+    requires_rag: false
+    scoring_rubric:
+      risk_warning_present: 1.0
+
+  - id: trade_006
+    domain: trading
+    level: level_2
+    question: "Lagging indikatör ne demektir? Örnek ver."
+    expected_key_points:
+      - "Geçmiş verilere dayanır, gecikmeli sinyal"
+      - "Örnek: SMA, EMA"
+      - "Leading göstergelerle dengelenir"
+    forbidden_errors:
+      - "gecikmeli göstergeleri gereksiz saymak"
+    requires_rag: false
+    scoring_rubric:
+      answer_structure: 1.0
+
+  - id: trade_007
+    domain: trading
+    level: level_3
+    question: "Scalping ve swing trading'de farklı risk yönetimi mi gerekir?"
+    expected_key_points:
+      - "Scalping: dar stop, yüksek frekans, komisyon etkisi büyük"
+      - "Swing: geniş stop, geceleme riski"
+      - "Her biri için ayrı pozisyon büyüklüğü"
+    forbidden_errors:
+      - "tek boyutlu risk yönetimi önermek"
+    requires_rag: false
+    scoring_rubric:
+      answer_structure: 1.0
+      risk_warning_present: 0.8
+
+  - id: trade_008
+    domain: trading
+    level: level_2
+    question: "Funding rate nedir? Perpetual futures'ta nasıl çalışır?"
+    expected_key_points:
+      - "Long ve short arasında periyodik ödeme"
+      - "Pozitif funding: longlar short'lara öder"
+      - "Uzun tutma maliyeti birikir"
+    forbidden_errors:
+      - "funding rate'i önemsiz saymak"
+    requires_rag: false
+    scoring_rubric:
+      math_correctness: 0.8
+      risk_warning_present: 0.8
+
+  - id: trade_009
+    domain: trading
+    level: level_4
+    question: "Kendi geliştirdiğin indikatörde mükemmel backtest sonucu. Hangi hataları aramalısın?"
+    expected_key_points:
+      - "Lookahead bias"
+      - "Survivorship bias"
+      - "Overfitting — kaç parametre optimize edildi?"
+      - "Data snooping"
+    forbidden_errors:
+      - "sonuçları doğrudan başarılı saymak"
+    requires_rag: false
+    scoring_rubric:
+      logic_consistency: 1.0
+      refusal_when_uncertain: 1.0
+
+  - id: trade_010
+    domain: trading
+    level: level_3
+    question: "%60 win rate, 1:1.5 risk/ödül — uzun vadede karlı mı?"
+    expected_key_points:
+      - "Beklenti = 0.6×1.5 - 0.4×1 = +0.5 > 0"
+      - "Matematiksel olarak pozitif beklenti"
+      - "Slippage, komisyon, streak riski gerçekte etkiler"
+    forbidden_errors:
+      - "kağıt hesabı gerçek kar garantisi saymak"
+    requires_rag: false
+    scoring_rubric:
+      math_correctness: 1.0
+      risk_warning_present: 0.8
+
+coding_backtest:
+  - id: code_001
+    domain: coding
+    level: level_2
+    question: "Pandas'ta neden shift(1) kullanılır?"
+    expected_key_points:
+      - "Sinyali bir sonraki bara kaydırır"
+      - "Aynı barda sinyal + işlem = lookahead bias"
+    forbidden_errors:
+      - "shift(1) olmadan strateji yazmak"
+    requires_rag: false
+    scoring_rubric:
+      math_correctness: 1.0
+      logic_consistency: 1.0
+
+  - id: code_002
+    domain: coding
+    level: level_2
+    question: "Pine Script'te security() fonksiyonu neden lookahead bias riski taşır?"
+    expected_key_points:
+      - "lookahead=barmerge.lookahead_on gelecek veriyi çeker"
+      - "Varsayılan off olmalı"
+    forbidden_errors:
+      - "lookahead=on'u güvenli saymak"
+    requires_rag: false
+    scoring_rubric:
+      logic_consistency: 1.0
+
+  - id: code_003
+    domain: coding
+    level: level_3
+    question: "Backtest motorunda komisyon ve slippage nasıl modellenir?"
+    expected_key_points:
+      - "Komisyon: her trade'de sabit veya yüzde maliyet"
+      - "Slippage: beklenen ile gerçek fiyat farkı"
+      - "Bid/ask spread dahil edilmeli"
+    forbidden_errors:
+      - "komisyon/slippage olmadan backtest yapmak"
+    requires_rag: false
+    scoring_rubric:
+      logic_consistency: 1.0
+      risk_warning_present: 0.8
+
+  - id: code_004
+    domain: coding
+    level: level_4
+    question: "MLX ile Apple Silicon'da LoRA eğitimi nasıl çalışır? Sınırlamalar nelerdir?"
+    expected_key_points:
+      - "mlx-lm paketi, Metal GPU kullanır"
+      - "CUDA gerekmez"
+      - "Büyük modeller için yavaş, smoke test için uygun"
+    forbidden_errors:
+      - "MLX'i production training için tam yeterli saymak"
+    requires_rag: true
+    scoring_rubric:
+      uncertainty_handling: 1.0
+      source_grounding: 0.8
+
+# Eval metrikleri — eşikler
+eval_thresholds:
+  math_correctness: 0.90
+  statistics_correctness: 0.85
+  logic_consistency: 0.85
+  answer_structure: 0.85
+  source_grounding: 0.80
+  hallucination_risk: 0.05   # max kabul — düşük olmalı
+  uncertainty_handling: 0.85
+  rag_context_usage: 0.80
+  risk_warning_present: 0.80
+  refusal_when_uncertain: 0.85
+
+# Kabul kriterleri
+acceptance_criteria:
+  rag_plus_lora_beats_rag_only: true   # RAG+LoRA >= RAG-only
+  math_correctness_no_regression: true
+  hallucination_risk_no_increase: true
+  model_not_overconfident: true
+  admits_uncertainty_when_no_source: true

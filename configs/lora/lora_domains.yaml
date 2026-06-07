@@ -1,0 +1,45 @@
+# Domain tanımları ve anahtar kelime listeleri (TR + EN).
+# domain_classifier.py içindeki DOMAIN_KEYWORDS ile uyumludur.
+
+domains:
+  mathematics:
+    keywords:
+      [calculus, integral, derivative, formula, matrix, vector, equation,
+       theorem, türev, formül, matris, denklem, hesap, fonksiyon, olasılık,
+       probability]
+
+  physics:
+    keywords:
+      [force, energy, acceleration, velocity, momentum, thermodynamics,
+       kuvvet, enerji, ivme, hız, hareket, termodinamik, birim, kütle]
+
+  statistics:
+    keywords:
+      [distribution, regression, correlation, p-value, p-değeri, hypothesis,
+       variance, standard deviation, dağılım, regresyon, korelasyon, hipotez,
+       varyans, ortalama, sample]
+
+  philosophy:
+    keywords:
+      [epistemology, causality, uncertainty, evidence, epistemoloji,
+       nedensellik, belirsizlik, kanıt, ontoloji, argument, akıl yürütme]
+
+  trading:
+    keywords:
+      [backtest, strategy, indicator, market, position, candlestick, strateji,
+       indikatör, piyasa, pozisyon, mum, fiyat, trend, momentum]
+
+  coding:
+    keywords:
+      [python, algorithm, function, code, class, loop, algoritma, fonksiyon,
+       kod, sınıf, döngü, değişken]
+
+  ai_system_design:
+    keywords:
+      [rag, lora, embedding, model, fine-tuning, fine tuning, transformer,
+       prompt, retrieval, gömme, ince ayar, vektör]
+
+  risk_management:
+    keywords:
+      [stop-loss, stop loss, drawdown, leverage, position size, kelly,
+       kaldıraç, pozisyon büyüklüğü, risk, zarar durdur, sermaye]

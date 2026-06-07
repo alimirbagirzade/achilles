@@ -1,0 +1,40 @@
+# Müfredat seviyeleri — zorluk derecesine göre eğitim aşamaları.
+# difficulty: 0.0-1.0 aralığında. Her seviye bir alt aralık kapsar.
+
+levels:
+  - level: 0
+    name: "Temel kavram"
+    description: "'Bu nedir?' — tanımsız, sezgisel açıklama"
+    difficulty_range: [0.0, 0.2]
+    prerequisites: []
+
+  - level: 1
+    name: "Tanım + Formül"
+    description: "Resmi tanım ve ilgili formül"
+    difficulty_range: [0.2, 0.4]
+    prerequisites: [0]
+
+  - level: 2
+    name: "Uygulama + Yorum"
+    description: "Formülün uygulanması ve sonucun yorumlanması"
+    difficulty_range: [0.4, 0.6]
+    prerequisites: [0, 1]
+
+  - level: 3
+    name: "Kombinasyon + Strateji"
+    description: "Birden çok kavramın birleştirilmesi, strateji kurma"
+    difficulty_range: [0.6, 0.8]
+    prerequisites: [0, 1, 2]
+
+  - level: 4
+    name: "Araştırma + Sentez"
+    description: "Özgün sentez — yalnızca backtest PASS olan içerikler"
+    difficulty_range: [0.8, 1.0]
+    prerequisites: [0, 1, 2, 3]
+
+# Batch karışım kuralı (curriculum pacing):
+# her batch %60 mevcut seviye + %30 alt seviye + %10 üst seviye.
+pacing:
+  current_level_ratio: 0.60
+  lower_level_ratio: 0.30
+  upper_level_ratio: 0.10
