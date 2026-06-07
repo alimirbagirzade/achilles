@@ -1213,3 +1213,91 @@ def mastery_report(
     q_pass = data.get('passed', 0)
     q_fail = data.get('failed', 0)
     console.print(f"Sorular: {q_total}  Geçti: {q_pass}  Kaldı: {q_fail}")
+
+
+# ---------------------------------------------------------------------------
+# arxiv-sync (Görev D: kayıtlı sorguları otomatik yeniden çalıştır)
+# ---------------------------------------------------------------------------
+
+@app.command("arxiv-sync")
+def arxiv_sync(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Gerçekten çalıştırmadan listele"),
+    force: bool = typer.Option(False, "--force", help="Son çalıştırma zamanına bakma"),
+) -> None:
+    """Kayıtlı arXiv sorgularını yeniden çalıştır, yeni makaleleri ingest et."""
+    from app.ingestion.arxiv_fetcher import fetch_arxiv_papers
+    from app.memory.sqlite_store import SqliteStore as _S
+
+    store = _S()
+    queries = store.list_arxiv_saved_queries()
+    if not queries:
+        console.print("[yellow]Kayıtlı arXiv sorgusu yok. Önce:[/yellow]")
+        console.print("  uv run achilles arxiv \"sorgu terimi\"")
+        return
+
+    console.print(f"[bold]{len(queries)} kayıtlı sorgu bulundu.[/bold]")
+    total_new = 0
+
+    for q in queries:
+        if dry_run:
+            console.print(
+                f"  [dim][dry-run][/dim] {q['query'][:60]}  "
+                f"(son çalışma: {q['last_run_at'] or 'hiç'})"
+            )
+            continue
+        if not q["auto_ingest"] and not force:
+            console.print(f"  [dim]atla (auto_ingest=False):[/dim] {q['query'][:50]}")
+            continue
+
+        console.print(f"  ↻  {q['query'][:60]} ...")
+        try:
+            results = fetch_arxiv_papers(q["query"], max_results=q["max_results"])
+            new_count = sum(1 for r in results if r.status == "downloaded")
+            total_new += new_count
+            store.mark_arxiv_query_ran(q["query_id"])
+            console.print(
+                f"     [green]✓[/green] {new_count} yeni makale / "
+                f"{len(results)} toplam"
+            )
+        except Exception as exc:  # noqa: BLE001
+            console.print(f"     [red]✗[/red] Hata: {exc}")
+
+    if not dry_run:
+        console.print(f"\n[bold green]Toplam {total_new} yeni makale eklendi.[/bold green]")
+        if total_new > 0:
+            console.print("[dim]Yeni makaleler için: uv run achilles ingest[/dim]")
+
+
+# ---------------------------------------------------------------------------
+# mastery-to-sft (Mastery cevaplarını SFT eğitim verisi olarak dışa aktar)
+# ---------------------------------------------------------------------------
+
+@app.command("mastery-to-sft")
+def mastery_to_sft(
+    min_score: float = typer.Option(75.0, help="Minimum mastery skoru (0-100)"),
+    citation: float = typer.Option(0.5, help="Minimum citation_score (0-1)"),
+    output: str = typer.Option("", help="Çıktı JSONL dosya yolu"),
+) -> None:
+    """Mastery test sonuçlarından SFT eğitim JSONL'i üret."""
+    from app.training.mastery_sft_builder import MasterySFTBuilder
+
+    builder = MasterySFTBuilder()
+    out_path = None if not output else __import__("pathlib").Path(output)
+    path, n = builder.build_jsonl(
+        output_path=out_path,
+        min_mastery_score=min_score,
+        citation_threshold=citation,
+    )
+    if n == 0:
+        console.print(
+            f"[yellow]Skor ≥ {min_score} olan ve citation ≥ {citation} olan "
+            "cevap bulunamadı.[/yellow]"
+        )
+        console.print(
+            "[dim]İpucu: Önce mastery testleri çalıştır:[/dim] "
+            "achilles mastery-queue --enqueue-all && achilles mastery-queue --run-all"
+        )
+    else:
+        console.print(
+            f"[green]✓[/green] {n} SFT örneği → [bold]{path}[/bold]"
+        )
