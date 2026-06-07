@@ -715,5 +715,197 @@ def arxiv_fetch(
             console.print(f"  {status}  {r.arxiv_id}  {r.title[:55]}")
 
 
+@app.command("profile")
+def oss_profile(
+    as_json: bool = typer.Option(False, "--json", help="JSON formatında çıktı ver"),
+) -> None:
+    """Sistemin hardware/software profilini tara ve göster."""
+    from app.agents.system_profiler.profiler import collect
+
+    profile = collect()
+    if as_json:
+        console.print_json(profile.model_dump_json(indent=2))
+        return
+
+    console.print(Panel("[bold cyan]Sistem Profili[/bold cyan]", border_style="cyan"))
+    console.print(f"  OS      : {profile.os} {profile.os_version[:30]}")
+    console.print(f"  Arch    : {profile.arch}")
+    console.print(f"  CPU     : {profile.cpu.name} ({profile.cpu.cores}c/{profile.cpu.threads}t)")
+    console.print(f"  RAM     : {profile.memory.ram_total_gb:.1f} GB total  |  {profile.memory.ram_available_gb:.1f} GB free")
+    console.print(f"  GPU     : {profile.gpu.name}")
+    console.print(f"  Vendor  : {profile.gpu.vendor}")
+    console.print(f"  VRAM    : {profile.gpu.vram_gb:.1f} GB")
+    flags = []
+    if profile.gpu.cuda:
+        flags.append("CUDA")
+    if profile.gpu.metal:
+        flags.append("Metal")
+    if profile.gpu.rocm:
+        flags.append("ROCm")
+    console.print(f"  Accel   : {', '.join(flags) if flags else 'CPU only'}")
+    console.print(f"  Disk    : {profile.disk.free_gb:.1f} GB free")
+    console.print(f"  Python  : {profile.python_version}")
+    tools = []
+    if profile.tools.ollama:
+        tools.append("ollama")
+    if profile.tools.git:
+        tools.append("git")
+    if profile.tools.cmake:
+        tools.append("cmake")
+    console.print(f"  Tools   : {', '.join(tools) if tools else '—'}")
+
+
+@app.command("recommend")
+def oss_recommend(
+    task: str = typer.Option("general", help="Görev türü: coding, general, reasoning, trading"),
+    top_k: int = typer.Option(3, help="Kaç öneri gösterilsin"),
+) -> None:
+    """RAM/VRAM'a göre en uygun OSS modelini öner."""
+    from app.agents.model_advisor.advisor import recommend
+    from app.agents.system_profiler.profiler import collect
+
+    console.print("[cyan]Sistem taranıyor...[/cyan]")
+    profile = collect()
+    result = recommend(profile, task=task, top_k=top_k)
+
+    console.print(f"\n[bold]Sistem:[/bold] {result.system_summary}")
+    console.print(f"[bold]Görev :[/bold] {task}\n")
+
+    if result.recommended:
+        t = Table(title="Önerilen Modeller")
+        t.add_column("Sıra")
+        t.add_column("Model")
+        t.add_column("Ollama")
+        t.add_column("Güven")
+        t.add_column("Neden")
+        for rec in result.recommended:
+            t.add_row(
+                str(rec.rank),
+                rec.display_name,
+                rec.ollama_name,
+                f"{rec.confidence:.0%}",
+                rec.reasons[0] if rec.reasons else "",
+            )
+        console.print(t)
+    else:
+        console.print("[yellow]Bu sistem için uygun model bulunamadı.[/yellow]")
+
+    if result.rejected:
+        console.print("\n[dim]Reddedilenler:[/dim]")
+        for r in result.rejected:
+            console.print(f"  [red]✗[/red] {r.display_name} — {r.reason}")
+
+
+@app.command("install")
+def oss_install(
+    model: str = typer.Option("", "--model", help="Ollama model adı (örn. qwen2.5-coder:7b)"),
+    auto_safe: bool = typer.Option(False, "--auto-safe", help="En iyi uygun modeli otomatik seç ve indir"),
+    diagnose: bool = typer.Option(False, "--diagnose", help="Sadece tanı yap, kurma"),
+) -> None:
+    """OSS modeli Ollama ile kur (sadece güvenli whitelist komutlar)."""
+    from app.agents.installer import ollama_installer as oi
+    from app.agents.model_advisor.advisor import recommend
+    from app.agents.system_profiler.profiler import collect
+
+    profile = collect()
+
+    if not oi.is_ollama_installed():
+        console.print(f"[red]{oi.install_guide_text()}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[green]Ollama:[/green] {oi.get_ollama_version()}")
+
+    if diagnose:
+        result = recommend(profile, task="general")
+        console.print(f"\n[bold]Sistem:[/bold] {result.system_summary}")
+        if result.recommended:
+            top = result.recommended[0]
+            console.print(f"[bold]Öneri :[/bold] {top.display_name} ({top.ollama_name})")
+            for r in top.reasons:
+                console.print(f"  • {r}")
+        return
+
+    ollama_name = model
+    if not ollama_name and auto_safe:
+        result = recommend(profile, task="general")
+        if not result.recommended:
+            console.print("[red]Uygun model bulunamadı.[/red]")
+            raise typer.Exit(1)
+        ollama_name = result.recommended[0].ollama_name
+        console.print(f"[cyan]Otomatik seçildi:[/cyan] {ollama_name}")
+
+    if not ollama_name:
+        console.print("[red]--model veya --auto-safe kullan.[/red]")
+        raise typer.Exit(1)
+
+    # Manuel seçimde uyarı kontrolü
+    if model and not auto_safe:
+        result = recommend(profile, task="general")
+        if result.recommended and result.recommended[0].ollama_name != model:
+            console.print(f"[yellow]⚠ Uyarı: Sisteminiz için önerilen model '{result.recommended[0].ollama_name}'. "
+                          f"'{model}' seçildi — çalışmayabilir.[/yellow]")
+
+    console.print(f"[cyan]İndiriliyor:[/cyan] {ollama_name} ...")
+    r = oi.pull_model(ollama_name)
+    if r.status == "ok":
+        console.print(f"[green]✓ İndirildi:[/green] {ollama_name}")
+    else:
+        console.print(f"[red]Hata:[/red] {r.error}")
+        raise typer.Exit(1)
+
+
+@app.command("benchmark")
+def oss_benchmark(
+    model: str = typer.Argument(..., help="Ollama model adı (örn. qwen2.5-coder:7b)"),
+    quick: bool = typer.Option(False, "--quick", help="Sadece ilk prompt (hızlı)"),
+    save: bool = typer.Option(True, help="Sonucu SQLite'a kaydet"),
+) -> None:
+    """Modeli benchmark et: tokens/sec, kalite, durum."""
+    from app.agents.benchmark.runner import run as bench_run
+    from app.agents.learning.memory import save_model_trial, save_system_profile
+    from app.agents.system_profiler.profiler import collect
+
+    console.print(f"[cyan]Benchmark başlıyor:[/cyan] {model} {'(hızlı)' if quick else ''}")
+    result = bench_run(model, quick=quick)
+
+    color_map = {
+        "excellent": "green",
+        "usable": "cyan",
+        "slow_but_usable": "yellow",
+        "unstable": "orange3",
+        "failed": "red",
+    }
+    color = color_map.get(result.status, "white")
+
+    t = Table(title=f"Benchmark — {model}")
+    t.add_column("Metrik")
+    t.add_column("Değer")
+    t.add_row("Durum", f"[{color}]{result.status}[/{color}]")
+    t.add_row("tokens/sec", f"{result.tokens_per_second:.1f}")
+    t.add_row("İlk token gecikmesi", f"{result.first_token_latency_ms:.0f} ms")
+    t.add_row("Peak RAM delta", f"{result.peak_ram_gb:.2f} GB")
+    t.add_row("Kalite skoru", f"{result.quality_score:.2f}")
+    console.print(t)
+
+    for pr in result.prompt_results:
+        icon = "[green]✓[/green]" if pr.status == "ok" else "[red]✗[/red]"
+        console.print(f"  {icon} {pr.prompt_id}: kalite={pr.quality:.1f}  latency={pr.latency_ms:.0f}ms")
+
+    if save and result.status != "failed":
+        profile = collect()
+        pid = save_system_profile(profile.model_dump())
+        save_model_trial(
+            system_profile_id=pid,
+            model_id=model,
+            backend="ollama",
+            status=result.status,
+            tokens_per_second=result.tokens_per_second,
+            first_token_latency_ms=result.first_token_latency_ms,
+            peak_ram_gb=result.peak_ram_gb,
+            quality_score=result.quality_score,
+        )
+        console.print("[dim]✓ Sonuç SQLite'a kaydedildi.[/dim]")
+
+
 if __name__ == "__main__":  # pragma: no cover
     app()

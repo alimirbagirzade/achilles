@@ -1,6 +1,6 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-06-04 · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Son güncelleme: 2026-06-07 · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon).
 **Canlı bot değil, yatırım tavsiyesi değil.** Tam akış:
@@ -19,11 +19,12 @@ LLM'i **"trader gibi düşünen"** bir araştırma motoru yapmak:
 5. Tüm zinciri **LoRA eğitim verisi** olarak kullan
 6. 3B model mimiriyi test eder; gerçek çıktı için 120B kullanılacak
 
-### Mevcut durum (2026-06-04 — son commit: d24cb1a)
-- **217 test** geçiyor · ruff+mypy temiz · Python 3.12
+### Mevcut durum (2026-06-07 — son commit: d24cb1a)
+- **233 test** geçiyor · ruff temiz · Python 3.12
 - **8 sekme** web UI: Araştırma · Makaleler · Trader Beyin · Backtest · Eğitim · Onay · Değerlendirme · Sistem
-- **`app/research/`** modülü TAMAMLANDI (bkz. aşağıdaki tablo)
+- **`app/research/`** modülü TAMAMLANDI
 - **Advanced RAG katmanı** EKLENDI — 37 yeni dosya (verification, evals, reliability)
+- **OSS Learning Agent MVP** EKLENDI — 6 yeni modül (profiler, advisor, installer, benchmark, memory, registry)
 - **LoRA:** `achilles_lora_v2` eğitildi (300 iter, loss 0.028, 2GB peak)
 - **Ollama aktif:** qwen2.5-coder:3b + nomic-embed-text · 7 PDF · 567 chunk
 
@@ -111,6 +112,25 @@ LLM'i **"trader gibi düşünen"** bir araştırma motoru yapmak:
    - API: `GET /api/strategy/{name}/export` + `POST /api/package/export`
    - **176 test** — hepsi yeşil · ruff+mypy sıfır hata
 
+### Bu seansta TAMAMLANANLAR ✅ (2026-06-07 — oturum 5)
+
+20. **✅ TradingView MCP Köprüsü — Canlı Test**
+    - TV CDP modu manuel başlatma (`--remote-debugging-port=9222`) çözüldü
+    - BTCUSD 1H · Pine v6 derleme · Strategy Tester aktif
+    - Kritik bulgu: `ema_rsi_trend_filter_v1` → Achilles: +2603%/Sharpe 2.17 (2017–2025 Binance) vs TV: -4%/Sharpe -0.641 (2025–2026 Bitstamp) → **overfit konfirme edildi**, OOS denetiminin önemi doğrulandı
+    - TV bridge tamamen işlevsel: Pine yükleme ✅, derleme ✅, metrik okuma ✅, ekran görüntüsü ✅
+
+21. **✅ OSS Learning Agent MVP**
+    - `app/agents/system_profiler/profiler.py` — hardware tara (Windows/macOS/Linux, psutil-free fallback)
+    - `app/registry/model_registry.yaml` — 9 model (tiny 1.5B → very_large 70B)
+    - `app/agents/model_advisor/advisor.py` — RAM/VRAM/görev bazlı skor motoru + red listesi
+    - `app/agents/installer/ollama_installer.py` — whitelist güvenlik katmanı (rm -rf, sudo, curl|sh bloklu)
+    - `app/agents/benchmark/runner.py` — 4 prompt (json/code/reasoning/translation) · tokens/sec · kalite
+    - `app/agents/learning/memory.py` — SQLite: `system_profiles`, `model_trials`, `error_patterns`, `rule_suggestions`
+    - 16 yeni test → **233 toplam test** · ruff CLEAN
+    - Yeni CLI: `achilles profile`, `achilles recommend --task`, `achilles install --auto-safe`, `achilles benchmark`
+    - 8 GB Apple Silicon'da test: qwen2.5-coder:1.5b + qwen3:4b önerildi, 7B+ reddedildi ✅
+
 ### Bu seansta TAMAMLANANLAR ✅ (2026-06-04 — oturum 3)
 
 16. **✅ README web kılavuzu tam güncelleme**
@@ -159,16 +179,20 @@ LLM'i **"trader gibi düşünen"** bir araştırma motoru yapmak:
 | ~~5~~ | ~~arXiv otomatik çekme~~ | ✅ **TAMAMLANDI** |
 | ~~6~~ | ~~Web UI pine export butonu~~ | ✅ **TAMAMLANDI** |
 | ~~7~~ | ~~Risk manager modülü~~ | ✅ **TAMAMLANDI** |
+| ~~A~~ | ~~TV köprüsü canlı test~~ | ✅ **TAMAMLANDI** — overfit bulgusu önemli |
+| ~~OSS~~ | ~~OSS Learning Agent MVP~~ | ✅ **TAMAMLANDI** — profiler + advisor + installer + benchmark + memory |
 | 8 | **Faz 4 DPO altyapısı** | 500+ onaylı not gerekiyor; önce kart biriktirmek lazım |
 
-### 🟢 Yeni küçük / hızlı görevler
+### 🟢 Bekleyen görevler (öncelik sırasıyla)
 
-| # | Görev | Süre tahmini |
-|---|-------|--------------|
-| 12 | **TV köprüsü canlı testi** | TV güncelleme sonrası `/tv-bridge` skill çalıştır |
-| 13 | **arXiv sorgu kütüphanesi** | Önerilen arama sorgularını kaydet, otomatik çalıştır |
-| 14 | **Risk raporu → SQLite kaydet** | `analyze_risk()` sonucunu DB'ye persist et |
-| 15 | **Web UI: .achpkg İndir butonu** | Backtest kartında `GET /api/strategy/{name}/export` tetikle |
+| # | Görev | Süre | Not |
+|---|-------|------|-----|
+| **B** | **Risk raporu → SQLite persist** | ~1 saat | `analyze_risk()` sonucunu `risk_reports` tablosuna kaydet, web UI'da göster |
+| **C** | **Web UI: .achpkg İndir butonu** | ~30 dk | Backtest kartında `GET /api/strategy/{name}/export` tetikle |
+| **D** | **arXiv sorgu kütüphanesi** | ~45 dk | Önerilen sorguları kaydet, scheduled/otomatik çalıştır |
+| **E** | **SessionStart hook** | ~10 dk | `.claude/settings.json` oluştur (otomatik HANDOFF yükleme) — kullanıcı onayı gerekli |
+| **F** | **OSS Agent: rules_updater.py** | ~1 saat | Başarısız trial → kural önerisi pipeline |
+| **G** | **OSS Agent: psutil opsiyonel bağımlılık** | ~15 dk | `pyproject.toml`'a `[dev,oss]` extra ekle |
 
 ### 🔵 Büyük / ileriki — şimdi yapılmaz
 
@@ -177,14 +201,16 @@ LLM'i **"trader gibi düşünen"** bir araştırma motoru yapmak:
 | Faz 4 DPO + GraphRAG | 500+ onaylı not gerekiyor (şu an 0) |
 | 120B model | Donanım hazır değil |
 | CCXT/Binance canlı veri | Türkiye'de bloklu |
+| OSS Agent Phase 2 | llama.cpp + MLX backend, GGUF downloader, HF metadata |
+| OSS Agent Phase 3 | RAG memory (logs/benchmark indexing) |
 
 ---
 
 **Önerilen sıra (sonraki seans):**
-- **A)** TradingView canlı test (TV güncellendikten sonra) — köprü hazır, test eksik
-- **B)** Risk raporu SQLite persist + backtest sonucuyla birlikte göster (14)
-- **C)** .achpkg İndir butonu (15) — web UI tamamlama
-- **D)** arXiv sorgu kütüphanesi (13) — otomatik literatür tarama
+- **B)** Risk raporu SQLite persist (küçük, bağımsız)
+- **C)** .achpkg İndir butonu (web UI tamamlama)
+- **D)** arXiv sorgu kütüphanesi (otomatik literatür tarama)
+- **E)** SessionStart hook — `.claude/settings.json` oluşturma (kullanıcı onayıyla)
 
 ---
 
@@ -228,6 +254,14 @@ app/
 │   ├── overfit_checks.py          # static checks + in/out-of-sample
 │   ├── strategy_generator.py      # hipotez keyword → StrategyIR template
 │   └── strategy_ir.py             # Pydantic StrategyIR (güvenli regex parse)
+├── agents/                        # 🆕 OSS Learning Agent MVP
+│   ├── system_profiler/profiler.py  # hardware tara (win/mac/linux)
+│   ├── model_advisor/advisor.py     # RAM/VRAM/görev bazlı öneri motoru
+│   ├── installer/ollama_installer.py # güvenli whitelist Ollama wrapper
+│   ├── benchmark/runner.py          # tokens/sec + 4-prompt kalite testi
+│   └── learning/memory.py           # SQLite: profiles/trials/errors/rules
+├── registry/
+│   └── model_registry.yaml        # 9 OSS model (1.5B–70B, tiny→very_large)
 ├── training/
 │   ├── adapter_registry.py        # LoRA adapter versiyonları SQLite+JSON
 │   ├── dataset_builder.py         # training_examples → train/valid JSONL
@@ -246,7 +280,8 @@ SQLite tabloları:
 CLI komutları (achilles --help):
   init, status, ingest, papers, ask, card, dataset, train, evaluate,
   gen-data, backtest, extract-formulas, formulas, research,
-  research-sessions, chain-dataset                ← 🆕
+  research-sessions, chain-dataset, pine, export-package, risk, arxiv,
+  profile, recommend, install, benchmark          ← 🆕 OSS Agent
 
 Web API endpoint'leri (/api/...):
   status, papers, papers/upload, ingest, ask,
