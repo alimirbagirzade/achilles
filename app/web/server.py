@@ -74,6 +74,8 @@ from app.web.schemas import (
     TrainDryRunResponse,
     TrainingExampleOut,
     TrainingExamplesResponse,
+    TrainingStartRequest,
+    TrainingStartResponse,
     TrainingStatusResponse,
 )
 
@@ -660,6 +662,82 @@ def api_training_dry_run(req: TrainDryRunRequest) -> TrainDryRunResponse:
         n_valid=r.n_valid,
         content_hash=r.content_hash,
         message="Dry-run: gerçek eğitim için terminalden --run ile çalıştırın.",
+    )
+
+
+@app.post("/api/training/run", response_model=TrainingStartResponse, dependencies=[api_auth])
+def api_training_run(req: TrainingStartRequest) -> TrainingStartResponse:
+    """Gerçek LoRA eğitimini başlat (subprocess, SSE ile izle)."""
+    import datetime as dt
+
+    from app.config import get_settings
+    from app.training.dataset_builder import DatasetBuilder
+    from app.training.mlx_lora_train import TrainConfig, build_command
+    from app.web.training_manager import get_training_manager
+
+    mgr = get_training_manager()
+    if mgr.progress.state.value == "running":
+        return TrainingStartResponse(ok=False, message="Zaten eğitim çalışıyor.")
+
+    r = DatasetBuilder().build()
+    if r.n_train == 0:
+        return TrainingStartResponse(ok=False, message="Eğitim verisi yok — önce dataset oluştur.")
+
+    s = get_settings()
+    ts = dt.datetime.now(dt.UTC).strftime("%Y%m%d_%H%M%S")
+    adapter_name = f"{req.adapter_name}_{ts}"
+    cfg = TrainConfig(
+        base_model=req.base_model,
+        train_jsonl=r.train_path,
+        valid_jsonl=r.valid_path,
+        adapter_output_path=s.adapters_dir / adapter_name,
+        iterations=req.iterations,
+        batch_size=req.batch_size,
+        learning_rate=req.learning_rate,
+        num_layers=req.num_layers,
+    )
+    cmd = build_command(cfg)
+    mgr.start(cmd, adapter_name=adapter_name, total_iters=req.iterations)
+    return TrainingStartResponse(
+        ok=True, message=f"Eğitim başladı: {adapter_name} ({r.n_train} örnek)"
+    )
+
+
+@app.post("/api/training/stop", dependencies=[api_auth])
+def api_training_stop() -> dict:
+    from app.web.training_manager import get_training_manager
+
+    get_training_manager().stop()
+    return {"ok": True}
+
+
+@app.get("/api/training/progress")
+def api_training_progress() -> dict:
+    from app.web.training_manager import get_training_manager
+
+    return get_training_manager().progress.to_dict()
+
+
+@app.get("/api/training/stream")
+async def api_training_stream(request: Request) -> Response:
+    import json
+
+    from fastapi.responses import StreamingResponse
+
+    from app.web.training_manager import get_training_manager
+
+    mgr = get_training_manager()
+
+    async def event_gen():
+        async for msg in mgr.subscribe():
+            if await request.is_disconnected():
+                break
+            yield f"data: {json.dumps(msg)}\n\n"
+
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

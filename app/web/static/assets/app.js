@@ -87,6 +87,7 @@
       if (name === "training") loadTrainingStatus();
       if (name === "review") loadPendingCards();
       if (name === "eval") loadEvalSets();
+      if (name === "about") loadSystemStatus();
     });
   });
 
@@ -251,7 +252,7 @@
       arxivSearchBtn.disabled = true;
       res.className = "result";
       res.innerHTML = '<div class="result-section"><span class="spinner"></span> arXiv aranıyor…</div>';
-      api("/arxiv/search?q=" + encodeURIComponent(p.q) + "&max=" + p.max, { method: "GET" })
+      api("/arxiv/search?q=" + encodeURIComponent(p.q) + "&max_results=" + p.max, { method: "GET" })
         .then(function (d) {
           if (!d.results || !d.results.length) {
             res.innerHTML = '<div class="result-section muted">Sonuç bulunamadı.</div>';
@@ -635,20 +636,23 @@
 
   // ---------- eğitim sekmesi ----------
   function loadTrainingStatus() {
-    var el = document.getElementById("trainingStatus");
-    el.innerHTML = '<span class="spinner"></span> yükleniyor…';
     api("/training/status", { method: "GET" })
       .then(function (data) {
-        el.innerHTML =
-          '<div class="training-stat">' +
-          '<span class="kc-label">Eğitim örnekleri</span> ' +
-          '<strong>' + data.n_examples + '</strong>' +
-          '</div>';
+        var el = document.getElementById("trainingStatus");
+        if (el) {
+          el.innerHTML =
+            '<div class="training-stat">' +
+            '<span class="kc-label">Eğitim örnekleri</span> ' +
+            '<strong>' + data.n_examples + '</strong>' +
+            '</div>';
+        }
         renderAdapters(data.adapters || []);
+        populateAdapterSelects(data.adapters || []);
         loadExamples();
       })
       .catch(function (err) {
-        el.innerHTML = '<span class="conn-err">Hata: ' + esc(err.message) + "</span>";
+        var el = document.getElementById("trainingStatus");
+        if (el) el.innerHTML = '<span class="conn-err">Hata: ' + esc(err.message) + "</span>";
       });
   }
 
@@ -760,47 +764,126 @@
     });
   }
 
-  var dryRunForm = document.getElementById("dryRunForm");
-  if (dryRunForm) {
-    dryRunForm.addEventListener("submit", function (e) {
-      e.preventDefault();
-      var btn = document.getElementById("dryRunBtn");
-      var res = document.getElementById("dryRunResult");
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner"></span>HAZIRLANYOR';
-      res.className = "result";
-      res.innerHTML = '<div class="result-section"><span class="spinner"></span></div>';
+  // ---------- Canlı Eğitim UI ----------
+  var _trainESS = null;
+
+  function applyTrainProgress(d) {
+    var stateMap = { idle: "boşta", running: "eğitiliyor…", completed: "tamamlandı ✓", failed: "hata ✗", stopped: "durduruldu" };
+    var stateColors = { idle: "badge-info", running: "badge-warn", completed: "badge-success", failed: "badge-error", stopped: "badge-info" };
+    var label = document.getElementById("trainStateLabel");
+    if (label) {
+      label.textContent = stateMap[d.state] || d.state;
+      label.className = "badge " + (stateColors[d.state] || "badge-info");
+    }
+    var isRunning = d.state === "running";
+    var startBtn = document.getElementById("startTrainBtn");
+    var stopBtn = document.getElementById("stopTrainBtn");
+    if (startBtn) startBtn.style.display = isRunning ? "none" : "";
+    if (stopBtn) stopBtn.style.display = isRunning ? "" : "none";
+
+    var section = document.getElementById("trainProgressSection");
+    if (section && d.state !== "idle") section.style.display = "";
+
+    var bar = document.getElementById("trainProgressBar");
+    var pctLbl = document.getElementById("trainPctLabel");
+    var iterLbl = document.getElementById("trainIterLabel");
+    if (bar) bar.style.width = (d.pct || 0) + "%";
+    if (pctLbl) pctLbl.textContent = (d.pct || 0).toFixed(1) + "%";
+    if (iterLbl) iterLbl.textContent = (d.current_iter || 0) + " / " + (d.total_iters || 0) + " iter";
+
+    var tl = document.getElementById("trainLossVal");
+    var vl = document.getElementById("valLossVal");
+    if (tl) tl.textContent = d.train_loss != null ? Number(d.train_loss).toFixed(4) : "—";
+    if (vl) vl.textContent = d.val_loss != null ? Number(d.val_loss).toFixed(4) : "—";
+
+    var meta = document.getElementById("trainMeta");
+    if (meta && d.adapter_name) {
+      meta.textContent = "Adapter: " + d.adapter_name +
+        (d.started_at ? "  ·  Başladı: " + d.started_at : "") +
+        (d.finished_at && d.state !== "running" ? "  ·  Bitti: " + d.finished_at : "");
+    }
+  }
+
+  function appendLog(line) {
+    var el = document.getElementById("trainLog");
+    if (!el) return;
+    el.textContent += line + "\n";
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function startSSE() {
+    if (_trainESS) { _trainESS.close(); _trainESS = null; }
+    var tok = getToken();
+    var url = "/api/training/stream" + (tok ? "?token=" + encodeURIComponent(tok) : "");
+    _trainESS = new EventSource(url);
+    _trainESS.onmessage = function (e) {
+      try {
+        var d = JSON.parse(e.data);
+        if (d.line) appendLog(d.line);
+        applyTrainProgress(d);
+        if (d.type === "done" || d.type === "stopped") {
+          _trainESS.close();
+          _trainESS = null;
+          loadTrainingStatus();
+        }
+      } catch (_) {}
+    };
+    _trainESS.onerror = function () {
+      if (_trainESS) { _trainESS.close(); _trainESS = null; }
+    };
+  }
+
+  var startTrainBtn = document.getElementById("startTrainBtn");
+  if (startTrainBtn) {
+    startTrainBtn.addEventListener("click", function () {
       var payload = {
-        base_model: document.getElementById("drBaseModel").value.trim(),
-        iterations: parseInt(document.getElementById("drIterations").value, 10) || 600,
-        batch_size: parseInt(document.getElementById("drBatch").value, 10) || 4,
-        num_layers: parseInt(document.getElementById("drLayers").value, 10) || 16,
+        base_model: (document.getElementById("drBaseModel") || {}).value || "mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit",
+        adapter_name: (document.getElementById("trAdapterName") || {}).value || "achilles_lora",
+        iterations: parseInt((document.getElementById("drIterations") || {}).value, 10) || 500,
+        batch_size: parseInt((document.getElementById("drBatch") || {}).value, 10) || 2,
+        num_layers: parseInt((document.getElementById("drLayers") || {}).value, 10) || 8,
         learning_rate: 1e-4,
       };
-      api("/training/dry-run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      })
+      var section = document.getElementById("trainProgressSection");
+      if (section) section.style.display = "";
+      var logEl = document.getElementById("trainLog");
+      if (logEl) logEl.textContent = "";
+      api("/training/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
         .then(function (data) {
-          res.innerHTML =
-            '<div class="result-section"><div class="result-label">komut</div>' +
-            '<pre class="dry-run-cmd">' + esc(data.command) + "</pre></div>" +
-            '<div class="result-section result-body">' +
-            esc(data.message) +
-            " (" + data.n_train + " eğitim / " + data.n_valid + " doğrulama)" +
-            "</div>";
+          toast(data.message, !data.ok);
+          if (data.ok) startSSE();
         })
-        .catch(function (err) {
-          toast(err.message, true);
-          res.innerHTML = '<div class="result-section result-body">Hata: ' + esc(err.message) + "</div>";
-        })
-        .finally(function () {
-          btn.disabled = false;
-          btn.textContent = "KOMUT ÖNIZLE →";
-        });
+        .catch(function (err) { toast(err.message, true); });
     });
   }
+
+  var stopTrainBtn = document.getElementById("stopTrainBtn");
+  if (stopTrainBtn) {
+    stopTrainBtn.addEventListener("click", function () {
+      api("/training/stop", { method: "POST" })
+        .then(function () { toast("Eğitim durduruldu."); })
+        .catch(function () {});
+    });
+  }
+
+  var clearLogBtn = document.getElementById("clearLogBtn");
+  if (clearLogBtn) {
+    clearLogBtn.addEventListener("click", function () {
+      var el = document.getElementById("trainLog");
+      if (el) el.textContent = "";
+    });
+  }
+
+  var refreshAdapters = document.getElementById("refreshAdapters");
+  if (refreshAdapters) refreshAdapters.addEventListener("click", loadTrainingStatus);
+
+  // Sayfa açılışında mevcut durumu çek; training devam ediyorsa SSE başlat
+  api("/training/progress", { method: "GET" })
+    .then(function (d) {
+      applyTrainProgress(d);
+      if (d.state === "running") startSSE();
+    })
+    .catch(function () {});
 
   // ---------- toplu kart üretimi ----------
   var batchCardBtn = document.getElementById("batchCardBtn");
@@ -1706,6 +1789,28 @@
   var btnLoadPending = document.getElementById("btn-load-pending");
   if (btnLoadPending) {
     btnLoadPending.addEventListener("click", loadPendingCards);
+  }
+
+  // ---------- sistem durumu ----------
+  function loadSystemStatus() {
+    var el = document.getElementById("systemStatusDisplay");
+    if (!el) return;
+    el.innerHTML = '<span class="spinner"></span> güncelleniyor…';
+    api("/status", { method: "GET" })
+      .then(function (s) {
+        el.innerHTML =
+          '<div class="metrics-grid" style="margin-top:8px">' +
+          '<div class="metric"><div class="k">LLM model</div><div class="v">' + esc(s.llm_model) + '</div></div>' +
+          '<div class="metric"><div class="k">Ollama</div><div class="v ' + (s.ollama_available ? "pos" : "neg") + '">' + (s.ollama_available ? "bağlı ✓" : "kapalı ✗") + '</div></div>' +
+          '<div class="metric"><div class="k">Embed modu</div><div class="v">' + esc(s.embedding_mode) + '</div></div>' +
+          '<div class="metric"><div class="k">Makale sayısı</div><div class="v">' + s.n_papers + '</div></div>' +
+          '<div class="metric"><div class="k">Chunk sayısı</div><div class="v">' + s.n_chunks + '</div></div>' +
+          '<div class="metric"><div class="k">Max yükleme</div><div class="v">' + s.max_upload_mb + ' MB</div></div>' +
+          '</div>';
+      })
+      .catch(function () {
+        el.innerHTML = '<span class="conn-err">Durum alınamadı.</span>';
+      });
   }
 
   // ---------- token ----------

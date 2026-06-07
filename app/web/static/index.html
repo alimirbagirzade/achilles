@@ -279,58 +279,75 @@
       <section class="panel" id="panel-training">
         <div class="panel-head">
           <h2>LoRA Eğitimi</h2>
-          <p class="muted">
-            Bilgi kartlarından eğitim seti oluştur, MLX-LM komutunu önizle.
-            Gerçek eğitim yalnızca terminalden <code>--run</code> ile başlatılır.
-          </p>
+          <p class="muted">Butona bas → eğitim başlar, ilerlemeyi canlı izle. Terminal gerekmez.</p>
         </div>
 
-        <div class="training-status" id="trainingStatus">
-          <span class="spinner"></span> yükleniyor…
-        </div>
-
+        <!-- 1. Dataset -->
         <div class="training-section">
-          <h3>Veri Seti</h3>
-          <p class="muted small">Kayıtlı eğitim örneklerinden train/valid JSONL üretir.</p>
+          <h3>1 · Veri Seti</h3>
+          <p class="muted small">Onaylı bilgi kartlarından train/valid JSONL oluşturur.</p>
           <button class="btn btn-primary" id="buildDatasetBtn">DATASET OLUŞTUR</button>
           <div id="datasetResult" class="result hidden"></div>
         </div>
 
+        <!-- 2. Ayarlar -->
         <div class="training-section">
-          <h3>Eğitim Komutu (Dry-Run)</h3>
-          <p class="muted small">Komutu gösterir; Apple Silicon'da mlx-lm gerektirir.</p>
-          <form id="dryRunForm" class="dry-run-form">
-            <label>
-              Temel model
-              <input type="text" id="drBaseModel" value="mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit" />
-            </label>
-            <label>
-              İterasyon
-              <input type="number" id="drIterations" min="50" max="5000" value="300" />
-            </label>
-            <label>
-              Batch
-              <input type="number" id="drBatch" min="1" max="16" value="2" />
-            </label>
-            <label>
-              Katman
-              <input type="number" id="drLayers" min="1" max="64" value="8" />
-            </label>
-            <button type="submit" class="btn btn-primary" id="dryRunBtn">KOMUT ÖNIZLE →</button>
-          </form>
-          <div id="dryRunResult" class="result hidden"></div>
+          <h3>2 · Eğitim Ayarları</h3>
+          <div class="dry-run-form">
+            <label>Temel model<input type="text" id="drBaseModel" value="mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit" /></label>
+            <label>Adapter adı<input type="text" id="trAdapterName" value="achilles_lora" /></label>
+            <label>İterasyon<input type="number" id="drIterations" min="50" max="5000" value="500" /></label>
+            <label>Batch<input type="number" id="drBatch" min="1" max="16" value="2" /></label>
+            <label>Katman<input type="number" id="drLayers" min="1" max="64" value="8" /></label>
+          </div>
         </div>
 
+        <!-- 3. Başlat -->
         <div class="training-section">
-          <h3>Eğitim Örnekleri</h3>
-          <p class="muted small">Bilgi kartlarından üretilen instruction/output çiftleri.</p>
+          <h3>3 · Eğitimi Başlat</h3>
+          <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+            <button class="btn btn-primary" id="startTrainBtn" style="font-size:1.05rem;padding:10px 28px">▶ EĞİTİMİ BAŞLAT</button>
+            <button class="btn" id="stopTrainBtn" style="display:none;padding:10px 20px">⬛ DURDUR</button>
+            <span id="trainStateLabel" class="badge badge-info">boşta</span>
+          </div>
+        </div>
+
+        <!-- 4. Canlı İlerleme -->
+        <div class="training-section" id="trainProgressSection" style="display:none">
+          <h3>4 · Canlı İlerleme</h3>
+          <div id="trainMeta" class="train-meta"></div>
+          <div class="train-progress-wrap">
+            <div class="train-progress-bar" id="trainProgressBar" style="width:0%"></div>
+          </div>
+          <div class="train-progress-labels">
+            <span id="trainIterLabel">0 / 0 iter</span>
+            <span id="trainPctLabel" style="font-weight:700;font-size:1.1rem">0%</span>
+          </div>
+          <div class="train-loss-row">
+            <div class="train-loss-box"><span class="muted small">Train Loss</span><span id="trainLossVal" class="train-loss-num">—</span></div>
+            <div class="train-loss-box"><span class="muted small">Val Loss</span><span id="valLossVal" class="train-loss-num">—</span></div>
+          </div>
+          <div class="train-log-wrap">
+            <div class="train-log-head">
+              <span class="muted small">Canlı Log</span>
+              <button class="btn" id="clearLogBtn" style="padding:2px 8px;font-size:.75rem">temizle</button>
+            </div>
+            <pre id="trainLog" class="train-log"></pre>
+          </div>
+        </div>
+
+        <!-- 5. Adapter'lar -->
+        <div class="training-section" id="adaptersSection">
+          <h3>5 · Kayıtlı Adapter'lar</h3>
+          <button class="btn" id="refreshAdapters">↻ YENİLE</button>
+          <div id="adaptersList" class="adapters-list"></div>
+        </div>
+
+        <!-- 6. Örnekler -->
+        <div class="training-section">
+          <h3>6 · Eğitim Örnekleri</h3>
           <button class="btn" id="refreshExamples">↻ YENİLE</button>
           <div id="examplesList" class="examples-list"></div>
-        </div>
-
-        <div class="training-section" id="adaptersSection">
-          <h3>Kayıtlı Adapter'lar</h3>
-          <div id="adaptersList" class="adapters-list"></div>
         </div>
       </section>
 
@@ -387,6 +404,10 @@
       <!-- ABOUT -->
       <section class="panel" id="panel-about">
         <div class="panel-head"><h2>Sistem & Disiplin</h2></div>
+        <div class="card" style="margin-bottom:16px">
+          <h3>Canlı Durum</h3>
+          <div id="systemStatusDisplay" class="muted small">Yükleniyor…</div>
+        </div>
         <div class="about-grid">
           <div class="card">
             <h3>Katmanlar</h3>
