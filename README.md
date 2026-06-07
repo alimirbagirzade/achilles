@@ -133,6 +133,13 @@ ollama pull nomic-embed-text   # embedding modeli
 | `achilles research-sessions` | Araştırma oturumlarını listele |
 | `achilles chain-dataset` | Araştırma zincirleri → LoRA JSONL |
 | `achilles pine [strateji]` | StrategyIR → TradingView Pine Script v5 |
+| `achilles mastery-run <paper_id>` | Makale için RAG kalite testi çalıştır (0–100 skor) |
+| `achilles mastery-queue` | Öğrenme kuyruğunu görüntüle |
+| `achilles mastery-queue --enqueue-all` | Tüm makaleleri kuyruğa ekle |
+| `achilles mastery-queue --run-next` | Sıradaki makaleyi test et |
+| `achilles mastery-queue --run-all` | Tüm kuyruğu işle |
+| `achilles mastery-score <paper_id>` | Son mastery skorunu göster |
+| `achilles mastery-report <paper_id>` | JSON/MD mastery raporunu göster |
 
 ### Tipik uçtan uca akış
 ```bash
@@ -153,6 +160,54 @@ achilles evaluate evals/discipline_core.jsonl
 achilles gen-data
 achilles backtest data/market/raw/synthetic.csv
 ```
+
+---
+
+## Paper Mastery Agent 📊
+
+RAG sisteminizin bir makaleyi ne kadar iyi "öğrendiğini" **0–100 puan** ile ölçer.
+LLM gerektirmez — tamamen deterministik, çevrimdışı çalışır.
+
+### Skor Bileşenleri
+
+| Bileşen | Maks | Ne Ölçer |
+|---------|------|----------|
+| Parse | 10 | PDF'den metin, sayfa sayısı, hash |
+| Metadata | 5 | Başlık, yıl, yazarlar |
+| Chunk Kalitesi | 15 | Chunk sayısı ve uzunluk dağılımı |
+| Index | 10 | Embedding tamamlanma oranı |
+| Retrieval | 15 | RAG context yeterliliği |
+| Citation | 15 | Kaynak atıf doğruluğu |
+| Grounding | 15 | Cevabın kaynak metnine dayanması |
+| Abstention | 10 | "Bilmiyorum" diyebilme (trick sorular) |
+| Formül/Argüman | 5 | Ticaret hipotezi soruları |
+
+### Durum Makinas
+
+```
+≥ 90 puan → learned
+≥ 75 puan → usable_needs_review
+≥ 60 puan → partially_learned
+≥ 40 puan → needs_rechunking
+< 40 puan → failed
+```
+
+### Kullanım
+
+```bash
+# Tek makale testi
+achilles mastery-run <paper_id>
+
+# Tüm makaleleri kuyruğa al ve işle
+achilles mastery-queue --enqueue-all
+achilles mastery-queue --run-all
+
+# Skor ve rapor görüntüle
+achilles mastery-score <paper_id>
+achilles mastery-report <paper_id>
+```
+
+Raporlar: `reports/papers/mastery/<paper_id>_mastery_report.{json,md}`
 
 ---
 

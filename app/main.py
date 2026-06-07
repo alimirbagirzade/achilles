@@ -1107,3 +1107,109 @@ def oss_rules_update(
 
 if __name__ == "__main__":  # pragma: no cover
     app()
+
+
+# ---------------------------------------------------------------------------
+# mastery commands
+# ---------------------------------------------------------------------------
+
+@app.command("mastery-run")
+def mastery_run(
+    paper_id: str = typer.Argument(..., help="Makale paper_id"),
+    questions: int = typer.Option(20, help="Soru sayısı"),
+) -> None:
+    """Bir makale için Paper Mastery testi çalıştır."""
+    from app.learning.paper_mastery_agent import PaperMasteryAgent
+
+    console.print(f"[bold]Mastery testi başlatılıyor:[/bold] {paper_id}")
+    agent = PaperMasteryAgent()
+    result = agent.run(paper_id, question_count=questions)
+    if result.error:
+        console.print(f"[red]Hata:[/red] {result.error}")
+        raise typer.Exit(1)
+    console.print(result.summary())
+    console.print(f"[dim]JSON rapor:[/dim] {result.report_json}")
+    console.print(f"[dim]MD rapor:[/dim]   {result.report_md}")
+
+
+@app.command("mastery-queue")
+def mastery_queue(
+    enqueue_all: bool = typer.Option(False, "--enqueue-all", help="Tüm makaleleri kuyruğa ekle"),
+    run_next: bool = typer.Option(False, "--run-next", help="Sıradaki makaleyi test et"),
+    run_all: bool = typer.Option(False, "--run-all", help="Tüm kuyruğu işle"),
+    limit: int = typer.Option(50, help="--run-all için maks limit"),
+) -> None:
+    """Mastery öğrenme kuyruğunu göster ve yönet."""
+    from app.learning.paper_mastery_agent import LearningQueue
+
+    q = LearningQueue()
+    if enqueue_all:
+        n = q.enqueue_all_papers()
+        console.print(f"[green]{n} makale kuyruğa eklendi.[/green]")
+    if run_next:
+        result = q.run_next()
+        if result is None:
+            console.print("[yellow]Kuyrukta bekleyen makale yok.[/yellow]")
+        else:
+            console.print(result.summary())
+    elif run_all:
+        results = q.run_all(limit=limit)
+        console.print(f"[green]{len(results)} makale işlendi.[/green]")
+        for r in results:
+            status = "[green]✓[/green]" if not r.error else "[red]✗[/red]"
+            total = r.score.total_score
+            st = r.score.final_status
+            console.print(f"  {status} {r.paper_id} — {total:.1f}/100 {st}")
+    else:
+        entries = q.list_all()
+        if not entries:
+            console.print("[dim]Kuyruk boş.[/dim]")
+            return
+        console.print(f"[bold]Mastery kuyruğu ({len(entries)} makale):[/bold]")
+        for e in entries:
+            console.print(
+                f"  [{e['status']}] {e['paper_id']}  öncelik={e['priority']}"
+            )
+
+
+@app.command("mastery-score")
+def mastery_score(
+    paper_id: str = typer.Argument(..., help="Makale paper_id"),
+) -> None:
+    """Bir makalenin son mastery skorunu göster."""
+    from app.memory.mastery_store import MasteryStore
+
+    ms = MasteryStore()
+    score = ms.get_latest_score(paper_id)
+    if score is None:
+        console.print(f"[yellow]'{paper_id}' için henüz mastery skoru yok.[/yellow]")
+        raise typer.Exit(1)
+    ts = score["total_score"]
+    fs = score["final_status"]
+    console.print(f"[bold]{paper_id}[/bold]  —  {ts:.1f}/100  [{fs}]")
+    for k, v in score.items():
+        if k.endswith("_score") and k != "total_score":
+            console.print(f"  {k}: {v}")
+
+
+@app.command("mastery-report")
+def mastery_report(
+    paper_id: str = typer.Argument(..., help="Makale paper_id"),
+) -> None:
+    """Bir makalenin mastery raporunu göster."""
+    import json as _json2
+    from pathlib import Path
+
+    report_path = Path("reports/papers/mastery") / f"{paper_id}_mastery_report.json"
+    if not report_path.exists():
+        console.print(f"[yellow]Rapor bulunamadı:[/yellow] {report_path}")
+        raise typer.Exit(1)
+    data = _json2.loads(report_path.read_text())
+    score = data.get("score", {})
+    ts = score.get('total_score', 0)
+    fs = score.get('final_status', '?')
+    console.print(f"[bold]{paper_id}[/bold]  total={ts:.1f}  status={fs}")
+    q_total = data.get('questions', 0)
+    q_pass = data.get('passed', 0)
+    q_fail = data.get('failed', 0)
+    console.print(f"Sorular: {q_total}  Geçti: {q_pass}  Kaldı: {q_fail}")
