@@ -32,13 +32,13 @@ class MasteryScore:
 
     paper_id: str
     test_id: str
-    parse_score: float = 0.0       # 0–10
-    metadata_score: float = 0.0    # 0–5
+    parse_score: float = 0.0  # 0–10
+    metadata_score: float = 0.0  # 0–5
     chunk_quality_score: float = 0.0  # 0–15
-    index_score: float = 0.0       # 0–10
-    retrieval_score: float = 0.0   # 0–15
-    citation_score: float = 0.0    # 0–15
-    grounding_score: float = 0.0   # 0–15
+    index_score: float = 0.0  # 0–10
+    retrieval_score: float = 0.0  # 0–15
+    citation_score: float = 0.0  # 0–15
+    grounding_score: float = 0.0  # 0–15
     abstention_score: float = 0.0  # 0–10
     formula_argument_score: float = 0.0  # 0–5
 
@@ -113,9 +113,7 @@ class MasteryScorer:
 
         # Retrieval: paper'ın chunk'larına erişilebildi mi?
         if regular:
-            has_paper_ctx = sum(
-                1 for a in regular if inspection.paper_id in a.cited_paper_ids
-            )
+            has_paper_ctx = sum(1 for a in regular if inspection.paper_id in a.cited_paper_ids)
             retrieval_ratio = has_paper_ctx / len(regular)
             score.retrieval_score = round(retrieval_ratio * _MAX_RETRIEVAL, 2)
 

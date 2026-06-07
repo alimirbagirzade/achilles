@@ -83,17 +83,13 @@ class UnifiedDatasetBuilder:
             citation_threshold=citation_threshold,
         )
         mastery_count = len(mastery_examples)
-        records.extend(
-            _to_mlx(e.instruction, e.input, e.output)
-            for e in mastery_examples
-        )
+        records.extend(_to_mlx(e.instruction, e.input, e.output) for e in mastery_examples)
 
         # 3. Tool-use seansları
         tool_examples = build_tool_use_dataset(store=self._store)
         tool_count = len(tool_examples)
         records.extend(
-            _to_mlx(e["instruction"], e.get("input", ""), e["output"])
-            for e in tool_examples
+            _to_mlx(e["instruction"], e.get("input", ""), e["output"]) for e in tool_examples
         )
 
         if shuffle:
@@ -101,9 +97,7 @@ class UnifiedDatasetBuilder:
 
         out = output_path or _OUTPUT_PATH
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(
-            "\n".join(json.dumps(r, ensure_ascii=False) for r in records)
-        )
+        out.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in records))
 
         return UnifiedStats(
             card_count=card_count,

@@ -63,9 +63,7 @@ class RagExamRunner:
         self._grounding_v = GroundingVerifier()
         self._sufficiency = ContextSufficiencyClassifier()
 
-    def run(
-        self, questions: list[MasteryQuestion], paper_id: str
-    ) -> list[ExamAnswer]:
+    def run(self, questions: list[MasteryQuestion], paper_id: str) -> list[ExamAnswer]:
         """Her soru için RAG cevabı al ve doğrula."""
         return [self._run_one(q, paper_id) for q in questions]
 
@@ -106,7 +104,8 @@ class RagExamRunner:
         grounding_results = self._grounding_v.verify(answer_text, chunks)
         if grounding_results:
             supported = sum(
-                1 for g in grounding_results
+                1
+                for g in grounding_results
                 if g.level in (GroundingLevel.SUPPORTED, GroundingLevel.PARTIALLY_SUPPORTED)
             )
             gnd_score = supported / len(grounding_results)

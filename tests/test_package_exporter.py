@@ -12,7 +12,7 @@ from app.trading.package_exporter import (
     _ir_to_python,
     export_strategy,
 )
-from app.trading.strategy_ir import CostSpec, IndicatorSpec, RiskSpec, StrategyIR, example_ir
+from app.trading.strategy_ir import CostSpec, IndicatorSpec, StrategyIR, example_ir
 
 
 @pytest.fixture()

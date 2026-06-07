@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-from app.training.mastery_sft_builder import MasterySFTBuilder, SFTExample
+from app.training.mastery_sft_builder import MasterySFTBuilder
 
 
 def _make_paper(paper_id: str = "p1") -> MagicMock:
@@ -95,6 +95,7 @@ def test_build_jsonl_creates_file(tmp_path: Path) -> None:
     assert path.exists()
     assert n == 1
     import json
+
     data = json.loads(path.read_text())
     assert data["source"] == "mastery:p1"
 
@@ -107,4 +108,6 @@ def test_instruction_varies_by_type() -> None:
     ms.list_questions.return_value = [_make_question("q1", "trading_hypothesis")]
     ms.list_answers.return_value = [_make_answer("q1")]
     examples = _builder(sq, ms).collect()
-    assert "trading" in examples[0].instruction.lower() or "hipotez" in examples[0].instruction.lower()
+    assert (
+        "trading" in examples[0].instruction.lower() or "hipotez" in examples[0].instruction.lower()
+    )

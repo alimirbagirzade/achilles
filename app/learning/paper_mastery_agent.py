@@ -116,6 +116,7 @@ class PaperMasteryAgent:
     @staticmethod
     def _error_result(paper_id: str, test_id: str, error: str) -> MasteryRunResult:
         from app.learning.mastery_scorer import MasteryScore
+
         return MasteryRunResult(
             paper_id=paper_id,
             test_id=test_id,

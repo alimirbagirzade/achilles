@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from app.memory.sqlite_store import SqliteStore
 from app.training.dpo_dataset_builder import (
     build_dpo_dataset,
@@ -27,6 +25,7 @@ def _store(tmp_path: Path) -> SqliteStore:
 
 # ---- compute_reward ----
 
+
 def test_error_gives_zero_composite() -> None:
     rc = compute_reward({}, verdict="fail", had_error=True)
     assert rc.composite == 0.0
@@ -36,8 +35,11 @@ def test_error_gives_zero_composite() -> None:
 
 def test_perfect_metrics_chosen() -> None:
     metrics = {
-        "n_trades": 50, "sharpe_ratio": 2.5, "max_drawdown_pct": 10.0,
-        "total_return_pct": 120.0, "win_rate": 0.60,
+        "n_trades": 50,
+        "sharpe_ratio": 2.5,
+        "max_drawdown_pct": 10.0,
+        "total_return_pct": 120.0,
+        "win_rate": 0.60,
     }
     rc = compute_reward(metrics, verdict="pass")
     assert rc.execution_ok == 1.0
@@ -82,10 +84,15 @@ def test_to_dict_has_all_keys() -> None:
 
 # ---- build_preference_pairs ----
 
+
 def test_preference_pairs_correct() -> None:
     high = RewardCriteria(
-        execution_ok=1, trade_count_ok=1, sharpe_ok=1,
-        drawdown_ok=1, return_ok=1, win_rate_ok=1,
+        execution_ok=1,
+        trade_count_ok=1,
+        sharpe_ok=1,
+        drawdown_ok=1,
+        return_ok=1,
+        win_rate_ok=1,
     )
     low = RewardCriteria()
     pairs = build_preference_pairs([("good", high), ("bad", low)], min_gap=0.25)
@@ -106,11 +113,17 @@ def test_preference_pairs_empty() -> None:
 
 # ---- SqliteStore reward_signals ----
 
+
 def test_save_and_get_reward_signal(tmp_path: Path) -> None:
     store = _store(tmp_path)
     rc = compute_reward(
-        {"n_trades": 30, "sharpe_ratio": 1.5, "max_drawdown_pct": 15.0,
-         "total_return_pct": 50.0, "win_rate": 0.55},
+        {
+            "n_trades": 30,
+            "sharpe_ratio": 1.5,
+            "max_drawdown_pct": 15.0,
+            "total_return_pct": 50.0,
+            "win_rate": 0.55,
+        },
         verdict="pass",
     )
     store.save_reward_signal("sess_001", rc, raw_metrics={"n_trades": 30})
@@ -123,8 +136,14 @@ def test_save_and_get_reward_signal(tmp_path: Path) -> None:
 def test_list_reward_signals_label_filter(tmp_path: Path) -> None:
     store = _store(tmp_path)
     good_rc = compute_reward(
-        {"n_trades": 30, "sharpe_ratio": 2.0, "max_drawdown_pct": 10.0,
-         "total_return_pct": 80.0, "win_rate": 0.58}, verdict="pass",
+        {
+            "n_trades": 30,
+            "sharpe_ratio": 2.0,
+            "max_drawdown_pct": 10.0,
+            "total_return_pct": 80.0,
+            "win_rate": 0.58,
+        },
+        verdict="pass",
     )
     bad_rc = compute_reward({}, had_error=True)
     store.save_reward_signal("good", good_rc)
@@ -143,18 +162,40 @@ def test_reward_signal_upsert(tmp_path: Path) -> None:
 
 # ---- score_and_save_sessions ----
 
+
 def _seed_session(store: SqliteStore, session_id: str, verdict: str) -> None:
-    m = {"n_trades": 25, "sharpe_ratio": 1.5, "max_drawdown_pct": 12.0,
-         "total_return_pct": 40.0, "win_rate": 0.55} if verdict == "pass" else \
-        {"n_trades": 2, "sharpe_ratio": -0.5, "max_drawdown_pct": 50.0,
-         "total_return_pct": -5.0, "win_rate": 0.2}
-    store.save_tool_use_example(
-        example_id=f"{session_id}_0", session_id=session_id, question="Q?",
-        step_index=0, step_type="think", content="hipotez",
+    m = (
+        {
+            "n_trades": 25,
+            "sharpe_ratio": 1.5,
+            "max_drawdown_pct": 12.0,
+            "total_return_pct": 40.0,
+            "win_rate": 0.55,
+        }
+        if verdict == "pass"
+        else {
+            "n_trades": 2,
+            "sharpe_ratio": -0.5,
+            "max_drawdown_pct": 50.0,
+            "total_return_pct": -5.0,
+            "win_rate": 0.2,
+        }
     )
     store.save_tool_use_example(
-        example_id=f"{session_id}_1", session_id=session_id, question="Q?",
-        step_index=1, step_type="call", content="backtest()",
+        example_id=f"{session_id}_0",
+        session_id=session_id,
+        question="Q?",
+        step_index=0,
+        step_type="think",
+        content="hipotez",
+    )
+    store.save_tool_use_example(
+        example_id=f"{session_id}_1",
+        session_id=session_id,
+        question="Q?",
+        step_index=1,
+        step_type="call",
+        content="backtest()",
         tool_name="run_backtest",
         tool_output={"verdict": verdict, "metrics": m},
         verdict=verdict,
@@ -179,6 +220,7 @@ def test_score_idempotent(tmp_path: Path) -> None:
 
 
 # ---- build_dpo_dataset / get_dpo_stats ----
+
 
 def test_build_dpo_no_signals(tmp_path: Path) -> None:
     assert build_dpo_dataset(store=_store(tmp_path)) == []

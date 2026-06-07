@@ -83,7 +83,8 @@ def _query_trial_summaries(db_path: Path) -> list[TrialSummary]:
 def _query_error_patterns(db_path: Path, min_occurrences: int) -> list[dict[str, Any]]:
     """Tekrar eden hata imzalarını bul."""
     conn = _connect(db_path)
-    rows = conn.execute("""
+    rows = conn.execute(
+        """
         SELECT error_signature, error_type, probable_cause,
                recommended_fix, COUNT(*) AS cnt,
                AVG(confidence) AS avg_conf
@@ -91,7 +92,9 @@ def _query_error_patterns(db_path: Path, min_occurrences: int) -> list[dict[str,
         GROUP BY error_signature
         HAVING cnt >= ?
         ORDER BY cnt DESC
-    """, (min_occurrences,)).fetchall()
+    """,
+        (min_occurrences,),
+    ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -130,12 +133,15 @@ def generate_rule_suggestions(
         total_bad = s.failed + s.unstable
 
         if total_bad >= _MIN_FAILURES_FOR_BLACKLIST:
-            patch = json.dumps({
-                "action": "blacklist_model",
-                "model_id": s.model_id,
-                "failure_count": total_bad,
-                "total_trials": s.total,
-            }, ensure_ascii=False)
+            patch = json.dumps(
+                {
+                    "action": "blacklist_model",
+                    "model_id": s.model_id,
+                    "failure_count": total_bad,
+                    "total_trials": s.total,
+                },
+                ensure_ascii=False,
+            )
             reason = (
                 f"Model '{s.model_id}' {total_bad}/{s.total} denemede başarısız/kararsız. "
                 f"Ortalama kalite: {s.avg_quality:.2f}. "
@@ -148,12 +154,15 @@ def generate_rule_suggestions(
                 )
 
         elif total_bad >= _MIN_FAILURES_FOR_THROTTLE and s.avg_tps < _MIN_TPS_THRESHOLD:
-            patch = json.dumps({
-                "action": "throttle_model",
-                "model_id": s.model_id,
-                "observed_avg_tps": s.avg_tps,
-                "suggested_min_tps": _MIN_TPS_THRESHOLD,
-            }, ensure_ascii=False)
+            patch = json.dumps(
+                {
+                    "action": "throttle_model",
+                    "model_id": s.model_id,
+                    "observed_avg_tps": s.avg_tps,
+                    "suggested_min_tps": _MIN_TPS_THRESHOLD,
+                },
+                ensure_ascii=False,
+            )
             reason = (
                 f"Model '{s.model_id}' yavaş ({s.avg_tps:.1f} tok/sn) ve "
                 f"{total_bad} kararsız trial mevcut. "
@@ -166,11 +175,14 @@ def generate_rule_suggestions(
                 )
 
         if s.avg_ram_gb > 0 and s.total >= 2:
-            patch = json.dumps({
-                "action": "add_ram_warning",
-                "model_id": s.model_id,
-                "observed_avg_ram_gb": s.avg_ram_gb,
-            }, ensure_ascii=False)
+            patch = json.dumps(
+                {
+                    "action": "add_ram_warning",
+                    "model_id": s.model_id,
+                    "observed_avg_ram_gb": s.avg_ram_gb,
+                },
+                ensure_ascii=False,
+            )
             reason = (
                 f"Model '{s.model_id}' ortalama {s.avg_ram_gb:.1f} GB RAM kullandı. "
                 "model_registry.yaml'daki 'min_ram_gb' değerinin gözden geçirilmesi önerilir."
@@ -183,13 +195,16 @@ def generate_rule_suggestions(
 
     # --- 2. Tekrar eden hata desenleri ---
     for p in _query_error_patterns(db_path, _MIN_ERROR_OCCURRENCES):
-        patch = json.dumps({
-            "action": "add_known_error",
-            "error_signature": p["error_signature"],
-            "error_type": p["error_type"],
-            "recommended_fix": p["recommended_fix"],
-            "occurrences": p["cnt"],
-        }, ensure_ascii=False)
+        patch = json.dumps(
+            {
+                "action": "add_known_error",
+                "error_signature": p["error_signature"],
+                "error_type": p["error_type"],
+                "recommended_fix": p["recommended_fix"],
+                "occurrences": p["cnt"],
+            },
+            ensure_ascii=False,
+        )
         reason = (
             f"Hata '{p['error_signature']}' {p['cnt']} kez tekrar etti "
             f"(tür: {p['error_type']}). "

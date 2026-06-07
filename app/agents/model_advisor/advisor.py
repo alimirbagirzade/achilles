@@ -67,13 +67,17 @@ def _score_model(
             [],
             f"Yetersiz RAM: {ram:.0f} GB < minimum {min_ram:.0f} GB",
         )
-    if min_vram > 0 and not has_dedicated and vram < min_vram:
-        if not (is_apple and ram >= min_vram * 2):
-            return (
-                -1.0,
-                [],
-                f"Dedicated GPU yok ve VRAM {vram:.1f} GB < minimum {min_vram:.0f} GB",
-            )
+    if (
+        min_vram > 0
+        and not has_dedicated
+        and vram < min_vram
+        and not (is_apple and ram >= min_vram * 2)
+    ):
+        return (
+            -1.0,
+            [],
+            f"Dedicated GPU yok ve VRAM {vram:.1f} GB < minimum {min_vram:.0f} GB",
+        )
 
     score = 0.0
     reasons: list[str] = []
@@ -112,7 +116,7 @@ def _score_model(
     score += (q + s) / 2
 
     # Büyük model bonusu: donanım tüm gereksinimleri karşılıyorsa kaliteyi ön plana çıkar
-    if ram >= rec_ram and (has_dedicated and vram >= rec_vram or is_apple):
+    if ram >= rec_ram and ((has_dedicated and vram >= rec_vram) or is_apple):
         score += q * 0.5  # tam donanım uyumu → kalite ağırlığını artır
 
     return score, reasons, None

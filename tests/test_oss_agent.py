@@ -5,8 +5,6 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-import pytest
-
 from app.agents.model_advisor.advisor import AdvisorResult, recommend
 from app.agents.system_profiler.profiler import (
     CpuInfo,

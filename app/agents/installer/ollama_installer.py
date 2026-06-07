@@ -36,10 +36,7 @@ def _is_allowed(cmd: str) -> bool:
     for pattern in _DENIED_PATTERNS:
         if pattern.search(cmd):
             return False
-    for pattern in _ALLOWED_PATTERNS:
-        if pattern.match(cmd.strip()):
-            return True
-    return False
+    return any(pattern.match(cmd.strip()) for pattern in _ALLOWED_PATTERNS)
 
 
 def _run(cmd: str, timeout: int = 60) -> CommandResult:

@@ -17,10 +17,17 @@ def _gen(tmp_path: Path) -> ReportGenerator:
 
 def _score(paper_id: str = "p1", test_id: str = "t1") -> MasteryScore:
     return MasteryScore(
-        paper_id=paper_id, test_id=test_id,
-        parse_score=8.0, metadata_score=4.0, chunk_quality_score=12.0,
-        index_score=8.0, retrieval_score=10.0, citation_score=10.0,
-        grounding_score=10.0, abstention_score=7.0, formula_argument_score=4.0,
+        paper_id=paper_id,
+        test_id=test_id,
+        parse_score=8.0,
+        metadata_score=4.0,
+        chunk_quality_score=12.0,
+        index_score=8.0,
+        retrieval_score=10.0,
+        citation_score=10.0,
+        grounding_score=10.0,
+        abstention_score=7.0,
+        formula_argument_score=4.0,
     )
 
 

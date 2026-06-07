@@ -174,9 +174,7 @@ class MasteryStore:
             )
             return _queue_to_dict(row) if row else None
 
-    def update_queue_status(
-        self, queue_id: str, status: str, error: str | None = None
-    ) -> None:
+    def update_queue_status(self, queue_id: str, status: str, error: str | None = None) -> None:
         with self.session() as s:
             row = s.get(PaperLearningQueue, queue_id)
             if row:
@@ -241,9 +239,7 @@ class MasteryStore:
     def list_questions(self, test_id: str) -> list[dict[str, Any]]:
         with self.session() as s:
             rows = s.scalars(
-                select(PaperMasteryQuestion).where(
-                    PaperMasteryQuestion.test_id == test_id
-                )
+                select(PaperMasteryQuestion).where(PaperMasteryQuestion.test_id == test_id)
             ).all()
             return [_question_to_dict(r) for r in rows]
 

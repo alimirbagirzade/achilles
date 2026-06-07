@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from app.learning.paper_mastery_agent import LearningQueue, MasteryRunResult
 from app.learning.mastery_scorer import MasteryScore
+from app.learning.paper_mastery_agent import LearningQueue, MasteryRunResult
 from app.memory.mastery_store import MasteryStore
 from app.memory.sqlite_store import SqliteStore
 
@@ -63,15 +63,27 @@ def test_run_next_returns_none_if_empty(tmp_path: Path) -> None:
 
 def _make_mock_result(paper_id: str) -> MasteryRunResult:
     score = MasteryScore(
-        paper_id=paper_id, test_id="t1",
-        parse_score=10, metadata_score=5, chunk_quality_score=15,
-        index_score=10, retrieval_score=15, citation_score=15,
-        grounding_score=15, abstention_score=10, formula_argument_score=5,
+        paper_id=paper_id,
+        test_id="t1",
+        parse_score=10,
+        metadata_score=5,
+        chunk_quality_score=15,
+        index_score=10,
+        retrieval_score=15,
+        citation_score=15,
+        grounding_score=15,
+        abstention_score=10,
+        formula_argument_score=5,
     )
     return MasteryRunResult(
-        paper_id=paper_id, test_id="t1", score=score,
-        n_questions=10, n_passed=10, n_failed=0,
-        report_json="r.json", report_md="r.md",
+        paper_id=paper_id,
+        test_id="t1",
+        score=score,
+        n_questions=10,
+        n_passed=10,
+        n_failed=0,
+        report_json="r.json",
+        report_md="r.md",
     )
 
 

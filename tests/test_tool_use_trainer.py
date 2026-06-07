@@ -6,8 +6,6 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from app.memory.sqlite_store import SqliteStore
 from app.training.tool_use_dataset_builder import build_tool_use_dataset, get_tool_use_stats
 from app.training.tool_use_trainer import ToolUseSession, ToolUseStep, ToolUseTrainer
@@ -15,6 +13,20 @@ from app.training.tool_use_trainer import ToolUseSession, ToolUseStep, ToolUseTr
 
 def _make_store(tmp_path: Path) -> SqliteStore:
     return SqliteStore(db_path=tmp_path / "test.db")
+
+
+def _fake_metrics(*, n_trades: int, sharpe: float, ret: float):
+    from app.trading.backtester import BacktestMetrics
+
+    return BacktestMetrics(
+        n_trades=n_trades,
+        total_return_pct=ret,
+        sharpe=sharpe,
+        sortino=sharpe,
+        max_drawdown_pct=-5.0,
+        profit_factor=1.0,
+        win_rate_pct=50.0,
+    )
 
 
 def _fake_synthesized(name: str = "FakeRSI"):
@@ -43,8 +55,13 @@ def _fake_synthesized(name: str = "FakeRSI"):
 def _seed_full_session(store: SqliteStore, session_id: str, verdict: str) -> None:
     steps = [
         ("think", "Hipotez", None, {}, {}),
-        ("call", "backtest()", "run_backtest",
-         {"n_bars": 200}, {"verdict": verdict, "metrics": {"n_trades": 5, "sharpe_ratio": 1.2}}),
+        (
+            "call",
+            "backtest()",
+            "run_backtest",
+            {"n_bars": 200},
+            {"verdict": verdict, "metrics": {"n_trades": 5, "sharpe_ratio": 1.2}},
+        ),
         ("observe", f"Sonuç: {verdict.upper()}", None, {}, {}),
         ("conclude", f"Yansıma — {verdict}", None, {}, {}),
     ]
@@ -65,6 +82,7 @@ def _seed_full_session(store: SqliteStore, session_id: str, verdict: str) -> Non
 
 # ---- ToolUseStep ----
 
+
 def test_tool_use_step_defaults() -> None:
     step = ToolUseStep(step_type="think", content="hipotez")
     assert step.tool_name is None
@@ -74,12 +92,15 @@ def test_tool_use_step_defaults() -> None:
 
 # ---- ToolUseSession.as_sft_example ----
 
+
 def test_as_sft_example_structure() -> None:
     session = ToolUseSession(session_id="tu_test", question="RSI nasıl çalışır?")
     session.steps = [
         ToolUseStep("think", "Hipotez"),
         ToolUseStep(
-            "call", "backtest()", tool_name="run_backtest",
+            "call",
+            "backtest()",
+            tool_name="run_backtest",
             tool_input={"n_bars": 500},
             tool_output={"verdict": "fail", "metrics": {"n_trades": 2}},
             verdict="fail",
@@ -98,11 +119,16 @@ def test_as_sft_example_structure() -> None:
 
 # ---- SqliteStore tool_use helpers ----
 
+
 def test_save_and_list_tool_use_examples(tmp_path: Path) -> None:
     store = _make_store(tmp_path)
     store.save_tool_use_example(
-        example_id="ex_001", session_id="tu_abc", question="Test?",
-        step_index=0, step_type="think", content="Hipotez",
+        example_id="ex_001",
+        session_id="tu_abc",
+        question="Test?",
+        step_index=0,
+        step_type="think",
+        content="Hipotez",
     )
     rows = store.list_tool_use_examples()
     assert len(rows) == 1
@@ -114,14 +140,19 @@ def test_list_tool_use_examples_filter_by_session(tmp_path: Path) -> None:
     store = _make_store(tmp_path)
     for sid, idx in [("sess_a", 0), ("sess_a", 1), ("sess_b", 0)]:
         store.save_tool_use_example(
-            example_id=f"{sid}_{idx}", session_id=sid, question="Q",
-            step_index=idx, step_type="think", content="x",
+            example_id=f"{sid}_{idx}",
+            session_id=sid,
+            question="Q",
+            step_index=idx,
+            step_type="think",
+            content="x",
         )
     assert len(store.list_tool_use_examples(session_id="sess_a")) == 2
     assert len(store.list_tool_use_examples(session_id="sess_b")) == 1
 
 
 # ---- ToolUseTrainer (mocked synthesis + backtest) ----
+
 
 @patch("app.training.tool_use_trainer.run_backtest")
 @patch("app.training.tool_use_trainer.eval_strategy")
@@ -131,9 +162,7 @@ def test_run_session_records_four_steps(mock_eval, mock_bt, tmp_path: Path) -> N
 
     trainer.synthesis = MagicMock()
     trainer.synthesis.synthesize.return_value = _fake_synthesized()
-    mock_bt.return_value = MagicMock(
-        metrics={"n_trades": 10, "sharpe_ratio": 1.5, "total_return_pct": 30.0}
-    )
+    mock_bt.return_value = MagicMock(metrics=_fake_metrics(n_trades=10, sharpe=1.5, ret=30.0))
     mock_eval.return_value = MagicMock(verdict="pass", reasons=["Sharpe yüksek"])
 
     session = trainer.run_session("RSI nasıl çalışır?", max_iterations=1)
@@ -151,9 +180,7 @@ def test_run_session_fail_uses_reflection(mock_eval, mock_bt, tmp_path: Path) ->
 
     trainer.synthesis = MagicMock()
     trainer.synthesis.synthesize.return_value = _fake_synthesized("SlowEMA")
-    mock_bt.return_value = MagicMock(
-        metrics={"n_trades": 1, "sharpe_ratio": -0.3, "total_return_pct": -5.0}
-    )
+    mock_bt.return_value = MagicMock(metrics=_fake_metrics(n_trades=1, sharpe=-0.3, ret=-5.0))
     mock_eval.return_value = MagicMock(verdict="fail", reasons=["Az işlem"])
     trainer.reflection = MagicMock()
     trainer.reflection.reflect.return_value = "Entry kuralını gevşet."
@@ -165,6 +192,7 @@ def test_run_session_fail_uses_reflection(mock_eval, mock_bt, tmp_path: Path) ->
 
 
 # ---- build_tool_use_dataset ----
+
 
 def test_build_returns_both_sessions(tmp_path: Path) -> None:
     store = _make_store(tmp_path)

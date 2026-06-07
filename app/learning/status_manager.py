@@ -5,10 +5,20 @@ from __future__ import annotations
 from app.memory.mastery_store import MasteryStore
 
 VALID_STATUSES = {
-    "uploaded", "parsed", "metadata_extracted", "chunked", "indexed",
-    "retrievable", "tested", "learned", "partially_learned",
-    "usable_needs_review", "needs_rechunking", "needs_reindexing",
-    "needs_human_review", "failed",
+    "uploaded",
+    "parsed",
+    "metadata_extracted",
+    "chunked",
+    "indexed",
+    "retrievable",
+    "tested",
+    "learned",
+    "partially_learned",
+    "usable_needs_review",
+    "needs_rechunking",
+    "needs_reindexing",
+    "needs_human_review",
+    "failed",
 }
 
 

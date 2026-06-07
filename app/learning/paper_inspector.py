@@ -32,10 +32,10 @@ class InspectionResult:
     missing_steps: list[str] = field(default_factory=list)
 
     # Bileşen skorlar (spec §7)
-    parse_score: float = 0.0     # 0–10
+    parse_score: float = 0.0  # 0–10
     metadata_score: float = 0.0  # 0–5
-    chunk_quality: float = 0.0   # 0–15
-    index_score: float = 0.0     # 0–10
+    chunk_quality: float = 0.0  # 0–15
+    index_score: float = 0.0  # 0–10
 
     @property
     def static_total(self) -> float:

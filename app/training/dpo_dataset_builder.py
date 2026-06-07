@@ -80,10 +80,9 @@ def build_dpo_dataset(
     for r in all_rows:
         session_steps.setdefault(r["session_id"], []).append(r)
 
-    scored = (
-        [(sig["session_id"], _to_rc(sig)) for sig in chosen_sigs]
-        + [(sig["session_id"], _to_rc(sig)) for sig in rejected_sigs]
-    )
+    scored = [(sig["session_id"], _to_rc(sig)) for sig in chosen_sigs] + [
+        (sig["session_id"], _to_rc(sig)) for sig in rejected_sigs
+    ]
     pairs = build_preference_pairs(scored, min_gap=min_gap)
 
     examples = []
@@ -93,12 +92,14 @@ def build_dpo_dataset(
         if not c_steps or not r_steps:
             continue
         prompt = c_steps[0]["question"] if c_steps else ""
-        examples.append({
-            "prompt": prompt,
-            "chosen": _session_text(c_steps),
-            "rejected": _session_text(r_steps),
-            "metadata": {"chosen_id": pair["chosen_id"], "rejected_id": pair["rejected_id"]},
-        })
+        examples.append(
+            {
+                "prompt": prompt,
+                "chosen": _session_text(c_steps),
+                "rejected": _session_text(r_steps),
+                "metadata": {"chosen_id": pair["chosen_id"], "rejected_id": pair["rejected_id"]},
+            }
+        )
 
     if output_path:
         out = Path(output_path)

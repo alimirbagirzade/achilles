@@ -61,9 +61,9 @@ class ToolUseSession:
         conclusions = [s for s in self.steps if s.step_type == "conclude"]
 
         call_summary = "\n".join(
-            f"  [{i+1}] {s.tool_name}({json.dumps(s.tool_input)[:120]}) → "
-            f"verdict={s.tool_output.get('verdict','?')}, "
-            f"n_trades={s.tool_output.get('metrics',{}).get('n_trades','?')}"
+            f"  [{i + 1}] {s.tool_name}({json.dumps(s.tool_input)[:120]}) → "
+            f"verdict={s.tool_output.get('verdict', '?')}, "
+            f"n_trades={s.tool_output.get('metrics', {}).get('n_trades', '?')}"
             for i, s in enumerate(tool_calls)
         )
         output = conclusions[-1].content if conclusions else "Sonuç belirsiz."
@@ -74,8 +74,7 @@ class ToolUseSession:
                 "Verilen soruyu analiz et, backtest aracını kullan ve sonucu değerlendir."
             ),
             "input": (
-                f"Araştırma Sorusu: {self.question}\n\n"
-                f"Araç Çağrıları:\n{call_summary or '  (yok)'}"
+                f"Araştırma Sorusu: {self.question}\n\nAraç Çağrıları:\n{call_summary or '  (yok)'}"
             ),
             "output": output,
             "metadata": {
@@ -135,6 +134,11 @@ class ToolUseTrainer:
                 timeframe=self.timeframe,
                 prev_failures=prev_failures or None,
             )
+            if synthesized is None:
+                logger.warning(
+                    "Sentez sonuç üretmedi (formül yok veya LLM çevrimdışı) — seans durduruluyor."
+                )
+                break
             think_step = ToolUseStep(
                 step_type="think",
                 content=(
@@ -163,10 +167,10 @@ class ToolUseTrainer:
             try:
                 if ir_obj:
                     bt = run_backtest(df.copy(), ir_obj)
-                    ev = eval_strategy(bt)
+                    ev = eval_strategy(df.copy(), ir_obj)
                     call_step.tool_output = {
                         "verdict": ev.verdict,
-                        "metrics": bt.metrics,
+                        "metrics": bt.metrics.to_dict(),
                         "reasons": ev.reasons,
                     }
                     call_step.verdict = ev.verdict
@@ -188,7 +192,7 @@ class ToolUseTrainer:
                 content=(
                     f"Sonuç: {verdict.upper()} | "
                     f"İşlem: {metrics.get('n_trades', 0)} | "
-                    f"Sharpe: {metrics.get('sharpe_ratio', 0):.2f} | "
+                    f"Sharpe: {metrics.get('sharpe', 0):.2f} | "
                     f"Getiri: {metrics.get('total_return_pct', 0):.1f}%"
                 ),
                 tool_output=call_step.tool_output,
@@ -201,16 +205,25 @@ class ToolUseTrainer:
             if verdict == "pass":
                 conclude_content = (
                     f"Strateji '{synthesized.indicator_name}' backtest'i geçti. "
-                    f"Sharpe {metrics.get('sharpe_ratio', 0):.2f}, "
+                    f"Sharpe {metrics.get('sharpe', 0):.2f}, "
                     f"{metrics.get('n_trades', 0)} işlem. Araştırma tamamlandı."
                 )
             else:
                 try:
-                    conclude_content = self.reflection.reflect(
-                        ir_obj,
-                        {"verdict": verdict, "metrics": metrics},
-                    ) if ir_obj else "Strateji IR üretilemedi."
-                    conclude_content = (conclude_content or "Yansıma boş.")[:400]
+                    if ir_obj:
+                        reflection = self.reflection.reflect(
+                            {
+                                "indicator_name": synthesized.indicator_name,
+                                "combination_reasoning": synthesized.combination_reasoning,
+                                "strategy_ir": ir_dict,
+                            },
+                            {"verdict": verdict, "metrics": metrics},
+                            verdict,
+                            call_step.tool_output.get("reasons", []),
+                        )
+                        conclude_content = self._format_reflection(reflection, verdict)
+                    else:
+                        conclude_content = "Strateji IR üretilemedi."
                 except Exception:
                     conclude_content = f"Yansıma başarısız — verdict: {verdict}"
 
@@ -227,15 +240,26 @@ class ToolUseTrainer:
             prev_failures.append({"indicator": synthesized.indicator_name, "verdict": verdict})
 
         if session.final_verdict == "inconclusive":
-            session.final_verdict = "pass" if any(
-                s.verdict == "pass" for s in session.steps
-            ) else "fail"
+            session.final_verdict = (
+                "pass" if any(s.verdict == "pass" for s in session.steps) else "fail"
+            )
 
         return session
 
-    def _save_step(
-        self, session_id: str, question: str, idx: int, step: ToolUseStep
-    ) -> None:
+    def _format_reflection(self, reflection: object, verdict: str) -> str:
+        """Yansıma çıktısını metne çevir (dict, str veya None olabilir)."""
+        if reflection is None:
+            return f"Yansıma boş — verdict: {verdict}"
+        if isinstance(reflection, str):
+            return reflection[:400]
+        if isinstance(reflection, dict):
+            lesson = reflection.get("lesson") or reflection.get("reasoning") or ""
+            suggestion = reflection.get("suggestion") or reflection.get("improvement") or ""
+            text = " ".join(part for part in (str(lesson), str(suggestion)) if part).strip()
+            return (text or f"Yansıma alındı — verdict: {verdict}")[:400]
+        return str(reflection)[:400]
+
+    def _save_step(self, session_id: str, question: str, idx: int, step: ToolUseStep) -> None:
         self.store.save_tool_use_example(
             example_id=f"{session_id}_{idx}",
             session_id=session_id,
@@ -249,9 +273,7 @@ class ToolUseTrainer:
             verdict=step.verdict,
         )
 
-    def run_batch(
-        self, questions: list[str], max_iterations: int = 2
-    ) -> list[ToolUseSession]:
+    def run_batch(self, questions: list[str], max_iterations: int = 2) -> list[ToolUseSession]:
         sessions = []
         for i, q in enumerate(questions, 1):
             logger.info("Toplu eğitim %d/%d: %s", i, len(questions), q[:60])

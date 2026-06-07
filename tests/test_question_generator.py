@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
-from app.learning.question_generator import QuestionGenerator, MasteryQuestion
+from app.learning.question_generator import MasteryQuestion, QuestionGenerator
 from app.memory.sqlite_store import SqliteStore
 
 

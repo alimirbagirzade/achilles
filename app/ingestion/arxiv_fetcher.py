@@ -7,6 +7,7 @@ ingestion pipeline ile indekslenir.
 
 from __future__ import annotations
 
+import logging
 import urllib.parse
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -40,7 +41,8 @@ class FetchResult:
     arxiv_id: str
     title: str
     pdf_path: Path
-    skipped: bool  # True → dosya zaten vardı
+    skipped: bool  # True → dosya zaten vardı veya hata
+    error: str | None = None  # hata mesajı (skipped=True ise dolu)
 
 
 def search_arxiv(query: str, max_results: int = 10) -> list[ArxivEntry]:
@@ -122,11 +124,32 @@ def fetch_arxiv_papers(
                 resp = client.get(entry.pdf_url)
                 resp.raise_for_status()
                 pdf_bytes = resp.content
-            except Exception:
-                continue  # ağ hatası → bu makaleyi atla
+            except Exception as exc:
+                logging.getLogger(__name__).warning(
+                    "PDF indirilemedi: %s — %s", entry.arxiv_id, exc
+                )
+                results.append(
+                    FetchResult(
+                        arxiv_id=entry.arxiv_id,
+                        title=entry.title,
+                        pdf_path=dest,
+                        skipped=True,
+                        error=str(exc),
+                    )
+                )
+                continue
 
             if not pdf_bytes.startswith(b"%PDF"):
-                continue  # gerçek PDF değil
+                results.append(
+                    FetchResult(
+                        arxiv_id=entry.arxiv_id,
+                        title=entry.title,
+                        pdf_path=dest,
+                        skipped=True,
+                        error="PDF içeriği geçersiz (magic bytes hatalı)",
+                    )
+                )
+                continue
 
             dest.write_bytes(pdf_bytes)
             results.append(

@@ -48,8 +48,8 @@ class ReportGenerator:
             "",
             "## Bileşen Skorları",
             "",
-            f"| Bileşen | Skor | Maks |",
-            f"|---------|------|------|",
+            "| Bileşen | Skor | Maks |",
+            "|---------|------|------|",
             f"| Parse | {score.parse_score:.1f} | 10 |",
             f"| Metadata | {score.metadata_score:.1f} | 5 |",
             f"| Chunk Kalitesi | {score.chunk_quality_score:.1f} | 15 |",
@@ -74,7 +74,7 @@ class ReportGenerator:
             else:
                 failed_n += 1
             md_lines.append(
-                f"- {status} `{q.get('question_type','?')}` — {q.get('question_text','?')[:80]}"
+                f"- {status} `{q.get('question_type', '?')}` — {q.get('question_text', '?')[:80]}"
             )
 
         md_lines += [

@@ -1030,6 +1030,7 @@ def api_arxiv_fetch(req: ArxivFetchRequest) -> ArxivFetchResponse:
 def api_save_arxiv_query(req: ArxivSavedQueryIn) -> ArxivSavedQueryOut:
     """Sorguyu kaydet (aynı sorgu tekrar kaydedilirse üzerine yaz)."""
     import hashlib
+
     from app.memory.sqlite_store import SqliteStore
 
     store = SqliteStore()
@@ -1053,6 +1054,7 @@ def api_list_arxiv_queries() -> ArxivSavedQueryListResponse:
 @app.delete("/api/arxiv/queries/{query_id}", dependencies=[api_auth])
 def api_delete_arxiv_query(query_id: str) -> dict:
     from fastapi import HTTPException
+
     from app.memory.sqlite_store import SqliteStore
 
     if not SqliteStore().delete_arxiv_query(query_id):
@@ -1066,8 +1068,9 @@ def api_delete_arxiv_query(query_id: str) -> dict:
 def api_run_arxiv_query(query_id: str) -> ArxivFetchResponse:
     """Kayıtlı sorguyu çalıştır: arXiv'den çek + indeksle."""
     from fastapi import HTTPException
-    from app.memory.sqlite_store import SqliteStore
+
     from app.ingestion.arxiv_fetcher import fetch_arxiv_papers
+    from app.memory.sqlite_store import SqliteStore
 
     store = SqliteStore()
     rows = store.list_arxiv_saved_queries()

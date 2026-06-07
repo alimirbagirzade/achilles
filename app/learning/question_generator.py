@@ -100,21 +100,30 @@ class QuestionGenerator:
         return [
             m(paper_id, test_id, f"'{title}' makalesinin ana iddiası nedir?", "main_claim"),
             m(
-                paper_id, test_id,
-                f"'{title}' ({year}) makalesinde hangi yöntem önerilmektedir?", "method",
+                paper_id,
+                test_id,
+                f"'{title}' ({year}) makalesinde hangi yöntem önerilmektedir?",
+                "method",
             ),
             m(
-                paper_id, test_id, f"'{title}' makalesinin özetini çıkar.",
-                "summary", difficulty="easy",
+                paper_id,
+                test_id,
+                f"'{title}' makalesinin özetini çıkar.",
+                "summary",
+                difficulty="easy",
             ),
             m(
-                paper_id, test_id,
-                f"'{title}' makalesinde hangi veri seti kullanılmıştır?", "dataset",
+                paper_id,
+                test_id,
+                f"'{title}' makalesinde hangi veri seti kullanılmıştır?",
+                "dataset",
             ),
             m(paper_id, test_id, f"'{title}' makalesinin temel bulgularını açıkla.", "result"),
             m(
-                paper_id, test_id,
-                f"'{title}' makalesindeki kısıtlamalar ve sınırlamalar nelerdir?", "limitation",
+                paper_id,
+                test_id,
+                f"'{title}' makalesindeki kısıtlamalar ve sınırlamalar nelerdir?",
+                "limitation",
             ),
         ]
 
@@ -123,26 +132,37 @@ class QuestionGenerator:
     ) -> list[MasteryQuestion]:
         qs: list[MasteryQuestion] = []
         for hyp in (card.get("possible_strategy_hypotheses") or [])[:3]:
-            qs.append(self._make(
-                paper_id, test_id,
-                f"Bu hipotezi makaledeki bulgularla destekle: '{hyp}'",
-                "trading_hypothesis", difficulty="hard",
-            ))
+            qs.append(
+                self._make(
+                    paper_id,
+                    test_id,
+                    f"Bu hipotezi makaledeki bulgularla destekle: '{hyp}'",
+                    "trading_hypothesis",
+                    difficulty="hard",
+                )
+            )
         formulas = card.get("formulas") or card.get("formula_components") or []
         for f in formulas[:2]:
             name = f if isinstance(f, str) else f.get("name", "formül")
-            qs.append(self._make(
-                paper_id, test_id,
-                f"'{name}' formülünü açıkla ve değişkenlerinin anlamlarını ver.",
-                "formula", difficulty="hard",
-            ))
+            qs.append(
+                self._make(
+                    paper_id,
+                    test_id,
+                    f"'{name}' formülünü açıkla ve değişkenlerinin anlamlarını ver.",
+                    "formula",
+                    difficulty="hard",
+                )
+            )
         claim = card.get("main_claim")
         if claim:
-            qs.append(self._make(
-                paper_id, test_id,
-                f"Makaledeki şu iddiayı destekleyen kanıtları göster: '{claim[:120]}'",
-                "main_claim",
-            ))
+            qs.append(
+                self._make(
+                    paper_id,
+                    test_id,
+                    f"Makaledeki şu iddiayı destekleyen kanıtları göster: '{claim[:120]}'",
+                    "main_claim",
+                )
+            )
         return qs
 
     def _abstention_questions(self, paper_id: str, test_id: str) -> list[MasteryQuestion]:

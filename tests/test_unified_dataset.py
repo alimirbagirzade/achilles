@@ -1,5 +1,7 @@
 """UnifiedDatasetBuilder birim testleri."""
+
 from __future__ import annotations
+
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -22,6 +24,7 @@ def test_empty_sources_writes_empty_file(MockDB, MockMastery, MockTU, tmp_path: 
     MockDB.return_value.collect.return_value = []
     MockMastery.return_value.collect.return_value = []
     from app.training.unified_dataset import UnifiedDatasetBuilder
+
     stats = UnifiedDatasetBuilder(sqlite_store=_sq(), mastery_store=_ms()).build(
         output_path=tmp_path / "u.jsonl"
     )
@@ -43,6 +46,7 @@ def test_merges_all_sources(MockDB, MockMastery, MockTU, tmp_path: Path) -> None
     MockMastery.return_value.collect.return_value = [mastery_ex]
     MockTU.return_value = [{"instruction": "i", "input": "q", "output": "a"}]
     from app.training.unified_dataset import UnifiedDatasetBuilder
+
     stats = UnifiedDatasetBuilder(sqlite_store=_sq(), mastery_store=_ms()).build(
         output_path=tmp_path / "u.jsonl"
     )
@@ -59,6 +63,7 @@ def test_summary_string(MockDB, MockMastery, MockTU, tmp_path: Path) -> None:
     MockDB.return_value.collect.return_value = []
     MockMastery.return_value.collect.return_value = []
     from app.training.unified_dataset import UnifiedDatasetBuilder
+
     stats = UnifiedDatasetBuilder(sqlite_store=_sq(), mastery_store=_ms()).build(
         output_path=tmp_path / "u.jsonl"
     )

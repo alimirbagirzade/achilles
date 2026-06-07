@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.learning.mastery_scorer import MasteryScorer, MasteryScore
+from app.learning.mastery_scorer import MasteryScore, MasteryScorer
 from app.learning.paper_inspector import InspectionResult
 from app.learning.rag_exam_runner import ExamAnswer
 
@@ -75,8 +75,6 @@ def test_fail_answers_lowers_score() -> None:
 
 
 def test_status_boundaries() -> None:
-    scorer = MasteryScorer()
-
     def _score_with_total(t: float) -> str:
         s = MasteryScore.__new__(MasteryScore)
         s.paper_id = "p"
@@ -94,18 +92,32 @@ def test_status_boundaries() -> None:
 
     # Just test that MasteryScore.final_status works with varied totals
     s90 = MasteryScore(
-        paper_id="p", test_id="t",
-        parse_score=10, metadata_score=5, chunk_quality_score=15, index_score=10,
-        retrieval_score=15, citation_score=15, grounding_score=15,
-        abstention_score=10, formula_argument_score=5,
+        paper_id="p",
+        test_id="t",
+        parse_score=10,
+        metadata_score=5,
+        chunk_quality_score=15,
+        index_score=10,
+        retrieval_score=15,
+        citation_score=15,
+        grounding_score=15,
+        abstention_score=10,
+        formula_argument_score=5,
     )
     assert s90.final_status == "learned"
 
     s75 = MasteryScore(
-        paper_id="p", test_id="t",
-        parse_score=8, metadata_score=4, chunk_quality_score=12, index_score=8,
-        retrieval_score=11, citation_score=11, grounding_score=11,
-        abstention_score=7, formula_argument_score=3,
+        paper_id="p",
+        test_id="t",
+        parse_score=8,
+        metadata_score=4,
+        chunk_quality_score=12,
+        index_score=8,
+        retrieval_score=11,
+        citation_score=11,
+        grounding_score=11,
+        abstention_score=7,
+        formula_argument_score=3,
     )
     assert s75.final_status in ("usable_needs_review", "learned")
 

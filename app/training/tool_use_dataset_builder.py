@@ -33,10 +33,10 @@ def _session_to_sft(session_id: str, steps: list[dict]) -> dict[str, Any] | None
         return None
 
     call_summary = "\n".join(
-        f"  [{i+1}] {s['tool_name'] or 'tool'}("
+        f"  [{i + 1}] {s['tool_name'] or 'tool'}("
         f"{json.dumps(s['tool_input'])[:100]}) → "
-        f"verdict={s['tool_output'].get('verdict','?')}, "
-        f"n_trades={s['tool_output'].get('metrics',{}).get('n_trades','?')}"
+        f"verdict={s['tool_output'].get('verdict', '?')}, "
+        f"n_trades={s['tool_output'].get('metrics', {}).get('n_trades', '?')}"
         for i, s in enumerate(call_steps)
     )
     final_verdict = conclude_steps[-1].get("verdict") or "inconclusive"

@@ -21,10 +21,10 @@ _OUTPUT_DIR = Path("data/training")
 
 @dataclass
 class SFTExample:
-    source: str           # "mastery:<paper_id>"
+    source: str  # "mastery:<paper_id>"
     instruction: str
-    input: str            # soru metni
-    output: str           # cevap metni
+    input: str  # soru metni
+    output: str  # cevap metni
     quality_score: float  # citation_score
 
     def to_dict(self) -> dict[str, Any]:
@@ -63,10 +63,7 @@ class MasterySFTBuilder:
                 continue
 
             test_id = score["test_id"]
-            q_map = {
-                q["question_id"]: q
-                for q in self._ms.list_questions(test_id)
-            }
+            q_map = {q["question_id"]: q for q in self._ms.list_questions(test_id)}
             answers = self._ms.list_answers(test_id)
 
             seen: set[str] = set()
@@ -105,9 +102,7 @@ class MasterySFTBuilder:
         examples = self.collect(min_mastery_score, citation_threshold)
         out = output_path or (_OUTPUT_DIR / "mastery_sft.jsonl")
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(
-            "\n".join(json.dumps(e.to_dict(), ensure_ascii=False) for e in examples)
-        )
+        out.write_text("\n".join(json.dumps(e.to_dict(), ensure_ascii=False) for e in examples))
         return out, len(examples)
 
 

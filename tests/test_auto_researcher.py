@@ -5,8 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from app.memory.sqlite_store import SqliteStore
 from app.pipeline.auto_researcher import PipelineRun, _extract_questions, run_pipeline
 from app.training.tool_use_trainer import ToolUseSession
@@ -18,13 +16,19 @@ def _store(tmp_path: Path) -> SqliteStore:
 
 def _seed_approved_card(store: SqliteStore, paper_id: str, hypotheses: list[str]) -> None:
     store.upsert_paper(
-        paper_id=paper_id, file_hash=f"h_{paper_id}",
-        source_path=f"/tmp/{paper_id}.pdf", title="Test",
+        paper_id=paper_id,
+        file_hash=f"h_{paper_id}",
+        source_path=f"/tmp/{paper_id}.pdf",
+        title="Test",
     )
     store.save_knowledge_card(
-        card_id=f"card_{paper_id}", paper_id=paper_id, model="test",
+        card_id=f"card_{paper_id}",
+        paper_id=paper_id,
+        model="test",
         card={
-            "paper_id": paper_id, "title": "T", "main_claim": "x",
+            "paper_id": paper_id,
+            "title": "T",
+            "main_claim": "x",
             "possible_strategy_hypotheses": hypotheses,
         },
     )
@@ -32,6 +36,7 @@ def _seed_approved_card(store: SqliteStore, paper_id: str, hypotheses: list[str]
 
 
 # ---- _extract_questions ----
+
 
 def test_extract_questions_from_approved_cards(tmp_path: Path) -> None:
     store = _store(tmp_path)
@@ -62,6 +67,7 @@ def test_extract_questions_empty_when_no_cards(tmp_path: Path) -> None:
 
 # ---- PipelineRun.summary ----
 
+
 def test_pipeline_run_summary_fields() -> None:
     run = PipelineRun(n_cards_scanned=3, n_questions=2, n_sessions=2, n_scored=2)
     s = run.summary()
@@ -70,6 +76,7 @@ def test_pipeline_run_summary_fields() -> None:
 
 
 # ---- run_pipeline dry_run ----
+
 
 def test_run_pipeline_dry_run_no_sessions(tmp_path: Path) -> None:
     store = _store(tmp_path)
@@ -87,6 +94,7 @@ def test_run_pipeline_no_cards_returns_empty(tmp_path: Path) -> None:
 
 
 # ---- run_pipeline with mocked trainer ----
+
 
 @patch("app.pipeline.auto_researcher.ToolUseTrainer")
 @patch("app.pipeline.auto_researcher.score_and_save_sessions")

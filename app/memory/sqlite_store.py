@@ -942,16 +942,16 @@ class SqliteStore:
             "created_at": r.created_at,
         }
 
-
     # ---- reward_signals ----
 
     def save_reward_signal(
         self,
         session_id: str,
-        criteria: "Any",  # RewardCriteria — circular import önlemek için Any
+        criteria: Any,  # RewardCriteria — circular import önlemek için Any
         raw_metrics: dict | None = None,
     ) -> str:
         import hashlib
+
         signal_id = "rs_" + hashlib.md5(session_id.encode()).hexdigest()[:16]
         with self.session() as s:
             s.merge(
