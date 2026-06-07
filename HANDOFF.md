@@ -1,6 +1,6 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-06-07 (gece) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Son güncelleme: 2026-06-07 (gece geç) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon).
 **Canlı bot değil, yatırım tavsiyesi değil.**
@@ -16,66 +16,72 @@ LLM'i "trader gibi düşünen" bir araştırma motoru yapmak:
 3. Otomatik backtest et → sonuçtan öğren → LoRA eğitim verisi üret
 4. 3B modeli test eder; gerçek çıktı için 120B kullanılacak
 
-### Mevcut durum (2026-06-07 gece)
+### Mevcut durum (2026-06-07 gece geç)
 - **407 test** geçiyor · ruff temiz · Python 3.12
 - **8 sekme** web UI: Araştırma · Makaleler · Trader Beyin · Backtest · Eğitim · Onay · Değerlendirme · Sistem
-- **Ollama:** qwen2.5-coder:3b + nomic-embed-text · 12 PDF · ~2000 chunk
-- **Son commit:** `1adcd6b` — tam sistem denetimi + 5 kritik bug düzeltildi
+- **Ollama:** qwen2.5-coder:3b + nomic-embed-text
+- **19 makale** · 2497 chunk (11 alakasız arXiv silindi, 8 alakalı + 11 kullanıcı makalesi kaldı)
+- **19 onaylı knowledge card**
+- **LoRA adapter:** `models/adapters/achilles_lora_v1/` — 300 iter tamamlandı, train loss 0.012
+- **Son commit:** `af5222d`
 
 ---
 
-## ✅ Bu Seansta Tamamlananlar (2026-06-07 gece)
+## ✅ Bu Seansta Tamamlananlar (2026-06-07 gece geç)
 
-### LoRA Training Control Plane (commit `1d8688a`)
-- `app/lora/` — 9 modül: curriculum, domain_classifier, quality_filter, math_verifier,
-  safety_scanner, dataset_builder, dataset_splitter, adapter_registry, control_plane, gates
-- Gate 0–8 pipeline: source → schema → curriculum → domain → quality → math → logic → safety[BLOCKER] → split
-- **Safety Gate (Gate 7) BLOCKER:** API key / finansal tavsiye / PII → tüm batch reddedilir
-- Adapter registry: candidate → smoke_passed → eval_passed → approved → production
-  (production'a geçiş `user_approved=True` zorunlu)
-- 10 Claude agent: `.claude/agents/lora-*.md`
-- 3 LoRA config profili: `configs/lora/lora_profiles.yaml`
-- 50 eval sorusu: `configs/eval/lora_eval_questions.yaml`
-- 4 yeni CLI komutu: `lora-status`, `lora-audit`, `lora-dataset`, `lora-registry`
+### RAGsetup Doğrulaması
+`/Users/mirbagirzade/Development/RAGsetup/` içindeki 3 belge okundu ve projeyle karşılaştırıldı.
+Belgelerde istenen tüm RAG/verification/mastery modülleri zaten projeye uygulanmış bulundu.
+5 Claude skill dosyası `.claude/skills/` altında aktif.
 
-### Tam Sistem Denetimi (commit `1adcd6b`)
-- `tool_use_trainer.py` — 5 kritik runtime bug düzeltildi (mock testlerin arkasında gizliydi):
-  - `eval_strategy(bt)` → `evaluate(df, ir)` yanlış imza
-  - `bt.metrics.get()` → `bt.metrics.to_dict().get()` dataclass erişimi
-  - `synthesize()` None dönüşü kontrolsüz → AttributeError
-  - `reflect()` eksik argümanlar
-  - `sharpe_ratio` → `sharpe` yanlış metrik anahtarı
-- `mastery_store.py` — `sqlite_db` → `sqlite_file` AttributeError
-- `arxiv_fetcher.py` — ağ/PDF hataları artık `FetchResult(skipped=True, error=...)` dönüyor;
-  UI "1 atlandı/hata" gösterebilir, log'a yazılıyor (PDF yükleme bug'ının kök nedeni)
-- 33+ dosyada ruff lint temizlendi (I001, F541, SIM110 vb.)
+### LoRA 300-iter Eğitimi Tamamlandı
+- Adapter: `models/adapters/achilles_lora_v1/adapters.safetensors`
+- Train loss: 4.48 → 0.012 · Val loss: 4.48 → 1.70
+- 16 train / 3 valid örnek; pipeline uçtan uca doğrulandı.
+
+### Makale Temizliği
+- 11 alakasız arXiv makalesi silindi (SQLite + ChromaDB + filesystem)
+- 19 makale · 2497 chunk kaldı
+
+### Gate Fix'leri (önceki seans devamı, bu seansta onaylandı)
+- `gates.py` `_card_text()` ve `gate_4_quality()` — boş cevap hatası giderildi
+- `domain_classifier.py` — TRADING keyword seti genişletildi
+- `dataset_builder.py` — `_build_answer()` multi-source okuma
+
+### Web UI Bug Tespit
+- **Trader Beyin → Formül Çıkar** butonu "Hata: Not Found" döndürüyor
+- Sebep: PID 25825 eski server; route sonradan eklendi, process restart almadı
+- Çözüm: `kill $(lsof -ti:8765) && uv run achilles web`
 
 ---
 
 ## 🔴 Sıradaki Görevler (öncelik sırasıyla)
 
-### 1. Knowledge Card Onayı + LoRA Pipeline Besleme
-- 12 kart onay bekliyor (web UI → **06 ONAY** sekmesi)
-- Onaydan sonra:
+### 1. Server Restart (2 dakika)
 ```bash
-uv run achilles lora-audit        # Gate durumu kontrol
-uv run achilles unified-dataset   # veri seti oluştur
-uv run achilles train --run       # gerçek eğitim
+kill $(lsof -ti:8765) && uv run achilles web
+```
+"Trader Beyin → Formül Çıkar" test et.
+
+### 2. Daha Fazla Makale + Kart → LoRA
+```bash
+uv run achilles arxiv "momentum volatility regime" --max 10
+uv run achilles lora-audit && uv run achilles lora-dataset
+```
+Hedef: 50+ onaylı kart.
+
+### 3. 500-iter LoRA Eğitimi
+```bash
+uv run achilles train --run --iters 500
 ```
 
-### 2. LoRA Pipeline Aktivasyonu
-- Şu an `lora_eligible=1` kart yok — mastery onayından geçmiş kart gerekiyor
-- Pipeline hazır, veri bekliyor
+### 4. Paper Mastery Testi
+```bash
+uv run achilles mastery-queue --enqueue-all && uv run achilles mastery-queue --run-all
+```
 
-### 3. Bilgi Kartı Onay Akışı (ertelendi)
-- Kullanıcı "ona döneriz" dedi — bu seansta atlandı
-
-### 4. OSS Agent Phase 2
-- llama.cpp ve MLX'i alternatif backend olarak bağlamak
-- `TRAINING_ROADMAP.md` → `[ ] OSS Agent Phase 2`
-
-### 5. DPO Hazırlığı
-- Engel: 500+ onaylı kart → önce onay akışını işlet
+### 5. DPO Hazırlığı (uzun vadeli)
+500+ onaylı kart gerekiyor.
 
 ---
 
