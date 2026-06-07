@@ -163,6 +163,23 @@ class Backtest(Base):
     strategy: Mapped[Strategy] = relationship(back_populates="backtests")
 
 
+class RiskReportRow(Base):
+    __tablename__ = "risk_reports"
+
+    report_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    backtest_id: Mapped[str] = mapped_column(String(80), index=True)
+    strategy_name: Mapped[str] = mapped_column(String(255))
+    n_trades: Mapped[int] = mapped_column(Integer, default=0)
+    win_rate: Mapped[float] = mapped_column(Float, default=0.0)
+    half_kelly: Mapped[float] = mapped_column(Float, default=0.0)
+    capped_kelly: Mapped[float] = mapped_column(Float, default=0.0)
+    scale_factor: Mapped[float] = mapped_column(Float, default=1.0)
+    position_size_pct: Mapped[float] = mapped_column(Float, default=0.0)
+    position_size_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    report_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+
+
 class ModelEvaluation(Base):
     __tablename__ = "model_evaluations"
 
@@ -240,6 +257,20 @@ class ResearchSession(Base):
 # ---------------------------------------------------------------------------
 # Advanced RAG tracking models
 # ---------------------------------------------------------------------------
+
+
+class ArxivSavedQuery(Base):
+    """Kayıtlı arXiv arama sorgusu — tekrar kullanım ve otomasyon için."""
+
+    __tablename__ = "arxiv_saved_queries"
+
+    query_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    query: Mapped[str] = mapped_column(Text)
+    max_results: Mapped[int] = mapped_column(Integer, default=5)
+    auto_ingest: Mapped[int] = mapped_column(Integer, default=1)  # 0/1
+    run_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_run_at: Mapped[str | None] = mapped_column(String(40), default=None)
+    created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
 
 
 class RagQuery(Base):
@@ -383,6 +414,45 @@ class VerificationRun(Base):
     formula_passed: Mapped[int] = mapped_column(Integer, default=0)
     confidence_score: Mapped[float] = mapped_column(Float, default=0.0)
     final_decision: Mapped[str] = mapped_column(String(16), default="warn")
+    created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+
+
+class RewardSignal(Base):
+    """Bir tool-use seansının doğrulanabilir ödül skoru."""
+
+    __tablename__ = "reward_signals"
+
+    signal_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(80), index=True, unique=True)
+    composite_score: Mapped[float] = mapped_column(Float, default=0.0)
+    label: Mapped[str] = mapped_column(String(16), default="neutral")
+    execution_ok: Mapped[float] = mapped_column(Float, default=0.0)
+    trade_count_ok: Mapped[float] = mapped_column(Float, default=0.0)
+    sharpe_ok: Mapped[float] = mapped_column(Float, default=0.0)
+    drawdown_ok: Mapped[float] = mapped_column(Float, default=0.0)
+    return_ok: Mapped[float] = mapped_column(Float, default=0.0)
+    win_rate_ok: Mapped[float] = mapped_column(Float, default=0.0)
+    notes_json: Mapped[str] = mapped_column(Text, default="[]")
+    raw_metrics_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+
+
+class ToolUseExample(Base):
+    """Tool-use eğitim örneği — bir araştırma döngüsündeki tek araç çağrısı adımı."""
+
+    __tablename__ = "tool_use_examples"
+
+    example_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(80), index=True)
+    question: Mapped[str] = mapped_column(Text)
+    step_index: Mapped[int] = mapped_column(Integer, default=0)
+    # think | call | observe | conclude
+    step_type: Mapped[str] = mapped_column(String(20))
+    tool_name: Mapped[str | None] = mapped_column(String(80), default=None)
+    tool_input_json: Mapped[str] = mapped_column(Text, default="{}")
+    tool_output_json: Mapped[str] = mapped_column(Text, default="{}")
+    content: Mapped[str] = mapped_column(Text, default="")
+    verdict: Mapped[str | None] = mapped_column(String(20), default=None)
     created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
 
 
@@ -642,6 +712,110 @@ class SqliteStore:
                 )
             return out
 
+    def save_risk_report(self, report_id: str, backtest_id: str, report_dict: dict) -> None:
+        """Risk raporunu upsert ile kaydet (idempotent)."""
+        kelly = report_dict.get("kelly", {})
+        dd = report_dict.get("drawdown_scale", {})
+        fr = report_dict.get("fixed_risk", {})
+        with self.session() as s:
+            s.merge(
+                RiskReportRow(
+                    report_id=report_id,
+                    backtest_id=backtest_id,
+                    strategy_name=report_dict.get("strategy_name", ""),
+                    n_trades=report_dict.get("n_trades", 0),
+                    win_rate=kelly.get("win_rate", 0.0),
+                    half_kelly=kelly.get("half_kelly", 0.0),
+                    capped_kelly=kelly.get("capped_kelly", 0.0),
+                    scale_factor=dd.get("scale_factor", 1.0),
+                    position_size_pct=fr.get("position_size_pct", 0.0),
+                    position_size_usd=fr.get("position_size_usd", 0.0),
+                    report_json=json.dumps(report_dict, ensure_ascii=False),
+                )
+            )
+
+    def list_risk_reports(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Son `limit` adet risk raporunu yeni→eski sırasıyla döndür."""
+        with self.session() as s:
+            rows = list(
+                s.scalars(
+                    select(RiskReportRow).order_by(RiskReportRow.created_at.desc()).limit(limit)
+                )
+            )
+            return [
+                {
+                    "report_id": r.report_id,
+                    "backtest_id": r.backtest_id,
+                    "strategy_name": r.strategy_name,
+                    "n_trades": r.n_trades,
+                    "win_rate": r.win_rate,
+                    "half_kelly": r.half_kelly,
+                    "capped_kelly": r.capped_kelly,
+                    "scale_factor": r.scale_factor,
+                    "position_size_pct": r.position_size_pct,
+                    "position_size_usd": r.position_size_usd,
+                    "created_at": r.created_at,
+                }
+                for r in rows
+            ]
+
+    def get_risk_report(self, report_id: str) -> dict | None:
+        """Tam rapor JSON'unu döndür (yoksa None)."""
+        with self.session() as s:
+            row = s.get(RiskReportRow, report_id)
+            if row is None:
+                return None
+            try:
+                return json.loads(row.report_json)
+            except (json.JSONDecodeError, TypeError):
+                return None
+
+    def save_arxiv_query(
+        self, query_id: str, query: str, max_results: int = 5, auto_ingest: bool = True
+    ) -> None:
+        with self.session() as s:
+            s.merge(
+                ArxivSavedQuery(
+                    query_id=query_id,
+                    query=query,
+                    max_results=max_results,
+                    auto_ingest=1 if auto_ingest else 0,
+                )
+            )
+
+    def list_arxiv_saved_queries(self) -> list[dict[str, Any]]:
+        with self.session() as s:
+            rows = list(
+                s.scalars(select(ArxivSavedQuery).order_by(ArxivSavedQuery.created_at.desc()))
+            )
+            return [
+                {
+                    "query_id": r.query_id,
+                    "query": r.query,
+                    "max_results": r.max_results,
+                    "auto_ingest": bool(r.auto_ingest),
+                    "run_count": r.run_count,
+                    "last_run_at": r.last_run_at,
+                    "created_at": r.created_at,
+                }
+                for r in rows
+            ]
+
+    def delete_arxiv_query(self, query_id: str) -> bool:
+        with self.session() as s:
+            row = s.get(ArxivSavedQuery, query_id)
+            if row is None:
+                return False
+            s.delete(row)
+            return True
+
+    def mark_arxiv_query_ran(self, query_id: str) -> None:
+        with self.session() as s:
+            row = s.get(ArxivSavedQuery, query_id)
+            if row:
+                row.run_count += 1
+                row.last_run_at = _utcnow()
+
     def list_training_examples(self, limit: int = 200) -> list[dict[str, Any]]:
         with self.session() as s:
             rows = list(
@@ -767,6 +941,137 @@ class SqliteStore:
             "status": r.status,
             "created_at": r.created_at,
         }
+
+
+    # ---- reward_signals ----
+
+    def save_reward_signal(
+        self,
+        session_id: str,
+        criteria: "Any",  # RewardCriteria — circular import önlemek için Any
+        raw_metrics: dict | None = None,
+    ) -> str:
+        import hashlib
+        signal_id = "rs_" + hashlib.md5(session_id.encode()).hexdigest()[:16]
+        with self.session() as s:
+            s.merge(
+                RewardSignal(
+                    signal_id=signal_id,
+                    session_id=session_id,
+                    composite_score=criteria.composite,
+                    label=criteria.label,
+                    execution_ok=criteria.execution_ok,
+                    trade_count_ok=criteria.trade_count_ok,
+                    sharpe_ok=criteria.sharpe_ok,
+                    drawdown_ok=criteria.drawdown_ok,
+                    return_ok=criteria.return_ok,
+                    win_rate_ok=criteria.win_rate_ok,
+                    notes_json=json.dumps(criteria.notes, ensure_ascii=False),
+                    raw_metrics_json=json.dumps(raw_metrics or {}, ensure_ascii=False),
+                )
+            )
+        return signal_id
+
+    def list_reward_signals(
+        self, label: str | None = None, limit: int = 200
+    ) -> list[dict[str, Any]]:
+        with self.session() as s:
+            q = select(RewardSignal).order_by(RewardSignal.composite_score.desc())
+            if label:
+                q = q.where(RewardSignal.label == label)
+            rows = list(s.scalars(q.limit(limit)))
+            return [
+                {
+                    "signal_id": r.signal_id,
+                    "session_id": r.session_id,
+                    "composite_score": r.composite_score,
+                    "label": r.label,
+                    "execution_ok": r.execution_ok,
+                    "trade_count_ok": r.trade_count_ok,
+                    "sharpe_ok": r.sharpe_ok,
+                    "drawdown_ok": r.drawdown_ok,
+                    "return_ok": r.return_ok,
+                    "win_rate_ok": r.win_rate_ok,
+                    "notes": json.loads(r.notes_json),
+                    "raw_metrics": json.loads(r.raw_metrics_json),
+                    "created_at": r.created_at,
+                }
+                for r in rows
+            ]
+
+    def get_reward_signal(self, session_id: str) -> dict[str, Any] | None:
+        with self.session() as s:
+            row = s.scalars(
+                select(RewardSignal).where(RewardSignal.session_id == session_id)
+            ).first()
+            if not row:
+                return None
+            return {
+                "signal_id": row.signal_id,
+                "session_id": row.session_id,
+                "composite_score": row.composite_score,
+                "label": row.label,
+                "notes": json.loads(row.notes_json),
+                "raw_metrics": json.loads(row.raw_metrics_json),
+            }
+
+    # ---- tool_use_examples ----
+
+    def save_tool_use_example(
+        self,
+        example_id: str,
+        session_id: str,
+        question: str,
+        step_index: int,
+        step_type: str,
+        content: str,
+        tool_name: str | None = None,
+        tool_input: dict | None = None,
+        tool_output: dict | None = None,
+        verdict: str | None = None,
+    ) -> None:
+        with self.session() as s:
+            s.merge(
+                ToolUseExample(
+                    example_id=example_id,
+                    session_id=session_id,
+                    question=question,
+                    step_index=step_index,
+                    step_type=step_type,
+                    tool_name=tool_name,
+                    tool_input_json=json.dumps(tool_input or {}, ensure_ascii=False),
+                    tool_output_json=json.dumps(tool_output or {}, ensure_ascii=False),
+                    content=content,
+                    verdict=verdict,
+                )
+            )
+
+    def list_tool_use_examples(
+        self, session_id: str | None = None, limit: int = 500
+    ) -> list[dict[str, Any]]:
+        with self.session() as s:
+            q = select(ToolUseExample).order_by(
+                ToolUseExample.session_id, ToolUseExample.step_index
+            )
+            if session_id:
+                q = q.where(ToolUseExample.session_id == session_id)
+            rows = list(s.scalars(q.limit(limit)))
+            return [
+                {
+                    "example_id": r.example_id,
+                    "session_id": r.session_id,
+                    "question": r.question,
+                    "step_index": r.step_index,
+                    "step_type": r.step_type,
+                    "tool_name": r.tool_name,
+                    "tool_input": json.loads(r.tool_input_json),
+                    "tool_output": json.loads(r.tool_output_json),
+                    "content": r.content,
+                    "verdict": r.verdict,
+                    "created_at": r.created_at,
+                }
+                for r in rows
+            ]
 
 
 if __name__ == "__main__":  # pragma: no cover

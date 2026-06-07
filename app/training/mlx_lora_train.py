@@ -33,12 +33,14 @@ class TrainConfig:
     num_layers: int = 8
     # Her iterasyonda değil, eğitim sonunda checkpoint al (OOM önleme)
     save_every: int = 0  # 0 → iterations sonuna ertele
+    lora_phase: int = 0  # 0 = faz yok, 1-4 = faz numarası
+    from_phase: int = 0  # 0 = sıfırdan başla, 1-4 = bu fazın adapter'ından devam
 
 
 def build_command(cfg: TrainConfig) -> list[str]:
     data_dir = cfg.train_jsonl.parent
     save_every = cfg.save_every if cfg.save_every > 0 else cfg.iterations
-    return [
+    cmd = [
         sys.executable,
         "-m",
         "mlx_lm",
@@ -63,6 +65,16 @@ def build_command(cfg: TrainConfig) -> list[str]:
         "--steps-per-eval",
         str(save_every),
     ]
+    # Önceki fazın adapter'ından devam et
+    if cfg.from_phase > 0:
+        resume_path = (
+            Path("models")
+            / "adapters"
+            / f"achilles_lora_v3_phase{cfg.from_phase}"
+            / "adapters.safetensors"
+        )
+        cmd += ["--resume-adapter-file", str(resume_path)]
+    return cmd
 
 
 def validate(cfg: TrainConfig) -> list[str]:
@@ -80,7 +92,12 @@ def run(cfg: TrainConfig, *, content_hash: str | None = None, notes: str | None 
     cmd = build_command(cfg)
     print("Çalıştırılıyor:\n  " + " ".join(cmd))
     subprocess.run(cmd, check=True)
-    version = cfg.adapter_output_path.name
+    # Adapter versiyonunu faz'a göre isimlendir
+    version = (
+        f"achilles_lora_v3_phase{cfg.lora_phase}"
+        if cfg.lora_phase > 0
+        else cfg.adapter_output_path.name
+    )
     AdapterRegistry().register(
         version=version,
         base_model=cfg.base_model,

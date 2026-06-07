@@ -64,6 +64,41 @@ class KnowledgeCardBuilder:
         self.llm = llm or LocalLLM()
         self.settings = get_settings()
 
+    def _classify_card(self, card: KnowledgeCard) -> tuple[str, float, str]:
+        """Kartı otomatik sınıflandır → (trust_level, difficulty, stage).
+
+        Basit kural tabanlı sınıflandırma (LLM çağrısı gerekmez, 8GB'da güvenli):
+        - difficulty: hypotheses sayısı + methods derinliğine göre 0.0-1.0
+        - stage: difficulty aralığına göre
+        - trust_level: her zaman "draft" (insan onayı gerekir)
+        """
+        hypotheses = card.possible_strategy_hypotheses
+        methods = card.methods
+        impl_notes = card.implementation_notes
+        risk_warnings = card.risk_warnings
+
+        if not hypotheses:
+            difficulty = 0.1
+        elif len(hypotheses) <= 2 and len(methods) < 3:
+            difficulty = 0.2
+        else:
+            difficulty = 0.4
+
+        # implementation_notes dolu VE risk_warnings dolu → +0.2 ekle
+        if impl_notes and risk_warnings:
+            difficulty = min(1.0, difficulty + 0.2)
+
+        if difficulty <= 0.25:
+            stage = "lora_phase_1"
+        elif difficulty <= 0.50:
+            stage = "lora_phase_2"
+        elif difficulty <= 0.75:
+            stage = "lora_phase_3"
+        else:
+            stage = "lora_phase_4"
+
+        return "draft", difficulty, stage
+
     def _load_text(self, paper_id: str) -> str:
         path = self.settings.extracted_text_dir / f"{paper_id}.txt"
         if path.exists():
@@ -124,12 +159,19 @@ class KnowledgeCardBuilder:
         data["paper_id"] = paper_id
         card = KnowledgeCard.model_validate(data)
 
+        trust_level, difficulty, stage = self._classify_card(card)
+
         card_id = f"card_{uuid.uuid4().hex[:12]}"
         self.store.save_knowledge_card(
             card_id=card_id,
             paper_id=paper_id,
             model=self.llm.model,
             card=card.model_dump(),
+            trust_level=trust_level,
+            review_status="pending",
+            lora_eligible=0,
+            difficulty=difficulty,
+            stage=stage,
         )
         out_path: Path = self.settings.reports_dir / "papers" / f"{paper_id}_card.json"
         out_path.write_text(

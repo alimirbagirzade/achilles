@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.config import configure_logging, get_settings
@@ -28,6 +28,9 @@ from app.web.schemas import (
     ArxivFetchRequest,
     ArxivFetchResponse,
     ArxivFetchResult,
+    ArxivSavedQueryIn,
+    ArxivSavedQueryListResponse,
+    ArxivSavedQueryOut,
     ArxivSearchResponse,
     AskRequest,
     AskResponse,
@@ -62,6 +65,8 @@ from app.web.schemas import (
     ResearchRequest,
     ResearchRunResponse,
     ResearchSessionOut,
+    RiskReportListResponse,
+    RiskReportRecord,
     RiskReportResponse,
     SourceOut,
     StatusResponse,
@@ -899,6 +904,8 @@ def api_backtest_risk(
     )
 
     d = report.to_dict()
+    report_id = f"rr_{backtest_id}"
+    store.save_risk_report(report_id=report_id, backtest_id=backtest_id, report_dict=d)
     return RiskReportResponse(
         strategy_name=d["strategy_name"],
         n_trades=d["n_trades"],
@@ -907,7 +914,24 @@ def api_backtest_risk(
         fixed_risk=FixedRiskOut(**d["fixed_risk"]),
         warnings=d["warnings"],
         recommendation=d["recommendation"],
+        report_id=report_id,
     )
+
+
+# ---------- Risk raporu listesi ----------
+@app.get(
+    "/api/risk-reports",
+    response_model=RiskReportListResponse,
+    dependencies=[api_auth],
+)
+def api_list_risk_reports(limit: int = 50) -> RiskReportListResponse:
+    """Kaydedilmiş risk raporlarını yeni→eski sırasıyla listele."""
+    from app.memory.sqlite_store import SqliteStore
+
+    store = SqliteStore()
+    rows = store.list_risk_reports(limit=limit)
+    records = [RiskReportRecord(**r) for r in rows]
+    return RiskReportListResponse(reports=records, total=len(records))
 
 
 # ---------- Pine Script export (backtest → TradingView) ----------
@@ -1001,6 +1025,84 @@ def api_arxiv_fetch(req: ArxivFetchRequest) -> ArxivFetchResponse:
     )
 
 
+# ---------- arXiv kayıtlı sorgu kütüphanesi ----------
+@app.post("/api/arxiv/queries", response_model=ArxivSavedQueryOut, dependencies=[api_auth])
+def api_save_arxiv_query(req: ArxivSavedQueryIn) -> ArxivSavedQueryOut:
+    """Sorguyu kaydet (aynı sorgu tekrar kaydedilirse üzerine yaz)."""
+    import hashlib
+    from app.memory.sqlite_store import SqliteStore
+
+    store = SqliteStore()
+    qid = "aq_" + hashlib.md5(req.query.strip().lower().encode()).hexdigest()[:16]
+    store.save_arxiv_query(qid, req.query, req.max_results, req.auto_ingest)
+    rows = store.list_arxiv_saved_queries()
+    row = next(r for r in rows if r["query_id"] == qid)
+    return ArxivSavedQueryOut(**row)
+
+
+@app.get("/api/arxiv/queries", response_model=ArxivSavedQueryListResponse, dependencies=[api_auth])
+def api_list_arxiv_queries() -> ArxivSavedQueryListResponse:
+    from app.memory.sqlite_store import SqliteStore
+
+    rows = SqliteStore().list_arxiv_saved_queries()
+    return ArxivSavedQueryListResponse(
+        queries=[ArxivSavedQueryOut(**r) for r in rows], total=len(rows)
+    )
+
+
+@app.delete("/api/arxiv/queries/{query_id}", dependencies=[api_auth])
+def api_delete_arxiv_query(query_id: str) -> dict:
+    from fastapi import HTTPException
+    from app.memory.sqlite_store import SqliteStore
+
+    if not SqliteStore().delete_arxiv_query(query_id):
+        raise HTTPException(status_code=404, detail="Sorgu bulunamadı.")
+    return {"ok": True}
+
+
+@app.post(
+    "/api/arxiv/queries/{query_id}/run", response_model=ArxivFetchResponse, dependencies=[api_auth]
+)
+def api_run_arxiv_query(query_id: str) -> ArxivFetchResponse:
+    """Kayıtlı sorguyu çalıştır: arXiv'den çek + indeksle."""
+    from fastapi import HTTPException
+    from app.memory.sqlite_store import SqliteStore
+    from app.ingestion.arxiv_fetcher import fetch_arxiv_papers
+
+    store = SqliteStore()
+    rows = store.list_arxiv_saved_queries()
+    row = next((r for r in rows if r["query_id"] == query_id), None)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Sorgu bulunamadı.")
+    fetch_results = fetch_arxiv_papers(row["query"], max_results=row["max_results"])
+    downloaded = [r for r in fetch_results if not r.skipped]
+    skipped_count = len(fetch_results) - len(downloaded)
+    ingested = 0
+    if row["auto_ingest"] and downloaded:
+        from app.memory.paper_indexer import PaperIndexer
+
+        for r in downloaded:
+            try:
+                PaperIndexer().index_paper(r.local_path)
+                ingested += 1
+            except Exception:
+                pass
+    store.mark_arxiv_query_ran(query_id)
+    return ArxivFetchResponse(
+        query=row["query"],
+        fetched=len(downloaded),
+        skipped=skipped_count,
+        results=[
+            ArxivFetchResult(arxiv_id=r.arxiv_id, title=r.title, skipped=r.skipped)
+            for r in fetch_results
+        ],
+        ingested=ingested,
+        message=f"{len(downloaded)} PDF indirildi, {skipped_count} atlandı"
+        + (f", {ingested} indekslendi" if row["auto_ingest"] else "")
+        + ".",
+    )
+
+
 # ---------- package export (Entropia) ----------
 @app.get(
     "/api/strategy/{strategy_name}/export",
@@ -1054,6 +1156,42 @@ def api_export_package_from_ir(ir_json: dict) -> PackageExportResponse:
         backtest_verdict=pkg.backtest_verdict,
         backtest_metrics=pkg.backtest_metrics,
         code=PackageCodeOut(pine=pkg.pine_code, python=pkg.python_code),
+    )
+
+
+# ---------- .achpkg dosya indirme (backtest ID'den) ----------
+@app.get(
+    "/api/backtest/{backtest_id}/download-pkg",
+    dependencies=[api_auth],
+)
+def api_download_pkg(backtest_id: str) -> Response:
+    """Backtest ID'ye ait stratejiyi .achpkg dosyası olarak indir."""
+    import re
+
+    from fastapi import HTTPException
+    from sqlalchemy import select
+
+    from app.memory.sqlite_store import Backtest, SqliteStore, Strategy
+    from app.trading.package_exporter import export_strategy
+    from app.trading.strategy_ir import StrategyIR
+
+    store = SqliteStore()
+    with store.session() as s:
+        bt = s.scalars(select(Backtest).where(Backtest.backtest_id == backtest_id)).first()
+        if bt is None:
+            raise HTTPException(status_code=404, detail=f"Backtest bulunamadı: {backtest_id}")
+        strat = s.get(Strategy, bt.strategy_id)
+        if strat is None:
+            raise HTTPException(status_code=404, detail="Strateji bulunamadı.")
+        ir = StrategyIR.model_validate_json(strat.ir_json)
+
+    pkg = export_strategy(ir, backtest_verdict=bt.verdict)
+    safe_name = re.sub(r"[^\w\-]", "_", pkg.name)
+    content = pkg.to_json()
+    return Response(
+        content=content,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}.achpkg"'},
     )
 
 

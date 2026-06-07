@@ -18,30 +18,31 @@ import pandas as pd
 
 # ─── Sonuç yapıları ───────────────────────────────────────────────────────────
 
+
 @dataclass
 class KellyResult:
-    win_rate: float          # kazanma oranı (0-1)
-    avg_win: float           # ortalama kazançlı işlem getirisi
-    avg_loss: float          # ortalama zararlı işlem getirisi (mutlak)
-    odds: float              # b = avg_win / avg_loss
-    full_kelly: float        # tam Kelly fraksiyonu (0-1)
-    half_kelly: float        # yarı Kelly (daha güvenli)
-    quarter_kelly: float     # çeyrek Kelly (çok muhafazakâr)
-    capped_kelly: float      # max %25 ile sınırlanmış önerilen fraksiyon
+    win_rate: float  # kazanma oranı (0-1)
+    avg_win: float  # ortalama kazançlı işlem getirisi
+    avg_loss: float  # ortalama zararlı işlem getirisi (mutlak)
+    odds: float  # b = avg_win / avg_loss
+    full_kelly: float  # tam Kelly fraksiyonu (0-1)
+    half_kelly: float  # yarı Kelly (daha güvenli)
+    quarter_kelly: float  # çeyrek Kelly (çok muhafazakâr)
+    capped_kelly: float  # max %25 ile sınırlanmış önerilen fraksiyon
 
 
 @dataclass
 class DrawdownScaleResult:
-    current_drawdown_pct: float   # anlık dd (negatif)
-    max_allowed_pct: float        # eşik (örn. -20)
-    scale_factor: float           # 0-1: pozisyona çarpılan katsayı
-    in_drawdown_zone: bool        # eşiği aştı mı
+    current_drawdown_pct: float  # anlık dd (negatif)
+    max_allowed_pct: float  # eşik (örn. -20)
+    scale_factor: float  # 0-1: pozisyona çarpılan katsayı
+    in_drawdown_zone: bool  # eşiği aştı mı
 
 
 @dataclass
 class FixedRiskResult:
-    equity: float             # toplam sermaye ($)
-    risk_per_trade_pct: float # işlem başına riske atılacak % (örn. 1.0)
+    equity: float  # toplam sermaye ($)
+    risk_per_trade_pct: float  # işlem başına riske atılacak % (örn. 1.0)
     stop_distance_pct: float  # stop noktasına mesafe % (örn. 2.0 → %2 zarar)
     position_size_pct: float  # sermayenin yüzdesi olarak pozisyon büyüklüğü
     position_size_usd: float  # mutlak $ miktarı
@@ -50,6 +51,7 @@ class FixedRiskResult:
 @dataclass
 class RiskReport:
     """Bir backtest sonucundan üretilen tam risk raporu."""
+
     strategy_name: str
     n_trades: int
     kelly: KellyResult
@@ -91,6 +93,7 @@ class RiskReport:
 
 
 # ─── Hesaplama fonksiyonları ──────────────────────────────────────────────────
+
 
 def compute_kelly(
     trade_returns: pd.Series,
@@ -195,6 +198,7 @@ def compute_fixed_risk(
 
 
 # ─── Ana API ─────────────────────────────────────────────────────────────────
+
 
 def analyze_risk(
     strategy_name: str,
@@ -307,14 +311,12 @@ def _build_recommendation(
 
     lines = [
         f"Önerilen pozisyon fraksiyonu (yarı Kelly × drawdown skalası): "
-        f"{effective:.1%} (sermayenin {effective*100:.1f}%'i)",
+        f"{effective:.1%} (sermayenin {effective * 100:.1f}%'i)",
         f"Sabit risk yöntemiyle: {fixed.position_size_pct:.1f}% sermaye "
         f"(= {fixed.position_size_usd:,.0f} $ varsayılan sermayeye göre)",
     ]
     if dd_scale.in_drawdown_zone:
-        lines.append(
-            f"⚠ Drawdown bölgesi — ölçek faktörü {dd_scale.scale_factor:.2f} uygulandı."
-        )
+        lines.append(f"⚠ Drawdown bölgesi — ölçek faktörü {dd_scale.scale_factor:.2f} uygulandı.")
     if warnings:
         lines.append("Uyarılar: " + "; ".join(warnings))
     return "  ".join(lines)

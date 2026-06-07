@@ -323,3 +323,92 @@ def test_auth_enforced_when_token_set(monkeypatch) -> None:
     finally:
         monkeypatch.delenv("ACHILLES_API_TOKEN", raising=False)
         _gs.cache_clear()
+
+
+def test_arxiv_save_and_list_queries(client: TestClient) -> None:
+    r = client.post(
+        "/api/arxiv/queries", json={"query": "momentum trading volatility", "max_results": 3}
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["query"] == "momentum trading volatility"
+    assert body["max_results"] == 3
+    qid = body["query_id"]
+
+    r2 = client.get("/api/arxiv/queries")
+    assert r2.status_code == 200
+    ids = [q["query_id"] for q in r2.json()["queries"]]
+    assert qid in ids
+
+
+def test_arxiv_delete_query(client: TestClient) -> None:
+    r = client.post(
+        "/api/arxiv/queries", json={"query": "silinecek test sorgusu", "max_results": 1}
+    )
+    qid = r.json()["query_id"]
+    assert client.delete(f"/api/arxiv/queries/{qid}").status_code == 200
+    assert client.delete(f"/api/arxiv/queries/{qid}").status_code == 404
+
+
+def test_arxiv_save_idempotent(client: TestClient) -> None:
+    payload = {"query": "idempotent test query", "max_results": 2}
+    r1 = client.post("/api/arxiv/queries", json=payload)
+    r2 = client.post("/api/arxiv/queries", json=payload)
+    assert r1.json()["query_id"] == r2.json()["query_id"]
+    total = sum(
+        1
+        for q in client.get("/api/arxiv/queries").json()["queries"]
+        if q["query"] == "idempotent test query"
+    )
+    assert total == 1
+
+
+def test_backtest_download_pkg(client: TestClient) -> None:
+    """download-pkg uç noktası .achpkg dosyası olarak JSON döndürmeli."""
+    bt = client.post("/api/backtest", json={"use_synthetic": True, "n_bars": 500, "seed": 55})
+    assert bt.status_code == 200
+    bt_id = bt.json()["backtest_id"]
+
+    r = client.get(f"/api/backtest/{bt_id}/download-pkg")
+    assert r.status_code == 200
+    assert "attachment" in r.headers.get("content-disposition", "")
+    assert r.headers.get("content-disposition", "").endswith('.achpkg"')
+    body = r.json()
+    assert "achilles_package_version" in body
+    assert "code" in body and "pine" in body["code"]
+
+
+def test_backtest_download_pkg_not_found(client: TestClient) -> None:
+    r = client.get("/api/backtest/nonexistent_bt_id/download-pkg")
+    assert r.status_code == 404
+
+
+def test_backtest_risk_persists(client: TestClient) -> None:
+    """Risk endpoint'i çağrıldığında rapor SQLite'a kaydedilmeli ve report_id dönmeli."""
+    bt = client.post("/api/backtest", json={"use_synthetic": True, "n_bars": 600, "seed": 99})
+    assert bt.status_code == 200
+    bt_id = bt.json()["backtest_id"]
+
+    r = client.get(f"/api/backtest/{bt_id}/risk")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["report_id"] == f"rr_{bt_id}"
+    assert body["n_trades"] >= 0
+    assert "kelly" in body and "drawdown_scale" in body and "fixed_risk" in body
+
+
+def test_list_risk_reports_endpoint(client: TestClient) -> None:
+    """Risk raporu listesi uç noktası kayıtlı raporları döndürmeli."""
+    bt = client.post("/api/backtest", json={"use_synthetic": True, "n_bars": 400, "seed": 77})
+    assert bt.status_code == 200
+    bt_id = bt.json()["backtest_id"]
+    client.get(f"/api/backtest/{bt_id}/risk")
+
+    r = client.get("/api/risk-reports")
+    assert r.status_code == 200
+    body = r.json()
+    assert "reports" in body and "total" in body
+    assert body["total"] >= 1
+    rec = next((x for x in body["reports"] if x["backtest_id"] == bt_id), None)
+    assert rec is not None
+    assert rec["report_id"] == f"rr_{bt_id}"

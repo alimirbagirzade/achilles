@@ -1,0 +1,17 @@
+{
+  "enabledPlugins": {
+    "ecc@ecc": true
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /Users/mirbagirzade/Development/Achilles && head -60 HANDOFF.md 2>/dev/null && echo '---' && echo 'Proje: Achilles Trader AI | Komut: uv run achilles status'"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -16,7 +16,15 @@ from pathlib import Path
 from sqlalchemy import select
 
 from app.config import get_settings
-from app.memory.sqlite_store import SqliteStore, TrainingExample
+from app.memory.sqlite_store import KnowledgeCard, SqliteStore, TrainingExample
+
+# LoRA fazı → stage eşlemesi
+STAGE_TO_PHASE: dict[str, int] = {
+    "lora_phase_1": 1,
+    "lora_phase_2": 2,
+    "lora_phase_3": 3,
+    "lora_phase_4": 4,
+}
 
 
 @dataclass
@@ -39,12 +47,58 @@ class DatasetBuilder:
         self.store = store or SqliteStore()
         self.settings = get_settings()
 
-    def collect(self) -> list[dict]:
+    def collect(
+        self,
+        *,
+        phase: int | None = None,
+        lora_eligible_only: bool = True,
+    ) -> list[dict]:
+        """Training örneklerini topla.
+
+        phase: 1-4 → sadece o fazın stage'indeki kartlardan gelen örnekler
+               None → tüm örnekler (lora_eligible_only=True ise sadece uygunlar)
+        lora_eligible_only: True → sadece lora_eligible=1 VE review_status=approved örnekler
+        """
+        # LoRA uygun paper_id setini oluştur
+        approved_paper_ids: set[str] | None = None
+        # Faz→stage eşlemesi (phase belirtilmişse kullanılır)
+        phase_stages: set[str] = set()
+        if phase is not None:
+            phase_stages = {s for s, p in STAGE_TO_PHASE.items() if p == phase}
+
+        if lora_eligible_only:
+            with self.store.session() as s:
+                cards = list(
+                    s.scalars(
+                        select(KnowledgeCard).where(
+                            KnowledgeCard.lora_eligible == 1,
+                            KnowledgeCard.review_status == "approved",
+                        )
+                    )
+                )
+            if phase is not None:
+                # Sadece istenen fazın stage'indeki kartlar
+                approved_paper_ids = {c.paper_id for c in cards if c.stage in phase_stages}
+            else:
+                approved_paper_ids = {c.paper_id for c in cards}
+
         with self.store.session() as s:
             rows = list(s.scalars(select(TrainingExample)))
+
         seen: set[str] = set()
         records: list[dict] = []
         for r in rows:
+            # Faz filtresi (lora_eligible_only=False durumunda da çalışır)
+            if phase is not None and approved_paper_ids is not None:
+                if r.source_paper_id not in approved_paper_ids:
+                    continue
+            elif lora_eligible_only and approved_paper_ids is not None:
+                # source_paper_id None ise lora_eligible_only=False değilse dahil etme
+                if r.source_paper_id is None:
+                    continue
+                if r.source_paper_id not in approved_paper_ids:
+                    continue
+
             key = f"{r.instruction}||{r.input_text}||{r.output_text}"
             if key in seen:
                 continue
@@ -52,9 +106,50 @@ class DatasetBuilder:
             records.append(_to_mlx_record(r.instruction, r.input_text, r.output_text))
         return records
 
-    def build(self, valid_ratio: float = 0.15, seed: int = 13) -> DatasetResult:
-        records = self.collect()
+    def build(
+        self,
+        valid_ratio: float = 0.15,
+        seed: int = 13,
+        phase: int | None = None,
+        lora_eligible_only: bool = True,
+    ) -> DatasetResult:
+        """Train/valid JSONL dosyalarını oluştur.
+
+        phase belirtilmişse curriculum pacing uygulanır:
+        - %60 mevcut faz örnekleri
+        - %30 alt faz örnekleri (phase-1, varsa)
+        - %10 üst faz örnekleri (phase+1, varsa)
+        """
         rng = random.Random(seed)
+
+        if phase is not None:
+            current = self.collect(phase=phase, lora_eligible_only=lora_eligible_only)
+            prev = (
+                self.collect(phase=phase - 1, lora_eligible_only=lora_eligible_only)
+                if phase > 1
+                else []
+            )
+            nxt = (
+                self.collect(phase=phase + 1, lora_eligible_only=lora_eligible_only)
+                if phase < 4
+                else []
+            )
+
+            # Curriculum pacing (yalnızca toplam > 20 ise)
+            total_available = len(current) + len(prev) + len(nxt)
+            if total_available > 20:
+                n_current = max(1, int(total_available * 0.60))
+                n_prev = max(0, int(total_available * 0.30))
+                n_next = max(0, int(total_available * 0.10))
+                rng.shuffle(current)
+                rng.shuffle(prev)
+                rng.shuffle(nxt)
+                records = current[:n_current] + prev[:n_prev] + nxt[:n_next]
+            else:
+                records = current + prev + nxt
+        else:
+            records = self.collect(lora_eligible_only=lora_eligible_only)
+
         rng.shuffle(records)
         # valid set en az 4 örnek içermeli (mlx_lm batch_size=4 zorunluluğu).
         # Toplam < 8 ise tüm örnekler train, valid için ilk 4'ü kopyala (bootstrap).

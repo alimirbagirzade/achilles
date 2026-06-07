@@ -19,8 +19,8 @@ LLM'i **"trader gibi düşünen"** bir araştırma motoru yapmak:
 5. Tüm zinciri **LoRA eğitim verisi** olarak kullan
 6. 3B model mimiriyi test eder; gerçek çıktı için 120B kullanılacak
 
-### Mevcut durum (2026-06-07 — son commit: d24cb1a)
-- **233 test** geçiyor · ruff temiz · Python 3.12
+### Mevcut durum (2026-06-07 — aktif seans)
+- **295 test** geçiyor · ruff temiz · Python 3.12
 - **8 sekme** web UI: Araştırma · Makaleler · Trader Beyin · Backtest · Eğitim · Onay · Değerlendirme · Sistem
 - **`app/research/`** modülü TAMAMLANDI
 - **Advanced RAG katmanı** EKLENDI — 37 yeni dosya (verification, evals, reliability)
@@ -187,12 +187,26 @@ LLM'i **"trader gibi düşünen"** bir araştırma motoru yapmak:
 
 | # | Görev | Süre | Not |
 |---|-------|------|-----|
-| **B** | **Risk raporu → SQLite persist** | ~1 saat | `analyze_risk()` sonucunu `risk_reports` tablosuna kaydet, web UI'da göster |
-| **C** | **Web UI: .achpkg İndir butonu** | ~30 dk | Backtest kartında `GET /api/strategy/{name}/export` tetikle |
-| **D** | **arXiv sorgu kütüphanesi** | ~45 dk | Önerilen sorguları kaydet, scheduled/otomatik çalıştır |
-| **E** | **SessionStart hook** | ~10 dk | `.claude/settings.json` oluştur (otomatik HANDOFF yükleme) — kullanıcı onayı gerekli |
-| **F** | **OSS Agent: rules_updater.py** | ~1 saat | Başarısız trial → kural önerisi pipeline |
-| **G** | **OSS Agent: psutil opsiyonel bağımlılık** | ~15 dk | `pyproject.toml`'a `[dev,oss]` extra ekle |
+| ~~**B**~~ | ~~Risk raporu → SQLite persist~~ | ✅ | `risk_reports` tablosu + `GET /api/risk-reports` + web UI liste |
+| ~~**C**~~ | ~~Web UI: .achpkg İndir butonu~~ | ✅ | `GET /api/backtest/{id}/download-pkg` + "⬇ .achpkg" butonu |
+| ~~**D**~~ | ~~arXiv sorgu kütüphanesi~~ | ✅ | `arxiv_saved_queries` tablosu + 4 endpoint (save/list/delete/run) + web UI |
+| ~~**E**~~ | ~~SessionStart hook~~ | ✅ | `.claude/settings.json` — her seans başında HANDOFF.md ilk 60 satırı otomatik gösterilir |
+| ~~**F**~~ | ~~OSS Agent: rules_updater.py~~ | ✅ | `analyze_failed_trials` + `generate_rule_suggestions` + `achilles rules-update` CLI + 12 test |
+| ~~**G**~~ | ~~OSS Agent: psutil opsiyonel bağımlılık~~ | ✅ | `pyproject.toml`'a `oss = ["psutil>=6.0"]` extra eklendi |
+
+### 📚 Eğitim Yol Haritası
+Detaylar → [`TRAINING_ROADMAP.md`](./TRAINING_ROADMAP.md)  
+Evrensel şablon: kopyala, proje adını değiştir, ilerledikçe güncelle.
+
+| # | Yöntem | Durum |
+|---|--------|-------|
+| 1 | RAG | ✅ Tamamlandı |
+| 2 | Tool Use Training | 🟡 Kısmi |
+| 3 | SFT | 🟡 Devam |
+| 4 | LoRA | 🟡 Devam |
+| 5 | DPO | 🔴 500+ onaylı kart bekliyor |
+| 6 | Verifiable Reward | 🔴 Planlandı |
+| 7 | Agentic Training | 🟡 MVP hazır |
 
 ### 🔵 Büyük / ileriki — şimdi yapılmaz
 

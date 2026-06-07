@@ -318,6 +318,67 @@
     });
   }
 
+  // ---------- arXiv kayıtlı sorgular ----------
+  function loadArxivQueries() {
+    var el = document.getElementById("arxivQueriesList");
+    if (!el) return;
+    el.innerHTML = '<span class="spinner"></span>';
+    api("/arxiv/queries", { method: "GET" })
+      .then(function (d) {
+        if (!d.queries || !d.queries.length) {
+          el.innerHTML = '<p class="muted small">Henüz kayıtlı sorgu yok. Bir sorgu gir ve 📌 Sorguyu Kaydet\'e tıkla.</p>';
+          return;
+        }
+        el.innerHTML = d.queries.map(function (q) {
+          return '<div class="bt-card" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+            '<span style="flex:1"><b>' + esc(q.query) + '</b>' +
+            '<span class="muted small"> · maks ' + q.max_results + ' · ' + q.run_count + ' çalıştırma' +
+            (q.last_run_at ? ' · ' + new Date(q.last_run_at).toLocaleString("tr-TR") : '') + '</span></span>' +
+            '<button class="btn btn-primary btn-run-query" data-qid="' + esc(q.query_id) + '" data-query="' + esc(q.query) + '">▶ Çalıştır</button>' +
+            '<button class="btn btn-del-query" data-qid="' + esc(q.query_id) + '" style="color:#e55">✕</button>' +
+            '</div>';
+        }).join("");
+        el.querySelectorAll(".btn-run-query").forEach(function (b) {
+          b.addEventListener("click", function () { runArxivQuery(b.getAttribute("data-qid"), b.getAttribute("data-query"), b); });
+        });
+        el.querySelectorAll(".btn-del-query").forEach(function (b) {
+          b.addEventListener("click", function () { deleteArxivQuery(b.getAttribute("data-qid")); });
+        });
+      })
+      .catch(function () { el.innerHTML = '<p class="muted small">Sorgular yüklenemedi.</p>'; });
+  }
+
+  function runArxivQuery(qid, queryText, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = "…"; }
+    api("/arxiv/queries/" + qid + "/run", { method: "POST" })
+      .then(function (d) { toast("✓ " + d.message); loadArxivQueries(); })
+      .catch(function (e) { toast("Hata: " + esc(e.message), true); })
+      .finally(function () { if (btn) { btn.disabled = false; btn.textContent = "▶ Çalıştır"; } });
+  }
+
+  function deleteArxivQuery(qid) {
+    api("/arxiv/queries/" + qid, { method: "DELETE" })
+      .then(function () { loadArxivQueries(); })
+      .catch(function (e) { toast("Silinemedi: " + esc(e.message), true); });
+  }
+
+  var arxivSaveBtn = document.getElementById("arxivSaveBtn");
+  if (arxivSaveBtn) {
+    arxivSaveBtn.addEventListener("click", function () {
+      var q = (document.getElementById("arxivQuery").value || "").trim();
+      var max = parseInt(document.getElementById("arxivMax").value, 10) || 5;
+      if (!q) { toast("Önce bir sorgu gir.", true); return; }
+      api("/arxiv/queries", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q, max_results: max, auto_ingest: true }) })
+        .then(function () { toast("Sorgu kaydedildi ✓"); loadArxivQueries(); })
+        .catch(function (e) { toast("Kaydedilemedi: " + esc(e.message), true); });
+    });
+  }
+
+  var refreshArxivQueries = document.getElementById("refreshArxivQueries");
+  if (refreshArxivQueries) refreshArxivQueries.addEventListener("click", loadArxivQueries);
+  loadArxivQueries();
+
   // ---------- papers ----------
   var _allPapers = [];
 
@@ -1326,6 +1387,7 @@
               '<div class="hist-actions">' +
               '<button class="btn btn-pine" data-btid="' + esc(r.backtest_id) + '" title="Pine Script\'i göster ve kopyala">🌲 Pine Kopyala</button>' +
               '<button class="btn btn-risk" data-btid="' + esc(r.backtest_id) + '" title="Kelly + drawdown risk analizi">⚖ Risk Analizi</button>' +
+              '<button class="btn btn-pkg" data-btid="' + esc(r.backtest_id) + '" data-stratname="' + esc(r.strategy_name) + '" title=".achpkg paketini indir">⬇ .achpkg</button>' +
               "</div>" +
               "</div>"
             );
@@ -1338,10 +1400,38 @@
         el.querySelectorAll(".btn-risk").forEach(function (b) {
           b.addEventListener("click", function () { openRiskModal(b.getAttribute("data-btid")); });
         });
+        el.querySelectorAll(".btn-pkg").forEach(function (b) {
+          b.addEventListener("click", function () {
+            downloadAchpkg(b.getAttribute("data-btid"), b.getAttribute("data-stratname"));
+          });
+        });
       })
       .catch(function (err) {
         el.innerHTML = '<div class="empty">Hata: ' + esc(err.message) + "</div>";
       });
+  }
+
+  function downloadAchpkg(btId, stratName) {
+    toast(".achpkg hazırlanıyor…");
+    fetch("/api/backtest/" + btId + "/download-pkg", { headers: authHeaders() })
+      .then(function (r) {
+        if (r.status === 401) { toast("Yetkisiz — API token gerekli.", true); throw new Error("unauthorized"); }
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.blob();
+      })
+      .then(function (blob) {
+        var safeName = stratName.replace(/[^\w\-]/g, "_") || btId;
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = safeName + ".achpkg";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast(".achpkg indirildi ✓");
+      })
+      .catch(function (err) { toast("İndirme hatası: " + esc(err.message), true); });
   }
 
   // ---------- Pine Script modal ----------
@@ -1452,16 +1542,58 @@
 
           warnHtml +
           '<div class="result-section"><div class="result-label">öneri</div>' +
-          '<div class="result-body muted small">' + esc(d.recommendation) + '</div></div>';
+          '<div class="result-body muted small">' + esc(d.recommendation) + '</div></div>' +
+          (d.report_id
+            ? '<div class="result-section"><span class="badge badge-ok">✓ Kaydedildi — ' + esc(d.report_id) + '</span></div>'
+            : '');
+        loadRiskReports();
       })
       .catch(function (err) {
         body.innerHTML = '<div class="result-section result-body">Hata: ' + esc(err.message) + '</div>';
       });
   }
 
+  function loadRiskReports() {
+    var list = document.getElementById("riskReportsList");
+    if (!list) return;
+    list.innerHTML = '<span class="spinner"></span>';
+    api("/risk-reports?limit=20", { method: "GET" })
+      .then(function (d) {
+        if (!d.reports || d.reports.length === 0) {
+          list.innerHTML = '<p class="muted small">Henüz kaydedilmiş risk raporu yok.</p>';
+          return;
+        }
+        list.innerHTML = d.reports.map(function (r) {
+          return '<div class="bt-card">' +
+            '<div class="bt-meta">' +
+            '<b>' + esc(r.strategy_name) + '</b>' +
+            '<span class="muted small"> · ' + r.n_trades + ' işlem · ' + new Date(r.created_at).toLocaleString("tr-TR") + '</span>' +
+            '</div>' +
+            '<div class="risk-grid" style="margin-top:6px">' +
+            '<div class="risk-item"><div class="k">Kazanma</div><div class="v">' + (r.win_rate * 100).toFixed(1) + '%</div></div>' +
+            '<div class="risk-item"><div class="k">Yarı Kelly</div><div class="v pos">' + (r.half_kelly * 100).toFixed(1) + '%</div></div>' +
+            '<div class="risk-item"><div class="k">Sınırlı Kelly</div><div class="v pos"><b>' + (r.capped_kelly * 100).toFixed(1) + '%</b></div></div>' +
+            '<div class="risk-item"><div class="k">Ölçek</div><div class="v ' + (r.scale_factor < 1 ? 'neg' : 'pos') + '">' + (r.scale_factor * 100).toFixed(0) + '%</div></div>' +
+            '<div class="risk-item"><div class="k">Pozisyon %</div><div class="v">' + r.position_size_pct.toFixed(1) + '%</div></div>' +
+            '<div class="risk-item"><div class="k">Pozisyon $</div><div class="v">' + r.position_size_usd.toLocaleString() + ' $</div></div>' +
+            '</div>' +
+            '<div class="muted small" style="margin-top:4px">backtest: ' + esc(r.backtest_id) + '</div>' +
+            '</div>';
+        }).join("");
+      })
+      .catch(function () {
+        list.innerHTML = '<p class="muted small">Risk raporları yüklenemedi.</p>';
+      });
+  }
+
   var refreshHistory = document.getElementById("refreshHistory");
   if (refreshHistory) {
     refreshHistory.addEventListener("click", loadBacktestHistory);
+  }
+
+  var refreshRiskReports = document.getElementById("refreshRiskReports");
+  if (refreshRiskReports) {
+    refreshRiskReports.addEventListener("click", loadRiskReports);
   }
 
   // ---------- özel strateji IR backtest ----------

@@ -126,7 +126,18 @@
             <button class="btn btn-primary" id="arxivFetchBtn">⬇ İNDİR + İNDEKSLE</button>
           </div>
           <div id="arxivResult" class="result hidden"></div>
+          <div class="arxiv-save-row">
+            <button class="btn" id="arxivSaveBtn" title="Mevcut sorguyu kütüphaneye kaydet">📌 Sorguyu Kaydet</button>
+          </div>
         </div>
+
+        <div class="arxiv-section">
+          <h3 class="arxiv-heading">Kayıtlı Sorgular</h3>
+          <p class="muted small">Kayıtlı sorguları tek tıkla tekrar çalıştır.</p>
+          <button class="btn" id="refreshArxivQueries">↻ YENİLE</button>
+          <div id="arxivQueriesList"></div>
+        </div>
+
         <div class="filter-bar">
           <input type="search" id="paperSearch" placeholder="başlık ara…" autocomplete="off" />
           <div class="filter-group" id="cardFilter" role="group" aria-label="Kart filtresi">
@@ -258,6 +269,10 @@
         <div class="bt-divider"><span>geçmiş</span></div>
         <button class="btn" id="refreshHistory">↻ GEÇMİŞİ YENİLE</button>
         <div id="btHistory" class="bt-history"></div>
+
+        <div class="bt-divider"><span>kayıtlı risk raporları</span></div>
+        <button class="btn" id="refreshRiskReports">↻ RİSK GEÇMİŞİ</button>
+        <div id="riskReportsList" class="risk-reports-list"></div>
       </section>
 
       <!-- TRAINING -->

@@ -35,8 +35,32 @@ class _FakeStore:
     def list_chunks(self, paper_id: str) -> list[_FakeChunk]:
         return self._chunks
 
-    def save_knowledge_card(self, *, card_id: str, paper_id: str, model: str, card: dict) -> None:
-        self.saved.append({"card_id": card_id, "paper_id": paper_id, "model": model, "card": card})
+    def save_knowledge_card(
+        self,
+        card_id: str,
+        paper_id: str,
+        model: str,
+        card: dict,
+        *,
+        trust_level: str = "draft",
+        review_status: str = "pending",
+        lora_eligible: int = 0,
+        difficulty: float = 0.0,
+        stage: str = "",
+    ) -> None:
+        self.saved.append(
+            {
+                "card_id": card_id,
+                "paper_id": paper_id,
+                "model": model,
+                "card": card,
+                "trust_level": trust_level,
+                "review_status": review_status,
+                "lora_eligible": lora_eligible,
+                "difficulty": difficulty,
+                "stage": stage,
+            }
+        )
 
 
 class _StubLLM:

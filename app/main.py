@@ -731,7 +731,10 @@ def oss_profile(
     console.print(f"  OS      : {profile.os} {profile.os_version[:30]}")
     console.print(f"  Arch    : {profile.arch}")
     console.print(f"  CPU     : {profile.cpu.name} ({profile.cpu.cores}c/{profile.cpu.threads}t)")
-    console.print(f"  RAM     : {profile.memory.ram_total_gb:.1f} GB total  |  {profile.memory.ram_available_gb:.1f} GB free")
+    console.print(
+        f"  RAM     : {profile.memory.ram_total_gb:.1f} GB total  |  "
+        f"{profile.memory.ram_available_gb:.1f} GB free"
+    )
     console.print(f"  GPU     : {profile.gpu.name}")
     console.print(f"  Vendor  : {profile.gpu.vendor}")
     console.print(f"  VRAM    : {profile.gpu.vram_gb:.1f} GB")
@@ -799,7 +802,9 @@ def oss_recommend(
 @app.command("install")
 def oss_install(
     model: str = typer.Option("", "--model", help="Ollama model adı (örn. qwen2.5-coder:7b)"),
-    auto_safe: bool = typer.Option(False, "--auto-safe", help="En iyi uygun modeli otomatik seç ve indir"),
+    auto_safe: bool = typer.Option(
+        False, "--auto-safe", help="En iyi uygun modeli otomatik seç ve indir"
+    ),
     diagnose: bool = typer.Option(False, "--diagnose", help="Sadece tanı yap, kurma"),
 ) -> None:
     """OSS modeli Ollama ile kur (sadece güvenli whitelist komutlar)."""
@@ -842,8 +847,11 @@ def oss_install(
     if model and not auto_safe:
         result = recommend(profile, task="general")
         if result.recommended and result.recommended[0].ollama_name != model:
-            console.print(f"[yellow]⚠ Uyarı: Sisteminiz için önerilen model '{result.recommended[0].ollama_name}'. "
-                          f"'{model}' seçildi — çalışmayabilir.[/yellow]")
+            console.print(
+                f"[yellow]⚠ Uyarı: Sisteminiz için önerilen model "
+                f"'{result.recommended[0].ollama_name}'. "
+                f"'{model}' seçildi — çalışmayabilir.[/yellow]"
+            )
 
     console.print(f"[cyan]İndiriliyor:[/cyan] {ollama_name} ...")
     r = oi.pull_model(ollama_name)
@@ -889,7 +897,9 @@ def oss_benchmark(
 
     for pr in result.prompt_results:
         icon = "[green]✓[/green]" if pr.status == "ok" else "[red]✗[/red]"
-        console.print(f"  {icon} {pr.prompt_id}: kalite={pr.quality:.1f}  latency={pr.latency_ms:.0f}ms")
+        console.print(
+            f"  {icon} {pr.prompt_id}: kalite={pr.quality:.1f}  latency={pr.latency_ms:.0f}ms"
+        )
 
     if save and result.status != "failed":
         profile = collect()
@@ -905,6 +915,194 @@ def oss_benchmark(
             quality_score=result.quality_score,
         )
         console.print("[dim]✓ Sonuç SQLite'a kaydedildi.[/dim]")
+
+
+@app.command("tool-use-train")
+def tool_use_train(
+    questions: list[str] = typer.Argument(None, help="Araştırma soruları (boşsa varsayılan set)."),
+    n_loops: int = typer.Option(1, "--n-loops", "-n", help="Her soru için iterasyon sayısı."),
+    seed: int = typer.Option(42, "--seed"),
+) -> None:
+    """Tool-use eğitim döngüsünü çalıştır ve seansları DB'ye kaydet."""
+    from app.training.tool_use_trainer import ToolUseTrainer
+
+    _default_questions = [
+        "Yüksek volatilitede RSI momentum stratejileri nasıl filtrelenir?",
+        "EMA çaprazlaması ile volume spike kombinasyonu backtest'te ne kadar etkili?",
+        "Düşük korelasyonlu indikatörler nasıl birleştirilir?",
+    ]
+    qs = list(questions) if questions else _default_questions
+    trainer = ToolUseTrainer(seed=seed)
+    console.print(f"[bold cyan]⚙ Tool-use eğitimi başlıyor — {len(qs)} soru[/bold cyan]")
+    sessions = trainer.run_batch(qs, max_iterations=n_loops)
+    pass_count = sum(1 for s in sessions if s.final_verdict == "pass")
+    console.print(
+        f"[green]✓ {len(sessions)} seans tamamlandı "
+        f"({pass_count} geçti / {len(sessions) - pass_count} başarısız)[/green]"
+    )
+    console.print("[dim]Veri seti için: achilles tool-use-dataset[/dim]")
+
+
+@app.command("tool-use-dataset")
+def tool_use_dataset(
+    output: str = typer.Option(
+        "data/training/tool_use_sft.jsonl", "--output", "-o"
+    ),
+    only_verdict: str = typer.Option("", "--only-verdict", help="pass | fail | (boş=hepsi)"),
+) -> None:
+    """tool_use_examples → SFT JSONL veri seti oluştur."""
+    from app.training.tool_use_dataset_builder import build_tool_use_dataset, get_tool_use_stats
+
+    stats = get_tool_use_stats()
+    console.print(
+        f"[bold]Tool-use DB:[/bold] {stats['n_sessions']} seans · "
+        f"{stats['n_steps']} adım · {stats['sft_eligible']} SFT uygun"
+    )
+    if stats["n_sessions"] == 0:
+        console.print("[yellow]Önce: achilles tool-use-train[/yellow]")
+        raise typer.Exit(1)
+
+    examples = build_tool_use_dataset(
+        output_path=output,  # type: ignore[arg-type]
+        only_verdict=only_verdict or None,
+    )
+    console.print(f"[green]✓ {len(examples)} örnek → {output}[/green]")
+
+
+@app.command("auto-research")
+def auto_research(
+    max_questions: int = typer.Option(5, "--max", "-n", help="İşlenecek maksimum soru sayısı."),
+    iterations: int = typer.Option(1, "--iterations", "-i"),
+    seed: int = typer.Option(42, "--seed"),
+    all_cards: bool = typer.Option(False, "--all-cards", help="Onaysız kartları da dahil et."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Eğitim çalıştırmadan sorular üret."),
+) -> None:
+    """Onaylı kartlardan otomatik tool-use eğitimi: kart→soru→backtest→ödül."""
+    from app.pipeline.auto_researcher import run_pipeline
+
+    console.print("[bold cyan]⚙ Otomatik araştırma pipeline'ı başlıyor…[/bold cyan]")
+    run = run_pipeline(
+        max_questions=max_questions,
+        max_iterations=iterations,
+        seed=seed,
+        only_approved=not all_cards,
+        dry_run=dry_run,
+    )
+    console.print(f"\n[bold]Özet:[/bold]\n{run.summary()}")
+    if run.errors:
+        for e in run.errors[:3]:
+            console.print(f"  [red]✗[/red] {e}")
+    if dry_run:
+        console.print(f"\n[dim]Üretilen sorular ({run.n_questions}):[/dim]")
+        from app.pipeline.auto_researcher import _extract_questions
+        from app.memory.sqlite_store import SqliteStore
+        for q in _extract_questions(SqliteStore(), max_questions, not all_cards):
+            console.print(f"  • {q}")
+
+
+@app.command("reward-analyze")
+def reward_analyze(
+    session_id: str = typer.Option("", "--session", "-s", help="Tek seans ID'si."),
+    build_dpo: bool = typer.Option(False, "--build-dpo", help="DPO veri seti oluştur."),
+    output: str = typer.Option("data/training/dpo_pairs.jsonl", "--output", "-o"),
+) -> None:
+    """Tool-use seanslarını ödül sinyaliyle değerlendir; DPO çiftleri üret."""
+    from app.training.dpo_dataset_builder import (
+        build_dpo_dataset,
+        get_dpo_stats,
+        score_and_save_sessions,
+    )
+    from app.training.reward_signal import compute_reward
+
+    if session_id:
+        from app.memory.sqlite_store import SqliteStore
+
+        store = SqliteStore()
+        steps = store.list_tool_use_examples(session_id=session_id)
+        if not steps:
+            console.print(f"[red]Seans bulunamadı: {session_id}[/red]")
+            raise typer.Exit(1)
+        call_steps = [s for s in steps if s["step_type"] == "call"]
+        if not call_steps:
+            console.print("[yellow]Bu seansda call adımı yok.[/yellow]")
+            raise typer.Exit(1)
+        last = call_steps[-1]
+        metrics = last.get("tool_output", {}).get("metrics", {})
+        rc = compute_reward(metrics, verdict=last.get("verdict", "fail"))
+        console.print(f"\n[bold]Seans:[/bold] {session_id}")
+        console.print(f"Bileşik skor : [bold]{rc.composite:.3f}[/bold] → [{rc.label}]")
+        for k, v in rc.to_dict().items():
+            if k not in ("composite", "label", "notes"):
+                console.print(f"  {k:<16} {v:.2f}")
+        if rc.notes:
+            console.print("[yellow]Notlar:[/yellow]", " | ".join(rc.notes))
+        return
+
+    new = score_and_save_sessions()
+    if new:
+        console.print(f"[green]✓ {len(new)} seans skorlandı[/green]")
+
+    stats = get_dpo_stats()
+    console.print(
+        f"Toplam sinyal: {stats['n_signals']} | "
+        f"chosen: {stats['label_distribution'].get('chosen',0)} | "
+        f"rejected: {stats['label_distribution'].get('rejected',0)} | "
+        f"DPO çifti potansiyeli: {stats['dpo_eligible_pairs']}"
+    )
+
+    if build_dpo:
+        pairs = build_dpo_dataset(output_path=output)
+        console.print(f"[green]✓ {len(pairs)} DPO çifti → {output}[/green]")
+    elif stats["dpo_eligible_pairs"] > 0:
+        console.print("[dim]DPO veri seti için: achilles reward-analyze --build-dpo[/dim]")
+
+
+@app.command("rules-update")
+def oss_rules_update(
+    dry_run: bool = typer.Option(False, "--dry-run", help="DB'ye yazmadan önerileri göster."),
+    approve: str = typer.Option("", "--approve", help="Onaylanacak öneri ID'si."),
+    dismiss: str = typer.Option("", "--dismiss", help="Reddedilecek öneri ID'si."),
+) -> None:
+    """Başarısız trial'lardan kural önerileri üret; bekleyenleri listele."""
+    from app.agents.learning.rules_updater import (
+        approve_suggestion,
+        dismiss_suggestion,
+        generate_rule_suggestions,
+        list_pending_suggestions,
+    )
+
+    if approve:
+        ok = approve_suggestion(approve)
+        console.print("[green]✓ Onaylandı[/green]" if ok else "[red]Bulunamadı[/red]")
+        return
+
+    if dismiss:
+        ok = dismiss_suggestion(dismiss)
+        console.print("[yellow]✗ Reddedildi[/yellow]" if ok else "[red]Bulunamadı[/red]")
+        return
+
+    import json as _json
+
+    new = generate_rule_suggestions(dry_run=dry_run)
+    if new:
+        label = "[dim](dry-run)[/dim]" if dry_run else ""
+        console.print(f"\n[bold cyan]🔧 {len(new)} yeni öneri üretildi {label}[/bold cyan]")
+        for s in new:
+            console.print(f"  • [yellow]{s.rule_file}[/yellow] — {s.reason[:80]}…")
+
+    pending = list_pending_suggestions()
+    if pending:
+        console.print(f"\n[bold]Onay bekleyen {len(pending)} öneri:[/bold]")
+        for p in pending:
+            patch = _json.loads(p.proposed_patch)
+            console.print(
+                f"  [dim]{p.suggestion_id[:8]}[/dim]  "
+                f"{patch.get('action', '?')} → {p.rule_file}"
+            )
+            console.print(f"    {p.reason[:100]}")
+        console.print("\n[dim]Onaylamak: achilles rules-update --approve <id>[/dim]")
+    elif not new:
+        console.print("[green]✓ Yeni öneri yok; sistem sağlıklı.[/green]")
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -1,4 +1,5 @@
 """OSS Learning Agent MVP testleri."""
+
 from __future__ import annotations
 
 import tempfile
@@ -42,6 +43,7 @@ def _make_profile(
 
 # ── Profiler testleri ─────────────────────────────────────────────────────────
 
+
 class TestSystemProfile:
     def test_has_dedicated_gpu_nvidia(self):
         p = _make_profile(gpu_vendor="NVIDIA", cuda=True)
@@ -61,6 +63,7 @@ class TestSystemProfile:
 
 
 # ── Model advisor testleri ────────────────────────────────────────────────────
+
 
 class TestModelAdvisor:
     def test_16gb_cpu_only_recommends_small_model(self):
@@ -115,7 +118,9 @@ class TestModelAdvisor:
             assert "coder" in top_id or "qwen" in top_id or "mistral" in top_id
 
     def test_apple_silicon_gets_metal_bonus(self):
-        profile = _make_profile(ram_gb=16, os_name="macOS", arch="arm64", metal=True, gpu_vendor="Apple")
+        profile = _make_profile(
+            ram_gb=16, os_name="macOS", arch="arm64", metal=True, gpu_vendor="Apple"
+        )
         result = recommend(profile, task="general")
         if result.recommended:
             top = result.recommended[0]
@@ -128,6 +133,7 @@ class TestModelAdvisor:
 
 
 # ── Learning memory testleri ──────────────────────────────────────────────────
+
 
 class TestLearningMemory:
     def test_save_and_list_trials(self):
@@ -143,8 +149,12 @@ class TestLearningMemory:
 
         init_schema(db)
         pid = save_system_profile(
-            {"os": "macOS", "cpu": {"name": "M1"}, "memory": {"ram_total_gb": 16},
-             "gpu": {"vendor": "Apple", "vram_gb": 0}},
+            {
+                "os": "macOS",
+                "cpu": {"name": "M1"},
+                "memory": {"ram_total_gb": 16},
+                "gpu": {"vendor": "Apple", "vram_gb": 0},
+            },
             db_path=db,
         )
         assert pid
@@ -190,6 +200,7 @@ class TestLearningMemory:
 
 
 # ── Installer güvenlik testleri ───────────────────────────────────────────────
+
 
 class TestInstallerSecurity:
     def test_dangerous_commands_blocked(self):

@@ -363,6 +363,26 @@ class RiskReportResponse(BaseModel):
     fixed_risk: FixedRiskOut
     warnings: list[str] = Field(default_factory=list)
     recommendation: str
+    report_id: str | None = None
+
+
+class RiskReportRecord(BaseModel):
+    report_id: str
+    backtest_id: str
+    strategy_name: str
+    n_trades: int
+    win_rate: float
+    half_kelly: float
+    capped_kelly: float
+    scale_factor: float
+    position_size_pct: float
+    position_size_usd: float
+    created_at: str
+
+
+class RiskReportListResponse(BaseModel):
+    reports: list[RiskReportRecord]
+    total: int
 
 
 # ---------- arXiv ----------
@@ -378,6 +398,27 @@ class ArxivEntryOut(BaseModel):
 class ArxivSearchResponse(BaseModel):
     query: str
     results: list[ArxivEntryOut]
+    total: int
+
+
+class ArxivSavedQueryIn(BaseModel):
+    query: str = Field(min_length=3, max_length=300)
+    max_results: int = Field(default=5, ge=1, le=20)
+    auto_ingest: bool = True
+
+
+class ArxivSavedQueryOut(BaseModel):
+    query_id: str
+    query: str
+    max_results: int
+    auto_ingest: bool
+    run_count: int
+    last_run_at: str | None
+    created_at: str
+
+
+class ArxivSavedQueryListResponse(BaseModel):
+    queries: list[ArxivSavedQueryOut]
     total: int
 
 
