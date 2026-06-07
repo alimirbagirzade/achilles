@@ -1301,3 +1301,30 @@ def mastery_to_sft(
         console.print(
             f"[green]✓[/green] {n} SFT örneği → [bold]{path}[/bold]"
         )
+
+
+@app.command("unified-dataset")
+def unified_dataset(
+    min_score: float = typer.Option(75.0, help="Minimum mastery skoru"),
+    citation: float = typer.Option(0.5, help="Minimum citation_score"),
+    output: str = typer.Option("", help="Çıktı JSONL dosya yolu"),
+) -> None:
+    """Tüm SFT kaynaklarını birleştirip unified_sft.jsonl üret (LoRA faz 2)."""
+    from app.training.unified_dataset import UnifiedDatasetBuilder
+    from pathlib import Path as _P
+
+    builder = UnifiedDatasetBuilder()
+    stats = builder.build(
+        output_path=_P(output) if output else None,
+        min_mastery_score=min_score,
+        citation_threshold=citation,
+    )
+    console.print("[bold green]✓ Unified dataset hazır[/bold green]")
+    console.print(f"  {stats.summary()}")
+    console.print(f"  → [bold]{stats.output_path}[/bold]")
+    console.print()
+    console.print("[dim]LoRA eğitimi için:[/dim]")
+    console.print(
+        f"  uv run achilles train --run "
+        f"--data {stats.output_path}"
+    )
