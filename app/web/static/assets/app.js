@@ -580,7 +580,8 @@
     showCardModal();
 
     if (paperId && hasHyps) {
-      document.getElementById("hypBtBtn").addEventListener("click", function () {
+      var hypBtBtn = document.getElementById("hypBtBtn");
+      if (hypBtBtn) hypBtBtn.addEventListener("click", function () {
         backtestFromCard(paperId);
       });
     }

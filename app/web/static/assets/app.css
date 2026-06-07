@@ -1519,3 +1519,74 @@ code {
     font-size: 21px;
   }
 }
+
+/* ── Training Progress UI ── */
+.train-progress-wrap {
+  background: #1e293b;
+  border-radius: 8px;
+  height: 22px;
+  overflow: hidden;
+  margin: 10px 0 4px;
+}
+.train-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #6366f1, #8b5cf6);
+  transition: width 0.4s ease;
+  border-radius: 8px;
+}
+.train-progress-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: .8rem;
+  color: #94a3b8;
+  margin-bottom: 14px;
+}
+.train-loss-row {
+  display: flex;
+  gap: 16px;
+  margin: 8px 0 14px;
+}
+.train-loss-box {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 10px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 120px;
+}
+.train-loss-num {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #a5b4fc;
+  font-family: "JetBrains Mono", monospace;
+}
+.train-meta {
+  font-size: .82rem;
+  color: #94a3b8;
+  margin-bottom: 8px;
+}
+.train-log-wrap {
+  margin-top: 10px;
+}
+.train-log-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.train-log {
+  background: #020617;
+  border: 1px solid #1e293b;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: .75rem;
+  line-height: 1.5;
+  max-height: 260px;
+  overflow-y: auto;
+  color: #94a3b8;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

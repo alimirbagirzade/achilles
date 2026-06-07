@@ -67,6 +67,100 @@ uv run achilles-web
 
 ---
 
+## 🔍 RAG mı, LoRA mı? (İkisi de var, farklı şeyler yapar)
+
+Bu iki kavram sıkça karıştırılır. Achilles her ikisini birlikte kullanır — ama **farklı amaçlarla**.
+
+### RAG (Retrieval-Augmented Generation) — Anlık Bellek
+
+> "Kütüphanede bir soru soruyorsun. Sistem o an doğru sayfayı çıkarıp sana gösteriyor."
+
+**Ne zaman çalışır:** Her ARAŞTIRMA sekmesi sorgusunda, anında.
+
+```
+Sen: "Momentum anomalisi ne zaman çalışmaz?"
+         │
+         ▼
+Soru → vektöre çevrilir (nomic-embed-text)
+         │
+         ▼
+ChromaDB: En benzer 6 makale parçasını bulur (cosine similarity)
+         │
+         ▼
+LLM (Ollama): Parçaları okuyup cevap üretir
+         │
+         ▼
+Cevap + kaynak (hangi makalenin kaçıncı parçası)
+```
+
+**Çıktılar nereye kaydedilir:**
+
+| Çıktı | Dosya/Tablo |
+|-------|-------------|
+| Makale vektörleri | `storage/vector_db/` (ChromaDB) |
+| Makale metadata | `storage/sqlite/achilles_trader_ai.db` → `papers` tablosu |
+| RAG sorgu geçmişi | `storage/sqlite/...` → `rag_queries` tablosu |
+
+**Sınırı:** Makale yoksa "bilmiyorum" der. Model zayıfsa iyi sentez yapamaz.
+
+---
+
+### LoRA (Low-Rank Adaptation) — Kalıcı Öğrenme
+
+> "Kütüphaneciye trading kitapları okutuyorsun. Artık sormadan kendisi biliyor."
+
+**Ne zaman çalışır:** Sadece `achilles train --run` yazınca — bir kez, ~10 dakika sürer.
+
+```
+Onaylı bilgi kartları (06 ONAY sekmesi)
+         │
+         ▼ achilles dataset
+data/training/jsonl/train.jsonl   (instruction/output çiftleri)
+data/training/jsonl/valid.jsonl   (doğrulama seti)
+         │
+         ▼ achilles train --run
+mlx-lm lora  (Apple Silicon GPU, ~0.17% parametre eğitilir)
+         │
+         ▼
+models/adapters/achilles_lora_v3/   ← adapter ağırlıkları
+models/adapters/achilles_lora_v3.meta.json  ← versiyon + hash
+         │
+         ▼
+01 ARAŞTIRMA → "model" menüsünden seç → LoRA ile cevap al
+```
+
+**Çıktılar nereye kaydedilir:**
+
+| Çıktı | Dosya |
+|-------|-------|
+| Eğitim verisi | `data/training/jsonl/train.jsonl` |
+| Doğrulama verisi | `data/training/jsonl/valid.jsonl` |
+| Adapter ağırlıkları | `models/adapters/<isim>/` |
+| Adapter metadata | `models/adapters/<isim>.meta.json` |
+| Adapter kayıt (DB) | `storage/sqlite/...` → `adapters` tablosu |
+
+---
+
+### RAG + LoRA Birlikte Çalışması
+
+01 ARAŞTIRMA sekmesinde **"model"** açılır menüsünden seç:
+
+```
+┌─────────────────────────────────┬──────────────────────────────────────────┐
+│ Seçim                           │ Ne olur                                  │
+├─────────────────────────────────┼──────────────────────────────────────────┤
+│ Ollama (varsayılan)             │ Saf RAG: genel model + makale parçaları  │
+│ achilles_lora_v3                │ LoRA + RAG: ince-ayarlı + makale parçaları│
+└─────────────────────────────────┴──────────────────────────────────────────┘
+```
+
+**En iyi sonuç:** LoRA seçildiğinde hem domain bilgisi hem kaynak doğrulaması aktif olur.
+
+> **Fark:** RAG her sorguda makalelere bakar (anlık). LoRA model içine "pişirilmiş" bilgidir (kalıcı).
+> RAG güncel makalelere göre değişir. LoRA eğitim tarihindeki bilgiyi taşır.
+
+---
+
 ## 🖥️ Web Arayüzü
 
 > Terminale tek komut yaz, tarayıcıda 8 sekmeli araştırma terminali açılır.

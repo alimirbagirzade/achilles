@@ -1,0 +1,184 @@
+"""LoRA eğitim süreci yöneticisi — web UI için singleton.
+
+Tek bir eğitimi yönetir: başlat / durdur / anlık durum.
+SSE ile frontend'e canlı satır akışı sağlar.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import datetime
+import re
+import subprocess
+import sys
+import threading
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import AsyncIterator
+
+
+class TrainState(str, Enum):
+    IDLE = "idle"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    STOPPED = "stopped"
+
+
+@dataclass
+class TrainProgress:
+    state: TrainState = TrainState.IDLE
+    current_iter: int = 0
+    total_iters: int = 0
+    train_loss: float | None = None
+    val_loss: float | None = None
+    pct: float = 0.0
+    adapter_name: str = ""
+    started_at: str = ""
+    finished_at: str = ""
+    error: str = ""
+    log_lines: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "state": self.state.value,
+            "current_iter": self.current_iter,
+            "total_iters": self.total_iters,
+            "train_loss": self.train_loss,
+            "val_loss": self.val_loss,
+            "pct": round(self.pct, 1),
+            "adapter_name": self.adapter_name,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "error": self.error,
+            "log_lines": self.log_lines[-200:],
+        }
+
+
+_ITER_RE = re.compile(r"Iter\s+(\d+):\s+Train loss\s+([\d.]+)")
+_VAL_RE = re.compile(r"Iter\s+(\d+):\s+Val loss\s+([\d.]+)")
+_START_RE = re.compile(r"Starting training.*iters:\s*(\d+)")
+_SAVED_RE = re.compile(r"Saved.*adapters\.safetensors")
+
+
+class TrainingManager:
+    """Uygulama genelinde tek örnek."""
+
+    def __init__(self) -> None:
+        self._progress = TrainProgress()
+        self._proc: subprocess.Popen | None = None
+        self._lock = threading.Lock()
+        self._subscribers: list[asyncio.Queue] = []
+
+    @property
+    def progress(self) -> TrainProgress:
+        return self._progress
+
+    def start(self, command: list[str], adapter_name: str, total_iters: int) -> bool:
+        with self._lock:
+            if self._progress.state == TrainState.RUNNING:
+                return False
+            self._progress = TrainProgress(
+                state=TrainState.RUNNING,
+                total_iters=total_iters,
+                adapter_name=adapter_name,
+                started_at=datetime.datetime.now().isoformat(timespec="seconds"),
+            )
+
+        self._proc = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        threading.Thread(target=self._read_output, daemon=True).start()
+        return True
+
+    def stop(self) -> None:
+        if self._proc and self._proc.poll() is None:
+            self._proc.terminate()
+        self._progress.state = TrainState.STOPPED
+        self._progress.finished_at = datetime.datetime.now().isoformat(timespec="seconds")
+        self._broadcast({"type": "stopped"})
+
+    def _read_output(self) -> None:
+        proc = self._proc
+        assert proc and proc.stdout
+        try:
+            for raw in proc.stdout:
+                line = raw.rstrip()
+                self._parse_line(line)
+                self._progress.log_lines.append(line)
+                self._broadcast({"type": "log", "line": line, **self._progress.to_dict()})
+        finally:
+            proc.wait()
+            self._progress.finished_at = datetime.datetime.now().isoformat(timespec="seconds")
+            if self._progress.state == TrainState.RUNNING:
+                ok = proc.returncode == 0
+                self._progress.state = TrainState.COMPLETED if ok else TrainState.FAILED
+                if not ok:
+                    self._progress.error = f"Exit code: {proc.returncode}"
+            self._broadcast({"type": "done", **self._progress.to_dict()})
+
+    def _parse_line(self, line: str) -> None:
+        m = _START_RE.search(line)
+        if m:
+            self._progress.total_iters = int(m.group(1))
+
+        m = _ITER_RE.search(line)
+        if m:
+            it = int(m.group(1))
+            self._progress.current_iter = it
+            self._progress.train_loss = float(m.group(2))
+            total = self._progress.total_iters or 1
+            self._progress.pct = min(it / total * 100, 100.0)
+
+        m = _VAL_RE.search(line)
+        if m:
+            self._progress.val_loss = float(m.group(2))
+
+        if _SAVED_RE.search(line):
+            self._progress.pct = 100.0
+
+    def _broadcast(self, msg: dict) -> None:
+        dead = []
+        for q in self._subscribers:
+            try:
+                q.put_nowait(msg)
+            except asyncio.QueueFull:
+                dead.append(q)
+        for q in dead:
+            try:
+                self._subscribers.remove(q)
+            except ValueError:
+                pass
+
+    async def subscribe(self) -> AsyncIterator[dict]:
+        q: asyncio.Queue = asyncio.Queue(maxsize=500)
+        self._subscribers.append(q)
+        try:
+            while True:
+                try:
+                    msg = await asyncio.wait_for(q.get(), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield {"type": "ping", **self._progress.to_dict()}
+                    continue
+                yield msg
+                if msg.get("type") in ("done", "stopped"):
+                    break
+        finally:
+            try:
+                self._subscribers.remove(q)
+            except ValueError:
+                pass
+
+
+_manager: TrainingManager | None = None
+
+
+def get_training_manager() -> TrainingManager:
+    global _manager
+    if _manager is None:
+        _manager = TrainingManager()
+    return _manager

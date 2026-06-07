@@ -201,6 +201,34 @@ class TrainDryRunResponse(BaseModel):
     message: str
 
 
+# ---------- Training run (web UI) ----------
+class TrainingStartRequest(BaseModel):
+    base_model: str = "mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit"
+    adapter_name: str = "achilles_lora"
+    iterations: int = 500
+    batch_size: int = 2
+    learning_rate: float = 1e-4
+    num_layers: int = 8
+
+
+class TrainingStartResponse(BaseModel):
+    ok: bool
+    message: str
+
+
+class TrainingProgressResponse(BaseModel):
+    state: str
+    current_iter: int
+    total_iters: int
+    train_loss: float | None = None
+    val_loss: float | None = None
+    pct: float
+    adapter_name: str
+    started_at: str
+    finished_at: str
+    error: str
+
+
 # ---------- Hipotez backtest ----------
 class HypothesisResult(BaseModel):
     hypothesis: str
