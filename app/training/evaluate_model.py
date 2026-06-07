@@ -50,14 +50,30 @@ class EvalRowResult:
 
 
 def load_eval_set(path: str | Path) -> list[EvalItem]:
+    import yaml
+
+    path = Path(path)
     items: list[EvalItem] = []
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
+    if path.suffix in (".yaml", ".yml"):
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for _domain, questions in data.items():
+            if not isinstance(questions, list):
                 continue
-            d = json.loads(line)
-            items.append(EvalItem(question=d["question"], must_avoid=d.get("must_avoid", [])))
+            for q in questions:
+                items.append(
+                    EvalItem(
+                        question=q["question"],
+                        must_avoid=q.get("forbidden_errors", []),
+                    )
+                )
+    else:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                d = json.loads(line)
+                items.append(EvalItem(question=d["question"], must_avoid=d.get("must_avoid", [])))
     return items
 
 
