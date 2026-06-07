@@ -32,11 +32,28 @@ class LoRAExample:
 
 
 def _build_answer(card_json: dict) -> str:
-    """Kart içeriğinden (summary + formüller) bir cevap metni kur."""
+    """Kart içeriğinden cevap metni kur.
+
+    summary → main_claim → trading_relevance → possible_strategy_hypotheses
+    sırasıyla kontrol eder; boş olmayan tüm bölümleri birleştirir.
+    """
     parts: list[str] = []
-    summary = str(card_json.get("summary") or "").strip()
-    if summary:
-        parts.append(summary)
+
+    for field in ("summary", "main_claim"):
+        val = str(card_json.get(field) or "").strip()
+        if val:
+            parts.append(val)
+
+    trading_rel = str(card_json.get("trading_relevance") or "").strip()
+    if trading_rel:
+        parts.append(f"Trading önemi: {trading_rel}")
+
+    hypotheses = card_json.get("possible_strategy_hypotheses") or []
+    if isinstance(hypotheses, list) and hypotheses:
+        lines = ["Olası strateji hipotezleri:"]
+        lines.extend(f"- {str(h).strip()}" for h in hypotheses if h)
+        if len(lines) > 1:
+            parts.append("\n".join(lines))
 
     formulas = card_json.get("formulas") or []
     if isinstance(formulas, list) and formulas:

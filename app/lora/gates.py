@@ -52,7 +52,14 @@ def _card_text(card: dict) -> str:
         parts = [
             str(card_json.get("title") or ""),
             str(card_json.get("summary") or ""),
+            str(card_json.get("main_claim") or ""),
+            str(card_json.get("trading_relevance") or ""),
+            str(card_json.get("domain") or ""),
         ]
+        for field in ("methods", "possible_strategy_hypotheses", "implementation_notes"):
+            items = card_json.get(field) or []
+            if isinstance(items, list):
+                parts.extend(str(x) for x in items if x)
         formulas = card_json.get("formulas") or []
         if isinstance(formulas, list):
             for f in formulas:
@@ -164,7 +171,15 @@ def gate_4_quality(cards: list[dict]) -> tuple[GateResult, list[dict]]:
         answer = ""
         if isinstance(card_json, dict):
             question = f"{card_json.get('title', '')} konusunu açıkla."
-            answer = str(card_json.get("summary") or "")
+            answer_parts = [
+                str(card_json.get("main_claim") or ""),
+                str(card_json.get("summary") or ""),
+                str(card_json.get("trading_relevance") or ""),
+            ]
+            hypotheses = card_json.get("possible_strategy_hypotheses") or []
+            if isinstance(hypotheses, list):
+                answer_parts.extend(str(h) for h in hypotheses if h)
+            answer = " ".join(p for p in answer_parts if p)
         quality_inputs.append({**card, "question": question, "answer": answer})
 
     passed, rejected = QualityFilter().filter_batch(quality_inputs)
