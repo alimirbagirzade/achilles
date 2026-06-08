@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import json
 import re
 import subprocess
-import sys
 import threading
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import AsyncIterator
 
 
@@ -38,6 +39,7 @@ class TrainProgress:
     finished_at: str = ""
     error: str = ""
     log_lines: list[str] = field(default_factory=list)
+    loss_curve: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -120,6 +122,7 @@ class TrainingManager:
                 if not ok:
                     self._progress.error = f"Exit code: {proc.returncode}"
             self._broadcast({"type": "done", **self._progress.to_dict()})
+            self._persist_loss_curve()
 
     def _parse_line(self, line: str) -> None:
         m = _START_RE.search(line)
@@ -133,13 +136,37 @@ class TrainingManager:
             self._progress.train_loss = float(m.group(2))
             total = self._progress.total_iters or 1
             self._progress.pct = min(it / total * 100, 100.0)
+            self._progress.loss_curve.append({
+                "iter": it,
+                "train_loss": self._progress.train_loss,
+                "val_loss": self._progress.val_loss,
+            })
 
         m = _VAL_RE.search(line)
         if m:
             self._progress.val_loss = float(m.group(2))
+            if self._progress.loss_curve:
+                self._progress.loss_curve[-1]["val_loss"] = self._progress.val_loss
 
         if _SAVED_RE.search(line):
             self._progress.pct = 100.0
+
+    def _persist_loss_curve(self) -> None:
+        if not self._progress.loss_curve or not self._progress.adapter_name:
+            return
+        try:
+            out_dir = Path("reports") / "training"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            out = out_dir / f"{self._progress.adapter_name}_loss.json"
+            out.write_text(json.dumps({
+                "adapter_name": self._progress.adapter_name,
+                "started_at": self._progress.started_at,
+                "finished_at": self._progress.finished_at,
+                "total_iters": self._progress.total_iters,
+                "curve": self._progress.loss_curve,
+            }, indent=2))
+        except Exception:
+            pass
 
     def _broadcast(self, msg: dict) -> None:
         dead = []

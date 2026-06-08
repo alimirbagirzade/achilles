@@ -292,6 +292,22 @@ class AutoLoRAPipeline:
             avg = total / len(eval_sets)
             passed = avg >= self.eval_pass_threshold
 
+            # Eval sonuçlarını kalıcı DB'ye kaydet
+            try:
+                from app.memory.sqlite_store import SqliteStore
+                store = SqliteStore()
+                for es in eval_sets:
+                    r = scores.get(es.stem, {})
+                    store.save_eval_history(
+                        adapter_name=adapter_name,
+                        eval_set=es.stem,
+                        pass_rate=float(r.get("pass_rate", 0.0)),
+                        total_items=int(r.get("total", 0)),
+                        passed_items=int(r.get("passed", 0)),
+                    )
+            except Exception:
+                log.warning("Auto-LoRA: eval_history kaydedilemedi")
+
             async with self._lock:
                 self._state.eval_scores = scores
                 if passed:

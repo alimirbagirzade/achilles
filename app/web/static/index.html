@@ -46,6 +46,7 @@
       <button class="tab" data-tab="review">06 · ONAY</button>
       <button class="tab" data-tab="eval">07 · DEĞERLENDİRME</button>
       <button class="tab" data-tab="about">08 · SİSTEM</button>
+      <button class="tab" data-tab="learning">09 · ÖĞRENME</button>
     </nav>
 
     <main>
@@ -483,6 +484,52 @@
         <div class="token-row">
           <input type="password" id="tokenInput" placeholder="API token (opsiyonel)" />
           <button class="btn" id="saveToken">KAYDET</button>
+        </div>
+      </section>
+
+      <!-- 09 · ÖĞRENME -->
+      <section class="panel" id="panel-learning">
+        <div class="panel-head"><h2>Öğrenme Dinamikleri</h2></div>
+
+        <!-- Özet kartları -->
+        <div class="card" style="margin-bottom:1rem">
+          <div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:center">
+            <div><span class="muted small">Makaleler</span><br><strong id="lrn-papers">—</strong></div>
+            <div><span class="muted small">Chunk'lar</span><br><strong id="lrn-chunks">—</strong></div>
+            <div><span class="muted small">Onaylı Kart</span><br><strong id="lrn-approved">—</strong></div>
+            <div><span class="muted small">Bekleyen Kart</span><br><strong id="lrn-pending">—</strong></div>
+            <button class="btn btn-sm" id="lrnRefreshBtn" style="margin-left:auto">YENİLE</button>
+          </div>
+        </div>
+
+        <!-- 1. Loss Curve -->
+        <div class="card" style="margin-bottom:1rem">
+          <h3 style="margin:0 0 .75rem">Eğitim Loss Eğrisi</h3>
+          <div style="margin-bottom:.5rem">
+            <label class="muted small">Adapter seç: </label>
+            <select id="lrnRunSelect" style="background:var(--bg2);color:var(--fg);border:1px solid var(--border);padding:.2rem .5rem;border-radius:4px"></select>
+          </div>
+          <svg id="lrnLossSvg" viewBox="0 0 700 220" style="width:100%;height:220px;background:var(--bg2);border-radius:6px;display:block">
+            <text x="350" y="115" text-anchor="middle" fill="#666" font-size="13">Henüz eğitim verisi yok</text>
+          </svg>
+          <div style="margin-top:.4rem;font-size:.75rem;color:#888">
+            <span style="color:#4af">■</span> Train Loss &nbsp;
+            <span style="color:#fa4">■</span> Val Loss
+          </div>
+        </div>
+
+        <!-- 2. Kart Büyümesi -->
+        <div class="card" style="margin-bottom:1rem">
+          <h3 style="margin:0 0 .75rem">Günlük Kart Büyümesi</h3>
+          <svg id="lrnGrowthSvg" viewBox="0 0 700 180" style="width:100%;height:180px;background:var(--bg2);border-radius:6px;display:block">
+            <text x="350" y="95" text-anchor="middle" fill="#666" font-size="13">Henüz onaylı kart yok</text>
+          </svg>
+        </div>
+
+        <!-- 3. Adapter Eval Karşılaştırması -->
+        <div class="card">
+          <h3 style="margin:0 0 .75rem">Adapter Eval Geçiş Oranları</h3>
+          <div id="lrnEvalTable"><span class="muted small">Yükleniyor…</span></div>
         </div>
       </section>
     </main>

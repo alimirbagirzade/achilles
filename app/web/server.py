@@ -1049,6 +1049,66 @@ def api_backtest_pine(backtest_id: str) -> PineExportResponse:
 
 
 # ---------- arXiv makale arama ve indirme ----------
+@app.get("/api/learning/summary")
+def api_learning_summary() -> dict:
+    """Makale / chunk / kart istatistikleri — dashboard özeti."""
+    from app.memory.sqlite_store import Chunk, KnowledgeCard, SqliteStore
+    from sqlalchemy import func, select as _sel
+    store = SqliteStore()
+    papers = store.list_papers()
+    approved = store.list_approved_cards()
+    with store.session() as s:
+        n_chunks = s.scalar(_sel(func.count()).select_from(Chunk)) or 0
+        n_pending = s.scalar(
+            _sel(func.count()).select_from(KnowledgeCard)
+            .where(KnowledgeCard.review_status == "pending")
+        ) or 0
+    return {
+        "n_papers": len(papers),
+        "n_chunks": n_chunks,
+        "n_approved_cards": len(approved),
+        "n_pending_cards": n_pending,
+    }
+
+
+@app.get("/api/learning/eval-history")
+def api_learning_eval_history() -> dict:
+    """Tüm adapter versiyonlarının eval skor geçmişi."""
+    from app.memory.sqlite_store import SqliteStore
+    rows = SqliteStore().list_eval_history()
+    return {"rows": rows}
+
+
+@app.get("/api/learning/training-runs")
+def api_learning_training_runs() -> dict:
+    """Kayıtlı loss curve JSON dosyalarını listele."""
+    import json as _json
+    runs = []
+    for f in sorted(Path("reports/training").glob("*_loss.json")):
+        try:
+            data = _json.loads(f.read_text())
+            runs.append({
+                "adapter_name": data.get("adapter_name", f.stem),
+                "started_at": data.get("started_at", ""),
+                "finished_at": data.get("finished_at", ""),
+                "total_iters": data.get("total_iters", 0),
+                "final_train_loss": data["curve"][-1]["train_loss"] if data.get("curve") else None,
+                "final_val_loss": data["curve"][-1].get("val_loss") if data.get("curve") else None,
+                "curve": data.get("curve", []),
+            })
+        except Exception:
+            pass
+    return {"runs": runs}
+
+
+@app.get("/api/learning/card-growth")
+def api_learning_card_growth() -> dict:
+    """Günlük onaylı kart büyüme verisi."""
+    from app.memory.sqlite_store import SqliteStore
+    rows = SqliteStore().list_card_growth()
+    return {"rows": rows}
+
+
 @app.get("/api/profile")
 def api_hardware_profile() -> dict:
     """Donanım profili döndürür (auth gerekmez — kurulum popup için)."""

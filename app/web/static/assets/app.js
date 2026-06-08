@@ -1998,6 +1998,159 @@
   if (setupModalClose) setupModalClose.addEventListener('click', closeSetupModal);
   if (setupModalDismiss) setupModalDismiss.addEventListener('click', closeSetupModal);
 
+  // ---------- 09 · ÖĞRENME dashboard ----------
+
+  function _svgLinePath(points, xScale, yScale, viewW, viewH, padX, padY) {
+    if (!points.length) return '';
+    return points.map((p, i) => {
+      const x = padX + p.x * xScale;
+      const y = viewH - padY - p.y * yScale;
+      return (i === 0 ? 'M' : 'L') + x.toFixed(1) + ' ' + y.toFixed(1);
+    }).join(' ');
+  }
+
+  function renderLossCurve(curve) {
+    const svg = document.getElementById('lrnLossSvg');
+    if (!svg) return;
+    if (!curve || !curve.length) {
+      svg.innerHTML = '<text x="350" y="115" text-anchor="middle" fill="#666" font-size="13">Henüz eğitim verisi yok</text>';
+      return;
+    }
+    const W = 700, H = 220, padX = 48, padY = 20;
+    const iters = curve.map(d => d.iter);
+    const trains = curve.map(d => d.train_loss);
+    const vals = curve.filter(d => d.val_loss != null).map(d => d.val_loss);
+    const maxIter = Math.max(...iters) || 1;
+    const maxLoss = Math.max(...trains, ...vals, 0.01);
+    const xS = (W - padX * 2) / maxIter;
+    const yS = (H - padY * 2) / maxLoss;
+    const trainPts = curve.map(d => ({ x: d.iter, y: d.train_loss }));
+    const valPts = curve.filter(d => d.val_loss != null).map(d => ({ x: d.iter, y: d.val_loss }));
+    const trainPath = _svgLinePath(trainPts, xS, yS, W, H, padX, padY);
+    const valPath = _svgLinePath(valPts, xS, yS, W, H, padX, padY);
+    // axis labels
+    const yLabels = [0, maxLoss * 0.5, maxLoss].map(v => {
+      const y = H - padY - v * yS;
+      return `<text x="${padX - 4}" y="${y.toFixed(1)}" text-anchor="end" fill="#888" font-size="10">${v.toFixed(2)}</text>`;
+    }).join('');
+    const xLabels = [0, Math.round(maxIter / 2), maxIter].map(it => {
+      const x = padX + it * xS;
+      return `<text x="${x.toFixed(1)}" y="${H - 4}" text-anchor="middle" fill="#888" font-size="10">${it}</text>`;
+    }).join('');
+    svg.innerHTML = yLabels + xLabels +
+      (trainPath ? `<path d="${trainPath}" stroke="#4af" stroke-width="1.8" fill="none"/>` : '') +
+      (valPath   ? `<path d="${valPath}"   stroke="#fa4" stroke-width="1.8" fill="none" stroke-dasharray="4 2"/>` : '');
+  }
+
+  function renderCardGrowth(rows) {
+    const svg = document.getElementById('lrnGrowthSvg');
+    if (!svg) return;
+    if (!rows || !rows.length) {
+      svg.innerHTML = '<text x="350" y="95" text-anchor="middle" fill="#666" font-size="13">Henüz onaylı kart yok</text>';
+      return;
+    }
+    const W = 700, H = 180, padX = 48, padY = 20;
+    const maxCum = Math.max(...rows.map(r => r.cumulative), 1);
+    const barW = Math.max(4, Math.floor((W - padX * 2) / rows.length) - 2);
+    const xStep = (W - padX * 2) / rows.length;
+    const yS = (H - padY * 2) / maxCum;
+    const bars = rows.map((r, i) => {
+      const bh = Math.max(2, r.cumulative * yS);
+      const x = padX + i * xStep;
+      const y = H - padY - bh;
+      return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW}" height="${bh.toFixed(1)}" fill="#4af" opacity="0.7" rx="2"/>`;
+    }).join('');
+    const lastRow = rows[rows.length - 1];
+    const topLabel = `<text x="${W - padX}" y="${padY}" text-anchor="end" fill="#4af" font-size="11">${lastRow.cumulative} toplam</text>`;
+    svg.innerHTML = bars + topLabel;
+  }
+
+  function renderEvalTable(rows) {
+    const el = document.getElementById('lrnEvalTable');
+    if (!el) return;
+    if (!rows || !rows.length) {
+      el.innerHTML = '<span class="muted small">Henüz eval kaydı yok</span>';
+      return;
+    }
+    const grouped = {};
+    rows.forEach(r => {
+      if (!grouped[r.adapter_name]) grouped[r.adapter_name] = [];
+      grouped[r.adapter_name].push(r);
+    });
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:.85rem"><thead><tr>' +
+      '<th style="text-align:left;padding:.3rem .5rem;border-bottom:1px solid var(--border)">Adapter</th>' +
+      '<th style="text-align:left;padding:.3rem .5rem;border-bottom:1px solid var(--border)">Eval Set</th>' +
+      '<th style="text-align:right;padding:.3rem .5rem;border-bottom:1px solid var(--border)">Geçiş %</th>' +
+      '<th style="text-align:right;padding:.3rem .5rem;border-bottom:1px solid var(--border)">Geçen/Toplam</th>' +
+      '<th style="padding:.3rem .5rem;border-bottom:1px solid var(--border)">Tarih</th>' +
+      '</tr></thead><tbody>';
+    rows.slice().reverse().forEach(r => {
+      const pct = (r.pass_rate * 100).toFixed(1);
+      const color = r.pass_rate >= 0.5 ? '#4a4' : '#a44';
+      html += `<tr>
+        <td style="padding:.3rem .5rem;font-family:monospace">${r.adapter_name}</td>
+        <td style="padding:.3rem .5rem">${r.eval_set}</td>
+        <td style="text-align:right;padding:.3rem .5rem;color:${color}"><strong>${pct}%</strong></td>
+        <td style="text-align:right;padding:.3rem .5rem">${r.passed_items}/${r.total_items}</td>
+        <td style="padding:.3rem .5rem;color:#888;font-size:.75rem">${(r.scored_at||'').slice(0,10)}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  }
+
+  let _lrnRuns = [];
+
+  async function loadLearningDashboard() {
+    try {
+      const [sumRes, evalRes, runsRes, growthRes] = await Promise.all([
+        fetch('/api/learning/summary'),
+        fetch('/api/learning/eval-history'),
+        fetch('/api/learning/training-runs'),
+        fetch('/api/learning/card-growth'),
+      ]);
+      const sum = await sumRes.json();
+      document.getElementById('lrn-papers').textContent  = sum.n_papers   ?? '—';
+      document.getElementById('lrn-chunks').textContent  = sum.n_chunks   ?? '—';
+      document.getElementById('lrn-approved').textContent= sum.n_approved_cards ?? '—';
+      document.getElementById('lrn-pending').textContent = sum.n_pending_cards  ?? '—';
+
+      const evalData = await evalRes.json();
+      renderEvalTable(evalData.rows || []);
+
+      const runsData = await runsRes.json();
+      _lrnRuns = runsData.runs || [];
+      const sel = document.getElementById('lrnRunSelect');
+      if (sel) {
+        sel.innerHTML = _lrnRuns.length
+          ? _lrnRuns.map((r, i) => `<option value="${i}">${r.adapter_name}</option>`).join('')
+          : '<option value="">— yok —</option>';
+        if (_lrnRuns.length) renderLossCurve(_lrnRuns[0].curve);
+      }
+
+      const growthData = await growthRes.json();
+      renderCardGrowth(growthData.rows || []);
+    } catch (e) {
+      console.error('learning dashboard yüklenemedi', e);
+    }
+  }
+
+  const lrnRunSel = document.getElementById('lrnRunSelect');
+  if (lrnRunSel) {
+    lrnRunSel.addEventListener('change', () => {
+      const i = parseInt(lrnRunSel.value, 10);
+      if (_lrnRuns[i]) renderLossCurve(_lrnRuns[i].curve);
+    });
+  }
+
+  const lrnRefreshBtn = document.getElementById('lrnRefreshBtn');
+  if (lrnRefreshBtn) lrnRefreshBtn.addEventListener('click', loadLearningDashboard);
+
+  // Auto-load when tab is clicked
+  document.querySelectorAll('.tab[data-tab="learning"]').forEach(btn => {
+    btn.addEventListener('click', loadLearningDashboard);
+  });
+
   // ---------- init ----------
   refreshStatus();
   setInterval(refreshStatus, 30000);

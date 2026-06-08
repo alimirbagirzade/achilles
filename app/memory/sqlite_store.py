@@ -273,6 +273,20 @@ class ArxivSavedQuery(Base):
     created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
 
 
+class EvalHistory(Base):
+    """Adapter versiyonu bazında eval skor geçmişi — öğrenme dinamikleri grafiği için."""
+
+    __tablename__ = "eval_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    adapter_name: Mapped[str] = mapped_column(String(128), index=True)
+    eval_set: Mapped[str] = mapped_column(String(64))
+    pass_rate: Mapped[float] = mapped_column(Float, default=0.0)
+    total_items: Mapped[int] = mapped_column(Integer, default=0)
+    passed_items: Mapped[int] = mapped_column(Integer, default=0)
+    scored_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+
+
 class RagQuery(Base):
     """Records a user query and its expanded variants."""
 
@@ -1072,6 +1086,71 @@ class SqliteStore:
                 }
                 for r in rows
             ]
+
+
+    # ------------------------------------------------------------------ eval history
+
+    def save_eval_history(
+        self,
+        adapter_name: str,
+        eval_set: str,
+        pass_rate: float,
+        total_items: int = 0,
+        passed_items: int = 0,
+    ) -> None:
+        with self.session() as s:
+            s.add(
+                EvalHistory(
+                    adapter_name=adapter_name,
+                    eval_set=eval_set,
+                    pass_rate=pass_rate,
+                    total_items=total_items,
+                    passed_items=passed_items,
+                )
+            )
+
+    def list_eval_history(self, limit: int = 200) -> list[dict[str, Any]]:
+        with self.session() as s:
+            rows = list(
+                s.scalars(
+                    select(EvalHistory)
+                    .order_by(EvalHistory.scored_at)
+                    .limit(limit)
+                )
+            )
+            return [
+                {
+                    "adapter_name": r.adapter_name,
+                    "eval_set": r.eval_set,
+                    "pass_rate": r.pass_rate,
+                    "total_items": r.total_items,
+                    "passed_items": r.passed_items,
+                    "scored_at": r.scored_at,
+                }
+                for r in rows
+            ]
+
+    def list_card_growth(self) -> list[dict[str, Any]]:
+        """Günlük onaylı kart sayısı — öğrenme grafiği için."""
+        with self.session() as s:
+            rows = list(
+                s.execute(
+                    text(
+                        """
+                        SELECT date(approved_at) AS day, COUNT(*) AS cnt
+                        FROM knowledge_cards
+                        WHERE stage = 'approved' AND approved_at IS NOT NULL
+                        GROUP BY day
+                        ORDER BY day
+                        """
+                    )
+                )
+            )
+            cumulative, result = 0, []
+            for day, cnt in rows:
+                cumulative += cnt
+                result.append({"day": day, "daily": cnt, "cumulative": cumulative})
+            return result
 
 
 if __name__ == "__main__":  # pragma: no cover
