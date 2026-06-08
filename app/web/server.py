@@ -144,13 +144,16 @@ def api_status() -> StatusResponse:
     s = get_settings()
     store = SqliteStore()
     emb = EmbeddingService()
+    llm = LocalLLM()
     try:
         n_chunks = ChromaStore().count()
     except Exception:
         n_chunks = 0
     return StatusResponse(
         llm_model=s.llm_model,
-        ollama_available=LocalLLM().available(),
+        llm_backend=s.llm_backend,
+        active_backend=llm.active_backend(),
+        ollama_available=llm.available(),
         embedding_mode=emb.mode,
         n_papers=len(store.list_papers()),
         n_chunks=n_chunks,

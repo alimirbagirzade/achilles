@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 
 class StatusResponse(BaseModel):
     llm_model: str
+    llm_backend: str = "auto"       # ayarlanan backend ("ollama"/"openai"/"auto")
+    active_backend: str = "none"    # gerçekte kullanılan backend
     ollama_available: bool
     embedding_mode: str
     n_papers: int

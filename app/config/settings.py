@@ -31,10 +31,22 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # --- Local LLM ---
+    # --- LLM backend ---
+    # "ollama"  → sadece yerel Ollama kullan
+    # "openai"  → sadece OpenAI API kullan (openai_api_key gerekli)
+    # "auto"    → Ollama dene; çalışmıyorsa OpenAI'ye geç
+    llm_backend: str = "auto"
+
+    # --- Ollama (yerel) ---
     ollama_host: str = "http://localhost:11434"
-    llm_model: str = "qwen2.5-coder:7b"
+    llm_model: str = "qwen3:4b"
     embed_model: str = "nomic-embed-text"
+
+    # --- OpenAI (bulut, opsiyonel) ---
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+    openai_base_url: str = "https://api.openai.com/v1"
+
     # mlx-lm LoRA eğitimi için HuggingFace model ID (Ollama formatı geçersiz)
     mlx_base_model: str = "mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit"
 
