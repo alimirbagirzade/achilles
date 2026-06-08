@@ -1,4 +1,4 @@
-# Achilles Trader AI — Windows Kurulum Scripti
+# Achilles Trader AI -- Windows Kurulum Scripti
 # Gereksinim: Windows 10/11, PowerShell 5.1+, internet baglantisi
 # Kullanim: PowerShell'i YONETICI olarak ac -> cd proje_klasoru -> .\setup.ps1
 
@@ -16,21 +16,23 @@ function Write-Warn($msg)     { Write-Host "  UYARI: $msg" -ForegroundColor Yell
 
 Write-Host "======================================" -ForegroundColor Magenta
 Write-Host "  Achilles Trader AI - Windows Kurulum" -ForegroundColor Magenta
-Write-Host "======================================`n" -ForegroundColor Magenta
+Write-Host "======================================" -ForegroundColor Magenta
+Write-Host ""
 
 # --- 0. LLM Backend secimi ---
-Write-Host "┌────────────────────────────────────────────────┐" -ForegroundColor Cyan
-Write-Host "│  LLM Backend Secin                             │" -ForegroundColor Cyan
-Write-Host "│                                                │" -ForegroundColor Cyan
-Write-Host "│  [1] OpenAI API  — gpt-4o-mini  [ONERILEN]    │" -ForegroundColor Cyan
-Write-Host "│      • Daha hizli ve guclu                     │" -ForegroundColor Cyan
-Write-Host "│      • sk-... API key gerekir (openai.com)     │" -ForegroundColor Cyan
-Write-Host "│  [2] Ollama      — yerel/ucretsiz              │" -ForegroundColor Cyan
-Write-Host "│      • Internet gerektirmez, gizlilik          │" -ForegroundColor Cyan
-Write-Host "│      • 4-14 GB disk + GPU onerilen             │" -ForegroundColor Cyan
-Write-Host "│  [3] Ikisi de (auto) — OpenAI varsa O,         │" -ForegroundColor Cyan
-Write-Host "│      yoksa Ollama'ya gec                       │" -ForegroundColor Cyan
-Write-Host "└────────────────────────────────────────────────┘`n" -ForegroundColor Cyan
+Write-Host "+------------------------------------------------+" -ForegroundColor Cyan
+Write-Host "|  LLM Backend Secin                             |" -ForegroundColor Cyan
+Write-Host "|                                                |" -ForegroundColor Cyan
+Write-Host "|  [1] OpenAI API - gpt-4o-mini  [ONERILEN]     |" -ForegroundColor Cyan
+Write-Host "|      * Daha hizli ve guclu                     |" -ForegroundColor Cyan
+Write-Host "|      * sk-... API key gerekir (openai.com)     |" -ForegroundColor Cyan
+Write-Host "|  [2] Ollama     - yerel/ucretsiz               |" -ForegroundColor Cyan
+Write-Host "|      * Internet gerektirmez, gizlilik          |" -ForegroundColor Cyan
+Write-Host "|      * 4-14 GB disk + GPU onerilen             |" -ForegroundColor Cyan
+Write-Host "|  [3] Ikisi de (auto) - OpenAI varsa O,         |" -ForegroundColor Cyan
+Write-Host "|      yoksa Ollama kullan                       |" -ForegroundColor Cyan
+Write-Host "+------------------------------------------------+" -ForegroundColor Cyan
+Write-Host ""
 
 $backendChoice = Read-Host "  Seciminiz [1/2/3] (Enter = 1)"
 if ($backendChoice -eq "") { $backendChoice = "1" }
@@ -43,7 +45,7 @@ $llmBackend = switch ($backendChoice) {
 
 $openaiKey = ""
 if ($llmBackend -in @("openai","auto")) {
-    $openaiKey = Read-Host "`n  OpenAI API key'inizi girin (bos birakmak Enter): sk-"
+    $openaiKey = Read-Host "`n  OpenAI API key girin (bos birakmak icin Enter): sk-"
     if ($openaiKey -ne "") { $openaiKey = "sk-$openaiKey" }
 }
 
@@ -86,9 +88,9 @@ Write-OK "Bagimliliklar tamam"
 $llmModel = "qwen3:4b"
 Write-Step 4 "Ollama..."
 if ($llmBackend -eq "openai") {
-    Write-OK "Atlandı (OpenAI backend secildi)"
+    Write-OK "Atlandi (OpenAI backend secildi)"
 } elseif ($SkipOllama) {
-    Write-OK "Atlandı (--SkipOllama)"
+    Write-OK "Atlandi (--SkipOllama)"
 } else {
     $ollamaCmd = Get-Command ollama -ErrorAction SilentlyContinue
     if (-not $ollamaCmd) {
@@ -96,7 +98,7 @@ if ($llmBackend -eq "openai") {
         $installer = "$env:TEMP\OllamaSetup.exe"
         try {
             Invoke-WebRequest -Uri "https://ollama.com/download/OllamaSetup.exe" `
-                -OutFile $installer -TimeoutSec 120
+                -OutFile $installer -TimeoutSec 300
             Write-Host "  Ollama kuruluyor... Tamamlaninca bu pencereye don."
             Start-Process -FilePath $installer -Wait
             $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" +
@@ -123,17 +125,17 @@ if ($llmBackend -eq "openai") {
 # --- 5. LLM modeller ---
 Write-Step 5 "LLM modeli seciliyor..."
 if ($llmBackend -eq "openai") {
-    Write-OK "Atlandı (OpenAI kullanılıyor)"
+    Write-OK "Atlandi (OpenAI kullaniliyor)"
 } elseif ($SkipModels) {
-    Write-OK "Atlandı (--SkipModels)"
+    Write-OK "Atlandi (--SkipModels)"
 } else {
     $ramGB = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)
     Write-Host "  Sistemde $ramGB GB RAM tespit edildi." -ForegroundColor White
     Write-Host ""
     Write-Host "  Hangi Ollama modelini kurmak istersiniz?" -ForegroundColor Cyan
-    Write-Host "  [1] qwen3:4b   — ~2.5 GB VRAM, 8 GB+ RAM  (varsayilan, hizli)" -ForegroundColor White
-    Write-Host "  [2] qwen3:8b   — ~5 GB VRAM,  16 GB+ RAM  (daha iyi)" -ForegroundColor White
-    Write-Host "  [3] qwen3:14b  — ~9 GB VRAM,  32 GB+ RAM  (en iyi)" -ForegroundColor White
+    Write-Host "  [1] qwen3:4b  - ~2.5 GB VRAM, 8 GB+ RAM  (varsayilan, hizli)" -ForegroundColor White
+    Write-Host "  [2] qwen3:8b  - ~5 GB VRAM,  16 GB+ RAM  (daha iyi)" -ForegroundColor White
+    Write-Host "  [3] qwen3:14b - ~9 GB VRAM,  32 GB+ RAM  (en iyi)" -ForegroundColor White
     Write-Host ""
 
     if     ($ramGB -ge 32) { $defaultChoice = "3" }
@@ -166,13 +168,11 @@ if (-not (Test-Path ".env")) {
 
 # Backend ve model ayarlarini .env'e yaz
 $envContent = Get-Content ".env"
-# LLM_BACKEND
 if ($envContent -match "^ACHILLES_LLM_BACKEND=") {
     $envContent = $envContent -replace "^ACHILLES_LLM_BACKEND=.*", "ACHILLES_LLM_BACKEND=$llmBackend"
 } else {
     $envContent += "ACHILLES_LLM_BACKEND=$llmBackend"
 }
-# OPENAI KEY
 if ($openaiKey -ne "") {
     if ($envContent -match "^ACHILLES_OPENAI_API_KEY=") {
         $envContent = $envContent -replace "^ACHILLES_OPENAI_API_KEY=.*", "ACHILLES_OPENAI_API_KEY=$openaiKey"
@@ -180,7 +180,6 @@ if ($openaiKey -ne "") {
         $envContent += "ACHILLES_OPENAI_API_KEY=$openaiKey"
     }
 }
-# Ollama model
 if ($llmBackend -ne "openai") {
     if ($envContent -match "^ACHILLES_LLM_MODEL=") {
         $envContent = $envContent -replace "^ACHILLES_LLM_MODEL=.*", "ACHILLES_LLM_MODEL=$llmModel"
@@ -196,19 +195,15 @@ Write-Host "`n  Veritabani ve klasorler olusturuluyor..."
 uv run achilles init
 Write-OK "Veritabani hazir"
 
-Write-Host "`n======================================" -ForegroundColor Green
+Write-Host ""
+Write-Host "======================================" -ForegroundColor Green
 Write-Host "  Kurulum tamamlandi!" -ForegroundColor Green
-Write-Host "======================================`n" -ForegroundColor Green
-
-Write-Host ">>> Donanim profiliniz ve onerilen modeller:" -ForegroundColor Cyan
+Write-Host "======================================" -ForegroundColor Green
 Write-Host ""
-try { uv run achilles recommend } catch { Write-Host "  (profil alinamadi)" -ForegroundColor Gray }
-Write-Host ""
-
 Write-Host "Sunucuyu baslatmak icin:" -ForegroundColor White
 Write-Host "  uv run achilles-web" -ForegroundColor Yellow
-Write-Host "  Tarayicide ac: http://127.0.0.1:8765`n" -ForegroundColor Yellow
-Write-Host "Guncelleme icin (gelistirici yeni surum yayinlayinca):" -ForegroundColor White
-Write-Host "  .\update.ps1`n" -ForegroundColor Yellow
+Write-Host "  Tarayicide ac: http://127.0.0.1:8765" -ForegroundColor Yellow
+Write-Host ""
 Write-Host "NOT: LoRA egitimi sadece macOS Apple Silicon'da calisir." -ForegroundColor DarkYellow
-Write-Host "     Windows'ta RAG, backtest, formul cikarma tam calisir.`n" -ForegroundColor DarkYellow
+Write-Host "     Windows'ta RAG, backtest, formul cikarma tam calisir." -ForegroundColor DarkYellow
+Write-Host ""
