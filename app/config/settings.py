@@ -47,6 +47,14 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"
     openai_base_url: str = "https://api.openai.com/v1"
 
+    # --- Anthropic (bulut, opsiyonel) ---
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-haiku-4-5-20251001"
+
+    # --- Google (bulut, opsiyonel) ---
+    google_api_key: str = ""
+    google_model: str = "gemini-2.0-flash"
+
     # mlx-lm LoRA eğitimi için HuggingFace model ID (Ollama formatı geçersiz)
     mlx_base_model: str = "mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit"
 
