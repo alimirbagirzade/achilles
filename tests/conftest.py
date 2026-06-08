@@ -4,7 +4,25 @@ from __future__ import annotations
 
 import os
 
+import httpx
 import pytest
+
+
+def _ollama_running() -> bool:
+    try:
+        r = httpx.get("http://localhost:11434/api/tags", timeout=2.0)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+def pytest_collection_modifyitems(config, items):
+    if _ollama_running():
+        return
+    skip = pytest.mark.skip(reason="Ollama çalışmıyor — @pytest.mark.ollama testi atlandı")
+    for item in items:
+        if item.get_closest_marker("ollama"):
+            item.add_marker(skip)
 
 
 @pytest.fixture(autouse=True, scope="session")
