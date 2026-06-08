@@ -1046,6 +1046,48 @@ def api_backtest_pine(backtest_id: str) -> PineExportResponse:
 
 
 # ---------- arXiv makale arama ve indirme ----------
+@app.get("/api/profile")
+def api_hardware_profile() -> dict:
+    """Donanım profili döndürür (auth gerekmez — kurulum popup için)."""
+    from app.agents.system_profiler.profiler import collect
+
+    p = collect()
+    return {
+        "os": p.os,
+        "arch": p.arch,
+        "cpu": p.cpu.name,
+        "cores": p.cpu.cores,
+        "ram_gb": round(p.memory.ram_total_gb, 1),
+        "gpu": p.gpu.name,
+        "gpu_vendor": p.gpu.vendor,
+        "metal": p.gpu.metal,
+        "cuda": p.gpu.cuda,
+        "lora_supported": p.os == "macOS" and p.arch == "arm64",
+    }
+
+
+@app.get("/api/recommend")
+def api_model_recommend() -> dict:
+    """RAM'e göre önerilen Ollama modellerini döndürür (auth gerekmez)."""
+    from app.agents.model_advisor.advisor import recommend
+    from app.agents.system_profiler.profiler import collect
+
+    profile = collect()
+    result = recommend(profile, task="general", top_k=3)
+    recommended = [
+        {
+            "rank": r.rank,
+            "name": r.display_name,
+            "ollama": r.ollama_name,
+            "confidence": round(r.confidence * 100),
+            "reasons": r.reasons[:2],
+        }
+        for r in result.recommended
+    ]
+    rejected = [{"name": r.display_name, "reason": r.reason} for r in result.rejected[:3]]
+    return {"recommended": recommended, "rejected": rejected}
+
+
 @app.get("/api/arxiv/search", response_model=ArxivSearchResponse, dependencies=[api_auth])
 def api_arxiv_search(q: str, max_results: int = 10) -> ArxivSearchResponse:
     """arXiv'de ara (indirme yok)."""

@@ -100,6 +100,12 @@ Write-OK "Veritabani hazir"
 Write-Host "`n======================================" -ForegroundColor Green
 Write-Host "  Kurulum tamamlandi!" -ForegroundColor Green
 Write-Host "======================================`n" -ForegroundColor Green
+
+Write-Host ">>> Donanim profiliniz ve onerilen modeller:" -ForegroundColor Cyan
+Write-Host ""
+try { uv run achilles recommend } catch { Write-Host "  (profil alinamadi)" -ForegroundColor Gray }
+Write-Host ""
+
 Write-Host "Sunucuyu baslatmak icin:" -ForegroundColor White
 Write-Host "  uv run achilles-web" -ForegroundColor Yellow
 Write-Host "  Tarayicide ac: http://127.0.0.1:8765`n" -ForegroundColor Yellow

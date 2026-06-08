@@ -408,6 +408,10 @@
           <h3>Canlı Durum</h3>
           <div id="systemStatusDisplay" class="muted small">Yükleniyor…</div>
         </div>
+        <div class="card" style="margin-bottom:16px" id="hwProfileCard">
+          <h3>Donanım Profili & Model Önerisi</h3>
+          <div id="hwProfileBody" class="muted small">Yükleniyor…</div>
+        </div>
         <div class="about-grid">
           <div class="card">
             <h3>Katmanlar</h3>
@@ -471,6 +475,18 @@
       <div class="modal-box">
         <button class="modal-close" id="cardClose" aria-label="Kapat">✕</button>
         <div id="cardBody"></div>
+      </div>
+    </div>
+
+    <!-- Kurulum popup — ilk açılışta donanım profili ve model önerisi -->
+    <div id="setupModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="setupModalTitle">
+      <div class="modal-box" style="max-width:600px">
+        <button class="modal-close" id="setupModalClose" aria-label="Kapat">✕</button>
+        <h2 id="setupModalTitle" style="margin-top:0">Sisteminiz için Model Önerisi</h2>
+        <div id="setupModalBody"><p class="muted small">Yükleniyor…</p></div>
+        <div style="margin-top:16px;text-align:right">
+          <button class="btn" id="setupModalDismiss">Anladım, gösterme</button>
+        </div>
       </div>
     </div>
 

@@ -1823,6 +1823,67 @@
     refreshStatus();
   });
 
+  // ---------- donanım profili + model önerisi ----------
+  function renderHwProfile(profile, recs) {
+    var loraNote = profile.lora_supported
+      ? '<span style="color:#4ade80">✓ LoRA eğitimi destekleniyor</span>'
+      : '<span style="color:#facc15">LoRA eğitimi bu platformda desteklenmez (yalnızca macOS Apple Silicon)</span>';
+    var recsHtml = recs.recommended.length
+      ? recs.recommended.map(function (r) {
+          return (
+            '<tr><td><strong>' + r.name + '</strong></td>' +
+            '<td><code>' + r.ollama + '</code></td>' +
+            '<td>' + r.confidence + '%</td></tr>'
+          );
+        }).join('')
+      : '<tr><td colspan="3" class="muted">Öneri bulunamadı.</td></tr>';
+
+    return (
+      '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:10px">' +
+      '<tr><td style="padding:3px 8px 3px 0"><strong>İşletim Sistemi</strong></td><td>' + profile.os + ' ' + profile.arch + '</td></tr>' +
+      '<tr><td style="padding:3px 8px 3px 0"><strong>CPU</strong></td><td>' + profile.cpu + ' (' + profile.cores + ' çekirdek)</td></tr>' +
+      '<tr><td style="padding:3px 8px 3px 0"><strong>RAM</strong></td><td>' + profile.ram_gb + ' GB</td></tr>' +
+      '<tr><td style="padding:3px 8px 3px 0"><strong>GPU</strong></td><td>' + profile.gpu + '</td></tr>' +
+      '</table>' +
+      loraNote +
+      '<h4 style="margin:12px 0 6px">Önerilen Modeller</h4>' +
+      '<table style="width:100%;border-collapse:collapse;font-size:13px">' +
+      '<thead><tr><th style="text-align:left;padding-bottom:4px">Model</th><th style="text-align:left">Ollama Komutu</th><th style="text-align:left">Uyum</th></tr></thead>' +
+      '<tbody>' + recsHtml + '</tbody></table>'
+    );
+  }
+
+  function loadHwProfile(targetEl) {
+    Promise.all([
+      fetch('/api/profile').then(function (r) { return r.json(); }),
+      fetch('/api/recommend').then(function (r) { return r.json(); })
+    ]).then(function (results) {
+      targetEl.innerHTML = renderHwProfile(results[0], results[1]);
+    }).catch(function () {
+      targetEl.innerHTML = '<span class="muted small">Profil alınamadı.</span>';
+    });
+  }
+
+  var hwProfileBody = document.getElementById('hwProfileBody');
+  if (hwProfileBody) loadHwProfile(hwProfileBody);
+
+  var setupModal = document.getElementById('setupModal');
+  var setupModalBody = document.getElementById('setupModalBody');
+  var setupModalClose = document.getElementById('setupModalClose');
+  var setupModalDismiss = document.getElementById('setupModalDismiss');
+
+  if (setupModal && !localStorage.getItem('achilles_setup_seen')) {
+    loadHwProfile(setupModalBody);
+    setupModal.classList.remove('hidden');
+  }
+
+  function closeSetupModal() {
+    if (setupModal) setupModal.classList.add('hidden');
+    localStorage.setItem('achilles_setup_seen', '1');
+  }
+  if (setupModalClose) setupModalClose.addEventListener('click', closeSetupModal);
+  if (setupModalDismiss) setupModalDismiss.addEventListener('click', closeSetupModal);
+
   // ---------- init ----------
   refreshStatus();
   setInterval(refreshStatus, 30000);

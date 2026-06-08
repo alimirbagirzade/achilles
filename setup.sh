@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
-# Achilles Trader AI — tek komutla kurulum (macOS Apple Silicon)
+# Achilles Trader AI — tek komutla kurulum (macOS + Linux)
 # Kullanım: bash setup.sh
 set -euo pipefail
 
+OS="$(uname -s)"
+ARCH="$(uname -m)"
+
 echo "=== Achilles Trader AI Kurulum ==="
+echo "    Platform: $OS $ARCH"
 echo ""
 
 # --- 1. uv ---
 if ! command -v uv &>/dev/null; then
   echo "[1/5] uv kuruluyor..."
   curl -LsSf https://astral.sh/uv/install.sh | sh
-  export PATH="$HOME/.cargo/bin:$PATH"
+  export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
 else
   echo "[1/5] uv zaten kurulu: $(uv --version)"
 fi
@@ -21,17 +25,36 @@ uv sync
 
 # --- 3. Ollama ---
 if ! command -v ollama &>/dev/null; then
-  echo "[3/5] Ollama kuruluyor (brew)..."
-  if ! command -v brew &>/dev/null; then
-    echo "  Homebrew bulunamadı. Manuel olarak kur: https://brew.sh"
-    echo "  Sonra: brew install ollama && brew services start ollama"
+  echo "[3/5] Ollama kuruluyor..."
+  if [ "$OS" = "Darwin" ]; then
+    if command -v brew &>/dev/null; then
+      brew install ollama
+      brew services start ollama
+    else
+      echo "  Homebrew bulunamadı — Ollama'yı manuel indir: https://ollama.com/download"
+      echo "  Kur ve çalıştır, sonra bu scripti yeniden başlat."
+      exit 1
+    fi
+  elif [ "$OS" = "Linux" ]; then
+    curl -fsSL https://ollama.com/install.sh | sh
+    # Systemd varsa servisi başlat
+    if command -v systemctl &>/dev/null; then
+      sudo systemctl enable --now ollama 2>/dev/null || true
+    else
+      # Arka planda başlat
+      ollama serve &>/tmp/ollama.log &
+      sleep 3
+    fi
   else
-    brew install ollama
-    brew services start ollama
+    echo "  Desteklenmeyen platform: $OS"
+    echo "  Ollama'yı manuel kur: https://ollama.com/download"
+    exit 1
   fi
 else
   echo "[3/5] Ollama zaten kurulu."
-  brew services start ollama 2>/dev/null || true
+  if [ "$OS" = "Darwin" ]; then
+    brew services start ollama 2>/dev/null || true
+  fi
 fi
 
 # --- 4. Ollama modelleri ---
@@ -46,6 +69,22 @@ uv run achilles init
 
 echo ""
 echo "=== Kurulum tamamlandı! ==="
+echo ""
+
+# --- Donanım profili ve model önerisi ---
+echo ">>> Donanımınız için önerilen modeller:"
+echo ""
+uv run achilles recommend 2>/dev/null || true
+echo ""
+
+# LoRA notu
+if [ "$OS" = "Darwin" ] && [ "$ARCH" = "arm64" ]; then
+  echo "  LoRA eğitimi: destekleniyor (Apple Silicon)"
+else
+  echo "  LoRA eğitimi: bu platformda desteklenmez (yalnızca macOS Apple Silicon)."
+  echo "  RAG, backtest ve formula çıkarma tam çalışır."
+fi
+
 echo ""
 echo "Web arayüzünü başlatmak için:"
 echo "  uv run achilles-web"
