@@ -60,7 +60,19 @@ adapters/
 wandb/
 mlruns/
 reports/lora/private/
+reports/lora/*.md
 registry/adapters/*.jsonl
+
+# Üretilen veri setleri
+data/training/unified_sft.jsonl
+datasets/*.jsonl
+
+# Claude worktrees (geçici ajan dizinleri)
+.claude/worktrees/
+
+# Yanlış yere oluşan DB dosyaları
+storage/*.db
+storage/*.db-*
 
 # OS / editor
 .DS_Store

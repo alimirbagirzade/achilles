@@ -8,20 +8,24 @@
 
 ---
 
-## ⚡ 30 Saniyede Başla
+## ⚡ Kurulum (Yeni Bilgisayar)
 
 ```bash
-# 1. Kurulum
+git clone https://github.com/alimirbagirzade/achilles.git
+cd achilles
+bash setup.sh          # uv + Ollama + modeller + init hepsini yapar
+uv run achilles-web    # → http://127.0.0.1:8765
+```
+
+> **Gereksinimler:** macOS Apple Silicon · Homebrew · internet bağlantısı (ilk kurulumda)
+
+Manuel adımlar (setup.sh yerine):
+```bash
+# uv kur: https://astral.sh/uv
 uv sync
+ollama pull qwen2.5-coder:3b && ollama pull nomic-embed-text
 uv run achilles init
-
-# 2. Ollama modellerini indir (ilk seferde gerekli)
-ollama pull qwen2.5-coder:3b
-ollama pull nomic-embed-text
-
-# 3. Web arayüzünü başlat
 uv run achilles-web
-# → Tarayıcıda aç: http://127.0.0.1:8765
 ```
 
 ---
@@ -30,14 +34,14 @@ uv run achilles-web
 
 | Bileşen | Durum | Detay |
 |---------|:-----:|-------|
-| 🐍 Python / Ortam | ✅ | Python 3.12 · uv · ruff · mypy · 329 test geçiyor |
-| 📚 PDF → RAG | ✅ | 7 makale · 567 chunk · Ollama embedding |
+| 🐍 Python / Ortam | ✅ | Python 3.12 · uv · ruff · mypy |
+| 📚 PDF → RAG | ✅ | PDF yükle → chunk → ChromaDB · Ollama embedding |
 | 🧠 Trader Beyin | ✅ | Formül çıkarımı → sentez → backtest → yansıma |
-| 📈 Backtest | ✅ | BTCUSD 1H · 71k bar · Sharpe 2.17 · +2603% |
+| 📈 Backtest | ✅ | Sentetik / gerçek CSV · komisyon + slippage dahil |
 | 📝 Pine Script | ✅ | `achilles pine` → TradingView v5 taslak |
-| 🎓 LoRA Eğitimi | ✅ | `achilles_lora_v2` · 300 iter · loss 0.028 |
+| 🎓 LoRA Eğitimi | ✅ | Web UI'dan tek tık · canlı ilerleme çubuğu · SSE stream |
 | 📊 Paper Mastery | ✅ | 0-100 RAG kalite skoru · deterministik · LLM gerektirmez |
-| 🖥️ Web Arayüzü | ✅ | 8 sekme · PDF yükle · soru sor · backtest et |
+| 🖥️ Web Arayüzü | ✅ | 8 sekme · PDF yükle · soru sor · backtest · eğitim |
 
 ---
 
