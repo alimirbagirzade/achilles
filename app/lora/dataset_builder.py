@@ -39,8 +39,8 @@ def _build_answer(card_json: dict) -> str:
     """
     parts: list[str] = []
 
-    for field in ("summary", "main_claim"):
-        val = str(card_json.get(field) or "").strip()
+    for key in ("summary", "main_claim"):
+        val = str(card_json.get(key) or "").strip()
         if val:
             parts.append(val)
 

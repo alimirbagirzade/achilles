@@ -92,7 +92,8 @@ async def _lifespan(app: FastAPI):
     get_settings().ensure_dirs()
     logger.info("Achilles web başladı — host=%s port=%s", _settings.web_host, _settings.web_port)
     from app.lora.auto_pipeline import get_auto_pipeline
-    _asyncio.create_task(get_auto_pipeline().background_loop())
+    _bg_task = _asyncio.create_task(get_auto_pipeline().background_loop())
+    _bg_task.add_done_callback(lambda _t: None)
     yield
 
 
@@ -1052,8 +1053,10 @@ def api_backtest_pine(backtest_id: str) -> PineExportResponse:
 @app.get("/api/learning/summary")
 def api_learning_summary() -> dict:
     """Makale / chunk / kart istatistikleri — dashboard özeti."""
+    from sqlalchemy import func
+    from sqlalchemy import select as _sel
+
     from app.memory.sqlite_store import Chunk, KnowledgeCard, SqliteStore
-    from sqlalchemy import func, select as _sel
     store = SqliteStore()
     papers = store.list_papers()
     approved = store.list_approved_cards()
@@ -1309,11 +1312,13 @@ def api_run_arxiv_query(query_id: str) -> ArxivFetchResponse:
     skipped_count = len(fetch_results) - len(downloaded)
     ingested = 0
     if row["auto_ingest"] and downloaded:
+        from app.ingestion.paper_loader import DiscoveredPaper, compute_file_hash
         from app.memory.paper_indexer import PaperIndexer
 
         for r in downloaded:
             try:
-                PaperIndexer().index_paper(r.local_path)
+                disc = DiscoveredPaper(path=r.pdf_path, file_hash=compute_file_hash(r.pdf_path))
+                PaperIndexer().ingest_one(disc)
                 ingested += 1
             except Exception:
                 pass

@@ -12,13 +12,13 @@ import json
 import re
 import subprocess
 import threading
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
-from typing import AsyncIterator
 
 
-class TrainState(str, Enum):
+class TrainState(StrEnum):
     IDLE = "idle"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -175,11 +175,10 @@ class TrainingManager:
                 q.put_nowait(msg)
             except asyncio.QueueFull:
                 dead.append(q)
+        import contextlib
         for q in dead:
-            try:
+            with contextlib.suppress(ValueError):
                 self._subscribers.remove(q)
-            except ValueError:
-                pass
 
     async def subscribe(self) -> AsyncIterator[dict]:
         q: asyncio.Queue = asyncio.Queue(maxsize=500)
@@ -188,17 +187,16 @@ class TrainingManager:
             while True:
                 try:
                     msg = await asyncio.wait_for(q.get(), timeout=15.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield {"type": "ping", **self._progress.to_dict()}
                     continue
                 yield msg
                 if msg.get("type") in ("done", "stopped"):
                     break
         finally:
-            try:
+            import contextlib
+            with contextlib.suppress(ValueError):
                 self._subscribers.remove(q)
-            except ValueError:
-                pass
 
 
 _manager: TrainingManager | None = None

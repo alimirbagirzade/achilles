@@ -826,8 +826,8 @@ def oss_install(
         if result.recommended:
             top = result.recommended[0]
             console.print(f"[bold]Öneri :[/bold] {top.display_name} ({top.ollama_name})")
-            for r in top.reasons:
-                console.print(f"  • {r}")
+            for reason in top.reasons:
+                console.print(f"  • {reason}")
         return
 
     ollama_name = model
@@ -1050,7 +1050,7 @@ def reward_analyze(
     )
 
     if build_dpo:
-        pairs = build_dpo_dataset(output_path=output)
+        pairs = build_dpo_dataset(output_path=Path(output))
         console.print(f"[green]✓ {len(pairs)} DPO çifti → {output}[/green]")
     elif stats["dpo_eligible_pairs"] > 0:
         console.print("[dim]DPO veri seti için: achilles reward-analyze --build-dpo[/dim]")
@@ -1250,7 +1250,7 @@ def arxiv_sync(
         console.print(f"  ↻  {q['query'][:60]} ...")
         try:
             results = fetch_arxiv_papers(q["query"], max_results=q["max_results"])
-            new_count = sum(1 for r in results if r.status == "downloaded")
+            new_count = sum(1 for r in results if not r.skipped)
             total_new += new_count
             store.mark_arxiv_query_ran(q["query_id"])
             console.print(f"     [green]✓[/green] {new_count} yeni makale / {len(results)} toplam")

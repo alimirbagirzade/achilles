@@ -170,7 +170,7 @@ class AutoLoRAPipeline:
                     )
                     log.info("Auto-LoRA: Gate geçti → kullanıcı onayı bekleniyor")
                 else:
-                    failed = [s.gate for s in report.stages if not s.passed]
+                    failed = [s.name for s in report.stages if not s.passed]
                     self._state.stage = PipelineStage.GATE_FAILED
                     self._state.last_gate_result = "failed"
                     self._state.gate_summary = f"Başarısız gate'ler: {failed}"
@@ -216,7 +216,7 @@ class AutoLoRAPipeline:
             f"--iters {iters}"
         )
 
-        ok = manager.start(cmd, adapter_name, iters)
+        ok = manager.start(cmd.split(), adapter_name, iters)
         if not ok:
             return {"ok": False, "reason": "TrainingManager başlatılamadı (başka eğitim çalışıyor)"}
 
@@ -227,12 +227,13 @@ class AutoLoRAPipeline:
             self._state.last_error = ""
             self._save_state()
 
-        asyncio.create_task(self._watch_training(adapter_name))
+        task = asyncio.create_task(self._watch_training(adapter_name))
+        task.add_done_callback(lambda _t: None)
         return {"ok": True, "adapter_name": adapter_name}
 
     async def _watch_training(self, adapter_name: str) -> None:
         """Eğitim tamamlanınca otomatik eval çalıştır."""
-        from app.web.training_manager import get_training_manager, TrainState
+        from app.web.training_manager import TrainState, get_training_manager
 
         manager = get_training_manager()
         try:
@@ -334,13 +335,13 @@ class AutoLoRAPipeline:
     async def _register_adapter(self, adapter_name: str) -> None:
         try:
             from app.config.settings import get_settings
-            from app.lora.adapter_registry import AdapterRecord, AdapterStatus, AdapterRegistry
+            from app.lora.adapter_registry import AdapterRecord, AdapterRegistry, AdapterStatus
 
             settings = get_settings()
             registry = AdapterRegistry()
             record = AdapterRecord(
                 base_model=settings.mlx_base_model,
-                adapter_path=f"models/adapters/{adapter_name}",
+                adapter_name=adapter_name,
                 eval_score=self._state.eval_scores.get(
                     "discipline_core", {}
                 ).get("pass_rate"),

@@ -59,7 +59,10 @@ fi
 
 # --- 4. Ollama modelleri ---
 echo "[4/5] LLM modelleri indiriliyor (ilk seferde ~2-4 GB)..."
-ollama pull qwen2.5-coder:3b
+# qwen3:4b — varsayilan (~2.5GB, 8GB RAM yeterli, thinking modu destekli)
+# 16GB+ icin: ollama pull qwen3:8b
+# 32GB+ icin: ollama pull qwen3:14b
+ollama pull qwen3:4b
 ollama pull nomic-embed-text
 
 # --- 5. Proje başlatma ---

@@ -77,8 +77,8 @@ Write-Step 5 "LLM modelleri indiriliyor (ilk seferinde ~2-4 GB)..."
 if ($SkipModels) {
     Write-OK "Atlandı (--SkipModels)"
 } else {
-    Write-Host "  qwen2.5-coder:3b indiriliyor..."
-    ollama pull qwen2.5-coder:3b
+    Write-Host "  qwen3:4b indiriliyor (~2.5GB, 8GB RAM yeterli)..."
+    ollama pull qwen3:4b
     Write-Host "  nomic-embed-text indiriliyor..."
     ollama pull nomic-embed-text
     Write-OK "Modeller hazir"
