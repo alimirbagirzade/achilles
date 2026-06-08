@@ -65,28 +65,42 @@ Kurulum başında backend sorulur — OpenAI seçersen Ollama adımı atlanır. 
 ### Windows 10 / 11
 
 > **NOT:** LoRA eğitimi (Eğitim sekmesi) sadece macOS Apple Silicon'da çalışır.
-> Windows'ta RAG, backtest, formül çıkarma, web arayüzü tam çalışır.
+> Windows'ta RAG, backtest, formul cikarma, web arayuzu tam calisir.
 
-**Adım 1 — Git ile projeyi indir**
+**Adim 0 — On gereksinimler (bir kez)**
+
+| Program | Neden | Indir |
+|---------|-------|-------|
+| **Python 3.12** | Zorunlu — olmadan hicbir sey calismaz | https://python.org/downloads |
+| **Git** | Projeyi indirmek icin | https://git-scm.com/download/win |
+
+> Python kurulumunda **"Add Python to PATH"** kutusunu mutlaka isaretle!
+
+Hizli kurulum (Windows 11 winget ile):
+```powershell
+winget install Python.Python.3.12
+winget install Git.Git
+# Kurulumdan sonra PowerShell'i kapat ve yeniden ac
+```
+
+**Adim 1 — Projeyi indir**
 
 ```powershell
-# PowerShell'i YÖNETİCİ olarak aç
+# PowerShell'i YONETiCi olarak ac
 git clone https://github.com/alimirbagirzade/achilles.git
 cd achilles
 ```
 
-Git kurulu değilse: https://git-scm.com/download/win adresinden kur.
-
-**Adım 2 — Otomatik kurulum**
+**Adim 2 — Otomatik kurulum**
 
 ```powershell
-# Execution Policy hatası alırsan önce şunu çalıştır:
+# Execution Policy hatasi alirsan once sunu calistir:
 Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force
 
 .\setup.ps1
 ```
 
-Script şunları yapar: Python 3.12 kontrol → uv kur → bağımlılıklar → **backend seç** (OpenAI/Ollama) → modelleri kur → veritabanı oluştur.
+Script sunlari yapar: Python kontrol → uv kur → bagimliliklar → **backend sec** (OpenAI/Ollama) → modelleri kur → veritabani olustur.
 
 **Adım 3 — Sunucuyu başlat**
 

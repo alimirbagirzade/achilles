@@ -53,12 +53,25 @@ if ($llmBackend -in @("openai","auto")) {
 Write-Step 1 "Python 3.12 kontrol ediliyor..."
 $py = Get-Command python -ErrorAction SilentlyContinue
 if (-not $py) {
-    Write-Warn "Python bulunamadi."
-    Write-Warn "https://python.org adresinden Python 3.12 indir ve kur."
-    Write-Warn "Kurulumda 'Add Python to PATH' secenegini mutlaka isaretle!"
-    Start-Process "https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe"
-    Read-Host "Python kurulduktan sonra Enter'a bas ve bu scripti yeniden calistir"
-    exit 1
+    Write-Warn "Python bulunamadi. Otomatik kuruluyor..."
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if ($winget) {
+        Write-Host "  winget ile Python 3.12 kuruluyor..." -ForegroundColor Cyan
+        winget install --id Python.Python.3.12 --silent --accept-package-agreements --accept-source-agreements
+        # PATH'i guncelle
+        $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" +
+                    [System.Environment]::GetEnvironmentVariable("PATH","User")
+        $py = Get-Command python -ErrorAction SilentlyContinue
+    }
+    if (-not $py) {
+        Write-Warn "Python otomatik kurulamadi. Manuel kur:"
+        Write-Host "  1. https://python.org/downloads adresine git" -ForegroundColor White
+        Write-Host "  2. Python 3.12 indir ve calistir" -ForegroundColor White
+        Write-Host "  3. Kurulumda 'Add Python to PATH' kutusunu MUTLAKA isaretle!" -ForegroundColor Yellow
+        Write-Host "  4. PowerShell'i kapat, yeniden ac, bu scripti tekrar calistir" -ForegroundColor White
+        Start-Process "https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe"
+        exit 1
+    }
 }
 $pyVer = python --version 2>&1
 Write-OK $pyVer
