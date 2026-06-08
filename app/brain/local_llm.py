@@ -42,7 +42,7 @@ class LocalLLM:
         temperature: float = 0.2,
         max_tokens: int | None = None,
         fmt: str | None = None,
-        timeout: int = 300,
+        timeout: int = 600,
     ) -> str:
         """Tek seferlik üretim.
 
