@@ -2,15 +2,10 @@
 # Gereksinim: Windows 10/11, PowerShell 5.1+, internet baglantisi
 # Kullanim: PowerShell'i YONETICI olarak ac -> cd proje_klasoru -> .\setup.ps1
 
-param(
-    [switch]$SkipOllama,   # Ollama zaten kuruluysa atla
-    [switch]$SkipModels    # Modeller zaten indirilmisse atla
-)
-
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-function Write-Step($n, $msg) { Write-Host "`n[$n/5] $msg" -ForegroundColor Cyan }
+function Write-Step($n, $msg) { Write-Host "`n[$n/3] $msg" -ForegroundColor Cyan }
 function Write-OK($msg)       { Write-Host "  OK: $msg" -ForegroundColor Green }
 function Write-Warn($msg)     { Write-Host "  UYARI: $msg" -ForegroundColor Yellow }
 
@@ -18,35 +13,12 @@ Write-Host "======================================" -ForegroundColor Magenta
 Write-Host "  Achilles Trader AI - Windows Kurulum" -ForegroundColor Magenta
 Write-Host "======================================" -ForegroundColor Magenta
 Write-Host ""
-
-# --- 0. LLM Backend secimi ---
-Write-Host "+------------------------------------------------+" -ForegroundColor Cyan
-Write-Host "|  LLM Backend Secin                             |" -ForegroundColor Cyan
-Write-Host "|                                                |" -ForegroundColor Cyan
-Write-Host "|  [1] OpenAI API - gpt-4o-mini  [ONERILEN]     |" -ForegroundColor Cyan
-Write-Host "|      * Daha hizli ve guclu                     |" -ForegroundColor Cyan
-Write-Host "|      * sk-... API key gerekir (openai.com)     |" -ForegroundColor Cyan
-Write-Host "|  [2] Ollama     - yerel/ucretsiz               |" -ForegroundColor Cyan
-Write-Host "|      * Internet gerektirmez, gizlilik          |" -ForegroundColor Cyan
-Write-Host "|      * 4-14 GB disk + GPU onerilen             |" -ForegroundColor Cyan
-Write-Host "|  [3] Ikisi de (auto) - OpenAI varsa O,         |" -ForegroundColor Cyan
-Write-Host "|      yoksa Ollama kullan                       |" -ForegroundColor Cyan
-Write-Host "+------------------------------------------------+" -ForegroundColor Cyan
+Write-Host "  LLM: OpenAI API (gpt-4o-mini)" -ForegroundColor Cyan
 Write-Host ""
 
-$backendChoice = Read-Host "  Seciminiz [1/2/3] (Enter = 1)"
-if ($backendChoice -eq "") { $backendChoice = "1" }
-
-$llmBackend = switch ($backendChoice) {
-    "2" { "ollama" }
-    "3" { "auto"   }
-    default { "openai" }
-}
-
-$openaiKey = ""
-if ($llmBackend -in @("openai","auto")) {
-    $openaiKey = Read-Host "`n  OpenAI API key girin (bos birakmak icin Enter): sk-"
-    if ($openaiKey -ne "") { $openaiKey = "sk-$openaiKey" }
+$openaiKey = Read-Host "  OpenAI API key girin (sk-...)"
+if ($openaiKey -eq "") {
+    Write-Warn "API key bos birakildi. Sonradan .env dosyasina ekleyebilirsiniz."
 }
 
 # --- 1. Python 3.12 kontrol ---
@@ -58,7 +30,6 @@ if (-not $py) {
     if ($winget) {
         Write-Host "  winget ile Python 3.12 kuruluyor..." -ForegroundColor Cyan
         winget install --id Python.Python.3.12 --silent --accept-package-agreements --accept-source-agreements
-        # PATH'i guncelle
         $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" +
                     [System.Environment]::GetEnvironmentVariable("PATH","User")
         $py = Get-Command python -ErrorAction SilentlyContinue
@@ -76,8 +47,8 @@ if (-not $py) {
 $pyVer = python --version 2>&1
 Write-OK $pyVer
 
-# --- 2. uv kur ---
-Write-Step 2 "uv paket yoneticisi..."
+# --- 2. uv + bagimliliklar ---
+Write-Step 2 "uv ve Python bagimliliklar..."
 $uvCmd = Get-Command uv -ErrorAction SilentlyContinue
 if (-not $uvCmd) {
     Write-Host "  uv indiriliyor..."
@@ -91,108 +62,11 @@ if (-not $uvCmd) {
     }
 }
 Write-OK "uv $(uv --version)"
-
-# --- 3. Python bagimliliklar ---
-Write-Step 3 "Python bagimliliklar yukleniyor..."
 uv sync
 Write-OK "Bagimliliklar tamam"
 
-# --- 4. Ollama (yalnizca ollama veya auto seciliyse) ---
-$llmModel = "qwen3:4b"
-Write-Step 4 "Ollama..."
-if ($llmBackend -eq "openai") {
-    Write-OK "Atlandi (OpenAI backend secildi)"
-} elseif ($SkipOllama) {
-    Write-OK "Atlandi (--SkipOllama)"
-} else {
-    $ollamaCmd = Get-Command ollama -ErrorAction SilentlyContinue
-    if (-not $ollamaCmd) {
-        Write-Host "  Ollama indiriliyor (~500 MB)..."
-        $installer = "$env:TEMP\OllamaSetup.exe"
-        try {
-            Invoke-WebRequest -Uri "https://ollama.com/download/OllamaSetup.exe" `
-                -OutFile $installer -TimeoutSec 300
-            Write-Host "  Ollama kuruluyor... Tamamlaninca bu pencereye don."
-            Start-Process -FilePath $installer -Wait
-            $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" +
-                        [System.Environment]::GetEnvironmentVariable("PATH","User")
-        } catch {
-            Write-Warn "Otomatik indirme basarisiz oldu."
-            Write-Host "  1. https://ollama.com/download adresine git" -ForegroundColor White
-            Write-Host "  2. 'Download for Windows' butonuna tikla" -ForegroundColor White
-            Write-Host "  3. OllamaSetup.exe'yi indir ve calistir" -ForegroundColor White
-            Read-Host "`n  Ollama kurulduktan sonra Enter'a bas"
-            $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","Machine") + ";" +
-                        [System.Environment]::GetEnvironmentVariable("PATH","User")
-        }
-        $ollamaCmd = Get-Command ollama -ErrorAction SilentlyContinue
-        if (-not $ollamaCmd) {
-            Write-Warn "Ollama PATH'te bulunamadi. Kurulumdan sonra PowerShell'i yeniden ac."
-            exit 1
-        }
-    } else {
-        Write-OK "Ollama zaten kurulu"
-    }
-}
-
-# --- 5. LLM modeller ---
-Write-Step 5 "LLM modeli seciliyor..."
-if ($llmBackend -eq "openai") {
-    Write-OK "Atlandi (OpenAI kullaniliyor)"
-} elseif ($SkipModels) {
-    Write-OK "Atlandi (--SkipModels)"
-} else {
-    $ramGB = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)
-    Write-Host "  Sistemde $ramGB GB RAM tespit edildi." -ForegroundColor White
-    Write-Host ""
-    Write-Host "+------------------------------------------------------------+" -ForegroundColor Cyan
-    Write-Host "|  Acik Kaynak (OSS) Model Secin                             |" -ForegroundColor Cyan
-    Write-Host "+------------------------------------------------------------+" -ForegroundColor Cyan
-    Write-Host "|  --- Qwen3 (Alibaba) ---                                   |" -ForegroundColor White
-    Write-Host "|  [1] qwen3:4b   - ~2.5 GB  8GB+ RAM   hizli, trading OK   |" -ForegroundColor White
-    Write-Host "|  [2] qwen3:8b   - ~5 GB   16GB+ RAM   dengeli             |" -ForegroundColor White
-    Write-Host "|  [3] qwen3:14b  - ~9 GB   32GB+ RAM   guclu               |" -ForegroundColor White
-    Write-Host "|  [4] qwen3:30b  - ~20 GB  48GB+ RAM   cok guclu           |" -ForegroundColor White
-    Write-Host "|  --- Llama 3.1 (Meta) ---                                  |" -ForegroundColor White
-    Write-Host "|  [5] llama3.1:8b  - ~5 GB  16GB+ RAM  genel amac          |" -ForegroundColor White
-    Write-Host "|  [6] llama3.1:70b - ~40 GB 80GB+ RAM  en guclu llama      |" -ForegroundColor White
-    Write-Host "|  --- Mistral ---                                            |" -ForegroundColor White
-    Write-Host "|  [7] mistral:7b   - ~4 GB  8GB+ RAM   hizli, hafif        |" -ForegroundColor White
-    Write-Host "|  --- DeepSeek ---                                           |" -ForegroundColor White
-    Write-Host "|  [8] deepseek-r1:8b  - ~5 GB  16GB+ RAM  akil yurutme     |" -ForegroundColor White
-    Write-Host "|  [9] deepseek-r1:14b - ~9 GB  32GB+ RAM  guclu akil yur.  |" -ForegroundColor White
-    Write-Host "+------------------------------------------------------------+" -ForegroundColor Cyan
-    Write-Host ""
-
-    if     ($ramGB -ge 80) { $defaultChoice = "6" }
-    elseif ($ramGB -ge 48) { $defaultChoice = "4" }
-    elseif ($ramGB -ge 32) { $defaultChoice = "3" }
-    elseif ($ramGB -ge 16) { $defaultChoice = "2" }
-    else                   { $defaultChoice = "1" }
-
-    $choice = Read-Host "  Seciminiz [1-9] (Enter = $defaultChoice - RAM'inize gore onerilen)"
-    if ($choice -eq "") { $choice = $defaultChoice }
-
-    switch ($choice) {
-        "2" { $llmModel = "qwen3:8b";        $llmSize = "~5 GB"  }
-        "3" { $llmModel = "qwen3:14b";       $llmSize = "~9 GB"  }
-        "4" { $llmModel = "qwen3:30b";       $llmSize = "~20 GB" }
-        "5" { $llmModel = "llama3.1:8b";     $llmSize = "~5 GB"  }
-        "6" { $llmModel = "llama3.1:70b";    $llmSize = "~40 GB" }
-        "7" { $llmModel = "mistral:7b";      $llmSize = "~4 GB"  }
-        "8" { $llmModel = "deepseek-r1:8b";  $llmSize = "~5 GB"  }
-        "9" { $llmModel = "deepseek-r1:14b"; $llmSize = "~9 GB"  }
-        default { $llmModel = "qwen3:4b";    $llmSize = "~2.5 GB" }
-    }
-
-    Write-Host "  $llmModel indiriliyor ($llmSize)..." -ForegroundColor Cyan
-    ollama pull $llmModel
-    Write-Host "  nomic-embed-text indiriliyor (~270 MB)..."
-    ollama pull nomic-embed-text
-    Write-OK "Modeller hazir"
-}
-
-# --- .env ---
+# --- 3. .env ve veritabani ---
+Write-Step 3 ".env ve veritabani..."
 if (-not (Test-Path ".env")) {
     Copy-Item ".env.example" ".env"
     Write-OK ".env olusturuldu"
@@ -200,12 +74,10 @@ if (-not (Test-Path ".env")) {
     Write-OK ".env zaten var"
 }
 
-# Backend ve model ayarlarini .env'e yaz
 $envContent = Get-Content ".env"
-if ($envContent -match "^ACHILLES_LLM_BACKEND=") {
-    $envContent = $envContent -replace "^ACHILLES_LLM_BACKEND=.*", "ACHILLES_LLM_BACKEND=$llmBackend"
-} else {
-    $envContent += "ACHILLES_LLM_BACKEND=$llmBackend"
+$envContent = $envContent -replace "^ACHILLES_LLM_BACKEND=.*", "ACHILLES_LLM_BACKEND=openai"
+if (-not ($envContent -match "^ACHILLES_LLM_BACKEND=")) {
+    $envContent += "ACHILLES_LLM_BACKEND=openai"
 }
 if ($openaiKey -ne "") {
     if ($envContent -match "^ACHILLES_OPENAI_API_KEY=") {
@@ -214,18 +86,9 @@ if ($openaiKey -ne "") {
         $envContent += "ACHILLES_OPENAI_API_KEY=$openaiKey"
     }
 }
-if ($llmBackend -ne "openai") {
-    if ($envContent -match "^ACHILLES_LLM_MODEL=") {
-        $envContent = $envContent -replace "^ACHILLES_LLM_MODEL=.*", "ACHILLES_LLM_MODEL=$llmModel"
-    } else {
-        $envContent += "ACHILLES_LLM_MODEL=$llmModel"
-    }
-}
 $envContent | Set-Content ".env"
-Write-OK ".env guncellendi: backend=$llmBackend"
+Write-OK ".env guncellendi: backend=openai"
 
-# --- Veritabani ---
-Write-Host "`n  Veritabani ve klasorler olusturuluyor..."
 uv run achilles init
 Write-OK "Veritabani hazir"
 
@@ -237,7 +100,4 @@ Write-Host ""
 Write-Host "Sunucuyu baslatmak icin:" -ForegroundColor White
 Write-Host "  uv run achilles-web" -ForegroundColor Yellow
 Write-Host "  Tarayicide ac: http://127.0.0.1:8765" -ForegroundColor Yellow
-Write-Host ""
-Write-Host "NOT: LoRA egitimi sadece macOS Apple Silicon'da calisir." -ForegroundColor DarkYellow
-Write-Host "     Windows'ta RAG, backtest, formul cikarma tam calisir." -ForegroundColor DarkYellow
 Write-Host ""
