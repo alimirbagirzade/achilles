@@ -102,7 +102,7 @@ class ModelEvaluator:
         rows: list[EvalRowResult] = []
         for item in items:
             try:
-                ans = self.llm.generate(item.question, temperature=0.2)
+                ans = self.llm.generate(item.question, temperature=0.2, max_tokens=300)
             except LLMUnavailable:
                 ans = "[LLM çevrimdışı]"
             rows.append(EvalRowResult(item.question, ans, check_flags(ans, item.must_avoid)))
