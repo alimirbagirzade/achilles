@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     ollama_host: str = "http://localhost:11434"
     llm_model: str = "qwen2.5-coder:7b"
     embed_model: str = "nomic-embed-text"
+    # mlx-lm LoRA eğitimi için HuggingFace model ID (Ollama formatı geçersiz)
+    mlx_base_model: str = "mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit"
 
     # --- Storage ---
     sqlite_path: Path = Field(default=Path("storage/sqlite/achilles_trader_ai.db"))

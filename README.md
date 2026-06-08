@@ -8,25 +8,70 @@
 
 ---
 
-## ⚡ Kurulum (Yeni Bilgisayar)
+## ⚡ Kurulum
+
+### macOS (Apple Silicon)
 
 ```bash
 git clone https://github.com/alimirbagirzade/achilles.git
 cd achilles
-bash setup.sh          # uv + Ollama + modeller + init hepsini yapar
-uv run achilles-web    # → http://127.0.0.1:8765
+bash setup.sh       # uv + Ollama + modeller + init — tek komut
+uv run achilles-web # → http://127.0.0.1:8765
 ```
 
-> **Gereksinimler:** macOS Apple Silicon · Homebrew · internet bağlantısı (ilk kurulumda)
+> **Gereksinimler:** macOS Apple Silicon · Homebrew · internet bağlantısı
 
-Manuel adımlar (setup.sh yerine):
-```bash
-# uv kur: https://astral.sh/uv
-uv sync
-ollama pull qwen2.5-coder:3b && ollama pull nomic-embed-text
-uv run achilles init
+---
+
+### Windows 10 / 11
+
+> **NOT:** LoRA eğitimi (Eğitim sekmesi) sadece macOS Apple Silicon'da çalışır.
+> Windows'ta RAG, backtest, formül çıkarma, web arayüzü tam çalışır.
+
+**Adım 1 — Git ile projeyi indir**
+
+```powershell
+# PowerShell'i YÖNETİCİ olarak aç
+git clone https://github.com/alimirbagirzade/achilles.git
+cd achilles
+```
+
+Git kurulu değilse: https://git-scm.com/download/win adresinden kur.
+
+**Adım 2 — Otomatik kurulum**
+
+```powershell
+# Execution Policy hatası alırsan önce şunu çalıştır:
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force
+
+.\setup.ps1
+```
+
+Script şunları yapar: Python 3.12 kontrol → uv kur → bağımlılıklar → Ollama kur → modelleri indir → veritabanı oluştur.
+
+**Adım 3 — Sunucuyu başlat**
+
+```powershell
 uv run achilles-web
+# Tarayıcıda aç: http://127.0.0.1:8765
 ```
+
+**Güncelleme (geliştirici yeni sürüm yayınlayınca)**
+
+```powershell
+.\update.ps1
+```
+
+Script şunları yapar: sunucuyu durdur → `git pull` → `uv sync` → sunucuyu yeniden başlat. Otomatik zamanlama için (her gün saat 09:00):
+
+```powershell
+$action  = New-ScheduledTaskAction -Execute "powershell.exe" `
+             -Argument "-NonInteractive -File `"$PWD\update.ps1`""
+$trigger = New-ScheduledTaskTrigger -Daily -At "09:00"
+Register-ScheduledTask -TaskName "AchillesUpdate" -Action $action -Trigger $trigger -RunLevel Highest
+```
+
+---
 
 ---
 

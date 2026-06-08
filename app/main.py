@@ -256,7 +256,7 @@ def train(
 
     settings = get_settings()
     cfg = TrainConfig(
-        base_model=base_model or settings.llm_model,
+        base_model=base_model or settings.mlx_base_model,
         train_jsonl=settings.jsonl_dir / "train.jsonl",
         valid_jsonl=settings.jsonl_dir / "valid.jsonl",
         adapter_output_path=settings.adapters_dir / adapter_name,
