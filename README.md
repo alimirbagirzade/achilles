@@ -10,16 +10,54 @@
 
 ## ⚡ Kurulum
 
-### macOS (Apple Silicon)
+> **Bilgisayarını açacaksın, terminale birkaç satır yazacaksın. Hepsi bu.**
+> Script her şeyi otomatik yapar: indirme, kurma, hazırlama.
+> Kurulum bitince sistem sana "Bilgisayarına göre şu modeli kullan" diyecek.
+
+---
+
+### macOS (Apple Silicon — M1/M2/M3/M4)
+
+**Gereksinimler:** Mac bilgisayar (M çipli) · Homebrew · internet bağlantısı
+
+Homebrew kurulu değilse önce şunu çalıştır:
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+Sonra:
+```bash
+git clone https://github.com/alimirbagirzade/achilles.git
+cd achilles
+bash setup.sh       # uv + Ollama + modeller + init — tek komut, ~5 dakika
+uv run achilles-web # → http://127.0.0.1:8765
+```
+
+Kurulum tamamlandığında terminal şunu gösterir:
+```
+>>> Donanımınız için önerilen modeller:
+  1. Qwen3 4B Q4  →  ollama pull qwen3:4b   (%95 uyum)
+  ...
+```
+
+> Bu makinede LoRA eğitimi **destekleniyor** (Apple Silicon avantajı).
+
+---
+
+### Linux (Ubuntu 20.04+ / Debian / Fedora)
+
+**Gereksinimler:** 64-bit Linux · Python 3.12+ · internet bağlantısı
 
 ```bash
 git clone https://github.com/alimirbagirzade/achilles.git
 cd achilles
-bash setup.sh       # uv + Ollama + modeller + init — tek komut
+bash setup.sh       # uv + Ollama (curl installer) + modeller + init
 uv run achilles-web # → http://127.0.0.1:8765
 ```
 
-> **Gereksinimler:** macOS Apple Silicon · Homebrew · internet bağlantısı
+Ollama kurulumu `sudo` istiyor ve systemd servisi oluşturuyor. Kurulum sonunda RAM'a uygun model önerisi gösterilir.
+
+> Linux'ta LoRA eğitimi **desteklenmez** (yalnızca macOS Apple Silicon). RAG, backtest, formül çıkarma tam çalışır.
 
 ---
 
@@ -235,6 +273,8 @@ Tarayıcında `http://127.0.0.1:8765` aç. Sağ üstte 🟢 **"ollama bağlı"**
 
 **İlk kez kullanıyorsan önerilen sıra: 08 → 02 → 01 → 03 → 04 → 05 → 06 → 07**
 
+> 💡 **İlk açılışta otomatik bir pencere çıkar:** Bilgisayarının RAM ve GPU'suna bakıp "Senin için en uygun model şu" der. "Anladım, gösterme" butonuna basarak kapatabilirsin. Aynı bilgiyi istediğin zaman **08 SİSTEM** sekmesinde de görebilirsin.
+
 ---
 
 ### 01 · ARAŞTIRMA — "Akıllı kütüphaneci"
@@ -406,14 +446,17 @@ Başarısız soru:
 
 ### 08 · SİSTEM — "Gösterge paneli"
 
-**Ne yapar?** Sistem durumunu izlersin. İşlem yapılmaz.
+**Ne yapar?** Sistem durumunu izlersin. **Yeni kurulum yaptıysan buradan başla.**
 
 | Bölüm | Ne gösterir |
 |-------|-------------|
 | **Üst çubuk** | Ollama bağlı mı · embedding modu · makale sayısı |
+| **Donanım Profili** | Bilgisayarının RAM / GPU bilgisi + önerilen Ollama modelleri |
 | **Katmanlar** | PDF'ten backtest'e akış şeması |
 | **Disiplin Kuralları** | 7 değişmez kural |
 | **API Token** | Şifre koyacaksan buradan |
+
+> **Önerilen modeli nasıl kurarım?** "Donanım Profili" kartında `ollama pull <model-adı>` komutu yazar. Terminale yapıştır, çalıştır, bitti.
 
 ---
 
