@@ -1137,9 +1137,9 @@ class SqliteStore:
                 s.execute(
                     text(
                         """
-                        SELECT date(approved_at) AS day, COUNT(*) AS cnt
+                        SELECT date(created_at) AS day, COUNT(*) AS cnt
                         FROM knowledge_cards
-                        WHERE stage = 'approved' AND approved_at IS NOT NULL
+                        WHERE review_status = 'approved'
                         GROUP BY day
                         ORDER BY day
                         """
