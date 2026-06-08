@@ -24,47 +24,39 @@ dependencies = [
     { name = "backtesting" },
     { name = "beautifulsoup4" },
     { name = "chromadb" },
+    { name = "fastapi" },
     { name = "feedparser" },
+    { name = "httpx" },
     { name = "numpy" },
     { name = "pandas" },
     { name = "pdfplumber" },
     { name = "polars" },
+    { name = "psutil" },
     { name = "pyarrow" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pymupdf" },
     { name = "pypdf" },
+    { name = "python-multipart" },
     { name = "requests" },
     { name = "rich" },
     { name = "sqlalchemy" },
     { name = "ta" },
     { name = "typer" },
+    { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.optional-dependencies]
 dev = [
-    { name = "fastapi" },
-    { name = "httpx" },
     { name = "mypy" },
     { name = "pre-commit" },
-    { name = "psutil" },
     { name = "pytest" },
     { name = "pytest-cov" },
-    { name = "python-multipart" },
     { name = "ruff" },
     { name = "types-requests" },
-    { name = "uvicorn", extra = ["standard"] },
-]
-oss = [
-    { name = "psutil" },
 ]
 train = [
     { name = "mlx-lm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-]
-web = [
-    { name = "fastapi" },
-    { name = "python-multipart" },
-    { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.metadata]
@@ -72,10 +64,9 @@ requires-dist = [
     { name = "backtesting", specifier = ">=0.3.3" },
     { name = "beautifulsoup4", specifier = ">=4.12" },
     { name = "chromadb", specifier = ">=0.5" },
-    { name = "fastapi", marker = "extra == 'dev'", specifier = ">=0.110" },
-    { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.110" },
+    { name = "fastapi", specifier = ">=0.110" },
     { name = "feedparser", specifier = ">=6.0" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "mlx-lm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'train'", specifier = ">=0.16" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "numpy", specifier = ">=1.26" },
@@ -83,8 +74,7 @@ requires-dist = [
     { name = "pdfplumber", specifier = ">=0.11" },
     { name = "polars", specifier = ">=1.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.7" },
-    { name = "psutil", marker = "extra == 'dev'", specifier = ">=6.0" },
-    { name = "psutil", marker = "extra == 'oss'", specifier = ">=6.0" },
+    { name = "psutil", specifier = ">=6.0" },
     { name = "pyarrow", specifier = ">=16.0" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-settings", specifier = ">=2.3" },
@@ -92,8 +82,7 @@ requires-dist = [
     { name = "pypdf", specifier = ">=4.2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.2" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
-    { name = "python-multipart", marker = "extra == 'dev'", specifier = ">=0.0.9" },
-    { name = "python-multipart", marker = "extra == 'web'", specifier = ">=0.0.9" },
+    { name = "python-multipart", specifier = ">=0.0.9" },
     { name = "requests", specifier = ">=2.32" },
     { name = "rich", specifier = ">=13.7" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },
@@ -101,10 +90,9 @@ requires-dist = [
     { name = "ta", specifier = ">=0.11" },
     { name = "typer", specifier = ">=0.12" },
     { name = "types-requests", marker = "extra == 'dev'" },
-    { name = "uvicorn", extras = ["standard"], marker = "extra == 'dev'", specifier = ">=0.29" },
-    { name = "uvicorn", extras = ["standard"], marker = "extra == 'web'", specifier = ">=0.29" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.29" },
 ]
-provides-extras = ["train", "oss", "web", "dev"]
+provides-extras = ["train", "dev"]
 
 [[package]]
 name = "aiohappyeyeballs"

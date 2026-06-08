@@ -58,12 +58,33 @@ else
 fi
 
 # --- 4. Ollama modelleri ---
-echo "[4/5] LLM modelleri indiriliyor (ilk seferde ~2-4 GB)..."
-# qwen3:4b — varsayilan (~2.5GB, 8GB RAM yeterli, thinking modu destekli)
-# 16GB+ icin: ollama pull qwen3:8b
-# 32GB+ icin: ollama pull qwen3:14b
-ollama pull qwen3:4b
+echo "[4/5] LLM modeli seciliyor..."
+RAM_GB=$(python3 -c "import os; print(os.sysconf('SC_PAGE_SIZE')*os.sysconf('SC_PHYS_PAGES')//1024//1024//1024)" 2>/dev/null || echo 8)
+echo "    Sistemde ~${RAM_GB} GB RAM tespit edildi."
+echo ""
+echo "    Hangi modeli kurmak istersiniz?"
+echo "    [1] qwen3:4b   (~2.5 GB, 8GB+ RAM)  — varsayilan, hizli"
+echo "    [2] qwen3:8b   (~5 GB,  16GB+ RAM)  — daha iyi"
+echo "    [3] qwen3:14b  (~9 GB,  32GB+ RAM)  — en iyi"
+echo ""
+if   [ "$RAM_GB" -ge 32 ] 2>/dev/null; then DEFAULT="3"
+elif [ "$RAM_GB" -ge 16 ] 2>/dev/null; then DEFAULT="2"
+else DEFAULT="1"; fi
+read -r -p "    Seciminiz [1/2/3] (Enter = $DEFAULT): " CHOICE
+CHOICE="${CHOICE:-$DEFAULT}"
+case "$CHOICE" in
+  2) LLM_MODEL="qwen3:8b"  ;;
+  3) LLM_MODEL="qwen3:14b" ;;
+  *) LLM_MODEL="qwen3:4b"  ;;
+esac
+echo "    $LLM_MODEL indiriliyor..."
+ollama pull "$LLM_MODEL"
 ollama pull nomic-embed-text
+# .env'deki modeli güncelle
+if [ -f .env ]; then
+  sed -i.bak "s/^ACHILLES_LLM_MODEL=.*/ACHILLES_LLM_MODEL=${LLM_MODEL}/" .env && rm -f .env.bak
+  echo "    .env guncellendi: ACHILLES_LLM_MODEL=${LLM_MODEL}"
+fi
 
 # --- 5. Proje başlatma ---
 echo "[5/5] Veritabanı ve dizinler oluşturuluyor..."
