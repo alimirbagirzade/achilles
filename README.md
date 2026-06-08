@@ -1,7 +1,8 @@
 # 🏛️ Achilles Trader AI
 
-> **Yerel çalışan, gizlilik-öncelikli AI araştırma sistemi** — macOS Apple Silicon için.
+> **Yerel veya bulut AI araştırma sistemi** — macOS · Windows · Linux.
 > Akademik finans makalelerini okur, trade hipotezleri üretir, backtest eder, sonuçtan öğrenir.
+> **OpenAI API** (önerilen) veya **yerel Ollama** ile çalışır — kurulumda seçersin.
 
 > ⚠️ **Bu bir araştırma aracıdır — canlı bot DEĞİLDİR ve yatırım tavsiyesi VERMEZ.**
 > Tüm çıktılar test edilmesi gereken _hipotezlerdir_. Gerçek parayla kullanımın sorumluluğu tamamen size aittir.
@@ -29,15 +30,15 @@ Sonra:
 ```bash
 git clone https://github.com/alimirbagirzade/achilles.git
 cd achilles
-bash setup.sh       # uv + Ollama + modeller + init — tek komut, ~5 dakika
+bash setup.sh       # uv + backend seçimi + modeller + init — tek komut
 uv run achilles-web # → http://127.0.0.1:8765
 ```
 
-Kurulum tamamlandığında terminal şunu gösterir:
+Kurulum sırasında backend seçimi sorulur:
 ```
->>> Donanımınız için önerilen modeller:
-  1. Qwen3 4B Q4  →  ollama pull qwen3:4b   (%95 uyum)
-  ...
+[1] OpenAI API  — gpt-4o-mini  [ÖNERİLEN]
+[2] Ollama      — yerel/ücretsiz
+[3] İkisi de (auto)
 ```
 
 > Bu makinede LoRA eğitimi **destekleniyor** (Apple Silicon avantajı).
@@ -51,11 +52,11 @@ Kurulum tamamlandığında terminal şunu gösterir:
 ```bash
 git clone https://github.com/alimirbagirzade/achilles.git
 cd achilles
-bash setup.sh       # uv + Ollama (curl installer) + modeller + init
+bash setup.sh       # uv + backend seçimi + modeller + init
 uv run achilles-web # → http://127.0.0.1:8765
 ```
 
-Ollama kurulumu `sudo` istiyor ve systemd servisi oluşturuyor. Kurulum sonunda RAM'a uygun model önerisi gösterilir.
+Kurulum başında backend sorulur — OpenAI seçersen Ollama adımı atlanır. Ollama seçersen RAM'a uygun model önerisi gösterilir (kurulum `sudo` istiyor, systemd servisi oluşturuyor).
 
 > Linux'ta LoRA eğitimi **desteklenmez** (yalnızca macOS Apple Silicon). RAG, backtest, formül çıkarma tam çalışır.
 
@@ -85,7 +86,7 @@ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force
 .\setup.ps1
 ```
 
-Script şunları yapar: Python 3.12 kontrol → uv kur → bağımlılıklar → Ollama kur → modelleri indir → veritabanı oluştur.
+Script şunları yapar: Python 3.12 kontrol → uv kur → bağımlılıklar → **backend seç** (OpenAI/Ollama) → modelleri kur → veritabanı oluştur.
 
 **Adım 3 — Sunucuyu başlat**
 
@@ -174,7 +175,7 @@ Soru → vektöre çevrilir (nomic-embed-text)
 ChromaDB: En benzer 6 makale parçasını bulur (cosine similarity)
          │
          ▼
-LLM (Ollama): Parçaları okuyup cevap üretir
+LLM (OpenAI/Ollama): Parçaları okuyup cevap üretir
          │
          ▼
 Cevap + kaynak (hangi makalenin kaçıncı parçası)
@@ -236,7 +237,7 @@ models/adapters/achilles_lora_v3.meta.json  ← versiyon + hash
 ┌─────────────────────────────────┬──────────────────────────────────────────┐
 │ Seçim                           │ Ne olur                                  │
 ├─────────────────────────────────┼──────────────────────────────────────────┤
-│ Ollama (varsayılan)             │ Saf RAG: genel model + makale parçaları  │
+│ OpenAI / Ollama (varsayılan)    │ Saf RAG: genel model + makale parçaları  │
 │ achilles_lora_v3                │ LoRA + RAG: ince-ayarlı + makale parçaları│
 └─────────────────────────────────┴──────────────────────────────────────────┘
 ```
@@ -257,7 +258,7 @@ models/adapters/achilles_lora_v3.meta.json  ← versiyon + hash
 uv run achilles-web
 ```
 
-Tarayıcında `http://127.0.0.1:8765` aç. Sağ üstte 🟢 **"ollama bağlı"** yazıyorsa hazırsın.
+Tarayıcında `http://127.0.0.1:8765` aç. Sağ üstte 🟢 **"openai aktif"** veya 🟢 **"ollama bağlı"** yazıyorsa hazırsın.
 
 > 💡 **İlk açılışta** veya sayfa eskiyse: **Cmd+Shift+R** (Mac) / **Ctrl+Shift+R** (Win/Linux)
 
@@ -450,7 +451,7 @@ Başarısız soru:
 
 | Bölüm | Ne gösterir |
 |-------|-------------|
-| **Üst çubuk** | Ollama bağlı mı · embedding modu · makale sayısı |
+| **Üst çubuk** | Aktif backend (OpenAI/Ollama) · embedding modu · makale sayısı |
 | **Donanım Profili** | Bilgisayarının RAM / GPU bilgisi + önerilen Ollama modelleri |
 | **Katmanlar** | PDF'ten backtest'e akış şeması |
 | **Disiplin Kuralları** | 7 değişmez kural |
@@ -504,7 +505,7 @@ uv run achilles mastery-report <paper_id>
 ### Gereksinimler
 - Python ≥ 3.12
 - [uv](https://docs.astral.sh/uv/) _(önerilen paket yöneticisi)_
-- [Ollama](https://ollama.com) _(RAG + bilgi kartı için gerekli)_
+- **OpenAI API key** _(önerilen — `ACHILLES_OPENAI_API_KEY=sk-...`)_ **veya** [Ollama](https://ollama.com) _(ücretsiz, yerel)_
 - macOS Apple Silicon _(sadece LoRA eğitimi için; diğer her şey platform-bağımsız)_
 
 ### Adım adım
@@ -518,26 +519,28 @@ uv run achilles init
 
 # 3. Ortam değişkenlerini ayarla
 cp .env.example .env
-# (isteğe bağlı) .env dosyasını düzenle
+# .env → ACHILLES_OPENAI_API_KEY=sk-...  (OpenAI için)
+# .env → ACHILLES_LLM_BACKEND=openai     (sadece OpenAI)
 
-# 4. Ollama modellerini indir
-brew install ollama && brew services start ollama
-ollama pull qwen2.5-coder:3b    # 8 GB RAM için önerilen
-ollama pull nomic-embed-text    # embedding modeli
+# --- VEYA Ollama ile ---
+# 4a. Ollama modeli indir (Ollama kuruluysa)
+ollama pull qwen3:4b         # 8 GB RAM için önerilen
+ollama pull nomic-embed-text # embedding modeli
 
 # 5. Web arayüzünü başlat
 uv run achilles-web
 ```
 
-**RAM profilleri** (`.env` → `ACHILLES_LLM_MODEL`):
+**Ollama RAM profilleri** (`.env` → `ACHILLES_LLM_MODEL`):
 
 | RAM | Model | Hız |
 |:---:|-------|-----|
-| 8 GB | `qwen2.5-coder:3b` | Hızlı |
-| 16 GB | `qwen2.5-coder:7b` | Dengeli |
-| 32 GB | `qwen2.5-coder:14b` | Güçlü |
+| 8 GB | `qwen3:4b` | Hızlı |
+| 16 GB | `qwen3:8b` | Dengeli |
+| 32 GB | `qwen3:14b` | Güçlü |
 
-> **Ollama yoksa da çalışır:** Embedding için deterministik hash yedek devreye girer (`ACHILLES_ALLOW_FAKE_EMBEDDINGS=true`).
+> **OpenAI API key varsa** sistem otomatik onu kullanır (auto mod). Ollama da varsa OpenAI tercih edilir.
+> **İkisi de yoksa:** Embedding için deterministik hash yedek devreye girer (`ACHILLES_ALLOW_FAKE_EMBEDDINGS=true`).
 
 ---
 
@@ -635,7 +638,8 @@ uv run achilles train --run               # macOS Apple Silicon gerekli
 | Sayfa eski veya boş | **Cmd+Shift+R** (Mac) / **Ctrl+Shift+R** (Win) — önbellek temizle |
 | "Bu siteye ulaşılamıyor" | Sunucu kapalı → `uv run achilles-web` çalıştır |
 | 🔴 "Ollama yok" uyarısı | `brew services start ollama` → tarayıcıyı yenile |
-| Kart üretimi çok uzun | `.env` → `ACHILLES_LLM_MODEL=qwen2.5-coder:1.5b` dene |
+| Kart üretimi çok uzun | OpenAI kullan (çok daha hızlı) veya `.env` → `ACHILLES_LLM_MODEL=qwen3:4b` |
+| 🔴 "LLM yok" uyarısı | OpenAI: `.env` → `ACHILLES_OPENAI_API_KEY=sk-...` · Ollama: `ollama serve` |
 | 50 MB az geldi | `.env` → `ACHILLES_MAX_UPLOAD_MB=200` → sunucuyu yeniden başlat |
 | "Yetkisiz" hatası | Token ayarlıysa **08 SİSTEM** → token gir → KAYDET bas |
 | Backtest FAIL ama getiri pozitif | OOS kısmı başarısız — bu kasıtlı, overfit koruması |
@@ -657,7 +661,7 @@ app/
 ├── agents/      OSS Learning Agent, araştırma orchestrator
 └── main.py      CLI (Typer)
 
-tests/           329 pytest testi — çevrimdışı çalışır
+tests/           407+ pytest testi — çevrimdışı çalışır
 .claude/skills/  trading-research, backtest-auditor, paper-mastery-agent
 evals/           discipline_core.jsonl, overfit_traps.jsonl, risk_scenarios.jsonl
 ```
