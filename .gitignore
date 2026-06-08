@@ -35,7 +35,7 @@ storage/sqlite/*.db-*
 models/adapters/*
 models/evals/*
 reports/papers/*
-reports/papers/mastery/
+reports/papers/mastery/*
 reports/training/*
 reports/backtests/*
 reports/evals/*
@@ -59,7 +59,7 @@ adapters/
 *.pth
 wandb/
 mlruns/
-reports/lora/private/
+reports/lora/private/*
 reports/lora/*.md
 registry/adapters/*.jsonl
 

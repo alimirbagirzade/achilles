@@ -87,9 +87,12 @@ _settings = get_settings()
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    import asyncio as _asyncio
     configure_logging()
     get_settings().ensure_dirs()
     logger.info("Achilles web başladı — host=%s port=%s", _settings.web_host, _settings.web_port)
+    from app.lora.auto_pipeline import get_auto_pipeline
+    _asyncio.create_task(get_auto_pipeline().background_loop())
     yield
 
 
@@ -1086,6 +1089,50 @@ def api_model_recommend() -> dict:
     ]
     rejected = [{"name": r.display_name, "reason": r.reason} for r in result.rejected[:3]]
     return {"recommended": recommended, "rejected": rejected}
+
+
+@app.get("/api/auto-lora/status")
+async def api_auto_lora_status() -> dict:
+    """Auto-LoRA pipeline durumu."""
+    from app.lora.auto_pipeline import get_auto_pipeline
+    return get_auto_pipeline().get_status()
+
+
+@app.post("/api/auto-lora/enable")
+async def api_auto_lora_enable(enabled: bool = True) -> dict:
+    """Otomatik periyodik kontrolü aç/kapat."""
+    from app.lora.auto_pipeline import get_auto_pipeline
+    get_auto_pipeline().set_enabled(enabled)
+    return {"ok": True, "auto_enabled": enabled}
+
+
+@app.post("/api/auto-lora/check")
+async def api_auto_lora_check() -> dict:
+    """Gate 0-8 kontrolünü manuel tetikle."""
+    from app.lora.auto_pipeline import get_auto_pipeline
+    return await get_auto_pipeline().check_and_prepare()
+
+
+@app.post("/api/auto-lora/train")
+async def api_auto_lora_train(adapter_name: str, iters: int = 300) -> dict:
+    """Kullanıcı onayıyla eğitimi başlat (READY_TO_TRAIN durumu gerekir)."""
+    from app.lora.auto_pipeline import get_auto_pipeline
+    return await get_auto_pipeline().start_training(adapter_name, iters)
+
+
+@app.post("/api/auto-lora/promote")
+async def api_auto_lora_promote() -> dict:
+    """Kullanıcı onayıyla adapter'ı production'a terfi et (EVAL_PASSED gerekir)."""
+    from app.lora.auto_pipeline import get_auto_pipeline
+    return await get_auto_pipeline().promote_to_production()
+
+
+@app.post("/api/auto-lora/reset")
+async def api_auto_lora_reset() -> dict:
+    """Pipeline'ı IDLE'a sıfırla."""
+    from app.lora.auto_pipeline import get_auto_pipeline
+    await get_auto_pipeline().reset()
+    return {"ok": True}
 
 
 @app.get("/api/arxiv/search", response_model=ArxivSearchResponse, dependencies=[api_auth])

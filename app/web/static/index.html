@@ -349,6 +349,37 @@
           <button class="btn" id="refreshExamples">↻ YENİLE</button>
           <div id="examplesList" class="examples-list"></div>
         </div>
+
+        <!-- 7. Auto-LoRA Pipeline -->
+        <div class="training-section" id="autoLoraSection">
+          <h3>7 · Otomatik LoRA Pipeline</h3>
+          <p class="muted small">
+            Yeterli kart birikince Gate 0-8 otomatik denetlenir.
+            <strong>Eğitim ve production terfi kullanıcı onayı gerektirir.</strong>
+          </p>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <span class="muted small">Otomatik kontrol:</span>
+            <button class="btn btn-sm" id="autoLoraEnableBtn">Aç</button>
+            <button class="btn btn-sm" id="autoLoraDisableBtn">Kapat</button>
+            <span id="autoLoraEnabledLabel" class="badge badge-info" style="margin-left:4px">kapalı</span>
+          </div>
+          <div class="card" style="padding:12px;margin-bottom:10px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span class="muted small">Pipeline Durumu</span>
+              <button class="btn btn-sm" id="autoLoraRefreshBtn">↻</button>
+            </div>
+            <div id="autoLoraStatusBody" style="margin-top:8px;font-size:13px">
+              <span class="muted">Yükleniyor…</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn" id="autoLoraCheckBtn">🔍 Gate Kontrolü Başlat</button>
+            <button class="btn btn-primary" id="autoLoraTrainBtn" disabled>▶ Eğitimi Onayla &amp; Başlat</button>
+            <button class="btn" id="autoLoraPromoteBtn" disabled>⬆ Production'a Terfi Et</button>
+            <button class="btn" id="autoLoraResetBtn">↺ Sıfırla</button>
+          </div>
+          <div id="autoLoraMsg" class="result hidden" style="margin-top:10px"></div>
+        </div>
       </section>
 
       <!-- ONAY -->

@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     allow_fake_embeddings: bool = True
     log_level: str = "INFO"
 
+    # --- Auto-LoRA Pipeline ---
+    auto_lora_enabled: bool = False          # otomatik döngü; varsayılan kapalı
+    auto_lora_min_cards: int = 20            # eğitim başlamadan gereken minimum kart
+    auto_lora_check_interval_min: int = 60   # kaç dakikada bir kontrol
+    auto_lora_eval_threshold: float = 0.5    # eval pass_rate eşiği
+
     # --- Web (FastAPI) ---
     # Güvenlik: varsayılan olarak SADECE localhost'a bağlanır (dışarı açılmaz).
     web_host: str = "127.0.0.1"

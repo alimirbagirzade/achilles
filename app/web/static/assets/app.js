@@ -1823,6 +1823,120 @@
     refreshStatus();
   });
 
+  // ---------- auto-lora pipeline ----------
+  var _STAGE_LABELS = {
+    idle: 'Boşta', checking: 'Gate kontrol ediliyor…', gate_failed: 'Gate başarısız',
+    ready_to_train: 'Gate geçti — Eğitim onayı bekleniyor', training: 'Eğitim sürüyor…',
+    train_failed: 'Eğitim başarısız', evaluating: 'Eval çalışıyor…',
+    eval_failed: 'Eval başarısız', eval_passed: 'Eval geçti — Production onayı bekleniyor',
+    promoted: 'Production\'a terfi edildi ✓'
+  };
+  var _STAGE_COLORS = {
+    idle: '#94a3b8', checking: '#facc15', gate_failed: '#f87171',
+    ready_to_train: '#60a5fa', training: '#a78bfa', train_failed: '#f87171',
+    evaluating: '#a78bfa', eval_failed: '#f87171', eval_passed: '#34d399', promoted: '#4ade80'
+  };
+
+  function renderAutoLoraStatus(d) {
+    var label = _STAGE_LABELS[d.stage] || d.stage;
+    var color = _STAGE_COLORS[d.stage] || '#94a3b8';
+    var rows = [
+      ['Durum', '<strong style="color:' + color + '">' + label + '</strong>'],
+      ['Onaylı kart', d.approved_cards_at_last_check + ' / min ' + d.min_eligible_cards],
+      ['Son kontrol', d.last_check ? d.last_check.slice(0,16).replace('T',' ') : '—'],
+      ['Gate özeti', d.gate_summary || '—'],
+      ['Adapter', d.adapter_id || '—'],
+      ['Hata', d.last_error || '—']
+    ];
+    var html = '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+    rows.forEach(function(r) {
+      html += '<tr><td style="padding:2px 10px 2px 0;color:#94a3b8;white-space:nowrap">' + r[0] + '</td><td>' + r[1] + '</td></tr>';
+    });
+    html += '</table>';
+    var trainBtn = document.getElementById('autoLoraTrainBtn');
+    var promoteBtn = document.getElementById('autoLoraPromoteBtn');
+    var enableLabel = document.getElementById('autoLoraEnabledLabel');
+    if (trainBtn) trainBtn.disabled = d.stage !== 'ready_to_train';
+    if (promoteBtn) promoteBtn.disabled = d.stage !== 'eval_passed';
+    if (enableLabel) {
+      enableLabel.textContent = d.auto_enabled ? 'açık' : 'kapalı';
+      enableLabel.className = 'badge ' + (d.auto_enabled ? 'badge-success' : 'badge-info');
+    }
+    return html;
+  }
+
+  function loadAutoLoraStatus() {
+    var body = document.getElementById('autoLoraStatusBody');
+    if (!body) return;
+    fetch('/api/auto-lora/status')
+      .then(function(r) { return r.json(); })
+      .then(function(d) { body.innerHTML = renderAutoLoraStatus(d); })
+      .catch(function() { body.innerHTML = '<span class="muted small">Durum alınamadı</span>'; });
+  }
+
+  function autoLoraMsg(text, ok) {
+    var el = document.getElementById('autoLoraMsg');
+    if (!el) return;
+    el.textContent = text;
+    el.className = 'result ' + (ok ? '' : 'error');
+  }
+
+  var autoLoraRefreshBtn = document.getElementById('autoLoraRefreshBtn');
+  var autoLoraEnableBtn  = document.getElementById('autoLoraEnableBtn');
+  var autoLoraDisableBtn = document.getElementById('autoLoraDisableBtn');
+  var autoLoraCheckBtn   = document.getElementById('autoLoraCheckBtn');
+  var autoLoraTrainBtn   = document.getElementById('autoLoraTrainBtn');
+  var autoLoraPromoteBtn = document.getElementById('autoLoraPromoteBtn');
+  var autoLoraResetBtn   = document.getElementById('autoLoraResetBtn');
+
+  if (autoLoraRefreshBtn) autoLoraRefreshBtn.addEventListener('click', loadAutoLoraStatus);
+
+  if (autoLoraEnableBtn) autoLoraEnableBtn.addEventListener('click', function() {
+    fetch('/api/auto-lora/enable?enabled=true', {method:'POST'})
+      .then(function() { autoLoraMsg('Otomatik kontrol açıldı.', true); loadAutoLoraStatus(); });
+  });
+  if (autoLoraDisableBtn) autoLoraDisableBtn.addEventListener('click', function() {
+    fetch('/api/auto-lora/enable?enabled=false', {method:'POST'})
+      .then(function() { autoLoraMsg('Otomatik kontrol kapatıldı.', true); loadAutoLoraStatus(); });
+  });
+  if (autoLoraCheckBtn) autoLoraCheckBtn.addEventListener('click', function() {
+    autoLoraMsg('Gate 0-8 kontrol ediliyor…', true);
+    fetch('/api/auto-lora/check', {method:'POST'})
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        autoLoraMsg(d.ok ? 'Gate geçti: ' + (d.summary||'') : 'Gate başarısız: ' + (d.reason||''), d.ok);
+        loadAutoLoraStatus();
+      }).catch(function() { autoLoraMsg('Bağlantı hatası', false); });
+  });
+  if (autoLoraTrainBtn) autoLoraTrainBtn.addEventListener('click', function() {
+    var name = (document.getElementById('trAdapterName')||{value:''}).value || ('achilles_auto_'+Date.now());
+    var iters = parseInt((document.getElementById('drIterations')||{value:'300'}).value, 10);
+    if (!confirm('Eğitim başlatılacak: ' + name + ', ' + iters + ' iter. Onaylıyor musun?')) return;
+    fetch('/api/auto-lora/train?adapter_name='+encodeURIComponent(name)+'&iters='+iters, {method:'POST'})
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        autoLoraMsg(d.ok ? 'Eğitim başladı: '+d.adapter_name : 'Hata: '+d.reason, d.ok);
+        loadAutoLoraStatus();
+      });
+  });
+  if (autoLoraPromoteBtn) autoLoraPromoteBtn.addEventListener('click', function() {
+    if (!confirm('Bu adapter production\'a terfi ettirilecek. Onaylıyor musun?')) return;
+    fetch('/api/auto-lora/promote', {method:'POST'})
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        autoLoraMsg(d.ok ? 'Terfi edildi: '+d.adapter_id : 'Hata: '+d.reason, d.ok);
+        loadAutoLoraStatus();
+      });
+  });
+  if (autoLoraResetBtn) autoLoraResetBtn.addEventListener('click', function() {
+    if (!confirm('Pipeline IDLE\'a sıfırlanacak. Devam?')) return;
+    fetch('/api/auto-lora/reset', {method:'POST'}).then(function() {
+      autoLoraMsg('Sıfırlandı.', true); loadAutoLoraStatus();
+    });
+  });
+
+  loadAutoLoraStatus();
+
   // ---------- donanım profili + model önerisi ----------
   function renderHwProfile(profile, recs) {
     var loraNote = profile.lora_supported
