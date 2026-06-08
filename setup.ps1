@@ -145,23 +145,44 @@ if ($llmBackend -eq "openai") {
     $ramGB = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)
     Write-Host "  Sistemde $ramGB GB RAM tespit edildi." -ForegroundColor White
     Write-Host ""
-    Write-Host "  Hangi Ollama modelini kurmak istersiniz?" -ForegroundColor Cyan
-    Write-Host "  [1] qwen3:4b  - ~2.5 GB VRAM, 8 GB+ RAM  (varsayilan, hizli)" -ForegroundColor White
-    Write-Host "  [2] qwen3:8b  - ~5 GB VRAM,  16 GB+ RAM  (daha iyi)" -ForegroundColor White
-    Write-Host "  [3] qwen3:14b - ~9 GB VRAM,  32 GB+ RAM  (en iyi)" -ForegroundColor White
+    Write-Host "+------------------------------------------------------------+" -ForegroundColor Cyan
+    Write-Host "|  Acik Kaynak (OSS) Model Secin                             |" -ForegroundColor Cyan
+    Write-Host "+------------------------------------------------------------+" -ForegroundColor Cyan
+    Write-Host "|  --- Qwen3 (Alibaba) ---                                   |" -ForegroundColor White
+    Write-Host "|  [1] qwen3:4b   - ~2.5 GB  8GB+ RAM   hizli, trading OK   |" -ForegroundColor White
+    Write-Host "|  [2] qwen3:8b   - ~5 GB   16GB+ RAM   dengeli             |" -ForegroundColor White
+    Write-Host "|  [3] qwen3:14b  - ~9 GB   32GB+ RAM   guclu               |" -ForegroundColor White
+    Write-Host "|  [4] qwen3:30b  - ~20 GB  48GB+ RAM   cok guclu           |" -ForegroundColor White
+    Write-Host "|  --- Llama 3.1 (Meta) ---                                  |" -ForegroundColor White
+    Write-Host "|  [5] llama3.1:8b  - ~5 GB  16GB+ RAM  genel amac          |" -ForegroundColor White
+    Write-Host "|  [6] llama3.1:70b - ~40 GB 80GB+ RAM  en guclu llama      |" -ForegroundColor White
+    Write-Host "|  --- Mistral ---                                            |" -ForegroundColor White
+    Write-Host "|  [7] mistral:7b   - ~4 GB  8GB+ RAM   hizli, hafif        |" -ForegroundColor White
+    Write-Host "|  --- DeepSeek ---                                           |" -ForegroundColor White
+    Write-Host "|  [8] deepseek-r1:8b  - ~5 GB  16GB+ RAM  akil yurutme     |" -ForegroundColor White
+    Write-Host "|  [9] deepseek-r1:14b - ~9 GB  32GB+ RAM  guclu akil yur.  |" -ForegroundColor White
+    Write-Host "+------------------------------------------------------------+" -ForegroundColor Cyan
     Write-Host ""
 
-    if     ($ramGB -ge 32) { $defaultChoice = "3" }
+    if     ($ramGB -ge 80) { $defaultChoice = "6" }
+    elseif ($ramGB -ge 48) { $defaultChoice = "4" }
+    elseif ($ramGB -ge 32) { $defaultChoice = "3" }
     elseif ($ramGB -ge 16) { $defaultChoice = "2" }
     else                   { $defaultChoice = "1" }
 
-    $choice = Read-Host "  Seciminiz [1/2/3] (Enter = $defaultChoice)"
+    $choice = Read-Host "  Seciminiz [1-9] (Enter = $defaultChoice - RAM'inize gore onerilen)"
     if ($choice -eq "") { $choice = $defaultChoice }
 
     switch ($choice) {
-        "2" { $llmModel = "qwen3:8b";  $llmSize = "~5 GB" }
-        "3" { $llmModel = "qwen3:14b"; $llmSize = "~9 GB" }
-        default { $llmModel = "qwen3:4b"; $llmSize = "~2.5 GB" }
+        "2" { $llmModel = "qwen3:8b";        $llmSize = "~5 GB"  }
+        "3" { $llmModel = "qwen3:14b";       $llmSize = "~9 GB"  }
+        "4" { $llmModel = "qwen3:30b";       $llmSize = "~20 GB" }
+        "5" { $llmModel = "llama3.1:8b";     $llmSize = "~5 GB"  }
+        "6" { $llmModel = "llama3.1:70b";    $llmSize = "~40 GB" }
+        "7" { $llmModel = "mistral:7b";      $llmSize = "~4 GB"  }
+        "8" { $llmModel = "deepseek-r1:8b";  $llmSize = "~5 GB"  }
+        "9" { $llmModel = "deepseek-r1:14b"; $llmSize = "~9 GB"  }
+        default { $llmModel = "qwen3:4b";    $llmSize = "~2.5 GB" }
     }
 
     Write-Host "  $llmModel indiriliyor ($llmSize)..." -ForegroundColor Cyan

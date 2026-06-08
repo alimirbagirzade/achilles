@@ -91,20 +91,41 @@ if [ "$LLM_BACKEND" != "openai" ]; then
   RAM_GB=$(python3 -c "import os; print(os.sysconf('SC_PAGE_SIZE')*os.sysconf('SC_PHYS_PAGES')//1024//1024//1024)" 2>/dev/null || echo 8)
   echo "    Sistemde ~${RAM_GB} GB RAM tespit edildi."
   echo ""
-  echo "    Hangi Ollama modelini kurmak istersiniz?"
-  echo "    [1] qwen3:4b   (~2.5 GB, 8GB+ RAM)  — varsayilan, hizli"
-  echo "    [2] qwen3:8b   (~5 GB,  16GB+ RAM)  — daha iyi"
-  echo "    [3] qwen3:14b  (~9 GB,  32GB+ RAM)  — en iyi"
+  echo "+--------------------------------------------------------------+"
+  echo "|  Acik Kaynak (OSS) Model Secin                               |"
+  echo "+--------------------------------------------------------------+"
+  echo "|  --- Qwen3 (Alibaba) ---                                     |"
+  echo "|  [1] qwen3:4b    ~2.5 GB  8GB+ RAM   hizli, trading OK      |"
+  echo "|  [2] qwen3:8b    ~5 GB   16GB+ RAM   dengeli                |"
+  echo "|  [3] qwen3:14b   ~9 GB   32GB+ RAM   guclu                  |"
+  echo "|  [4] qwen3:30b   ~20 GB  48GB+ RAM   cok guclu              |"
+  echo "|  --- Llama 3.1 (Meta) ---                                    |"
+  echo "|  [5] llama3.1:8b   ~5 GB  16GB+ RAM  genel amac             |"
+  echo "|  [6] llama3.1:70b  ~40 GB 80GB+ RAM  en guclu llama         |"
+  echo "|  --- Mistral ---                                              |"
+  echo "|  [7] mistral:7b    ~4 GB   8GB+ RAM  hizli, hafif            |"
+  echo "|  --- DeepSeek ---                                             |"
+  echo "|  [8] deepseek-r1:8b   ~5 GB  16GB+ RAM  akil yurutme        |"
+  echo "|  [9] deepseek-r1:14b  ~9 GB  32GB+ RAM  guclu akil yurutme  |"
+  echo "+--------------------------------------------------------------+"
   echo ""
-  if   [ "$RAM_GB" -ge 32 ] 2>/dev/null; then DEFAULT="3"
+  if   [ "$RAM_GB" -ge 80 ] 2>/dev/null; then DEFAULT="6"
+  elif [ "$RAM_GB" -ge 48 ] 2>/dev/null; then DEFAULT="4"
+  elif [ "$RAM_GB" -ge 32 ] 2>/dev/null; then DEFAULT="3"
   elif [ "$RAM_GB" -ge 16 ] 2>/dev/null; then DEFAULT="2"
   else DEFAULT="1"; fi
-  read -r -p "    Seciminiz [1/2/3] (Enter = $DEFAULT): " CHOICE
+  read -r -p "    Seciminiz [1-9] (Enter = $DEFAULT - RAM'inize gore onerilen): " CHOICE
   CHOICE="${CHOICE:-$DEFAULT}"
   case "$CHOICE" in
-    2) LLM_MODEL="qwen3:8b"  ;;
-    3) LLM_MODEL="qwen3:14b" ;;
-    *) LLM_MODEL="qwen3:4b"  ;;
+    2) LLM_MODEL="qwen3:8b"        ;;
+    3) LLM_MODEL="qwen3:14b"       ;;
+    4) LLM_MODEL="qwen3:30b"       ;;
+    5) LLM_MODEL="llama3.1:8b"     ;;
+    6) LLM_MODEL="llama3.1:70b"    ;;
+    7) LLM_MODEL="mistral:7b"      ;;
+    8) LLM_MODEL="deepseek-r1:8b"  ;;
+    9) LLM_MODEL="deepseek-r1:14b" ;;
+    *) LLM_MODEL="qwen3:4b"        ;;
   esac
   echo "    $LLM_MODEL indiriliyor..."
   ollama pull "$LLM_MODEL"
