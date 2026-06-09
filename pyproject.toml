@@ -101,7 +101,7 @@ exclude = ["tests/", "scripts/"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q --strict-markers"
+addopts = "-q --strict-markers -m 'not ollama and not slow'"
 markers = [
     "ollama: tests that require a running local Ollama server",
     "slow: slow tests",
