@@ -40,40 +40,33 @@ if ($_inBadDir) {
     $_userHome = if ($env:USERPROFILE) { $env:USERPROFILE } else { "C:\Users\$env:USERNAME" }
     $_target   = Join-Path $_userHome "achilles"
 
-    Write-Host "  [!] Proje sistem dizininde acildi: $_scriptDir" -ForegroundColor Yellow
-    Write-Host "  Otomatik olarak dogru konuma tasiniyor..." -ForegroundColor Cyan
-    Write-Host "  Hedef: $_target" -ForegroundColor White
     Write-Host ""
-
-    if (-not (Test-Path $_target)) {
-        Write-Host "  >> Proje indiriliyor (bu birka dakika surebilir)..." -ForegroundColor White
-        git clone https://github.com/alimirbagirzade/achilles.git "$_target"
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host ""
-            Write-Host "  [HATA] Otomatik indirme basarisiz." -ForegroundColor Red
-            Write-Host "  Lutfen su adimlari elle yapin:" -ForegroundColor Yellow
-            Write-Host "    1. Yeni PowerShell (Yonetici) acin" -ForegroundColor White
-            Write-Host "    2. Asagidaki komutu calistirin:" -ForegroundColor White
-            Write-Host ""
-            Write-Host "    git clone https://github.com/alimirbagirzade/achilles.git `"$_target`"" -ForegroundColor Yellow
-            Write-Host "    cd `"$_target`"" -ForegroundColor Yellow
-            Write-Host "    .\setup.ps1" -ForegroundColor Yellow
-            Write-Host ""
-            Read-Host "  Devam etmek icin Enter'a basin"
-            exit 1
-        }
-        Write-Host "  [OK] Proje indirildi: $_target" -ForegroundColor Green
-    } else {
-        Write-Host "  [OK] Mevcut kurulum bulundu: $_target" -ForegroundColor Green
-    }
-
+    Write-Host "  ================================================================" -ForegroundColor Red
+    Write-Host "   HATA: Yanlis klasorde calisiyorsunuz!" -ForegroundColor Red
+    Write-Host "  ================================================================" -ForegroundColor Red
     Write-Host ""
-    Write-Host "  >> Kurulum yeniden baslatiliyor (yeni pencere acilacak)..." -ForegroundColor Cyan
+    Write-Host "  Mevcut konum: $_scriptDir" -ForegroundColor Yellow
+    Write-Host "  Bu klasore kurulum YAPILMAMALIDIR." -ForegroundColor Yellow
     Write-Host ""
-    $_setup = Join-Path $_target "setup.ps1"
-    Start-Process powershell.exe -Verb RunAs `
-        -ArgumentList "-NoExit", "-ExecutionPolicy", "RemoteSigned", "-File", "`"$_setup`""
-    exit 0
+    Write-Host "  Simdi su adimlari yapin:" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "  ADIM 1 -- Bu pencereyi KAPATIN" -ForegroundColor White
+    Write-Host ""
+    Write-Host "  ADIM 2 -- Yeni PowerShell acin (Yonetici olarak)" -ForegroundColor White
+    Write-Host "           Baslat menusunde 'PowerShell' arayin" -ForegroundColor DarkGray
+    Write-Host "           Sag tiklayin -> 'Yonetici olarak calistir'" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "  ADIM 3 -- Su komutu kopyalayip yapistirin:" -ForegroundColor White
+    Write-Host ""
+    Write-Host "  git clone https://github.com/alimirbagirzade/achilles.git `"$_target`"" -ForegroundColor Green
+    Write-Host "  cd `"$_target`"" -ForegroundColor Green
+    Write-Host "  Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force" -ForegroundColor Green
+    Write-Host "  .\setup.ps1" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "  ================================================================" -ForegroundColor Red
+    Write-Host ""
+    Read-Host "  Enter'a basin ve bu pencereyi kapatin"
+    exit 1
 }
 
 # ==========================================================================
@@ -362,12 +355,16 @@ $installPeft = Read-Host "  LoRA model egitimi icin ek paketler kurulsun mu? (~2
 if ($installPeft -eq "E" -or $installPeft -eq "e") {
     Write-Info "PEFT paketleri kuruluyor (torch, transformers, peft, datasets)..."
     Write-Info "Bu islem 5-15 dakika surebilir, internet hizinize gore degisir."
-    uv pip install torch transformers peft datasets accelerate --index-url https://download.pytorch.org/whl/cpu
+    # Once sadece torch (PyTorch CPU index) -- transformers/peft PyPI'da yok
+    uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+    # Diger paketler normal PyPI'dan
+    uv pip install transformers peft datasets accelerate
     Write-OK "LoRA egitim paketleri kuruldu (CPU modu)"
     Write-Warn "NVIDIA GPU icin: uv pip install torch --index-url https://download.pytorch.org/whl/cu121"
 } else {
     Write-Info "LoRA paketleri atlandı. Sonradan kurmak icin:"
-    Write-Host "  uv pip install torch transformers peft datasets accelerate" -ForegroundColor Yellow
+    Write-Host "  uv pip install torch --index-url https://download.pytorch.org/whl/cpu" -ForegroundColor Yellow
+    Write-Host "  uv pip install transformers peft datasets accelerate" -ForegroundColor Yellow
 }
 
 # Ollama bolumu
@@ -521,6 +518,6 @@ Write-Host ""
 Write-Host "  Baglanti testi (opsiyonel):" -ForegroundColor DarkGray
 Write-Host "    uv run achilles status" -ForegroundColor DarkGray
 Write-Host ""
-Write-Warn "NOT: LoRA model egitimi yalnizca macOS Apple Silicon'da calisir."
-Write-Host "     Windows'ta: RAG, backtest, formul cikarma tam desteklenmektedir." -ForegroundColor White
+Write-Warn "NOT: LoRA egitim modlari -- macOS Apple Silicon: MLX (hizli), Windows/Linux: PEFT/CPU."
+Write-Host "     Windows'ta tum ozellikler calismaktadir: RAG, backtest, formul cikarma, PEFT LoRA." -ForegroundColor White
 Write-Host ""
