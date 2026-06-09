@@ -85,8 +85,11 @@ function Stop-AchillesServer {
 }
 
 function Install-Task {
-    $action   = New-ScheduledTaskAction -Execute $UvPath `
-        -Argument "run --project `"$ProjectDir`" achilles-web" `
+    # Task Scheduler bu scriptin kendisini cagirsin -- Ollama + server ikisi birden baslar
+    $thisScript = Join-Path $ScriptDir "start-server.ps1"
+    $action   = New-ScheduledTaskAction `
+        -Execute "powershell.exe" `
+        -Argument "-WindowStyle Hidden -ExecutionPolicy RemoteSigned -File `"$thisScript`"" `
         -WorkingDirectory $ProjectDir
     $trigger  = New-ScheduledTaskTrigger -AtLogOn
     $settings = New-ScheduledTaskSettingsSet `
@@ -97,16 +100,9 @@ function Install-Task {
     Register-ScheduledTask -TaskName $TaskName -Action $action `
         -Trigger $trigger -Settings $settings -RunLevel Highest -Force | Out-Null
     Write-Host "  [OK] Gorev Zamanlayici'ya eklendi -- Windows acilisinda otomatik baslar" -ForegroundColor Green
-    # Hemen baslat (login bekleme)
-    Start-ScheduledTask -TaskName $TaskName
-    Start-Sleep -Seconds 4
-    try {
-        $null = Invoke-WebRequest -Uri "http://127.0.0.1:8765/api/status" `
-            -TimeoutSec 6 -UseBasicParsing -ErrorAction Stop
-        Write-Host "  [OK] Servis aktif -- http://127.0.0.1:8765" -ForegroundColor Green
-    } catch {
-        Write-Host "  [!] Servis kaydedildi, birka saniye sonra hazir olacak." -ForegroundColor Yellow
-    }
+    # Hemen Ollama + server baslat
+    Start-OllamaIfNeeded
+    Start-AchillesServer
 }
 
 function Uninstall-Task {
@@ -129,9 +125,31 @@ function Show-Status {
     Write-Host "  Log        : $LogOut" -ForegroundColor Gray
 }
 
+function Start-OllamaIfNeeded {
+    # Ollama cevap veriyorsa atla
+    try {
+        $null = Invoke-WebRequest -Uri "http://127.0.0.1:11434/api/tags" `
+            -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop
+        return  # zaten calisiyor
+    } catch {}
+
+    $ollamaExe = (Get-Command ollama -ErrorAction SilentlyContinue).Source
+    if (-not $ollamaExe) {
+        $ollamaExe = Join-Path $env:LOCALAPPDATA "Programs\Ollama\ollama.exe"
+    }
+    if (Test-Path $ollamaExe) {
+        Start-Process -FilePath $ollamaExe -ArgumentList "serve" -WindowStyle Hidden
+        Start-Sleep -Seconds 3
+        Write-Host "  [OK] Ollama baslatildi" -ForegroundColor Green
+    } else {
+        Write-Host "  [!] Ollama bulunamadi -- RAG sorgu ozelligi calismaaz" -ForegroundColor Yellow
+    }
+}
+
 if ($Install)   { Install-Task;        exit 0 }
 if ($Uninstall) { Uninstall-Task;      exit 0 }
 if ($Stop)      { Stop-AchillesServer; exit 0 }
 if ($Status)    { Show-Status;         exit 0 }
 
+Start-OllamaIfNeeded
 Start-AchillesServer
