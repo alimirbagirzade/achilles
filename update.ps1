@@ -1,4 +1,4 @@
-# Achilles Trader AI — Otomatik Guncelleme Scripti
+# Achilles Trader AI -- Otomatik Guncelleme Scripti
 # Gelistirici GitHub'a yeni surum gonderince bu scripti calistir.
 # Kullanim: .\update.ps1
 #
@@ -38,7 +38,7 @@ git fetch origin main 2>&1 | Out-Null
 $localHash  = git rev-parse HEAD
 $remoteHash = git rev-parse origin/main
 if ($localHash -eq $remoteHash) {
-    Write-Host "  Zaten guncel — guncelleme yok." -ForegroundColor Green
+    Write-Host "  Zaten guncel -- guncelleme yok." -ForegroundColor Green
 } else {
     $commitCount = git rev-list HEAD..origin/main --count
     Write-Host "  $commitCount yeni commit bulundu, indiriliyor..." -ForegroundColor Yellow
@@ -46,8 +46,8 @@ if ($localHash -eq $remoteHash) {
     Write-Host "  Kod guncellendi." -ForegroundColor Green
 }
 
-# --- 3. Bagimlilikları guncelle ---
-Write-Host "`n[3/4] Python bagimliliklar guncelleniyor..."
+# --- 3. Bagimliliklari guncelle ---
+Write-Host "`n[3/4] Python bagimliliklari guncelleniyor..."
 uv sync
 Write-Host "  Bagimliliklar guncellendi." -ForegroundColor Green
 
