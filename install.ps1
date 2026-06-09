@@ -67,3 +67,8 @@ Write-Host ""
 
 Set-Location $TARGET
 & powershell.exe -ExecutionPolicy RemoteSigned -File (Join-Path $TARGET "setup.ps1")
+
+# Kurulum bitti -- servisi arka plana al ve Windows acilisina ekle
+Write-Host ""
+Write-Host "  >> Web servisi arka planda baslatiliyor..." -ForegroundColor Cyan
+& powershell.exe -ExecutionPolicy RemoteSigned -File (Join-Path $TARGET "scripts\start-server.ps1") -Install
