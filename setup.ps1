@@ -21,6 +21,62 @@ Write-Host "  ====================================================" -ForegroundC
 Write-Host ""
 
 # ==========================================================================
+# DIZIN KONTROLU — sistem klasorlerinde calismayi otomatik duzelt
+# ==========================================================================
+$_scriptDir = if ($MyInvocation.MyCommand.Path) {
+    Split-Path -Parent $MyInvocation.MyCommand.Path
+} else { $PWD.Path }
+
+$_badSegments = @("Windows", "system32", "SysWOW64", "Program Files",
+                  "Program Files (x86)", "ProgramData", "winsxs")
+$_inBadDir = $false
+foreach ($_seg in $_badSegments) {
+    if ($_scriptDir -like "*\$_seg\*" -or $_scriptDir -like "*\$_seg") {
+        $_inBadDir = $true; break
+    }
+}
+
+if ($_inBadDir) {
+    $_userHome = if ($env:USERPROFILE) { $env:USERPROFILE } else { "C:\Users\$env:USERNAME" }
+    $_target   = Join-Path $_userHome "achilles"
+
+    Write-Host "  [!] Proje sistem dizininde acildi: $_scriptDir" -ForegroundColor Yellow
+    Write-Host "  Otomatik olarak dogru konuma tasiniyor..." -ForegroundColor Cyan
+    Write-Host "  Hedef: $_target" -ForegroundColor White
+    Write-Host ""
+
+    if (-not (Test-Path $_target)) {
+        Write-Host "  >> Proje indiriliyor (bu birka dakika surebilir)..." -ForegroundColor White
+        git clone https://github.com/alimirbagirzade/achilles.git "$_target"
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host ""
+            Write-Host "  [HATA] Otomatik indirme basarisiz." -ForegroundColor Red
+            Write-Host "  Lutfen su adimlari elle yapin:" -ForegroundColor Yellow
+            Write-Host "    1. Yeni PowerShell (Yonetici) acin" -ForegroundColor White
+            Write-Host "    2. Asagidaki komutu calistirin:" -ForegroundColor White
+            Write-Host ""
+            Write-Host "    git clone https://github.com/alimirbagirzade/achilles.git `"$_target`"" -ForegroundColor Yellow
+            Write-Host "    cd `"$_target`"" -ForegroundColor Yellow
+            Write-Host "    .\setup.ps1" -ForegroundColor Yellow
+            Write-Host ""
+            Read-Host "  Devam etmek icin Enter'a basin"
+            exit 1
+        }
+        Write-Host "  [OK] Proje indirildi: $_target" -ForegroundColor Green
+    } else {
+        Write-Host "  [OK] Mevcut kurulum bulundu: $_target" -ForegroundColor Green
+    }
+
+    Write-Host ""
+    Write-Host "  >> Kurulum yeniden baslatiliyor (yeni pencere acilacak)..." -ForegroundColor Cyan
+    Write-Host ""
+    $_setup = Join-Path $_target "setup.ps1"
+    Start-Process powershell.exe -Verb RunAs `
+        -ArgumentList "-NoExit", "-ExecutionPolicy", "RemoteSigned", "-File", "`"$_setup`""
+    exit 0
+}
+
+# ==========================================================================
 # MODEL SECIM MENUSU
 # ==========================================================================
 Write-Host "  +------------------------------------------------------------------+" -ForegroundColor Cyan
