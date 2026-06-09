@@ -1522,7 +1522,8 @@ code {
 
 /* ── Training Progress UI ── */
 .train-progress-wrap {
-  background: #1e293b;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: 8px;
   height: 22px;
   overflow: hidden;
@@ -1538,7 +1539,7 @@ code {
   display: flex;
   justify-content: space-between;
   font-size: .8rem;
-  color: #94a3b8;
+  color: var(--ink-dim);
   margin-bottom: 14px;
 }
 .train-loss-row {
@@ -1547,8 +1548,8 @@ code {
   margin: 8px 0 14px;
 }
 .train-loss-box {
-  background: #1e293b;
-  border: 1px solid #334155;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px 18px;
   display: flex;
@@ -1560,12 +1561,12 @@ code {
 .train-loss-num {
   font-size: 1.4rem;
   font-weight: 700;
-  color: #a5b4fc;
+  color: var(--primary);
   font-family: "JetBrains Mono", monospace;
 }
 .train-meta {
   font-size: .82rem;
-  color: #94a3b8;
+  color: var(--ink-dim);
   margin-bottom: 8px;
 }
 .train-log-wrap {
@@ -1578,12 +1579,13 @@ code {
   margin-bottom: 4px;
 }
 .train-log {
-  background: #020617;
-  border: 1px solid #1e293b;
+  background: #0f172a;
+  border: 1px solid var(--border-strong);
   border-radius: 6px;
   padding: 10px 12px;
   font-size: .75rem;
   line-height: 1.5;
+  min-height: 60px;
   max-height: 260px;
   overflow-y: auto;
   color: #94a3b8;
