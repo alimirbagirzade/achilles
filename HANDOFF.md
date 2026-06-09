@@ -1,6 +1,6 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-06-07 (gece geç) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Son güncelleme: 2026-06-09 (öğleden sonra) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon).
 **Canlı bot değil, yatırım tavsiyesi değil.**
@@ -16,52 +16,61 @@ LLM'i "trader gibi düşünen" bir araştırma motoru yapmak:
 3. Otomatik backtest et → sonuçtan öğren → LoRA eğitim verisi üret
 4. 3B modeli test eder; gerçek çıktı için 120B kullanılacak
 
-### Mevcut durum (2026-06-07 gece geç)
-- **407 test** geçiyor · ruff temiz · Python 3.12
+### Mevcut durum (2026-06-09 öğleden sonra)
+- **405 test** geçiyor (2 deselected: ollama+slow) · ruff temiz · Python 3.12
 - **8 sekme** web UI: Araştırma · Makaleler · Trader Beyin · Backtest · Eğitim · Onay · Değerlendirme · Sistem
-- **Ollama:** qwen2.5-coder:3b + nomic-embed-text
-- **19 makale** · 2497 chunk (11 alakasız arXiv silindi, 8 alakalı + 11 kullanıcı makalesi kaldı)
+- **Ollama:** qwen3:8b (Windows) / qwen2.5-coder:3b (macOS) + nomic-embed-text
+- **19 makale** · 2497 chunk
 - **19 onaylı knowledge card**
 - **LoRA adapter:** `models/adapters/achilles_lora_v1/` — 300 iter tamamlandı, train loss 0.012
-- **Son commit:** `af5222d`
+- **macOS:** LaunchAgent aktif (`com.achilles.web.plist`) — login'de otomatik başlar
+- **Windows:** Task Scheduler (`AchillesWeb`) — login'de Ollama + web server birlikte başlar
+- **Son commit:** `9861ab6`
 
 ---
 
-## ✅ Bu Seansta Tamamlananlar (2026-06-07 gece geç)
+## ✅ Bu Seansta Tamamlananlar (2026-06-09 öğleden sonra)
 
-### RAGsetup Doğrulaması
-`/Users/mirbagirzade/Development/RAGsetup/` içindeki 3 belge okundu ve projeyle karşılaştırıldı.
-Belgelerde istenen tüm RAG/verification/mastery modülleri zaten projeye uygulanmış bulundu.
-5 Claude skill dosyası `.claude/skills/` altında aktif.
+### Windows Kalıcı Kurulum — `install.ps1`
+- Tek satır kurulum: `irm .../install.ps1 | iex` — her zaman `$USERPROFILE\achilles`'e kurar
+- system32 dizininde çalıştırılsa bile doğru konuma yönlendirir
+- Git otomatik kurulumu (winget), clone/update, setup, servis kaydı hepsi otomatik
 
-### LoRA 300-iter Eğitimi Tamamlandı
-- Adapter: `models/adapters/achilles_lora_v1/adapters.safetensors`
-- Train loss: 4.48 → 0.012 · Val loss: 4.48 → 1.70
-- 16 train / 3 valid örnek; pipeline uçtan uca doğrulandı.
+### Windows Servis Kalıcılığı — `scripts/start-server.ps1`
+- PowerShell kapandığında web server duruyordu → Task Scheduler ile çözüldü
+- Script kendisini Task olarak kaydediyor; login'de `Start-OllamaIfNeeded` + `Start-AchillesServer`
+- Ayrı log dosyaları: `logs/achilles-web.log` + `logs/achilles-web-err.log`
+- `$pid` built-in çakışması → `$webPid` ile düzeltildi
 
-### Makale Temizliği
-- 11 alakasız arXiv makalesi silindi (SQLite + ChromaDB + filesystem)
-- 19 makale · 2497 chunk kaldı
+### macOS LaunchAgent
+- `~/Library/LaunchAgents/com.achilles.web.plist` oluşturuldu ve yüklendi
+- `KeepAlive: true`, `RunAtLoad: true` — login'de otomatik başlar
 
-### Gate Fix'leri (önceki seans devamı, bu seansta onaylandı)
-- `gates.py` `_card_text()` ve `gate_4_quality()` — boş cevap hatası giderildi
-- `domain_classifier.py` — TRADING keyword seti genişletildi
-- `dataset_builder.py` — `_build_answer()` multi-source okuma
+### Test Fix
+- `pyproject.toml` addopts: `-m 'not ollama and not slow'` eklendi
+- qwen3:4b thinking mode 600s timeout'a neden oluyordu → artık varsayılan çalışmada atlanıyor
+- 405 test geçiyor
 
-### Web UI Bug Tespit
-- **Trader Beyin → Formül Çıkar** butonu "Hata: Not Found" döndürüyor
-- Sebep: PID 25825 eski server; route sonradan eklendi, process restart almadı
-- Çözüm: `kill $(lsof -ti:8765) && uv run achilles web`
+### PEFT / PyTorch Install Fix
+- `--index-url` PyPI'ı tamamen değiştiriyordu → `transformers` bulunamıyordu
+- İki ayrı komuta bölündü: `torch` PyTorch index'ten, `transformers peft datasets accelerate` PyPI'dan
+
+### `update.ps1` Encoding Fix
+- em dash (`—`) ve curly apostrophe (`'`) → ASCII'ye dönüştürüldü
+- Windows-1252 sistemlerde string terminator hatası artık yok
 
 ---
 
 ## 🔴 Sıradaki Görevler (öncelik sırasıyla)
 
-### 1. Server Restart (2 dakika)
-```bash
-kill $(lsof -ti:8765) && uv run achilles web
+### 1. Windows'ta Son Güncellemeyi Al (5 dakika)
+```powershell
+cd "$env:USERPROFILE\achilles"
+git pull
+.\scripts\start-server.ps1 -Install
+.\scripts\start-server.ps1 -Status
 ```
-"Trader Beyin → Formül Çıkar" test et.
+Ollama + web server'ın birlikte başladığını doğrula.
 
 ### 2. Daha Fazla Makale + Kart → LoRA
 ```bash
