@@ -3,7 +3,7 @@
 
 UV := $(shell command -v uv 2> /dev/null)
 
-.PHONY: help install test lint format typecheck run clean gen-data ci web
+.PHONY: help install test lint format typecheck run clean gen-data ci web web-start web-stop web-log
 
 help:
 	@echo "Hedefler:"
@@ -68,6 +68,17 @@ ifdef UV
 else
 	achilles-web
 endif
+
+web-start:
+	@launchctl load ~/Library/LaunchAgents/com.achilles.web.plist 2>/dev/null; \
+	sleep 2 && curl -sf http://localhost:8765/api/status > /dev/null && echo "Achilles Web calisiyor: http://localhost:8765" || echo "Baslatiliyor..."
+
+web-stop:
+	@launchctl unload ~/Library/LaunchAgents/com.achilles.web.plist 2>/dev/null; \
+	lsof -ti:8765 | xargs kill -9 2>/dev/null; echo "Achilles Web durduruldu."
+
+web-log:
+	@tail -f ~/Library/Logs/achilles-web.log
 
 clean:
 	rm -rf .pytest_cache .ruff_cache .mypy_cache **/__pycache__ build dist *.egg-info
