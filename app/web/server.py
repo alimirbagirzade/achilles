@@ -718,6 +718,43 @@ def api_training_stop() -> dict:
     return {"ok": True}
 
 
+@app.get("/api/training/colab-notebook")
+def api_training_colab_notebook() -> Response:
+    """Google Colab egitim notebook'u olustur ve indir (.ipynb)."""
+    import datetime as dt
+
+    from fastapi.responses import Response as FR
+
+    from app.config import get_settings
+    from app.training.dataset_builder import DatasetBuilder
+    from app.training.peft_lora_train import PeftTrainConfig, generate_colab_notebook
+
+    s = get_settings()
+    try:
+        r = DatasetBuilder().build()
+        train_path = r.train_path
+        valid_path = r.valid_path
+    except Exception:
+        train_path = s.jsonl_dir / "train.jsonl"
+        valid_path = s.jsonl_dir / "valid.jsonl"
+
+    ts = dt.datetime.now(dt.UTC).strftime("%Y%m%d_%H%M%S")
+    cfg = PeftTrainConfig(
+        base_model="Qwen/Qwen2.5-1.5B-Instruct",
+        train_jsonl=train_path,
+        valid_jsonl=valid_path,
+        adapter_output_path=s.adapters_dir / f"achilles_lora_colab_{ts}",
+    )
+    out = s.reports_dir / f"achilles_colab_{ts}.ipynb"
+    generate_colab_notebook(cfg, out)
+    content = out.read_bytes()
+    return FR(
+        content=content,
+        media_type="application/json",
+        headers={"Content-Disposition": f"attachment; filename=achilles_colab_{ts}.ipynb"},
+    )
+
+
 @app.get("/api/training/progress")
 def api_training_progress() -> dict:
     from app.web.training_manager import get_training_manager
@@ -1132,6 +1169,11 @@ def api_hardware_profile() -> dict:
         "metal": p.gpu.metal,
         "cuda": p.gpu.cuda,
         "lora_supported": p.os == "macOS" and p.arch == "arm64",
+        "lora_backend": (
+            "mlx" if (p.os == "macOS" and p.arch == "arm64")
+            else "peft_cuda" if p.gpu.cuda
+            else "peft_cpu"
+        ),
     }
 
 

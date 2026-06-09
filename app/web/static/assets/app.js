@@ -1939,9 +1939,12 @@
 
   // ---------- donanım profili + model önerisi ----------
   function renderHwProfile(profile, recs) {
-    var loraNote = profile.lora_supported
-      ? '<span style="color:#4ade80">✓ LoRA eğitimi destekleniyor</span>'
-      : '<span style="color:#facc15">LoRA eğitimi bu platformda desteklenmez (yalnızca macOS Apple Silicon)</span>';
+    var loraBackend = profile.lora_backend || (profile.lora_supported ? 'mlx' : 'peft_cpu');
+    var loraNote = loraBackend === 'mlx'
+      ? '<span style="color:#4ade80">&#10003; LoRA egitimi destekleniyor (MLX - Apple Silicon, hizli)</span>'
+      : loraBackend === 'peft_cuda'
+        ? '<span style="color:#4ade80">&#10003; LoRA egitimi destekleniyor (CUDA GPU, hizli)</span>'
+        : '<span style="color:#facc15">&#9888; LoRA egitimi CPU ile calisir (yavas ~2-4 saat) &mdash; Hizli egitim icin Egitim sekmesindeki "Colab Notebook Indir" dugmesini kullanin.</span>';
     var recsHtml = recs.recommended.length
       ? recs.recommended.map(function (r) {
           return (

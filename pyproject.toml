@@ -49,6 +49,8 @@ dependencies = [
 [project.optional-dependencies]
 # Heavier / platform-specific extras. mlx-lm only installs on Apple Silicon.
 train = ["mlx-lm>=0.16; platform_system == 'Darwin' and platform_machine == 'arm64'"]
+# Windows/Linux CPU veya CUDA ile LoRA egitimi icin: uv pip install -e ".[train-cpu]"
+train-cpu = ["torch>=2.2", "transformers>=4.40", "peft>=0.10", "datasets>=2.19", "accelerate>=0.29"]
 dev = [
     "pytest>=8.2",
     "pytest-cov>=5.0",
