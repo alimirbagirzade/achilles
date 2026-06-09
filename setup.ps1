@@ -108,7 +108,7 @@ $apiKey = ""
 if (-not $needOllama) {
     Write-Host ""
     Write-Host "  ====================================================" -ForegroundColor Cyan
-    Write-Host "    API KEY NASIL ALINIR  —  Adim Adim Rehber" -ForegroundColor Cyan
+    Write-Host "    API KEY NASIL ALINIR  --  Adim Adim Rehber" -ForegroundColor Cyan
     Write-Host "  ====================================================" -ForegroundColor Cyan
 
     switch ($llmBackend) {
@@ -205,7 +205,7 @@ if (-not $needOllama) {
     if ($apiKey -eq "") {
         Write-Warn "API key girilmedi. Sonradan .env dosyasindaki ilgili satiri doldurun."
     } elseif (-not $validKey) {
-        Write-Warn "API key formati beklenenden farkli gorunuyor — yine de devam ediliyor."
+        Write-Warn "API key formati beklenenden farkli gorunuyor -- yine de devam ediliyor."
         Write-Warn "OpenAI: 'sk-...' | Anthropic: 'sk-ant-...' | Google: 'AIza...'"
     } else {
         Write-OK "API key formati gecerli"
@@ -218,7 +218,7 @@ if (-not $needOllama) {
 if ($needOllama) {
     Write-Host ""
     Write-Host "  ====================================================" -ForegroundColor Cyan
-    Write-Host "    SISTEM KONTROLU  —  $llmModel" -ForegroundColor Cyan
+    Write-Host "    SISTEM KONTROLU  --  $llmModel" -ForegroundColor Cyan
     Write-Host "  ====================================================" -ForegroundColor Cyan
     Write-Host ""
 
@@ -359,7 +359,7 @@ if ($needOllama -and -not $SkipOllama) {
         Start-Sleep -Seconds 3
         $ollamaCmd = Get-Command ollama -ErrorAction SilentlyContinue
         if (-not $ollamaCmd) {
-            Write-Warn "Ollama kuruldu ancak bu oturumda tanınamadi."
+            Write-Warn "Ollama kuruldu ancak bu oturumda taninamadi."
             Write-Info "Bu pencereyi kapat, yeni PowerShell (Yonetici) ac, tekrar calistir."
             exit 1
         }
@@ -410,7 +410,7 @@ if ($needOllama -and -not $SkipOllama) {
 # ==========================================================================
 # [3/3] .ENV + VERITABANI
 # ==========================================================================
-Write-Step 3 ".env yapılandirmasi ve veritabani olusturuluyor..."
+Write-Step 3 ".env yapilandirmasi ve veritabani olusturuluyor..."
 if (-not (Test-Path ".env")) {
     Copy-Item ".env.example" ".env"
     Write-OK ".env dosyasi olusturuldu"
