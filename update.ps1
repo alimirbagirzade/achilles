@@ -6,7 +6,7 @@
 #   $action  = New-ScheduledTaskAction -Execute "powershell.exe" `
 #                -Argument "-NonInteractive -File `"C:\achilles\update.ps1`""
 #   $trigger = New-ScheduledTaskTrigger -Daily -At "09:00"
-#   Register-ScheduledTask -TaskName "AchillesUpdate" -Action $action -Trigger $trigger -RunLevel Highest
+#   Register-ScheduledTask -TaskName "AchillesUpdate" -Action $action -Trigger $trigger -RunLevel Highest -Force
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -34,9 +34,9 @@ try {
 
 # --- 2. Git'ten son surumu cek ---
 Write-Host "`n[2/4] GitHub'dan guncellemeler cekiliyor..."
-git fetch origin main 2>&1 | Out-Null
-$localHash  = git rev-parse HEAD
-$remoteHash = git rev-parse origin/main
+git fetch origin main 2>$null
+$localHash  = git rev-parse HEAD 2>$null
+$remoteHash = git rev-parse origin/main 2>$null
 if ($localHash -eq $remoteHash) {
     Write-Host "  Zaten guncel -- guncelleme yok." -ForegroundColor Green
 } else {
