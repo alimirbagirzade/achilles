@@ -234,8 +234,8 @@ def generate_colab_notebook(cfg: PeftTrainConfig, out_path: Path) -> Path:
                 "def tokenize(ex):\n",
                 "    return tokenizer(ex['text'], truncation=True,\n",
                 "                      max_length=MAX_SEQ_LEN, padding='max_length')\n",
-                "train_ds = Dataset.from_list(TRAIN_DATA).map(tokenize, batched=True, remove_columns=['text'])\n",
-                "valid_ds = Dataset.from_list(VALID_DATA).map(tokenize, batched=True, remove_columns=['text'])\n",
+                "train_ds = Dataset.from_list(TRAIN_DATA).map(tokenize, batched=True, remove_columns=['text'])\n",  # noqa: E501
+                "valid_ds = Dataset.from_list(VALID_DATA).map(tokenize, batched=True, remove_columns=['text'])\n",  # noqa: E501
                 "args = TrainingArguments(\n",
                 "    output_dir=ADAPTER_NAME, num_train_epochs=NUM_EPOCHS,\n",
                 "    per_device_train_batch_size=4, learning_rate=LEARNING_RATE,\n",

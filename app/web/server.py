@@ -669,8 +669,10 @@ def api_training_dry_run(req: TrainDryRunRequest) -> TrainDryRunResponse:
             num_layers=req.num_layers,
         )
     else:
-        from app.training.peft_lora_train import PeftTrainConfig as TrainConfig
-        from app.training.peft_lora_train import build_command
+        from app.training.peft_lora_train import (
+            PeftTrainConfig as TrainConfig,  # type: ignore[assignment]
+        )
+        from app.training.peft_lora_train import build_command  # type: ignore[assignment]
 
         cfg = TrainConfig(
             base_model=req.base_model or "Qwen/Qwen2.5-1.5B-Instruct",
@@ -681,7 +683,7 @@ def api_training_dry_run(req: TrainDryRunRequest) -> TrainDryRunResponse:
         )
 
     return TrainDryRunResponse(
-        command=" ".join(build_command(cfg)),
+        command=" ".join(build_command(cfg)),  # type: ignore[arg-type]
         n_train=r.n_train,
         n_valid=r.n_valid,
         content_hash=r.content_hash,
@@ -726,8 +728,10 @@ def api_training_run(req: TrainingStartRequest) -> TrainingStartResponse:
             num_layers=req.num_layers,
         )
     else:
-        from app.training.peft_lora_train import PeftTrainConfig as TrainConfig
-        from app.training.peft_lora_train import build_command
+        from app.training.peft_lora_train import (
+            PeftTrainConfig as TrainConfig,  # type: ignore[assignment]
+        )
+        from app.training.peft_lora_train import build_command  # type: ignore[assignment]
 
         missing = []
         for pkg in ["torch", "transformers", "peft", "datasets"]:

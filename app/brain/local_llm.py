@@ -249,4 +249,4 @@ class LocalLLM:
             contents=prompt,
             config=config,
         )
-        return response.text.strip()
+        return (response.text or "").strip()

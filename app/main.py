@@ -292,7 +292,7 @@ def train(
         from app.training.peft_lora_train import PeftTrainConfig, dry_run
         from app.training.peft_lora_train import train as peft_train
 
-        cfg = PeftTrainConfig(
+        cfg = PeftTrainConfig(  # type: ignore[assignment]
             base_model=base_model or "Qwen/Qwen2.5-1.5B-Instruct",
             train_jsonl=settings.jsonl_dir / "train.jsonl",
             valid_jsonl=settings.jsonl_dir / "valid.jsonl",
@@ -300,7 +300,7 @@ def train(
             iterations=iterations,
         )
         if run:
-            result = peft_train(cfg)
+            result = peft_train(cfg)  # type: ignore[arg-type]
             if not result.get("ok"):
                 console.print(f"[red]Hata: {result.get('error')}[/red]")
                 if "Eksik paketler" in str(result.get("error", "")):
@@ -309,7 +309,7 @@ def train(
                         "peft datasets accelerate[/yellow]"
                     )
         else:
-            result = dry_run(cfg)
+            result = dry_run(cfg)  # type: ignore[arg-type]
             import json as _json
 
             console.print(_json.dumps(result, ensure_ascii=False, indent=2))
