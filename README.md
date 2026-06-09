@@ -65,42 +65,47 @@ Kurulum başında backend sorulur — OpenAI seçersen Ollama adımı atlanır. 
 ### Windows 10 / 11
 
 > **NOT:** LoRA eğitimi (Eğitim sekmesi) sadece macOS Apple Silicon'da çalışır.
-> Windows'ta RAG, backtest, formul cikarma, web arayuzu tam calisir.
+> Windows'ta RAG, backtest, formül çıkarma, web arayüzü tam çalışır.
 
-**Adim 0 — On gereksinimler (bir kez)**
+**Adım 0 — Ön gereksinimler (bir kez)**
 
-| Program | Neden | Indir |
+| Program | Neden | İndir |
 |---------|-------|-------|
-| **Python 3.12** | Zorunlu — olmadan hicbir sey calismaz | https://python.org/downloads |
-| **Git** | Projeyi indirmek icin | https://git-scm.com/download/win |
+| **Python 3.12** | Zorunlu — olmadan hiçbir şey çalışmaz | https://python.org/downloads |
+| **Git** | Projeyi indirmek için | https://git-scm.com/download/win |
 
-> Python kurulumunda **"Add Python to PATH"** kutusunu mutlaka isaretle!
+> Python kurulumunda **"Add Python to PATH"** kutusunu mutlaka işaretle!
 
-Hizli kurulum (Windows 11 winget ile):
+Hızlı kurulum (Windows 11 winget ile):
 ```powershell
 winget install Python.Python.3.12
 winget install Git.Git
-# Kurulumdan sonra PowerShell'i kapat ve yeniden ac
+# Kurulumdan sonra PowerShell'i kapat ve yeniden aç
 ```
 
-**Adim 1 — Projeyi indir**
+**Adım 1 — Projeyi indir**
 
 ```powershell
-# PowerShell'i YONETiCi olarak ac
+# PowerShell'i YÖNETİCİ olarak aç
 git clone https://github.com/alimirbagirzade/achilles.git
 cd achilles
 ```
 
-**Adim 2 — Otomatik kurulum**
+**Adım 2 — Otomatik kurulum**
 
 ```powershell
-# Execution Policy hatasi alirsan once sunu calistir:
+# Execution Policy hatası alırsan önce şunu çalıştır:
 Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force
 
 .\setup.ps1
 ```
 
-Script sunlari yapar: Python kontrol → uv kur → bagimliliklar → **backend sec** (OpenAI/Ollama) → modelleri kur → veritabani olustur.
+Script şunları yapar: Python kontrol → uv kur → bağımlılıklar → **backend seç** (OpenAI/Ollama) → modelleri kur → veritabanı oluştur.
+
+> 💡 **Yanlış dizinden çalıştırsan sorun yok** — script `system32`, `Program Files` veya
+> başka bir sistem klasöründe çalıştığını otomatik fark eder, projeyi
+> `C:\Users\<kullanıcıadın>\achilles` konumuna kendisi taşır ve kurulumu oradan sürdürür.
+> Hiçbir şey yapman gerekmez.
 
 **Adım 3 — Sunucuyu başlat**
 
