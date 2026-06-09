@@ -356,6 +356,20 @@ Write-Info "Python kutuphane bagimliliklar yukleniyor..."
 uv sync
 Write-OK "Kutuphaneler tamam"
 
+# PEFT / LoRA egitim paketleri (Windows icin)
+Write-Host ""
+$installPeft = Read-Host "  LoRA model egitimi icin ek paketler kurulsun mu? (~2 GB) [E/H] (Enter = H)"
+if ($installPeft -eq "E" -or $installPeft -eq "e") {
+    Write-Info "PEFT paketleri kuruluyor (torch, transformers, peft, datasets)..."
+    Write-Info "Bu islem 5-15 dakika surebilir, internet hizinize gore degisir."
+    uv pip install torch transformers peft datasets accelerate --index-url https://download.pytorch.org/whl/cpu
+    Write-OK "LoRA egitim paketleri kuruldu (CPU modu)"
+    Write-Warn "NVIDIA GPU icin: uv pip install torch --index-url https://download.pytorch.org/whl/cu121"
+} else {
+    Write-Info "LoRA paketleri atlandı. Sonradan kurmak icin:"
+    Write-Host "  uv pip install torch transformers peft datasets accelerate" -ForegroundColor Yellow
+}
+
 # Ollama bolumu
 if ($needOllama -and -not $SkipOllama) {
 

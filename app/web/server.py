@@ -647,28 +647,45 @@ def api_training_dry_run(req: TrainDryRunRequest) -> TrainDryRunResponse:
     import datetime as dt
 
     from app.config import get_settings
+    from app.training.backend import detect_lora_backend
     from app.training.dataset_builder import DatasetBuilder
-    from app.training.mlx_lora_train import TrainConfig, build_command
 
     r = DatasetBuilder().build()
     s = get_settings()
     ts = dt.datetime.now(dt.UTC).strftime("%Y%m%d_%H%M%S")
-    cfg = TrainConfig(
-        base_model=req.base_model,
-        train_jsonl=r.train_path,
-        valid_jsonl=r.valid_path,
-        adapter_output_path=s.adapters_dir / f"adapter_{ts}",
-        iterations=req.iterations,
-        batch_size=req.batch_size,
-        learning_rate=req.learning_rate,
-        num_layers=req.num_layers,
-    )
+    backend = detect_lora_backend()
+
+    if backend == "mlx":
+        from app.training.mlx_lora_train import TrainConfig, build_command
+
+        cfg = TrainConfig(
+            base_model=req.base_model,
+            train_jsonl=r.train_path,
+            valid_jsonl=r.valid_path,
+            adapter_output_path=s.adapters_dir / f"adapter_{ts}",
+            iterations=req.iterations,
+            batch_size=req.batch_size,
+            learning_rate=req.learning_rate,
+            num_layers=req.num_layers,
+        )
+    else:
+        from app.training.peft_lora_train import PeftTrainConfig as TrainConfig
+        from app.training.peft_lora_train import build_command
+
+        cfg = TrainConfig(
+            base_model=req.base_model or "Qwen/Qwen2.5-1.5B-Instruct",
+            train_jsonl=r.train_path,
+            valid_jsonl=r.valid_path,
+            adapter_output_path=s.adapters_dir / f"adapter_{ts}",
+            iterations=req.iterations,
+        )
+
     return TrainDryRunResponse(
         command=" ".join(build_command(cfg)),
         n_train=r.n_train,
         n_valid=r.n_valid,
         content_hash=r.content_hash,
-        message="Dry-run: gerçek eğitim için terminalden --run ile çalıştırın.",
+        message=f"Backend: {backend} — gerçek eğitim için terminalden --run ile çalıştırın.",
     )
 
 
@@ -678,8 +695,8 @@ def api_training_run(req: TrainingStartRequest) -> TrainingStartResponse:
     import datetime as dt
 
     from app.config import get_settings
+    from app.training.backend import detect_lora_backend
     from app.training.dataset_builder import DatasetBuilder
-    from app.training.mlx_lora_train import TrainConfig, build_command
     from app.web.training_manager import get_training_manager
 
     mgr = get_training_manager()
@@ -693,20 +710,48 @@ def api_training_run(req: TrainingStartRequest) -> TrainingStartResponse:
     s = get_settings()
     ts = dt.datetime.now(dt.UTC).strftime("%Y%m%d_%H%M%S")
     adapter_name = f"{req.adapter_name}_{ts}"
-    cfg = TrainConfig(
-        base_model=req.base_model,
-        train_jsonl=r.train_path,
-        valid_jsonl=r.valid_path,
-        adapter_output_path=s.adapters_dir / adapter_name,
-        iterations=req.iterations,
-        batch_size=req.batch_size,
-        learning_rate=req.learning_rate,
-        num_layers=req.num_layers,
-    )
+    backend = detect_lora_backend()
+
+    if backend == "mlx":
+        from app.training.mlx_lora_train import TrainConfig, build_command
+
+        cfg = TrainConfig(
+            base_model=req.base_model,
+            train_jsonl=r.train_path,
+            valid_jsonl=r.valid_path,
+            adapter_output_path=s.adapters_dir / adapter_name,
+            iterations=req.iterations,
+            batch_size=req.batch_size,
+            learning_rate=req.learning_rate,
+            num_layers=req.num_layers,
+        )
+    else:
+        from app.training.peft_lora_train import PeftTrainConfig as TrainConfig
+        from app.training.peft_lora_train import build_command
+
+        missing = []
+        for pkg in ["torch", "transformers", "peft", "datasets"]:
+            try:
+                __import__(pkg)
+            except ImportError:
+                missing.append(pkg)
+        if missing:
+            return TrainingStartResponse(
+                ok=False,
+                message=f"PEFT paketleri eksik: {missing}. Kur: uv pip install {' '.join(missing)}",
+            )
+        cfg = TrainConfig(
+            base_model=req.base_model or "Qwen/Qwen2.5-1.5B-Instruct",
+            train_jsonl=r.train_path,
+            valid_jsonl=r.valid_path,
+            adapter_output_path=s.adapters_dir / adapter_name,
+            iterations=req.iterations,
+        )
+
     cmd = build_command(cfg)
     mgr.start(cmd, adapter_name=adapter_name, total_iters=req.iterations)
     return TrainingStartResponse(
-        ok=True, message=f"Eğitim başladı: {adapter_name} ({r.n_train} örnek)"
+        ok=True, message=f"Eğitim başladı [{backend}]: {adapter_name} ({r.n_train} örnek)"
     )
 
 

@@ -246,41 +246,79 @@ def train(
     adapter_name: str = typer.Option("achilles_lora_v1"),
     iterations: int = typer.Option(300, help="Eğitim iterasyon sayısı"),
     batch_size: int = typer.Option(2, help="Batch büyüklüğü (8GB için 2 önerilir)"),
-    num_layers: int = typer.Option(8, help="LoRA adapter katman sayısı (8GB için 8 önerilir)"),
-    run: bool = typer.Option(False, help="Eğitimi gerçekten başlat (Apple Silicon + mlx-lm)"),
+    num_layers: int = typer.Option(8, help="LoRA adapter katman sayısı (sadece MLX)"),
+    run: bool = typer.Option(False, help="Eğitimi gerçekten başlat"),
+    backend: str = typer.Option("auto", help="Backend: auto|mlx|peft"),
 ) -> None:
-    """MLX-LM LoRA eğitim komutunu hazırla (varsayılan dry-run)."""
-    from app.training.mlx_lora_train import TrainConfig
-    from app.training.mlx_lora_train import main as train_main
-    from app.training.mlx_lora_train import run as train_run
+    """LoRA eğitim komutunu hazırla — platform otomatik tespit edilir."""
+    from app.training.backend import detect_lora_backend
 
     settings = get_settings()
-    cfg = TrainConfig(
-        base_model=base_model or settings.mlx_base_model,
-        train_jsonl=settings.jsonl_dir / "train.jsonl",
-        valid_jsonl=settings.jsonl_dir / "valid.jsonl",
-        adapter_output_path=settings.adapters_dir / adapter_name,
-        iterations=iterations,
-        batch_size=batch_size,
-        num_layers=num_layers,
-    )
-    if run:
-        train_run(cfg)
-    else:
-        train_main(
-            [
-                "--base-model",
-                cfg.base_model,
-                "--train-jsonl",
-                str(cfg.train_jsonl),
-                "--valid-jsonl",
-                str(cfg.valid_jsonl),
-                "--adapter-output-path",
-                str(cfg.adapter_output_path),
-                "--iterations",
-                str(cfg.iterations),
-            ]
+
+    resolved = detect_lora_backend() if backend == "auto" else backend
+
+    if resolved == "mlx":
+        from app.training.mlx_lora_train import TrainConfig
+        from app.training.mlx_lora_train import main as train_main
+        from app.training.mlx_lora_train import run as train_run
+
+        cfg = TrainConfig(
+            base_model=base_model or settings.mlx_base_model,
+            train_jsonl=settings.jsonl_dir / "train.jsonl",
+            valid_jsonl=settings.jsonl_dir / "valid.jsonl",
+            adapter_output_path=settings.adapters_dir / adapter_name,
+            iterations=iterations,
+            batch_size=batch_size,
+            num_layers=num_layers,
         )
+        if run:
+            train_run(cfg)
+        else:
+            train_main(
+                [
+                    "--base-model",
+                    cfg.base_model,
+                    "--train-jsonl",
+                    str(cfg.train_jsonl),
+                    "--valid-jsonl",
+                    str(cfg.valid_jsonl),
+                    "--adapter-output-path",
+                    str(cfg.adapter_output_path),
+                    "--iterations",
+                    str(cfg.iterations),
+                ]
+            )
+    else:
+        from app.training.peft_lora_train import PeftTrainConfig, dry_run
+        from app.training.peft_lora_train import train as peft_train
+
+        cfg = PeftTrainConfig(
+            base_model=base_model or "Qwen/Qwen2.5-1.5B-Instruct",
+            train_jsonl=settings.jsonl_dir / "train.jsonl",
+            valid_jsonl=settings.jsonl_dir / "valid.jsonl",
+            adapter_output_path=settings.adapters_dir / adapter_name,
+            iterations=iterations,
+        )
+        if run:
+            result = peft_train(cfg)
+            if not result.get("ok"):
+                console.print(f"[red]Hata: {result.get('error')}[/red]")
+                if "Eksik paketler" in str(result.get("error", "")):
+                    console.print(
+                        "[yellow]Kur: uv pip install torch transformers "
+                        "peft datasets accelerate[/yellow]"
+                    )
+        else:
+            result = dry_run(cfg)
+            import json as _json
+
+            console.print(_json.dumps(result, ensure_ascii=False, indent=2))
+            if result.get("missing_packages"):
+                console.print(f"\n[yellow]Eksik paketler: {result['missing_packages']}[/yellow]")
+                console.print(
+                    "[yellow]Kur: uv pip install torch transformers "
+                    "peft datasets accelerate[/yellow]"
+                )
 
 
 @app.command()

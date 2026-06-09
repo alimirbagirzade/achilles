@@ -281,6 +281,20 @@ def generate_colab_notebook(cfg: PeftTrainConfig, out_path: Path) -> Path:
     return out_path
 
 
+def build_command(cfg: PeftTrainConfig) -> list[str]:
+    """TrainingManager.start() için subprocess komutu üretir."""
+    return [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "--train", str(cfg.train_jsonl),
+        "--valid", str(cfg.valid_jsonl),
+        "--output", str(cfg.adapter_output_path),
+        "--model", cfg.base_model,
+        "--iters", str(cfg.iterations),
+        "--run",
+    ]
+
+
 if __name__ == "__main__":
     import argparse
 

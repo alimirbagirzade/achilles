@@ -62,6 +62,13 @@ _VAL_RE = re.compile(r"Iter\s+(\d+):\s+Val loss\s+([\d.]+)")
 _START_RE = re.compile(r"Starting training.*iters:\s*(\d+)")
 _SAVED_RE = re.compile(r"Saved.*adapters\.safetensors")
 
+# HuggingFace Trainer (PEFT/Windows/Linux) format
+_PEFT_LOSS_RE = re.compile(r"'loss':\s*([\d.]+)")
+_PEFT_EVAL_RE = re.compile(r"'eval_loss':\s*([\d.]+)")
+_PEFT_EPOCH_RE = re.compile(r"Epoch\s+(\d+)/(\d+)")
+_PEFT_STEP_RE = re.compile(r"\[(\d+)/(\d+)")
+_PEFT_SAVED_RE = re.compile(r"Saving model checkpoint|adapter.*saved", re.IGNORECASE)
+
 
 class TrainingManager:
     """Uygulama genelinde tek örnek."""
@@ -149,6 +156,30 @@ class TrainingManager:
                 self._progress.loss_curve[-1]["val_loss"] = self._progress.val_loss
 
         if _SAVED_RE.search(line):
+            self._progress.pct = 100.0
+
+        m = _PEFT_LOSS_RE.search(line)
+        if m:
+            self._progress.train_loss = float(m.group(1))
+            self._progress.loss_curve.append({
+                "iter": self._progress.current_iter,
+                "train_loss": self._progress.train_loss,
+                "val_loss": self._progress.val_loss,
+            })
+
+        m = _PEFT_EVAL_RE.search(line)
+        if m:
+            self._progress.val_loss = float(m.group(1))
+            if self._progress.loss_curve:
+                self._progress.loss_curve[-1]["val_loss"] = self._progress.val_loss
+
+        m = _PEFT_STEP_RE.search(line)
+        if m and self._progress.total_iters:
+            step = int(m.group(1))
+            self._progress.current_iter = step
+            self._progress.pct = min(step / self._progress.total_iters * 100, 100.0)
+
+        if _PEFT_SAVED_RE.search(line):
             self._progress.pct = 100.0
 
     def _persist_loss_curve(self) -> None:
