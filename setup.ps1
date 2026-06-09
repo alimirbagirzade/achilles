@@ -23,51 +23,40 @@ Write-Host ""
 # ==========================================================================
 # DIZIN KONTROLU — sistem klasorlerinde calismayi otomatik duzelt
 # ==========================================================================
-$_scriptDir = if ($MyInvocation.MyCommand.Path) {
+# Proje klasoru kontrolu -- pyproject.toml ve app/ olmadan calisma
+$_scriptDir = if ($PSScriptRoot) {
+    $PSScriptRoot
+} elseif ($MyInvocation.MyCommand.Path) {
     Split-Path -Parent $MyInvocation.MyCommand.Path
-} else { $PWD.Path }
-
-$_badSegments = @("Windows", "system32", "SysWOW64", "Program Files",
-                  "Program Files (x86)", "ProgramData", "winsxs")
-$_inBadDir = $false
-foreach ($_seg in $_badSegments) {
-    if ($_scriptDir -like "*\$_seg\*" -or $_scriptDir -like "*\$_seg") {
-        $_inBadDir = $true; break
-    }
+} else {
+    $PWD.Path
 }
 
-if ($_inBadDir) {
-    $_userHome = if ($env:USERPROFILE) { $env:USERPROFILE } else { "C:\Users\$env:USERNAME" }
-    $_target   = Join-Path $_userHome "achilles"
+$_hasProject = (Test-Path (Join-Path $_scriptDir "pyproject.toml")) -and
+               (Test-Path (Join-Path $_scriptDir "app"))
 
+if (-not $_hasProject) {
     Write-Host ""
     Write-Host "  ================================================================" -ForegroundColor Red
-    Write-Host "   HATA: Yanlis klasorde calisiyorsunuz!" -ForegroundColor Red
+    Write-Host "   HATA: setup.ps1 yanlis klasorden calistirildi!" -ForegroundColor Red
     Write-Host "  ================================================================" -ForegroundColor Red
     Write-Host ""
-    Write-Host "  Mevcut konum: $_scriptDir" -ForegroundColor Yellow
-    Write-Host "  Bu klasore kurulum YAPILMAMALIDIR." -ForegroundColor Yellow
+    Write-Host "  Mevcut konum  : $_scriptDir" -ForegroundColor Yellow
+    Write-Host "  Beklenen dosya: pyproject.toml (bu klasorde yok)" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "  Simdi su adimlari yapin:" -ForegroundColor Cyan
+    Write-Host "  Dogru kurulum icin asagidaki komutu PowerShell'e kopyalayip calistirin:" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "  ADIM 1 -- Bu pencereyi KAPATIN" -ForegroundColor White
+    Write-Host "  Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force; irm https://raw.githubusercontent.com/alimirbagirzade/achilles/main/install.ps1 | iex" -ForegroundColor Green
     Write-Host ""
-    Write-Host "  ADIM 2 -- Yeni PowerShell acin (Yonetici olarak)" -ForegroundColor White
-    Write-Host "           Baslat menusunde 'PowerShell' arayin" -ForegroundColor DarkGray
-    Write-Host "           Sag tiklayin -> 'Yonetici olarak calistir'" -ForegroundColor DarkGray
-    Write-Host ""
-    Write-Host "  ADIM 3 -- Su komutu kopyalayip yapistirin:" -ForegroundColor White
-    Write-Host ""
-    Write-Host "  git clone https://github.com/alimirbagirzade/achilles.git `"$_target`"" -ForegroundColor Green
-    Write-Host "  cd `"$_target`"" -ForegroundColor Green
-    Write-Host "  Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force" -ForegroundColor Green
-    Write-Host "  .\setup.ps1" -ForegroundColor Green
-    Write-Host ""
+    Write-Host "  Bu komut projeyi otomatik olarak dogru konuma indirir ve kurar." -ForegroundColor White
     Write-Host "  ================================================================" -ForegroundColor Red
     Write-Host ""
     Read-Host "  Enter'a basin ve bu pencereyi kapatin"
     exit 1
 }
+
+# CWD'yi proje kokune sabitle (her kosulda tutarli calissin)
+Set-Location $_scriptDir
 
 # ==========================================================================
 # MODEL SECIM MENUSU

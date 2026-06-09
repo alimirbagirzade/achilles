@@ -64,48 +64,33 @@ Kurulum başında backend sorulur — OpenAI seçersen Ollama adımı atlanır. 
 
 ### Windows 10 / 11
 
-> **NOT:** LoRA eğitimi (Eğitim sekmesi) sadece macOS Apple Silicon'da çalışır.
-> Windows'ta RAG, backtest, formül çıkarma, web arayüzü tam çalışır.
+> LoRA egitimi: macOS Apple Silicon (MLX) + Windows/Linux (PEFT/CPU) desteklenir.
+> RAG, backtest, formul cikarma, web arayuzu tum platformlarda tam calismaktadir.
 
-**Adım 0 — Ön gereksinimler (bir kez)**
-
-| Program | Neden | İndir |
-|---------|-------|-------|
-| **Python 3.12** | Zorunlu — olmadan hiçbir şey çalışmaz | https://python.org/downloads |
-| **Git** | Projeyi indirmek için | https://git-scm.com/download/win |
-
-> Python kurulumunda **"Add Python to PATH"** kutusunu mutlaka işaretle!
-
-Hızlı kurulum (Windows 11 winget ile):
-```powershell
-winget install Python.Python.3.12
-winget install Git.Git
-# Kurulumdan sonra PowerShell'i kapat ve yeniden aç
-```
-
-**Adım 1 — Projeyi indir**
+**Tek komutla kurulum** — PowerShell'i ac, asagidaki satiri kopyalayip yapistir:
 
 ```powershell
-# PowerShell'i YÖNETİCİ olarak aç
-git clone https://github.com/alimirbagirzade/achilles.git
-cd achilles
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force; irm https://raw.githubusercontent.com/alimirbagirzade/achilles/main/install.ps1 | iex
 ```
 
-**Adım 2 — Otomatik kurulum**
+Bu komut her seyi halleder:
+- Git yoksa otomatik kurar
+- Projeyi her zaman `C:\Users\<kullaniciadiniz>\achilles` konumuna indirir
+- Kurulum sihirbazini baslatir (backend secimi, model indirme, veritabani)
+
+**Kurulumdan sonra sunucuyu baslatmak:**
 
 ```powershell
-# Execution Policy hatası alırsan önce şunu çalıştır:
-Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force
-
-.\setup.ps1
+cd "$env:USERPROFILE\achilles"
+uv run achilles-web
+# Tarayicide ac: http://127.0.0.1:8765
 ```
 
-Script şunları yapar: Python kontrol → uv kur → bağımlılıklar → **backend seç** (OpenAI/Ollama) → modelleri kur → veritabanı oluştur.
+**Sunucuyu Windows acilisinda otomatik baslatmak (opsiyonel):**
 
-> 💡 **Yanlış dizinden çalıştırsan sorun yok** — script `system32`, `Program Files` veya
-> başka bir sistem klasöründe çalıştığını otomatik fark eder, projeyi
-> `C:\Users\<kullanıcıadın>\achilles` konumuna kendisi taşır ve kurulumu oradan sürdürür.
-> Hiçbir şey yapman gerekmez.
+```powershell
+.\scripts\start-server.ps1 -Install
+```
 
 **Adım 3 — Sunucuyu başlat**
 
