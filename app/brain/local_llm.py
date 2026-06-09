@@ -151,6 +151,7 @@ class LocalLLM:
             "prompt": prompt,
             "system": system or "",
             "stream": False,
+            "think": False,
             "options": options,
         }
         if fmt:
@@ -158,7 +159,12 @@ class LocalLLM:
         with httpx.Client(timeout=timeout) as client:
             r = client.post(f"{self._ollama_host}/api/generate", json=payload)
         r.raise_for_status()
-        return r.json().get("response", "").strip()
+        data = r.json()
+        # qwen3 gibi thinking-mode modeller response bos birakilip thinking'e yazar
+        response = data.get("response", "").strip()
+        if not response:
+            response = data.get("thinking", "").strip()
+        return response
 
     def _generate_openai(
         self,
