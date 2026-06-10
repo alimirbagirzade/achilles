@@ -988,9 +988,7 @@
       fail = 0;
     function next() {
       if (i >= files.length) {
-        toast(ok + " PDF yüklendi" + (fail ? ", " + fail + " atlandı/hata" : "") + ".");
-        loadPapers();
-        refreshStatus();
+        done();
         return;
       }
       var f = files[i++];
@@ -1011,6 +1009,36 @@
         })
         .finally(next);
     }
+
+    function done() {
+      var msg = ok + " PDF sunucuya aktarıldı" + (fail ? ", " + fail + " atlandı/hata" : "") + ". İndeksleniyor…";
+      toast(msg);
+      api("/papers")
+        .then(function (data) {
+          var prevCount = (data.papers || data || []).length;
+          pollPapersUntilGrown(prevCount, 30);
+        })
+        .catch(function () { pollPapersUntilGrown(0, 30); });
+    }
+
+    function pollPapersUntilGrown(prevCount, attempts) {
+      if (attempts <= 0) { loadPapers(); refreshStatus(); return; }
+      setTimeout(function () {
+        api("/papers")
+          .then(function (data) {
+            var list = data.papers || data || [];
+            if (list.length > prevCount) {
+              loadPapers();
+              refreshStatus();
+              toast("İndeksleme tamamlandı, makaleler güncellendi.");
+            } else {
+              pollPapersUntilGrown(prevCount, attempts - 1);
+            }
+          })
+          .catch(function () { pollPapersUntilGrown(prevCount, attempts - 1); });
+      }, 4000);
+    }
+
     next();
   }
 

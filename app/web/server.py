@@ -14,7 +14,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, Request, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -182,14 +182,15 @@ def api_papers() -> list[PaperOut]:
 
 
 @app.post("/api/papers/upload", response_model=IngestResponse, dependencies=[api_auth])
-async def api_upload(file: UploadFile = File(...)) -> IngestResponse:
-    """PDF yükle (katı doğrulama) → kaydet → indeksle.
+async def api_upload(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+) -> IngestResponse:
+    """PDF yükle → kaydet → arka planda indeksle (anında yanıt döner).
 
-    _ingest_all senkron ve agir (PDF parse + embedding) oldugu icin
-    run_in_threadpool ile thread pool'a tasiniyor; event loop bloke olmuyor.
+    Ingestion agir oldugu icin (PDF parse + embedding) BackgroundTasks ile
+    ayristiriliyor; HTTP baglantisi beklemeden kapaniyor.
     """
-    from fastapi.concurrency import run_in_threadpool
-
     content = await file.read()
     safe_name = security.validate_pdf_upload(file.filename or "", content)
 
@@ -199,13 +200,27 @@ async def api_upload(file: UploadFile = File(...)) -> IngestResponse:
     dest.write_bytes(content)
     logger.info("PDF yüklendi: %s (%d bayt)", dest.name, len(content))
 
-    return await run_in_threadpool(_ingest_all)
+    background_tasks.add_task(_ingest_one, dest)
+    return IngestResponse(ingested=0, skipped=0, papers=[], message=f"{safe_name} alındı, indeksleniyor…")
 
 
 @app.post("/api/ingest", response_model=IngestResponse, dependencies=[api_auth])
 def api_ingest() -> IngestResponse:
     """raw_pdf/ içindeki tüm PDF'leri indeksle (idempotent)."""
     return _ingest_all()
+
+
+def _ingest_one(path: Path) -> None:
+    """Arka planda tek bir PDF'i indeksler (BackgroundTasks için)."""
+    from app.ingestion.paper_loader import DiscoveredPaper, compute_file_hash
+    from app.memory.paper_indexer import PaperIndexer
+
+    try:
+        disc = DiscoveredPaper(path=path, file_hash=compute_file_hash(path))
+        PaperIndexer().ingest_one(disc)
+        logger.info("Arka plan indeksleme tamamlandi: %s", path.name)
+    except Exception:
+        logger.exception("Arka plan indeksleme hatasi: %s", path.name)
 
 
 def _ingest_all() -> IngestResponse:
