@@ -33,14 +33,28 @@ class EmbeddingService:
         self._mode: str | None = None  # "ollama" | "fake"
 
     # --- public API -------------------------------------------------------
+    _BATCH_SIZE = 64  # Ollama'ya gönderilecek maksimum chunk sayısı (bellek/zaman sınırı)
+
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
         if self._mode is None:
             self._mode = "ollama" if self._ollama_available() else self._fallback_mode()
         if self._mode == "ollama":
-            return [self._embed_ollama(t) for t in texts]
+            return self._embed_in_batches(texts)
         return [self._embed_fake(t) for t in texts]
+
+    def _embed_in_batches(self, texts: list[str]) -> list[list[float]]:
+        """Büyük listeleri _BATCH_SIZE'lık alt gruplara bölerek toplu embed eder."""
+        results: list[list[float]] = []
+        for i in range(0, len(texts), self._BATCH_SIZE):
+            batch = texts[i : i + self._BATCH_SIZE]
+            try:
+                results.extend(self._embed_ollama_batch(batch))
+            except Exception:
+                logger.debug("Toplu embedding basarisiz (%d metin), tekli moda geciliyor", len(batch))
+                results.extend(self._embed_ollama_single(t) for t in batch)
+        return results
 
     def embed_one(self, text: str) -> list[float]:
         return self.embed([text])[0]
@@ -61,7 +75,20 @@ class EmbeddingService:
         except Exception:
             return False
 
-    def _embed_ollama(self, text: str) -> list[float]:
+    def _embed_ollama_batch(self, texts: list[str]) -> list[list[float]]:
+        """Ollama /api/embed ile tek istekte toplu embedding (Ollama >= 0.1.26)."""
+        import requests
+
+        r = requests.post(
+            f"{self.host}/api/embed",
+            json={"model": self.model, "input": texts},
+            timeout=120,
+        )
+        r.raise_for_status()
+        return r.json()["embeddings"]
+
+    def _embed_ollama_single(self, text: str) -> list[float]:
+        """Eski Ollama sürümleri için tekli yedek endpoint."""
         import requests
 
         r = requests.post(
