@@ -62,6 +62,10 @@ class PaperIndexer:
         parsed = parse_pdf(disc.path)
         meta = extract_metadata(parsed.text)
 
+        # Baslik bulunamazsa dosya adindan uret (alt cizgi/tire -> bosluk)
+        if not meta.title:
+            meta.title = disc.path.stem.replace("_", " ").replace("-", " ").strip()
+
         # save extracted text + metadata to disk
         (self.settings.extracted_text_dir / f"{disc.paper_id}.txt").write_text(
             parsed.text, encoding="utf-8"
