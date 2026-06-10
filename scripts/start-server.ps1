@@ -151,7 +151,7 @@ Set sh = Nothing
     Write-Host "  [OK] Windows acilisina eklendi (Registry Run)" -ForegroundColor Green
     Write-Host "       $VbsFile" -ForegroundColor Gray
 
-    # Task Scheduler'a da ekle (yedek)
+    # Task Scheduler'a da ekle (web servisi yedek)
     $action   = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$VbsFile`"" -WorkingDirectory $ProjectDir
     $trigger  = New-ScheduledTaskTrigger -AtLogOn
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -StartWhenAvailable `
@@ -160,21 +160,37 @@ Set sh = Nothing
         -Trigger $trigger -Settings $settings -RunLevel Highest -Force | Out-Null
     Write-Host "  [OK] Gorev Zamanlayici yedegi eklendi" -ForegroundColor Green
 
+    # Gunluk otomatik guncelleme gorevini kaydet (her gun 03:00)
+    $updateScript = Join-Path $ProjectDir "update.ps1"
+    $updateAction = New-ScheduledTaskAction `
+        -Execute "powershell.exe" `
+        -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -NonInteractive -File `"$updateScript`"" `
+        -WorkingDirectory $ProjectDir
+    $updateTrigger  = New-ScheduledTaskTrigger -Daily -At "03:00"
+    $updateSettings = New-ScheduledTaskSettingsSet `
+        -ExecutionTimeLimit (New-TimeSpan -Minutes 10) `
+        -StartWhenAvailable
+    Register-ScheduledTask -TaskName "AchillesUpdate" -Action $updateAction `
+        -Trigger $updateTrigger -Settings $updateSettings -RunLevel Highest -Force | Out-Null
+    Write-Host "  [OK] Gunluk otomatik guncelleme eklendi (her gun 03:00)" -ForegroundColor Green
+
     # Hemen baslat
     Start-OllamaIfNeeded
     Start-AchillesServer
 
     Write-Host ""
     Write-Host "  Artik PowerShell'i kapatabilirsiniz." -ForegroundColor Cyan
-    Write-Host "  Bir sonraki Windows acilisinda otomatik baslar." -ForegroundColor Cyan
+    Write-Host "  Web arayuz her Windows acilisinda otomatik baslar." -ForegroundColor Cyan
+    Write-Host "  Guncelleme her gece 03:00'de otomatik yapilir." -ForegroundColor Cyan
 }
 
 function Uninstall-Autostart {
     Stop-AchillesServer
     Remove-ItemProperty -Path $RegPath -Name $RegKey -ErrorAction SilentlyContinue
     Remove-Item $VbsFile -Force -ErrorAction SilentlyContinue
-    Unregister-ScheduledTask -TaskName "AchillesWeb" -Confirm:$false -ErrorAction SilentlyContinue
-    Write-Host "  [OK] Otomatik baslatma kaldirildi." -ForegroundColor Yellow
+    Unregister-ScheduledTask -TaskName "AchillesWeb"    -Confirm:$false -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName "AchillesUpdate" -Confirm:$false -ErrorAction SilentlyContinue
+    Write-Host "  [OK] Otomatik baslatma ve guncelleme kaldirildi." -ForegroundColor Yellow
 }
 
 function Show-Status {
@@ -189,6 +205,8 @@ function Show-Status {
     Write-Host "  Registry   : $(if ($reg) { 'kayitli' } else { 'kayitli degil' })" -ForegroundColor Gray
     $task = Get-ScheduledTask -TaskName "AchillesWeb" -ErrorAction SilentlyContinue
     Write-Host "  Zamanlayici: $(if ($task) { $task.State } else { 'kayitli degil' })" -ForegroundColor Gray
+    $upd = Get-ScheduledTask -TaskName "AchillesUpdate" -ErrorAction SilentlyContinue
+    Write-Host "  Guncelleme : $(if ($upd) { 'kayitli (her gece 03:00)' } else { 'kayitli degil' })" -ForegroundColor Gray
     Write-Host "  Log        : $LogOut" -ForegroundColor Gray
     Write-Host "  uv yolu    : $UvPath" -ForegroundColor Gray
 }

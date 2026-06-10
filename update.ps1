@@ -1,81 +1,93 @@
-# Achilles Trader AI -- Otomatik Guncelleme Scripti
-# Gelistirici GitHub'a yeni surum gonderince bu scripti calistir.
-# Kullanim: .\update.ps1
-#
-# Otomatik zamanlama (her gun saat 09:00):
-#   $action  = New-ScheduledTaskAction -Execute "powershell.exe" `
-#                -Argument "-NonInteractive -File `"C:\achilles\update.ps1`""
-#   $trigger = New-ScheduledTaskTrigger -Daily -At "09:00"
-#   Register-ScheduledTask -TaskName "AchillesUpdate" -Action $action -Trigger $trigger -RunLevel Highest -Force
+# Achilles Trader AI -- Otomatik Guncelleme
+# Kurulum sirasinda otomatik zamanlanir; elle de calistirabilirsiniz:
+#   .\update.ps1
 
-Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 
-$ProjectDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ProjectDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 Set-Location $ProjectDir
 
-Write-Host "=====================================" -ForegroundColor Cyan
-Write-Host "  Achilles - Guncelleme Basladi" -ForegroundColor Cyan
-Write-Host "=====================================" -ForegroundColor Cyan
+# ---------------------------------------------------------------- uv bul
+function Find-Uv {
+    $fromPath = (Get-Command uv -ErrorAction SilentlyContinue).Source
+    if ($fromPath -and (Test-Path $fromPath)) { return $fromPath }
+    $candidates = @(
+        (Join-Path $env:USERPROFILE ".local\bin\uv.exe"),
+        (Join-Path $env:USERPROFILE ".cargo\bin\uv.exe"),
+        (Join-Path $env:LOCALAPPDATA "Programs\uv\uv.exe"),
+        (Join-Path $env:APPDATA "uv\uv.exe"),
+        (Join-Path $env:LOCALAPPDATA "uv\uv.exe")
+    )
+    foreach ($p in $candidates) { if ($p -and (Test-Path $p)) { return $p } }
+    return $null
+}
 
-# --- 1. Mevcut sunucuyu durdur (port 8765) ---
-Write-Host "`n[1/4] Sunucu durduruluyor..."
-try {
-    $conn = Get-NetTCPConnection -LocalPort 8765 -State Listen -ErrorAction SilentlyContinue
-    if ($conn) {
-        Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue
-        Write-Host "  Sunucu durduruldu." -ForegroundColor Yellow
-    } else {
-        Write-Host "  Sunucu zaten calismiyor." -ForegroundColor Gray
+# ---------------------------------------------------------------- git bul
+function Find-Git {
+    $fromPath = (Get-Command git -ErrorAction SilentlyContinue).Source
+    if ($fromPath -and (Test-Path $fromPath)) { return $fromPath }
+    $candidates = @(
+        "C:\Program Files\Git\bin\git.exe",
+        "C:\Program Files (x86)\Git\bin\git.exe",
+        (Join-Path $env:LOCALAPPDATA "Programs\Git\bin\git.exe")
+    )
+    foreach ($p in $candidates) { if ($p -and (Test-Path $p)) { return $p } }
+    return $null
+}
+
+$UvPath  = Find-Uv
+$GitPath = Find-Git
+
+if (-not $UvPath)  { Write-Host "[HATA] uv bulunamadi."  -ForegroundColor Red; exit 1 }
+if (-not $GitPath) { Write-Host "[HATA] git bulunamadi." -ForegroundColor Red; exit 1 }
+
+$LogDir = Join-Path $ProjectDir "logs"
+$null   = New-Item -ItemType Directory -Path $LogDir -Force
+$LogFile = Join-Path $LogDir "update.log"
+
+"[$(Get-Date -Format 'yyyy-MM-dd HH:mm')] Guncelleme basliyor..." | Add-Content $LogFile
+
+# --- 1. Sunucuyu durdur ---
+$PidFile = Join-Path $ProjectDir ".web.pid"
+if (Test-Path $PidFile) {
+    $stored = Get-Content $PidFile -ErrorAction SilentlyContinue
+    if ($stored -match '^\d+$') {
+        Stop-Process -Id ([int]$stored) -Force -ErrorAction SilentlyContinue
+        Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
     }
-} catch {
-    Write-Host "  Sunucu kontrol edilemedi, devam ediliyor." -ForegroundColor Gray
 }
 
-# --- 2. Git'ten son surumu cek ---
-Write-Host "`n[2/4] GitHub'dan guncellemeler cekiliyor..."
-git fetch origin main 2>$null
-$localHash  = git rev-parse HEAD 2>$null
-$remoteHash = git rev-parse origin/main 2>$null
-if ($localHash -eq $remoteHash) {
-    Write-Host "  Zaten guncel -- guncelleme yok." -ForegroundColor Green
+# --- 2. GitHub'dan guncelleme cek (sadece git pull -- push yok) ---
+& $GitPath fetch origin main 2>$null
+$localHash  = (& $GitPath rev-parse HEAD 2>$null).Trim()
+$remoteHash = (& $GitPath rev-parse origin/main 2>$null).Trim()
+
+$updated = $false
+if ($localHash -ne $remoteHash) {
+    & $GitPath pull --ff-only origin main 2>&1 | Out-Null
+    $updated = $true
+    "[$(Get-Date -Format 'yyyy-MM-dd HH:mm')] Kod guncellendi ($($localHash.Substring(0,7)) -> $($remoteHash.Substring(0,7)))." |
+        Add-Content $LogFile
 } else {
-    $commitCount = git rev-list HEAD..origin/main --count
-    Write-Host "  $commitCount yeni commit bulundu, indiriliyor..." -ForegroundColor Yellow
-    git pull --ff-only origin main
-    Write-Host "  Kod guncellendi." -ForegroundColor Green
+    "[$(Get-Date -Format 'yyyy-MM-dd HH:mm')] Zaten guncel." | Add-Content $LogFile
 }
 
-# --- 3. Bagimliliklari guncelle ---
-Write-Host "`n[3/4] Python bagimliliklari guncelleniyor..."
-uv sync
-Write-Host "  Bagimliliklar guncellendi." -ForegroundColor Green
+# --- 3. Bagimliliklari guncelle (sadece kod degistiyse) ---
+if ($updated) {
+    & $UvPath sync 2>&1 | Out-Null
+}
 
 # --- 4. Sunucuyu yeniden baslat ---
-Write-Host "`n[4/4] Sunucu yeniden baslatiliyor..."
-$logPath    = Join-Path $ProjectDir "achilles_web.log"
-$logErrPath = Join-Path $ProjectDir "achilles_web_err.log"
-
-Start-Process -FilePath "uv" `
-    -ArgumentList "run", "achilles-web" `
+$LogOut = Join-Path $LogDir "achilles-web.log"
+$LogErr = Join-Path $LogDir "achilles-web-err.log"
+$proc = Start-Process `
+    -FilePath $UvPath `
+    -ArgumentList "run", "--project", "`"$ProjectDir`"", "achilles-web" `
     -WorkingDirectory $ProjectDir `
-    -RedirectStandardOutput $logPath `
-    -RedirectStandardError  $logErrPath `
-    -WindowStyle Hidden
+    -RedirectStandardOutput $LogOut `
+    -RedirectStandardError  $LogErr `
+    -WindowStyle Hidden `
+    -PassThru
+$proc.Id | Out-File $PidFile -Force -Encoding ascii
 
-Start-Sleep -Seconds 5
-
-# Canlilik kontrolu
-try {
-    $resp = Invoke-WebRequest -Uri "http://127.0.0.1:8765/api/status" -TimeoutSec 8 -UseBasicParsing -ErrorAction Stop
-    if ($resp.StatusCode -eq 200) {
-        Write-Host "  Sunucu hazir: http://127.0.0.1:8765" -ForegroundColor Green
-    }
-} catch {
-    Write-Host "  Sunucu henuz cevap vermiyor. Birkas saniye bekle." -ForegroundColor Yellow
-    Write-Host "  Log dosyasi: $logPath" -ForegroundColor Gray
-}
-
-Write-Host "`n=====================================" -ForegroundColor Cyan
-Write-Host "  Guncelleme tamamlandi!" -ForegroundColor Cyan
-Write-Host "=====================================" -ForegroundColor Cyan
+"[$(Get-Date -Format 'yyyy-MM-dd HH:mm')] Sunucu baslatildi (PID $($proc.Id))." | Add-Content $LogFile
