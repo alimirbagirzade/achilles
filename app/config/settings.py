@@ -91,7 +91,7 @@ class Settings(BaseSettings):
     # CORS: yalnız bu kökenlere izin verilir (frontend aynı origin'den sunulur).
     cors_origins: str = "http://127.0.0.1:8765,http://localhost:8765"
     # PDF upload üst sınırı (MB).
-    max_upload_mb: int = 50
+    max_upload_mb: int = 100
     # Basit hız sınırı: IP başına dakikadaki istek.
     rate_limit_per_min: int = 120
 
