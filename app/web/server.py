@@ -183,7 +183,13 @@ def api_papers() -> list[PaperOut]:
 
 @app.post("/api/papers/upload", response_model=IngestResponse, dependencies=[api_auth])
 async def api_upload(file: UploadFile = File(...)) -> IngestResponse:
-    """PDF yükle (katı doğrulama) → kaydet → indeksle."""
+    """PDF yükle (katı doğrulama) → kaydet → indeksle.
+
+    _ingest_all senkron ve agir (PDF parse + embedding) oldugu icin
+    run_in_threadpool ile thread pool'a tasiniyor; event loop bloke olmuyor.
+    """
+    from fastapi.concurrency import run_in_threadpool
+
     content = await file.read()
     safe_name = security.validate_pdf_upload(file.filename or "", content)
 
@@ -193,7 +199,7 @@ async def api_upload(file: UploadFile = File(...)) -> IngestResponse:
     dest.write_bytes(content)
     logger.info("PDF yüklendi: %s (%d bayt)", dest.name, len(content))
 
-    return _ingest_all()
+    return await run_in_threadpool(_ingest_all)
 
 
 @app.post("/api/ingest", response_model=IngestResponse, dependencies=[api_auth])
