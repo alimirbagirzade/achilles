@@ -225,14 +225,29 @@
           </p>
         </div>
         <form id="btForm" class="bt-form">
-          <label>
-            bar sayısı
-            <input type="number" id="nBars" min="200" max="20000" value="2000" />
-          </label>
-          <label>
-            seed
-            <input type="number" id="seed" min="0" max="9999999" value="42" />
-          </label>
+          <div class="setting-group">
+            <label>
+              bar sayısı
+              <input type="number" id="nBars" min="200" max="20000" value="2000" />
+            </label>
+            <p class="setting-desc">
+              Sentetik OHLCV mumu sayısı (1 bar = 1 zaman dilimi). <code>200–500</code> hızlı ön test,
+              <code>2000</code> önerilen (≈3–4 ay 1H), <code>5000+</code> uzun vadeli strateji doğrulaması.
+              Fazla bar ram kullanımını artırır; 20 000 üzeri önerilmez.
+            </p>
+          </div>
+          <div class="setting-group">
+            <label>
+              seed
+              <input type="number" id="seed" min="0" max="9999999" value="42" />
+            </label>
+            <p class="setting-desc">
+              Sentetik fiyat verisi üretiminde kullanılan rastgelelik başlangıcı.
+              Aynı <code>seed</code> + aynı bar sayısı → her çalıştırmada özdeş veri üretilir (tekrarlanabilirlik).
+              Farklı <code>seed</code> değerleri farklı piyasa koşullarını simüle eder; aynı stratejiyi
+              birden fazla seed'de test etmek sağlamlığı artırır.
+            </p>
+          </div>
           <button type="submit" class="btn btn-primary" id="btBtn">SENTETİK ÇALIŞTIR →</button>
         </form>
 
@@ -260,9 +275,15 @@
             </p>
             <textarea id="customIR" rows="8" placeholder='{"name":"my_strat","market":"XAUUSD","timeframe":"15m","indicators":[{"name":"EMA","period":20},{"name":"EMA","period":50},{"name":"RSI","period":14},{"name":"ATR","period":14}],"entry_rules":["ema_20 > ema_50","rsi_14 > 55"],"exit_rules":["ema_20 < ema_50","rsi_14 < 45"],"risk":{"stop_loss":"2 * ATR"},"costs":{"commission":0.0005,"slippage":0.0005}}'></textarea>
             <div class="bt-custom-row">
-              <label>bar <input type="number" id="customNBars" min="200" max="20000" value="2000" /></label>
-              <label>seed <input type="number" id="customSeed" min="0" max="9999999" value="42" /></label>
-              <button class="btn btn-primary" id="customBtBtn">ÖZEL IR ÇALIŞTIR →</button>
+              <div class="setting-group" style="flex:1;min-width:140px">
+                <label>bar sayısı <input type="number" id="customNBars" min="200" max="20000" value="2000" /></label>
+                <p class="setting-desc">Kaç mum üretilsin? <code>2000</code> önerilen.</p>
+              </div>
+              <div class="setting-group" style="flex:1;min-width:140px">
+                <label>seed <input type="number" id="customSeed" min="0" max="9999999" value="42" /></label>
+                <p class="setting-desc">Aynı seed → aynı sentetik veri; farklı seed → farklı senaryo.</p>
+              </div>
+              <button class="btn btn-primary" id="customBtBtn" style="align-self:flex-start;margin-top:4px">ÖZEL IR ÇALIŞTIR →</button>
             </div>
           </div>
         </details>
