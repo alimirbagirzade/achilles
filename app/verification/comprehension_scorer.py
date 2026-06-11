@@ -44,17 +44,9 @@ class ComprehensionScorer:
         self._embedder = Embedder()
 
     def score(self, paper_id: str) -> ComprehensionScore:
-        cards = self._store.list_knowledge_cards(paper_id)
-        if not cards:
+        card_json = self._store.get_latest_knowledge_card(paper_id)
+        if not card_json:
             return ComprehensionScore(paper_id=paper_id, details={"error": "kart yok"})
-
-        card = cards[0]
-        card_json: dict = {}
-        raw = card.card_json if isinstance(card.card_json, str) else json.dumps(card.card_json or {})
-        try:
-            card_json = json.loads(raw)
-        except Exception:
-            pass
 
         a = self._score_extraction(card_json)
         b = self._score_retrieval(paper_id, card_json)
@@ -74,7 +66,6 @@ class ComprehensionScorer:
                 "a_extraction": round(a, 3),
                 "b_retrieval": round(b, 3),
                 "c_llm": round(c, 3),
-                "card_id": card.card_id,
             },
         )
 
@@ -114,7 +105,7 @@ class ComprehensionScorer:
             from app.brain.local_llm import LocalLLM
 
             llm = LocalLLM()
-            if not llm.is_available():
+            if not llm.available():
                 return 0.5
 
             prompt = (
