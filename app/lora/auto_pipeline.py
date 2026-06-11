@@ -202,19 +202,33 @@ class AutoLoRAPipeline:
                 }
 
         from app.config.settings import get_settings
+        from app.training.backend import detect_lora_backend
         from app.web.training_manager import get_training_manager
 
         settings = get_settings()
         manager = get_training_manager()
+        backend = detect_lora_backend()
 
-        cmd = (
-            f"python -m mlx_lm.lora "
-            f"--model {settings.mlx_base_model} "
-            f"--train "
-            f"--data data/training/jsonl "
-            f"--adapter-path models/adapters/{adapter_name} "
-            f"--iters {iters}"
-        )
+        if backend == "mlx":
+            cmd = (
+                f"python -m mlx_lm.lora "
+                f"--model {settings.mlx_base_model} "
+                f"--train "
+                f"--data data/training/jsonl "
+                f"--adapter-path models/adapters/{adapter_name} "
+                f"--iters {iters}"
+            )
+        else:
+            # Windows / Linux: PEFT backend (torch + peft)
+            cmd = (
+                f"python -m app.training.peft_lora_train "
+                f"--model {settings.mlx_base_model} "
+                f"--train data/training/jsonl/train.jsonl "
+                f"--valid data/training/jsonl/valid.jsonl "
+                f"--output models/adapters/{adapter_name} "
+                f"--iters {iters} "
+                f"--run"
+            )
 
         ok = manager.start(cmd.split(), adapter_name, iters)
         if not ok:
