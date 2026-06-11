@@ -1369,14 +1369,25 @@
           el.innerHTML = '<div class="empty">Henüz araştırma oturumu yok.</div>';
           return;
         }
-        el.innerHTML = rows.map(function (r) {
+        var vLabels = { pass: "✓ BAŞARILI", fail: "✗ BAŞARISIZ", inconclusive: "~ SONUÇSUZ" };
+        var passed = rows.filter(function(r) { return r.verdict === "pass"; }).length;
+        var failed = rows.filter(function(r) { return r.verdict === "fail"; }).length;
+        var pending = rows.filter(function(r) { return !r.verdict; }).length;
+        var summary = '<div class="sessions-summary">' +
+          '<span class="verdict verdict-pass sess-count">✓ ' + passed + ' başarılı</span>' +
+          '<span class="verdict verdict-fail sess-count">✗ ' + failed + ' başarısız</span>' +
+          (pending ? '<span class="verdict verdict-inconclusive sess-count">~ ' + pending + ' bekliyor</span>' : '') +
+          '</div>';
+        el.innerHTML = summary + rows.map(function (r) {
+          var vKey = r.verdict || "pending";
           var vClass = "verdict-" + (r.verdict || "inconclusive");
+          var vLabel = vLabels[r.verdict] || "⏳ test bekleniyor";
           return (
             '<div class="hist-row">' +
             '<div class="hist-head">' +
             '<span class="hist-name">' + esc((r.indicator_name || "—")) + "</span>" +
             '<span class="muted small">iter ' + r.iteration + "</span>" +
-            (r.verdict ? '<span class="verdict ' + vClass + ' hist-verdict">' + r.verdict + "</span>" : "") +
+            '<span class="verdict ' + vClass + ' hist-verdict">' + vLabel + "</span>" +
             '<span class="muted small">' + esc((r.created_at || "").slice(0, 10)) + "</span>" +
             "</div>" +
             '<div class="muted small">' + esc((r.question || "").slice(0, 80)) + "</div>" +
