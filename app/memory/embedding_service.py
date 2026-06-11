@@ -70,7 +70,7 @@ class EmbeddingService:
         try:
             import requests
 
-            r = requests.get(f"{self.host}/api/tags", timeout=2)
+            r = requests.get(f"{self.host}/api/tags", timeout=5)
             return r.status_code == 200
         except Exception:
             return False

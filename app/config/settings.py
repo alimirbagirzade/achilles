@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     llm_backend: str = "auto"
 
     # --- Ollama (yerel) ---
-    ollama_host: str = "http://localhost:11434"
+    ollama_host: str = "http://127.0.0.1:11434"  # localhost yerine IP — Windows IPv6 sorununu önler
     llm_model: str = "qwen3:4b"
     embed_model: str = "nomic-embed-text"
 

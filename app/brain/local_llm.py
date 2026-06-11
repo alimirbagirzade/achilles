@@ -45,7 +45,7 @@ class LocalLLM:
 
     def _ollama_alive(self) -> bool:
         try:
-            r = httpx.get(f"{self._ollama_host}/api/tags", timeout=2.0)
+            r = httpx.get(f"{self._ollama_host}/api/tags", timeout=5.0)
             return r.status_code == 200
         except Exception:
             return False
