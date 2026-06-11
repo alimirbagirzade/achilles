@@ -1937,15 +1937,20 @@
       }).catch(function() { autoLoraMsg('Bağlantı hatası', false); });
   });
   if (autoLoraTrainBtn) autoLoraTrainBtn.addEventListener('click', function() {
-    var name = (document.getElementById('trAdapterName')||{value:''}).value || ('achilles_auto_'+Date.now());
-    var iters = parseInt((document.getElementById('drIterations')||{value:'300'}).value, 10);
-    if (!confirm('Eğitim başlatılacak: ' + name + ', ' + iters + ' iter. Onaylıyor musun?')) return;
-    fetch('/api/auto-lora/train?adapter_name='+encodeURIComponent(name)+'&iters='+iters, {method:'POST'})
+    var nameEl = document.getElementById('autoLoraAdapterName') || document.getElementById('trAdapterName');
+    var itersEl = document.getElementById('autoLoraIters') || document.getElementById('drIterations');
+    var name = (nameEl && nameEl.value.trim()) || ('achilles_auto_' + Date.now());
+    var iters = parseInt((itersEl && itersEl.value) || '300', 10);
+    if (!name) { autoLoraMsg('Adapter adı boş bırakılamaz.', false); return; }
+    if (iters < 50 || iters > 5000) { autoLoraMsg('İterasyon 50–5000 arasında olmalı.', false); return; }
+    if (!confirm('Eğitim başlatılacak:\nAdapter: ' + name + '\nİterasyon: ' + iters + '\n\nOnaylıyor musun?')) return;
+    autoLoraMsg('Eğitim başlatılıyor…', true);
+    fetch('/api/auto-lora/train?adapter_name=' + encodeURIComponent(name) + '&iters=' + iters, {method:'POST'})
       .then(function(r) { return r.json(); })
       .then(function(d) {
-        autoLoraMsg(d.ok ? 'Eğitim başladı: '+d.adapter_name : 'Hata: '+d.reason, d.ok);
+        autoLoraMsg(d.ok ? '✓ Eğitim başladı: ' + d.adapter_name + ' (' + iters + ' iter)' : 'Hata: ' + (d.reason || 'bilinmiyor'), d.ok);
         loadAutoLoraStatus();
-      });
+      }).catch(function() { autoLoraMsg('Bağlantı hatası', false); });
   });
   if (autoLoraPromoteBtn) autoLoraPromoteBtn.addEventListener('click', function() {
     if (!confirm('Bu adapter production\'a terfi ettirilecek. Onaylıyor musun?')) return;

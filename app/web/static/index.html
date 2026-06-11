@@ -294,12 +294,28 @@
         <!-- 2. Ayarlar -->
         <div class="training-section">
           <h3>2 · Eğitim Ayarları</h3>
+          <p class="muted small">Aşağıdaki değerleri değiştirerek eğitimi özelleştirebilirsin.</p>
           <div class="dry-run-form">
-            <label>Temel model<input type="text" id="drBaseModel" value="mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit" /></label>
-            <label>Adapter adı<input type="text" id="trAdapterName" value="achilles_lora" /></label>
-            <label>İterasyon<input type="number" id="drIterations" min="50" max="5000" value="500" /></label>
-            <label>Batch<input type="number" id="drBatch" min="1" max="16" value="2" /></label>
-            <label>Katman<input type="number" id="drLayers" min="1" max="64" value="8" /></label>
+            <div class="setting-group">
+              <label>Temel model<input type="text" id="drBaseModel" value="mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit" /></label>
+              <p class="setting-desc">Eğitilecek dil modelinin adı. macOS'ta MLX formatı (<code>mlx-community/…</code>), Windows/Linux'ta standart HuggingFace formatı kullanılır. Modeli değiştirirsen önceki adapter'lar uyumsuz hale gelir.</p>
+            </div>
+            <div class="setting-group">
+              <label>Adapter adı<input type="text" id="trAdapterName" value="achilles_lora" /></label>
+              <p class="setting-desc">Eğitim sonucunun kaydedileceği klasör adı (<code>models/adapters/&lt;ad&gt;</code>). Her yeni eğitim için farklı isim kullan (ör. <code>achilles_lora_v2</code>) — aynı adı kullanırsan öncekinin üzerine yazılır.</p>
+            </div>
+            <div class="setting-group">
+              <label>İterasyon<input type="number" id="drIterations" min="50" max="5000" value="500" /></label>
+              <p class="setting-desc">Modelin kaç güncelleme adımı yapacağı. <strong>100–200:</strong> hızlı ama yetersiz. <strong>300–500:</strong> çoğu kullanım için yeterli (önerilen). <strong>1000+:</strong> güçlü ama yavaş ve aşırı öğrenme riski taşır.</p>
+            </div>
+            <div class="setting-group">
+              <label>Batch<input type="number" id="drBatch" min="1" max="16" value="2" /></label>
+              <p class="setting-desc">Her adımda aynı anda işlenecek örnek sayısı. <strong>1–2:</strong> düşük RAM / CPU eğitimi için güvenli. <strong>4–8:</strong> CUDA GPU varsa hızlandırır. Bellek hatası alırsan bu değeri düşür.</p>
+            </div>
+            <div class="setting-group">
+              <label>Katman<input type="number" id="drLayers" min="1" max="64" value="8" /></label>
+              <p class="setting-desc">LoRA'nın modelin kaç transformatör katmanını ince ayarlayacağı. <strong>4–8:</strong> hızlı ve az bellek (başlangıç için yeterli). <strong>16–32:</strong> daha güçlü öğrenme ama yavaş ve fazla bellek ister.</p>
+            </div>
           </div>
         </div>
 
@@ -363,13 +379,18 @@
             Yeterli kart birikince Gate 0-8 otomatik denetlenir.
             <strong>Eğitim ve production terfi kullanıcı onayı gerektirir.</strong>
           </p>
+
+          <!-- Otomatik kontrol aç/kapat -->
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
             <span class="muted small">Otomatik kontrol:</span>
             <button class="btn btn-sm" id="autoLoraEnableBtn">Aç</button>
             <button class="btn btn-sm" id="autoLoraDisableBtn">Kapat</button>
             <span id="autoLoraEnabledLabel" class="badge badge-info" style="margin-left:4px">kapalı</span>
           </div>
-          <div class="card" style="padding:12px;margin-bottom:10px">
+          <p class="setting-desc" style="margin-bottom:12px">Otomatik kontrol açıkken sistem her saatte bir onaylı kart sayısını kontrol eder. 20+ kart biriktiyse Gate 0-8 çalıştırılır. Eğitimi yine de sen başlatırsın — otomatik olarak eğitim başlamaz.</p>
+
+          <!-- Pipeline durumu -->
+          <div class="card" style="padding:12px;margin-bottom:14px">
             <div style="display:flex;justify-content:space-between;align-items:center">
               <span class="muted small">Pipeline Durumu</span>
               <button class="btn btn-sm" id="autoLoraRefreshBtn">↻</button>
@@ -378,11 +399,36 @@
               <span class="muted">Yükleniyor…</span>
             </div>
           </div>
+
+          <!-- Eğitim konfigürasyonu -->
+          <div class="card" style="padding:14px;margin-bottom:14px;border:1px solid #334155">
+            <h4 style="margin:0 0 10px;font-size:.9rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">Eğitim Konfigürasyonu</h4>
+            <div class="setting-group" style="margin-bottom:10px">
+              <label style="display:flex;flex-direction:column;gap:4px;font-size:.85rem">
+                Adapter adı
+                <input type="text" id="autoLoraAdapterName" value="achilles_lora_v2" style="max-width:260px" />
+              </label>
+              <p class="setting-desc">Eğitim sonucunun kaydedileceği klasör adı. Her yeni eğitim için farklı bir versiyon numarası kullan (ör. <code>achilles_lora_v2</code>, <code>v3</code>…). Aynı adı kullanırsan önceki adapter'ın üzerine yazılır.</p>
+            </div>
+            <div class="setting-group">
+              <label style="display:flex;flex-direction:column;gap:4px;font-size:.85rem">
+                İterasyon
+                <input type="number" id="autoLoraIters" min="50" max="5000" value="300" style="max-width:120px" />
+              </label>
+              <p class="setting-desc">Gate geçtikten sonra kaç adım eğitim yapılacağı. <strong>300</strong> başlangıç için önerilir. Daha uzun eğitim istiyorsan 500–1000 arası dene — ancak aşırı öğrenme riskini göz önünde bulundur.</p>
+            </div>
+          </div>
+
+          <!-- Aksiyon butonları -->
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn" id="autoLoraCheckBtn">🔍 Gate Kontrolü Başlat</button>
             <button class="btn btn-primary" id="autoLoraTrainBtn" disabled>▶ Eğitimi Onayla &amp; Başlat</button>
             <button class="btn" id="autoLoraPromoteBtn" disabled>⬆ Production'a Terfi Et</button>
             <button class="btn" id="autoLoraResetBtn">↺ Sıfırla</button>
+          </div>
+          <div class="setting-desc" style="margin-top:8px">
+            <strong>Gate Kontrolü:</strong> 9 kalite kapısından geçip geçmediğini denetler (kaynak, şema, domain, kalite, matematik, felsefe, güvenlik, bölme). Tümü geçerse "Eğitimi Onayla" butonu aktif olur. |
+            <strong>Production'a Terfi:</strong> Eval puanı eşiği geçen adapter'ı aktif model olarak işaretle.
           </div>
           <div id="autoLoraMsg" class="result hidden" style="margin-top:10px"></div>
         </div>

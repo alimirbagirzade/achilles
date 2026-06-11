@@ -1200,11 +1200,27 @@ code {
   margin: 0 0 4px;
   color: var(--ink);
 }
+.setting-group {
+  width: 100%;
+  margin-bottom: 4px;
+}
+.setting-desc {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 4px 0 0;
+  line-height: 1.5;
+}
+.setting-desc code {
+  background: var(--surface);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 11px;
+}
 .dry-run-form {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  align-items: flex-end;
+  align-items: flex-start;
   margin: 12px 0;
 }
 .dry-run-form label {
