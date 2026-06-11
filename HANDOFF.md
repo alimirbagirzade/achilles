@@ -77,6 +77,14 @@ uv pip install torch transformers peft datasets accelerate
 | `app/memory/sqlite_store.py` | Ana DB (kartlar, örnekler, adapter'lar) |
 | `storage/auto_lora_state.json` | Pipeline anlık durumu (stage, gate_summary, …) |
 
+## 🏛️ Mimari Kararlar (değişmez)
+
+- **API key entegrasyonu planlanmıyor.** OpenAI/Anthropic/Google key desteği kodda mevcut ama aktif olarak geliştirilmeyecek. Sistem tamamen lokal-öncelikli.
+- **Uzun vadeli hedef: lokal 120B OSS model.** (ör. Llama 3.1 405B, Qwen2.5 72B+) Ollama üzerinden çalışacak. Geçiş için tek değişiklik: `.env` dosyasında `ACHILLES_LLM_MODEL` ve `ACHILLES_OLLAMA_HOST`. Kod değişikliği gerekmez.
+- **Ollama host:** `127.0.0.1:11434` (localhost değil — Windows IPv6 sorunundan dolayı).
+
+---
+
 ## ⚠️ Bilinen Sınırlamalar / Dikkat Noktaları
 
 - **Dataset builder vs LoRA dataset builder:** `app/training/dataset_builder.py` → `training_examples` tablosunu okur. `app/lora/dataset_builder.py` → `knowledge_cards` tablosunu okur. İkisi farklı sistem.
