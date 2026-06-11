@@ -20,6 +20,24 @@ _HEADING_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Matematik/fizik formül kalıpları — bu bloklara chunk sınırı girmesin
+_MATH_BLOCK_RE = re.compile(
+    r"\$\$.+?\$\$"                                          # $$...$$
+    r"|\\\[.+?\\\]"                                         # \[...\]
+    r"|\\begin\{(?:equation|align|gather|multline)\*?\}"    # \begin{equation}
+    r"|\$[^$\n]{3,120}\$",                                  # $inline$
+    re.DOTALL,
+)
+_MATH_CHARS_RE = re.compile(r"[$\\∂∑∏∫√≤≥≠±∞∈∉⊂⊃∪∩∀∃λσμπθαβγδ=]")
+
+
+def _is_math_heavy(text: str) -> bool:
+    """Paragraf ağırlıklı olarak matematiksel formül içeriyorsa True döner."""
+    if _MATH_BLOCK_RE.search(text):
+        return True
+    math_chars = len(_MATH_CHARS_RE.findall(text))
+    return bool(text) and math_chars / len(text) > 0.12
+
 
 @dataclass
 class TextChunk:
@@ -88,19 +106,42 @@ def chunk_text(
             tail = buf[-over:] if over else ""
             buf = f"{tail}\n\n{para}" if tail else para
         else:
-            # single oversized paragraph: hard-split
-            for j in range(0, len(para), size):
-                piece = para[j : j + size]
+            # Tek aşırı büyük paragraf: formül içeriyorsa bölme, değilse cümle sınırında kes
+            if _is_math_heavy(para):
+                # Formül bütünlüğünü koru — oversized chunk kabul et
                 chunks.append(
                     TextChunk(
                         paper_id=paper_id,
                         chunk_index=idx,
-                        text=piece,
+                        text=para,
                         page_number=page_number,
-                        section_name=_detect_section(piece),
+                        section_name=_detect_section(para),
                     )
                 )
                 idx += 1
+            else:
+                # Cümle sınırında kes (nokta/satırsonu tercih et)
+                start = 0
+                while start < len(para):
+                    end = start + size
+                    if end < len(para):
+                        # nokta veya satırsonu bul
+                        cut = para.rfind(". ", start, end)
+                        if cut == -1:
+                            cut = para.rfind("\n", start, end)
+                        end = cut + 1 if cut != -1 and cut > start else end
+                    piece = para[start:end]
+                    chunks.append(
+                        TextChunk(
+                            paper_id=paper_id,
+                            chunk_index=idx,
+                            text=piece,
+                            page_number=page_number,
+                            section_name=_detect_section(piece),
+                        )
+                    )
+                    idx += 1
+                    start = end
             buf = ""
     if buf:
         chunks.append(

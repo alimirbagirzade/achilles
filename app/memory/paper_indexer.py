@@ -136,12 +136,23 @@ class PaperIndexer:
             ],
         )
 
+        # Formül çıkarma — LLM yoksa kural tabanlı yedek devreye girer, hata ingestion'ı bloklamaz
+        notes: list[str] = [f"embedding_mode={self.embedder.mode}"]
+        try:
+            from app.research.formula_extractor import FormulaExtractor
+            n_formulas = len(FormulaExtractor().extract_from_paper(disc.paper_id))
+            if n_formulas:
+                notes.append(f"formulas={n_formulas}")
+                logger.info("Formül çıkarıldı: %s → %d formül", disc.paper_id, n_formulas)
+        except Exception as exc:
+            logger.debug("Formül çıkarma atlandı (%s): %s", disc.paper_id, exc)
+
         logger.info("Indexlendi: %s (%d chunk)", disc.paper_id, len(chunks))
         return IngestResult(
             paper_id=disc.paper_id,
             title=meta.title,
             n_chunks=len(chunks),
-            notes=[f"embedding_mode={self.embedder.mode}"],
+            notes=notes,
         )
 
     def ingest_directory(self, directory: str | Path | None = None, *, force: bool = False):
