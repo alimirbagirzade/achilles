@@ -64,11 +64,27 @@ $remoteHash = (& $GitPath rev-parse origin/main 2>$null).Trim()
 
 $updated = $false
 if ($localHash -ne $remoteHash) {
-    & $GitPath pull --ff-only origin main 2>&1 | Out-Null
+    # Yerel degisiklikler varsa gecici sakla (auto_lora_state.json vb.)
+    $stashOut = (& $GitPath stash 2>&1)
+    $didStash = ($stashOut -notmatch "No local changes")
+
+    $pullOut = (& $GitPath pull origin main 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[HATA] git pull basarisiz:" -ForegroundColor Red
+        Write-Host ($pullOut | Out-String) -ForegroundColor Yellow
+        "[$(Get-Date -Format 'yyyy-MM-dd HH:mm')] git pull HATASI: $pullOut" | Add-Content $LogFile
+        if ($didStash) { & $GitPath stash pop 2>&1 | Out-Null }
+        exit 1
+    }
+
+    if ($didStash) { & $GitPath stash pop 2>&1 | Out-Null }
+
     $updated = $true
+    Write-Host "[OK] Guncellendi: $($localHash.Substring(0,7)) -> $($remoteHash.Substring(0,7))" -ForegroundColor Green
     "[$(Get-Date -Format 'yyyy-MM-dd HH:mm')] Kod guncellendi ($($localHash.Substring(0,7)) -> $($remoteHash.Substring(0,7)))." |
         Add-Content $LogFile
 } else {
+    Write-Host "[OK] Zaten guncel ($($localHash.Substring(0,7)))." -ForegroundColor Cyan
     "[$(Get-Date -Format 'yyyy-MM-dd HH:mm')] Zaten guncel." | Add-Content $LogFile
 }
 

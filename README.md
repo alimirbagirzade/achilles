@@ -1,8 +1,8 @@
 # 🏛️ Achilles Trader AI
 
-> **Yerel veya bulut AI araştırma sistemi** — macOS · Windows · Linux.
+> **Yerel-öncelikli AI araştırma sistemi** — macOS · Windows · Linux.
 > Akademik finans makalelerini okur, trade hipotezleri üretir, backtest eder, sonuçtan öğrenir.
-> **OpenAI API** (önerilen) veya **yerel Ollama** ile çalışır — kurulumda seçersin.
+> **Yerel Ollama** ile çalışır — API key, bulut bağlantısı, ücret yok.
 
 > ⚠️ **Bu bir araştırma aracıdır — canlı bot DEĞİLDİR ve yatırım tavsiyesi VERMEZ.**
 > Tüm çıktılar test edilmesi gereken _hipotezlerdir_. Gerçek parayla kullanımın sorumluluğu tamamen size aittir.
@@ -127,8 +127,9 @@ Register-ScheduledTask -TaskName "AchillesUpdate" -Action $action -Trigger $trig
 | 🧠 Trader Beyin | ✅ | Formül çıkarımı → sentez → backtest → yansıma |
 | 📈 Backtest | ✅ | Sentetik / gerçek CSV · komisyon + slippage dahil |
 | 📝 Pine Script | ✅ | `achilles pine` → TradingView v5 taslak |
-| 🎓 LoRA Eğitimi | ✅ | Web UI'dan tek tık · canlı ilerleme çubuğu · SSE stream |
+| 🎓 LoRA Eğitimi | ✅ | Web UI'dan tek tık · macOS MLX + Windows PEFT · SSE stream |
 | 📊 Paper Mastery | ✅ | 0-100 RAG kalite skoru · deterministik · LLM gerektirmez |
+| 🧪 Makale Anlama Skoru | ✅ | A+B+C üç katman · kart kalitesini anında gösterir |
 | 🖥️ Web Arayüzü | ✅ | 8 sekme · PDF yükle · soru sor · backtest · eğitim |
 
 ---
@@ -262,7 +263,7 @@ models/adapters/achilles_lora_v3.meta.json  ← versiyon + hash
 uv run achilles-web
 ```
 
-Tarayıcında `http://127.0.0.1:8765` aç. Sağ üstte 🟢 **"openai aktif"** veya 🟢 **"ollama bağlı"** yazıyorsa hazırsın.
+Tarayıcında `http://127.0.0.1:8765` aç. Sağ üstte 🟢 **"ollama bağlı"** yazıyorsa hazırsın.
 
 > 💡 **İlk açılışta** veya sayfa eskiyse: **Cmd+Shift+R** (Mac) / **Ctrl+Shift+R** (Win/Linux)
 
