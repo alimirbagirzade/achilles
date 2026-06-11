@@ -410,6 +410,23 @@ def api_comprehension_compute(paper_id: str) -> dict:
         raise HTTPException(status_code=503, detail=f"Skor hesaplanamadı: {exc}") from exc
 
 
+@app.get("/api/papers/comprehension/all", dependencies=[api_auth])
+def api_comprehension_all() -> dict:
+    """Tüm makalelerin anlama skorlarını tek seferde döner → N+1 isteği önler."""
+    from app.memory.sqlite_store import SqliteStore
+
+    store = SqliteStore()
+    scores: dict[str, int] = {}
+    for paper in store.list_papers():
+        try:
+            result = store.get_comprehension_score(paper.paper_id)
+            if result is not None:
+                scores[paper.paper_id] = round(result.total_score)
+        except Exception:
+            pass
+    return {"scores": scores}
+
+
 @app.post("/api/papers/comprehension/batch", response_model=BatchScoreResponse, dependencies=[api_auth])
 def api_comprehension_batch(skip_existing: bool = False) -> BatchScoreResponse:
     """Tüm makaleler için anlama skoru hesapla (kartı olan makaleler için)."""

@@ -498,17 +498,19 @@
   }
 
   function loadComprehensionScores() {
-    _allPapers.forEach(function (p) {
-      if (!p.has_card || _comprehensionCache[p.paper_id] !== undefined) return;
-      api("/papers/" + encodeURIComponent(p.paper_id) + "/comprehension", { method: "GET" })
-        .then(function (d) {
-          if (d && d.total != null) {
-            _comprehensionCache[p.paper_id] = Math.round(d.total);
-            renderPapers();
+    api("/papers/comprehension/all", { method: "GET" })
+      .then(function (d) {
+        var scores = (d && d.scores) ? d.scores : {};
+        var changed = false;
+        Object.keys(scores).forEach(function (pid) {
+          if (_comprehensionCache[pid] !== scores[pid]) {
+            _comprehensionCache[pid] = scores[pid];
+            changed = true;
           }
-        })
-        .catch(function () {});
-    });
+        });
+        if (changed) renderPapers();
+      })
+      .catch(function () {});
   }
 
   // filtre/sıralama olayları
