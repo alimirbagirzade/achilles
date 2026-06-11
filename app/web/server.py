@@ -40,6 +40,8 @@ from app.web.schemas import (
     BacktestResponse,
     BatchCardResponse,
     BatchCardResult,
+    BatchScoreResponse,
+    BatchScoreResult,
     CardResponse,
     CardReviewOut,
     ChainDatasetResponse,
@@ -406,6 +408,54 @@ def api_comprehension_compute(paper_id: str) -> dict:
     except Exception as exc:
         logger.warning("Anlama skoru hesaplanamadı: %s", exc)
         raise HTTPException(status_code=503, detail=f"Skor hesaplanamadı: {exc}") from exc
+
+
+@app.post("/api/papers/comprehension/batch", response_model=BatchScoreResponse, dependencies=[api_auth])
+def api_comprehension_batch(skip_existing: bool = False) -> BatchScoreResponse:
+    """Tüm makaleler için anlama skoru hesapla (kartı olan makaleler için)."""
+    from app.brain.comprehension_scorer import ComprehensionScorer
+    from app.memory.sqlite_store import SqliteStore
+
+    store = SqliteStore()
+    papers = store.list_papers()
+    scorer = ComprehensionScorer()
+    results: list[BatchScoreResult] = []
+
+    for paper in papers:
+        pid = paper.paper_id
+        if not store.has_knowledge_card(pid):
+            results.append(
+                BatchScoreResult(paper_id=pid, title=paper.title, status="skip", message="kart yok")
+            )
+            continue
+        if skip_existing:
+            existing = store.get_comprehension_score(pid)
+            if existing is not None:
+                results.append(
+                    BatchScoreResult(
+                        paper_id=pid, title=paper.title, status="skip",
+                        score=existing.total, message="zaten hesaplanmış",
+                    )
+                )
+                continue
+        try:
+            result = scorer.score(pid)
+            results.append(
+                BatchScoreResult(
+                    paper_id=pid, title=paper.title, status="ok",
+                    score=result.total, message=f"{result.total:.0%}",
+                )
+            )
+        except Exception as exc:
+            logger.warning("Toplu skor — %s başarısız: %s", pid, exc)
+            results.append(
+                BatchScoreResult(paper_id=pid, title=paper.title, status="error", message=str(exc))
+            )
+
+    computed = sum(1 for r in results if r.status == "ok")
+    skipped = sum(1 for r in results if r.status == "skip")
+    errors = sum(1 for r in results if r.status == "error")
+    return BatchScoreResponse(computed=computed, skipped=skipped, errors=errors, results=results)
 
 
 @app.post("/api/cards/batch", response_model=BatchCardResponse, dependencies=[api_auth])

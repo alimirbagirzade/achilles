@@ -964,6 +964,46 @@
     });
   }
 
+  // ---------- toplu skor hesaplama ----------
+  var batchScoreBtn = document.getElementById("batchScoreBtn");
+  if (batchScoreBtn) {
+    batchScoreBtn.addEventListener("click", function () {
+      batchScoreBtn.disabled = true;
+      batchScoreBtn.innerHTML = '<span class="spinner"></span>HESAPLANIYOR…';
+      var res = document.getElementById("batchScoreResult");
+      res.className = "result";
+      res.innerHTML = '<div class="result-section"><span class="spinner"></span> Skorlar hesaplanıyor (LLM gerekli, her makale ~30s)…</div>';
+      api("/papers/comprehension/batch", { method: "POST" })
+        .then(function (data) {
+          toast(data.computed + " skor hesaplandı, " + data.skipped + " atlandı, " + data.errors + " hata.");
+          var rows = (data.results || []).map(function (r) {
+            var cls = r.status === "ok" ? "pos" : r.status === "error" ? "neg" : "muted";
+            var scoreStr = r.score != null ? " — " + Math.round(r.score * 100) + "%" : "";
+            return (
+              '<div class="batch-row">' +
+              '<span class="' + cls + '">' + esc(r.status.toUpperCase()) + "</span> " +
+              "<b>" + esc(r.title || r.paper_id) + "</b>" +
+              esc(scoreStr) + " " + esc(r.message) +
+              "</div>"
+            );
+          }).join("");
+          res.innerHTML =
+            '<div class="result-section"><div class="result-label">sonuç</div>' +
+            "<div>" + rows + "</div></div>";
+          _comprehensionCache = {};
+          loadPapers();
+        })
+        .catch(function (err) {
+          toast(err.message, true);
+          res.innerHTML = '<div class="result-section result-body">Hata: ' + esc(err.message) + "</div>";
+        })
+        .finally(function () {
+          batchScoreBtn.disabled = false;
+          batchScoreBtn.textContent = "🧪 TÜM SKORLARI HESAPLA";
+        });
+    });
+  }
+
   document.getElementById("refreshPapers").addEventListener("click", loadPapers);
   document.getElementById("reindexBtn").addEventListener("click", function () {
     var b = this;

@@ -299,6 +299,21 @@ class BatchCardResponse(BaseModel):
     results: list[BatchCardResult]
 
 
+class BatchScoreResult(BaseModel):
+    paper_id: str
+    title: str | None = None
+    status: str  # ok | skip | error
+    score: float | None = None
+    message: str
+
+
+class BatchScoreResponse(BaseModel):
+    computed: int
+    skipped: int
+    errors: int
+    results: list[BatchScoreResult]
+
+
 # ---------- Kart Onay (Curriculum) ----------
 class CardReviewOut(BaseModel):
     card_id: str
