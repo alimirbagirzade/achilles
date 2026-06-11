@@ -1,6 +1,6 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-06-11 (akşam) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Son güncelleme: 2026-06-11 (gece) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
@@ -16,17 +16,17 @@ LLM'i "trader gibi düşünen" bir araştırma motoru yapmak:
 3. Otomatik backtest et → sonuçtan öğren → LoRA eğitim verisi üret
 4. 3B modeli test eder; gerçek çıktı için 120B kullanılacak
 
-### Mevcut durum (2026-06-11 akşam)
-- **405 test** geçiyor (2 deselected: ollama+slow) · ruff temiz · Python 3.12
+### Mevcut durum (2026-06-11 gece)
+- **405 test** geçiyor (2 deselected: ollama+slow) · ruff temiz · mypy temiz · Python 3.12
 - **8 sekme** web UI: Araştırma · Makaleler · Trader Beyin · Backtest · Eğitim · Onay · Değerlendirme · Sistem
 - **Ollama:** qwen3:8b (Windows) / qwen2.5-coder:3b (macOS) + nomic-embed-text
+- **27 makale** indekslenmiş · 4194 chunk · 142 formül · 121 eğitim örneği (19 çapraz sentez)
 - **26 onaylı knowledge card** (8 içeriksiz kart reject edildi)
-- **103 training example** — `training_examples` tablosunda, 83 train + 14 valid
 - **LoRA adapter'lar:** `models/adapters/achilles_lora_v1..v4` — macOS'ta eğitildi
 - **Auto-LoRA pipeline:** `ready_to_train` — 9/9 gate PASS, Windows'ta eğitime hazır
 - **macOS:** LaunchAgent aktif (`com.achilles.web.plist`) — login'de otomatik başlar
 - **Windows:** Task Scheduler (`AchillesWeb`) — login'de Ollama + web server birlikte başlar
-- **Son commit:** `1f5ca50`
+- **Son commit:** `47ffd4c`
 
 ---
 
@@ -56,6 +56,41 @@ uv pip install torch transformers peft datasets accelerate
 ```
 
 ### 3. Eğitim UI — Açıklamalar + Auto-LoRA Konfig — `1f5ca50`
+- Her eğitim ayarına (model, adapter, iterasyon, batch, katman) Türkçe açıklama eklendi
+- Auto-LoRA bölümüne kendi adapter adı + iterasyon inputları eklendi (`#autoLoraAdapterName`, `#autoLoraIters`)
+- JS validation: boş ad ve 50–5000 dışı iter engellendi
+- CSS: `.setting-group`, `.setting-desc` sınıfları eklendi
+
+### 4. Genel Sağlık Kontrolü + Bug Fix'leri — `1aef7eb` `572b605` `47ffd4c`
+
+**Tespit edilen ve düzeltilen hatalar:**
+
+| Dosya | Hata | Düzeltme |
+|-------|------|----------|
+| `server.py:17` | `HTTPException` import eksik → runtime `NameError` | Import eklendi |
+| `server.py:455` | `PaperComprehension.total` yok → 500 error | → `total_score` |
+| `comprehension_scorer.py:47` | `list_knowledge_cards` yok | → `get_latest_knowledge_card` |
+| `comprehension_scorer.py:117` | `llm.is_available()` yok | → `llm.available()` |
+| `formula_extractor.py` | `available()` guard eksik → test isolation bug | LLM çağrısından önce `available()` kontrolü |
+| `comprehension_scorer.py` | unused `json` import | ruff auto-fix |
+| `sqlite_store.py` | quoted type annotations | ruff auto-fix |
+
+**Sonuç:** 405 test PASS · ruff CLEAN · mypy CLEAN (app/ üzerinde)
+
+### Önceki Seans Detayları (2026-06-11 akşam)
+
+#### Batch Comprehension Skor Butonu
+- `GET /api/papers/comprehension/all` — tüm skorları tek çağrıda döner (N+1 fix)
+- `POST /api/papers/comprehension/batch` — kartı olan tüm makaleler için skor hesapla
+- Frontend: `🧪 TÜM SKORLARI HESAPLA` butonu, client-side cache reset
+
+#### Math-Aware Chunker + Formül Pipeline
+- `app/ingestion/chunker.py` → `_MATH_BLOCK_RE` ile `$...$` / `\[...\]` / `\begin{equation}` bloklarını korur
+- `app/memory/paper_indexer.py` → ingestion sonrası otomatik: formül çıkarma → kavram grafiği → çapraz sentez
+- `app/research/cross_paper_synthesizer.py` → 8 kategori kombinasyonu, SHA256 idempotency, 8 fallback template
+
+#### 27 Makale Yeniden İndekslendi
+- 4194 chunk · 142 formül (7 kategori) · 19 çapraz sentez örneği · 121 toplam eğitim örneği
 - Her eğitim ayarına (model, adapter, iterasyon, batch, katman) Türkçe açıklama eklendi
 - Auto-LoRA bölümüne kendi adapter adı + iterasyon inputları eklendi (`#autoLoraAdapterName`, `#autoLoraIters`)
 - JS validation: boş ad ve 50–5000 dışı iter engellendi
