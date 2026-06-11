@@ -382,6 +382,7 @@
 
   // ---------- papers ----------
   var _allPapers = [];
+  var _comprehensionCache = {};
 
   function loadPapers() {
     var list = document.getElementById("papersList");
@@ -390,6 +391,7 @@
       .then(function (papers) {
         _allPapers = papers || [];
         renderPapers();
+        loadComprehensionScores();
       })
       .catch(function (err) {
         document.getElementById("papersList").innerHTML =
@@ -438,6 +440,13 @@
         var btn = p.has_card
           ? '<button class="btn card-view" data-id="' + esc(p.paper_id) + '">✓ KARTI GÖR</button>'
           : '<button class="btn card-btn" data-id="' + esc(p.paper_id) + '">BİLGİ KARTI ÜRET</button>';
+        var cached = _comprehensionCache[p.paper_id];
+        var badgeLabel = (cached != null) ? cached + "%" : "?%";
+        var badgeCls = "comp-badge" +
+          (cached == null ? "" : (cached >= 80 ? " comp-high" : cached >= 50 ? " comp-mid" : " comp-low"));
+        var badge = p.has_card
+          ? '<button class="' + badgeCls + '" data-comp-id="' + esc(p.paper_id) + '" title="Anlama skoru — tıkla hesapla">' + badgeLabel + '</button>'
+          : '';
         return (
           '<div class="paper-row' +
           (p.has_card ? " has-card" : "") +
@@ -453,6 +462,7 @@
           (p.year ? " · " + esc(p.year) : "") +
           "</div></div>" +
           '<div class="paper-actions">' +
+          badge +
           btn +
           "</div></div>"
         );
@@ -468,6 +478,36 @@
       b.addEventListener("click", function () {
         viewCard(b.getAttribute("data-id"));
       });
+    });
+    list.querySelectorAll(".comp-badge").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var pid = b.getAttribute("data-comp-id");
+        b.textContent = "…";
+        b.disabled = true;
+        api("/papers/" + encodeURIComponent(pid) + "/comprehension", { method: "POST" })
+          .then(function (d) {
+            _comprehensionCache[pid] = d.total != null ? Math.round(d.total) : null;
+            renderPapers();
+          })
+          .catch(function () {
+            b.textContent = "?%";
+            b.disabled = false;
+          });
+      });
+    });
+  }
+
+  function loadComprehensionScores() {
+    _allPapers.forEach(function (p) {
+      if (!p.has_card || _comprehensionCache[p.paper_id] !== undefined) return;
+      api("/papers/" + encodeURIComponent(p.paper_id) + "/comprehension", { method: "GET" })
+        .then(function (d) {
+          if (d && d.total != null) {
+            _comprehensionCache[p.paper_id] = Math.round(d.total);
+            renderPapers();
+          }
+        })
+        .catch(function () {});
     });
   }
 

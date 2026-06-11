@@ -358,6 +358,56 @@ def api_card(paper_id: str) -> CardResponse:
         ) from exc
 
 
+@app.get("/api/papers/{paper_id}/comprehension", dependencies=[api_auth])
+def api_comprehension_get(paper_id: str) -> dict:
+    """Önbellekteki anlama skoru — henüz hesaplanmamışsa null döner."""
+    from app.memory.sqlite_store import SqliteStore
+    import json as _json
+
+    row = SqliteStore().get_comprehension_score(paper_id)
+    if row is None:
+        return {"paper_id": paper_id, "total": None, "computed_at": None}
+    return {
+        "paper_id": paper_id,
+        "total": row.total_score,
+        "extraction": row.extraction_score,
+        "retrieval": row.retrieval_score,
+        "llm_verify": row.llm_score,
+        "details": _json.loads(row.details_json or "{}"),
+        "computed_at": row.computed_at,
+    }
+
+
+@app.post("/api/papers/{paper_id}/comprehension", dependencies=[api_auth])
+def api_comprehension_compute(paper_id: str) -> dict:
+    """Anlama skorunu (yeniden) hesapla ve kaydet."""
+    from fastapi import HTTPException
+    from app.memory.sqlite_store import SqliteStore
+    from app.verification.comprehension_scorer import ComprehensionScorer
+    import json as _json
+
+    store = SqliteStore()
+    known = {p.paper_id for p in store.list_papers()}
+    if paper_id not in known:
+        raise HTTPException(status_code=404, detail="Makale bulunamadı.")
+
+    try:
+        result = ComprehensionScorer().score(paper_id)
+        store.save_comprehension_score(result)
+        return {
+            "paper_id": paper_id,
+            "total": result.total,
+            "extraction": result.extraction,
+            "retrieval": result.retrieval,
+            "llm_verify": result.llm_verify,
+            "details": result.details,
+            "computed_at": result.computed_at,
+        }
+    except Exception as exc:
+        logger.warning("Anlama skoru hesaplanamadı: %s", exc)
+        raise HTTPException(status_code=503, detail=f"Skor hesaplanamadı: {exc}") from exc
+
+
 @app.post("/api/cards/batch", response_model=BatchCardResponse, dependencies=[api_auth])
 def api_cards_batch(skip_existing: bool = True) -> BatchCardResponse:
     """Kartı olmayan tüm makaleler için sırayla bilgi kartı üret (LLM gerekli)."""

@@ -470,6 +470,20 @@ class ToolUseExample(Base):
     created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
 
 
+class PaperComprehension(Base):
+    """Makale anlama skoru — 3 katmanlı hesaplama sonucu."""
+
+    __tablename__ = "paper_comprehension"
+
+    paper_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    extraction_score: Mapped[float] = mapped_column(Float, default=0.0)
+    retrieval_score: Mapped[float] = mapped_column(Float, default=0.0)
+    llm_score: Mapped[float] = mapped_column(Float, default=0.0)
+    total_score: Mapped[float] = mapped_column(Float, default=0.0)
+    details_json: Mapped[str] = mapped_column(Text, default="{}")
+    computed_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+
+
 class SqliteStore:
     """Thin wrapper around a SQLAlchemy engine + session factory."""
 
@@ -590,6 +604,25 @@ class SqliteStore:
                 )
                 is not None
             )
+
+    def save_comprehension_score(self, score: "ComprehensionScore") -> None:  # type: ignore[name-defined]
+        import json as _json
+
+        with self.session() as s:
+            row = s.get(PaperComprehension, score.paper_id)
+            if row is None:
+                row = PaperComprehension(paper_id=score.paper_id)
+                s.add(row)
+            row.extraction_score = score.extraction
+            row.retrieval_score = score.retrieval
+            row.llm_score = score.llm_verify
+            row.total_score = score.total
+            row.details_json = _json.dumps(score.details, ensure_ascii=False)
+            row.computed_at = score.computed_at
+
+    def get_comprehension_score(self, paper_id: str) -> "PaperComprehension | None":
+        with self.session() as s:
+            return s.get(PaperComprehension, paper_id)
 
     def get_latest_knowledge_card(self, paper_id: str) -> dict | None:
         """En son üretilmiş kartın JSON içeriğini döndür (yoksa None)."""

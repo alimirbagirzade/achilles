@@ -597,7 +597,23 @@ input:focus {
   display: flex;
   gap: 8px;
   flex-shrink: 0;
+  align-items: center;
 }
+.comp-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  background: var(--surface);
+  color: var(--muted);
+  transition: background 0.15s;
+}
+.comp-badge:hover { opacity: 0.8; }
+.comp-badge.comp-high { background: #1a6b3c; color: #7effc2; }
+.comp-badge.comp-mid  { background: #5c4a00; color: #ffd666; }
+.comp-badge.comp-low  { background: #6b1a1a; color: #ffaaaa; }
 .empty {
   color: var(--muted);
   text-align: center;
