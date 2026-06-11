@@ -129,11 +129,16 @@ class LoRAControlPlane:
 
     def _run_card_gates(self, cards: list[dict]) -> tuple[list[GateResult], list[dict], list]:
         """Kart bazlı kapıları (0,2-7) çalıştır, temiz kart ve örnekleri döndür."""
-        stages: list[GateResult] = [gate_0_source(cards)]
-        stages.append(gate_2_curriculum(cards))
-        stages.append(gate_3_domain(cards))
+        # title/içerik boş olan kartları gate'lere sokmadan ele — bunlar DB'de
+        # hatalı onaylanmış (içeriksiz) kartlardır ve pipeline'ı bloklamalı değil.
+        from app.lora.gates import _card_text
+        nonempty = [c for c in cards if _card_text(c)]
 
-        gate4, clean_cards = gate_4_quality(cards)
+        stages: list[GateResult] = [gate_0_source(nonempty)]
+        stages.append(gate_2_curriculum(nonempty))
+        stages.append(gate_3_domain(nonempty))
+
+        gate4, clean_cards = gate_4_quality(nonempty)
         stages.append(gate4)
         stages.append(gate_5_math(clean_cards))
         stages.append(gate_6_philosophy(clean_cards))
