@@ -1,6 +1,6 @@
 # Achilles Trader AI -- Windows Yukleyici
-# Bu dosyayi HERHANGI BIR YERDEN calistiabilirsiniz.
-# Her zaman dogru konuma (Belgelerim\achilles) kurar.
+# Bu dosyayi HERHANGI BIR YERDEN calistirabilirsiniz.
+# Her zaman dogru konuma (%USERPROFILE%\achilles) kurar.
 #
 # Kullanim (PowerShell):
 #   Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force

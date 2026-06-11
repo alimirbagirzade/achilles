@@ -19,29 +19,33 @@
 
 ### macOS (Apple Silicon — M1/M2/M3/M4)
 
-**Gereksinimler:** Mac bilgisayar (M çipli) · Homebrew · internet bağlantısı
+**Gereksinimler:** Mac bilgisayar (M çipli) · internet bağlantısı
 
-Homebrew kurulu değilse önce şunu çalıştır:
-```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
-
-Sonra:
 ```bash
 git clone https://github.com/alimirbagirzade/achilles.git
 cd achilles
-bash setup.sh       # uv + backend seçimi + modeller + init — tek komut
+bash setup.sh       # uv + model seçimi + Ollama + init — tek komut
 uv run achilles-web # → http://127.0.0.1:8765
 ```
 
-Kurulum sırasında backend seçimi sorulur:
+Kurulum açılır ve **18 model seçeneği** sunar:
+
 ```
-[1] OpenAI API  — gpt-4o-mini  [ÖNERİLEN]
-[2] Ollama      — yerel/ücretsiz
-[3] İkisi de (auto)
+  YEREL MODELLER (internetsiz, ücretsiz)
+  [10] qwen3:4b    ~2.5 GB   8 GB+ RAM   Hızlı   ← önerilen başlangıç
+  [11] qwen3:8b    ~5 GB    16 GB+ RAM   Dengeli
+  [12] qwen3:14b   ~9 GB    32 GB+ RAM   Güçlü
+  [14] llama3.1:8b ~5 GB    16 GB+ RAM
+  [16] mistral:7b  ~4 GB     8 GB+ RAM
+
+  BULUT MODELLER (API key gerekir)
+  [1] gpt-4o-mini  [2] gpt-4o  [3] o4-mini  [4] o3
+  [5–7] Claude Haiku/Sonnet/Opus
+  [8–9] Gemini Flash/Pro
 ```
 
-> Bu makinede LoRA eğitimi **destekleniyor** (Apple Silicon avantajı).
+> Bu makinede LoRA eğitimi **destekleniyor** (Apple Silicon — MLX ile hızlı).
+> Homebrew sadece Ollama seçildiğinde ve kurulu değilse otomatik yüklenir.
 
 ---
 
@@ -56,9 +60,9 @@ bash setup.sh       # uv + backend seçimi + modeller + init
 uv run achilles-web # → http://127.0.0.1:8765
 ```
 
-Kurulum başında backend sorulur — OpenAI seçersen Ollama adımı atlanır. Ollama seçersen RAM'a uygun model önerisi gösterilir (kurulum `sudo` istiyor, systemd servisi oluşturuyor).
+Kurulum başında 18 model seçeneği çıkar — bulut model seçersen Ollama adımı atlanır, yerel model seçersen RAM/disk kontrolü yapılır ve Ollama + model otomatik indirilir (kurulum `sudo` gerektirebilir, systemd servisi oluşturur).
 
-> Linux'ta LoRA eğitimi **desteklenmez** (yalnızca macOS Apple Silicon). RAG, backtest, formül çıkarma tam çalışır.
+> Linux'ta LoRA eğitimi **PEFT/CPU ile desteklenir**. Kurulumda "LoRA paketleri kurulsun mu?" sorusuna E de. Hız macOS MLX'e göre yavaş olur ama çalışır.
 
 ---
 
@@ -86,33 +90,23 @@ uv run achilles-web
 # Tarayicide ac: http://127.0.0.1:8765
 ```
 
-**Sunucuyu Windows acilisinda otomatik baslatmak (opsiyonel):**
+**Sunucuyu Windows açılışında otomatik başlatmak (önerilen):**
 
 ```powershell
+cd "$env:USERPROFILE\achilles"
 .\scripts\start-server.ps1 -Install
 ```
 
-**Adım 3 — Sunucuyu başlat**
+Bu komut şunları yapar: web servisi login'de otomatik başlar + her gece **03:00**'de `update.ps1` ile güncelleme zamanlanır.
+
+**Güncelleme (geliştirici yeni sürüm yayınlayınca):**
 
 ```powershell
-uv run achilles-web
-# Tarayıcıda aç: http://127.0.0.1:8765
-```
-
-**Güncelleme (geliştirici yeni sürüm yayınlayınca)**
-
-```powershell
+cd "$env:USERPROFILE\achilles"
 .\update.ps1
 ```
 
-Script şunları yapar: sunucuyu durdur → `git pull` → `uv sync` → sunucuyu yeniden başlat. Otomatik zamanlama için (her gün saat 09:00):
-
-```powershell
-$action  = New-ScheduledTaskAction -Execute "powershell.exe" `
-             -Argument "-NonInteractive -File `"$PWD\update.ps1`""
-$trigger = New-ScheduledTaskTrigger -Daily -At "09:00"
-Register-ScheduledTask -TaskName "AchillesUpdate" -Action $action -Trigger $trigger -RunLevel Highest
-```
+Script şunları yapar: sunucuyu durdur → yerel değişiklikleri sakla → `git pull` → `uv sync` → saklanmış değişiklikleri geri al → sunucuyu yeniden başlat.
 
 ---
 

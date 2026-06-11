@@ -418,9 +418,10 @@ echo "    uv run achilles status"
 echo ""
 
 if [ "$OS" = "Darwin" ] && [ "$ARCH" = "arm64" ]; then
-    info "LoRA egitimi: destekleniyor (Apple Silicon)"
+    info "LoRA egitimi: Apple Silicon MLX ile destekleniyor (hizli)"
 else
-    warn "LoRA egitimi: bu platformda desteklenmez (yalnizca macOS Apple Silicon)."
+    info "LoRA egitimi: PEFT/CPU ile destekleniyor (macOS MLX'e gore yavas)"
+    info "LoRA icin: uv pip install torch transformers peft datasets accelerate"
     info "RAG, backtest ve formul cikarma tam olarak calisir."
 fi
 echo ""
