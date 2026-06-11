@@ -99,6 +99,19 @@ class DatasetBuilder:
                 if r.source_paper_id not in approved_paper_ids:
                     continue
 
+            # cross_paper_synthesis örnekleri her zaman dahil edilir (source_paper_id yok)
+            is_synthesis = r.example_type == "cross_paper_synthesis"
+
+            if not is_synthesis:
+                if phase is not None and approved_paper_ids is not None:
+                    if r.source_paper_id not in approved_paper_ids:
+                        continue
+                elif lora_eligible_only and approved_paper_ids is not None:
+                    if r.source_paper_id is None:
+                        continue
+                    if r.source_paper_id not in approved_paper_ids:
+                        continue
+
             key = f"{r.instruction}||{r.input_text}||{r.output_text}"
             if key in seen:
                 continue

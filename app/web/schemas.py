@@ -299,6 +299,11 @@ class BatchCardResponse(BaseModel):
     results: list[BatchCardResult]
 
 
+class CrossSynthesisResponse(BaseModel):
+    produced: int
+    message: str
+
+
 class BatchScoreResult(BaseModel):
     paper_id: str
     title: str | None = None

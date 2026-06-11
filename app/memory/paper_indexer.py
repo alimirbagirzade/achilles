@@ -136,8 +136,9 @@ class PaperIndexer:
             ],
         )
 
-        # Formül çıkarma — LLM yoksa kural tabanlı yedek devreye girer, hata ingestion'ı bloklamaz
         notes: list[str] = [f"embedding_mode={self.embedder.mode}"]
+
+        # 1. Formül çıkarma — LLM yoksa kural tabanlı yedek, hata ingestion'ı bloklamaz
         try:
             from app.research.formula_extractor import FormulaExtractor
             n_formulas = len(FormulaExtractor().extract_from_paper(disc.paper_id))
@@ -146,6 +147,26 @@ class PaperIndexer:
                 logger.info("Formül çıkarıldı: %s → %d formül", disc.paper_id, n_formulas)
         except Exception as exc:
             logger.debug("Formül çıkarma atlandı (%s): %s", disc.paper_id, exc)
+
+        # 2. Kavram grafiği yeniden oluştur — tüm makaleler arası ilişkileri güncelle
+        try:
+            from app.research.concept_graph import ConceptGraph
+            n_links = ConceptGraph().build_from_papers()
+            if n_links:
+                notes.append(f"concept_links={n_links}")
+                logger.info("Kavram grafiği güncellendi: %d bağlantı", n_links)
+        except Exception as exc:
+            logger.debug("Kavram grafiği güncellenemedi: %s", exc)
+
+        # 3. Çapraz makale sentezi — yeni kategori çiftleri için eğitim verisi üret
+        try:
+            from app.research.cross_paper_synthesizer import CrossPaperSynthesizer
+            n_synth = CrossPaperSynthesizer().synthesize_all()
+            if n_synth:
+                notes.append(f"synthesis_examples={n_synth}")
+                logger.info("Çapraz sentez: %d yeni eğitim örneği", n_synth)
+        except Exception as exc:
+            logger.debug("Çapraz sentez atlandı: %s", exc)
 
         logger.info("Indexlendi: %s (%d chunk)", disc.paper_id, len(chunks))
         return IngestResult(

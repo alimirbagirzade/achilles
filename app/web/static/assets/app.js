@@ -1006,6 +1006,39 @@
     });
   }
 
+  // ---------- çapraz makale sentezi ----------
+  var crossSynthesisBtn = document.getElementById("crossSynthesisBtn");
+  if (crossSynthesisBtn) {
+    crossSynthesisBtn.addEventListener("click", function () {
+      crossSynthesisBtn.disabled = true;
+      crossSynthesisBtn.innerHTML = '<span class="spinner"></span>SENTEZLENİYOR…';
+      var res = document.getElementById("crossSynthesisResult");
+      res.className = "result";
+      res.innerHTML =
+        '<div class="result-section"><span class="spinner"></span> ' +
+        'Formüller arası ilişkiler analiz ediliyor ve eğitim verisi üretiliyor…</div>';
+      api("/synthesis/cross-paper", { method: "POST" })
+        .then(function (data) {
+          toast(data.message);
+          var cls = data.produced > 0 ? "pos" : "muted";
+          res.innerHTML =
+            '<div class="result-section"><div class="result-label">sentez sonucu</div>' +
+            '<div class="batch-row"><span class="' + cls + '">' +
+            (data.produced > 0 ? "✓ " + data.produced + " yeni örnek" : "Güncel") +
+            '</span> — ' + esc(data.message) + "</div></div>";
+        })
+        .catch(function (err) {
+          toast(err.message, true);
+          res.innerHTML =
+            '<div class="result-section result-body">Hata: ' + esc(err.message) + "</div>";
+        })
+        .finally(function () {
+          crossSynthesisBtn.disabled = false;
+          crossSynthesisBtn.textContent = "🔗 ÇAPRAZ SENTEZ ÜRET";
+        });
+    });
+  }
+
   document.getElementById("refreshPapers").addEventListener("click", loadPapers);
   document.getElementById("reindexBtn").addEventListener("click", function () {
     var b = this;

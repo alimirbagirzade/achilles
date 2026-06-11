@@ -42,6 +42,7 @@ from app.web.schemas import (
     BatchCardResult,
     BatchScoreResponse,
     BatchScoreResult,
+    CrossSynthesisResponse,
     CardResponse,
     CardReviewOut,
     ChainDatasetResponse,
@@ -473,6 +474,25 @@ def api_comprehension_batch(skip_existing: bool = False) -> BatchScoreResponse:
     skipped = sum(1 for r in results if r.status == "skip")
     errors = sum(1 for r in results if r.status == "error")
     return BatchScoreResponse(computed=computed, skipped=skipped, errors=errors, results=results)
+
+
+@app.post("/api/synthesis/cross-paper", response_model=CrossSynthesisResponse, dependencies=[api_auth])
+def api_cross_paper_synthesis(force: bool = False) -> CrossSynthesisResponse:
+    """Farklı makalelerden formülleri birleştirerek LoRA eğitim verisi üret.
+
+    force=True → mevcut sentez örneklerini yeniden üretir.
+    """
+    from app.research.cross_paper_synthesizer import CrossPaperSynthesizer
+
+    try:
+        n = CrossPaperSynthesizer().synthesize_all(force=force)
+        return CrossSynthesisResponse(
+            produced=n,
+            message=f"{n} yeni sentez eğitim örneği üretildi." if n else "Yeni örnek yok (zaten güncel).",
+        )
+    except Exception as exc:
+        logger.warning("Çapraz sentez başarısız: %s", exc)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.post("/api/cards/batch", response_model=BatchCardResponse, dependencies=[api_auth])
