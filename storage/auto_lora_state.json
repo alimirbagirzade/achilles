@@ -1,12 +1,12 @@
 {
-  "stage": "ready_to_train",
-  "last_check": "2026-06-11T07:54:43.792446+00:00",
+  "stage": "train_failed",
+  "last_check": "2026-06-11T17:08:32.971039+00:00",
   "last_gate_result": "passed",
   "gate_summary": "26 kart onayland\u0131, 0 reddedildi",
   "approved_cards_at_last_check": 26,
   "adapter_id": "",
-  "adapter_path": "",
+  "adapter_path": "models/adapters/achilles_lora_v2",
   "eval_scores": {},
-  "last_error": "",
-  "last_run": ""
+  "last_error": "E\u011fitim COMPLETED olmad\u0131",
+  "last_run": "2026-06-11T17:08:36.488089+00:00"
 }
