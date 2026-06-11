@@ -14,7 +14,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Request, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -452,7 +452,7 @@ def api_comprehension_batch(skip_existing: bool = False) -> BatchScoreResponse:
                 results.append(
                     BatchScoreResult(
                         paper_id=pid, title=paper.title, status="skip",
-                        score=existing.total, message="zaten hesaplanmış",
+                        score=existing.total_score, message="zaten hesaplanmış",
                     )
                 )
                 continue
