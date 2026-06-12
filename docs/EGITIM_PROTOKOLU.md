@@ -75,10 +75,13 @@ Windows/Linux → **PEFT** (torch+peft).
 
 Gerçek koşudan ölçülen **adım başına süre** (CPU fp32, batch=1, seq=512):
 
-| Model | Adım başına | Kaynak |
-|---|---|---|
-| Qwen2.5-1.5B | **~29 sn/adım** | ölçüldü (6 adım = 174 sn) |
-| **Qwen3-4B** | **~74 sn/adım** | ölçüldü (canlı koşu) |
+| Model | Adım başına | Tam koşu (6 adım, 2 epoch) | eval_loss |
+|---|---|---|---|
+| Qwen2.5-1.5B | **~29 sn/adım** | 174 sn | 2.769 |
+| **Qwen3-4B** | **~74 sn/adım** (saf) | **513.7 sn** (eval dahil ~85 sn/adım) | **2.588** |
+
+> Not: `eval_strategy=epoch` her epoch sonunda ~35 sn eval ekler; çok epoch'lu
+> uzun koşularda toplam süreye bu da eklenir.
 
 **Toplam süre formülü:** `süre ≈ iterations × adım_süresi`
 (çünkü toplam adım ≈ `iterations`).
