@@ -147,6 +147,18 @@
     api("/training/status", { method: "GET" })
       .then(function (d) { populateAdapterSelects(d.adapters || []); })
       .catch(function () {});
+    // RAG ustalık % — kaç makaleyi içerik kartına dönüştürüp "anladı" + eğitim hazırlığı
+    api("/rag-mastery", { method: "GET" })
+      .then(function (m) {
+        var el = document.getElementById("ragMastery");
+        if (el) {
+          el.textContent =
+            "RAG anladı: %" + m.coverage_percent +
+            " (" + m.papers_with_real + "/" + m.n_papers + ") · eğitim %" +
+            m.train_readiness_percent;
+        }
+      })
+      .catch(function () {});
   }
 
   // ---------- ask (RAG) ----------

@@ -1452,62 +1452,32 @@ def lora_dataset(
 @app.command("rag-mastery")
 def rag_mastery() -> None:
     """RAG'in ne kadar 'öğrendiğini' gösteren ustalık panosu (LLM gerektirmez)."""
-    from app.lora.dataset_builder import build_dataset
-    from app.memory.sqlite_store import SqliteStore
+    from app.verification.rag_mastery import compute_rag_mastery
 
-    store = SqliteStore()
-    papers = store.list_papers()
-    n_papers = len(papers)
-    cards = store.list_approved_cards()
-    n_cards = len(cards)
-    # Yalnızca İÇERİK TAŞIYAN kartları say (boş/title'sız kabuk kartlar örnek üretmez).
-    examples = build_dataset(cards)
-    n_examples = len(examples)
-    papers_with_real = len(
-        {str(e.metadata.get("paper_id", "")) for e in examples if e.metadata.get("paper_id")}
-    )
-    empty_cards = n_cards - n_examples
-
-    scored = 0
-    total_comp = 0.0
-    for p in papers:
-        row = store.get_comprehension_score(p.paper_id)
-        if row is not None:
-            scored += 1
-            total_comp += row.total_score
-    avg_comp = (total_comp / scored) if scored else None
-
-    coverage = (papers_with_real / n_papers * 100) if n_papers else 0.0
-    train_readiness = min(1.0, n_examples / 50.0) * 100
-    comp_component = avg_comp if avg_comp is not None else 0.0
-
-    # Bileşik ustalık = bilgi kapsamı (çıkarım) + anlama kalitesi + eğitim hazırlığı.
-    # Anlama henüz hesaplanmadıysa 0 sayılır (ölçülmemiş = kanıtlanmamış).
-    mastery = 0.40 * coverage + 0.30 * comp_component + 0.30 * train_readiness
+    m = compute_rag_mastery()
+    comp = m["comprehension_percent"]
 
     table = Table(title="RAG Ustalık Panosu")
     table.add_column("Metrik")
     table.add_column("Değer", justify="right")
-    table.add_row("İçe alınan makale", str(n_papers))
-    table.add_row("Onaylı bilgi kartı", f"{n_cards}  ({empty_cards} içeriksiz/atlandı)")
+    table.add_row("İçe alınan makale", str(m["n_papers"]))
+    table.add_row("Onaylı bilgi kartı", f"{m['n_cards']}  ({m['empty_cards']} içeriksiz/atlandı)")
     table.add_row(
         "Bilgi kapsamı (gerçek kart/makale)",
-        f"{papers_with_real}/{n_papers}  %{coverage:.0f}",
+        f"{m['papers_with_real']}/{m['n_papers']}  %{m['coverage_percent']}",
     )
-    table.add_row("LoRA eğitim örneği", f"{n_examples}  (hazırlık %{train_readiness:.0f})")
+    table.add_row(
+        "LoRA eğitim örneği", f"{m['n_examples']}  (hazırlık %{m['train_readiness_percent']})"
+    )
     comp_txt = (
-        f"%{avg_comp:.0f} ({scored}/{n_papers} makale)"
-        if avg_comp is not None
-        else f"hesaplanmadı ({scored}/{n_papers}) — LLM ile çalıştır"
+        f"%{comp} ({m['papers_scored']}/{m['n_papers']} makale)"
+        if comp is not None
+        else f"hesaplanmadı ({m['papers_scored']}/{m['n_papers']}) — LLM ile çalıştır"
     )
     table.add_row("Anlama skoru", comp_txt)
     console.print(table)
-    console.print(
-        f"\n[bold]RAG Ustalık (bileşik): %{mastery:.0f}[/bold]\n"
-        f"[dim]= kapsam %{coverage:.0f}×0.4 + anlama %{comp_component:.0f}×0.3 "
-        f"+ eğitim %{train_readiness:.0f}×0.3[/dim]"
-    )
-    if avg_comp is None:
+    console.print(f"\n[bold]RAG Ustalık (bileşik): %{m['mastery_percent']}[/bold]")
+    if comp is None:
         console.print(
             "[dim]Not: Anlama skoru için makale başına LLM doğrulaması gerekir "
             "(eğitim sürerken RAM çakışır — cooldown'da çalıştır).[/dim]"

@@ -204,7 +204,9 @@ async def api_upload(
     logger.info("PDF yüklendi: %s (%d bayt)", dest.name, len(content))
 
     background_tasks.add_task(_ingest_one, dest)
-    return IngestResponse(ingested=0, skipped=0, papers=[], message=f"{safe_name} alındı, indeksleniyor…")
+    return IngestResponse(
+        ingested=0, skipped=0, papers=[], message=f"{safe_name} alındı, indeksleniyor…"
+    )
 
 
 @app.post("/api/ingest", response_model=IngestResponse, dependencies=[api_auth])
@@ -430,7 +432,19 @@ def api_comprehension_all() -> dict:
     return {"scores": scores}
 
 
-@app.post("/api/papers/comprehension/batch", response_model=BatchScoreResponse, dependencies=[api_auth])
+@app.get("/api/rag-mastery", dependencies=[api_auth])
+def api_rag_mastery() -> dict:
+    """RAG ustalık panosu: kaç makale anlaşıldı/öğrenildi (%), LLM gerektirmez."""
+    from app.verification.rag_mastery import compute_rag_mastery
+
+    return compute_rag_mastery()
+
+
+@app.post(
+    "/api/papers/comprehension/batch",
+    response_model=BatchScoreResponse,
+    dependencies=[api_auth],
+)
 def api_comprehension_batch(skip_existing: bool = False) -> BatchScoreResponse:
     """Tüm makaleler için anlama skoru hesapla (kartı olan makaleler için)."""
     from app.brain.comprehension_scorer import ComprehensionScorer
@@ -478,7 +492,11 @@ def api_comprehension_batch(skip_existing: bool = False) -> BatchScoreResponse:
     return BatchScoreResponse(computed=computed, skipped=skipped, errors=errors, results=results)
 
 
-@app.post("/api/synthesis/cross-paper", response_model=CrossSynthesisResponse, dependencies=[api_auth])
+@app.post(
+    "/api/synthesis/cross-paper",
+    response_model=CrossSynthesisResponse,
+    dependencies=[api_auth],
+)
 def api_cross_paper_synthesis(force: bool = False) -> CrossSynthesisResponse:
     """Farklı makalelerden formülleri birleştirerek LoRA eğitim verisi üret.
 
@@ -490,7 +508,11 @@ def api_cross_paper_synthesis(force: bool = False) -> CrossSynthesisResponse:
         n = CrossPaperSynthesizer().synthesize_all(force=force)
         return CrossSynthesisResponse(
             produced=n,
-            message=f"{n} yeni sentez eğitim örneği üretildi." if n else "Yeni örnek yok (zaten güncel).",
+            message=(
+                f"{n} yeni sentez eğitim örneği üretildi."
+                if n
+                else "Yeni örnek yok (zaten güncel)."
+            ),
         )
     except Exception as exc:
         logger.warning("Çapraz sentez başarısız: %s", exc)
@@ -829,8 +851,8 @@ def api_training_dry_run(req: TrainDryRunRequest) -> TrainDryRunResponse:
             num_layers=req.num_layers,
         )
     else:
-        from app.training.peft_lora_train import (
-            PeftTrainConfig as TrainConfig,  # type: ignore[assignment]
+        from app.training.peft_lora_train import (  # type: ignore[assignment]
+            PeftTrainConfig as TrainConfig,
         )
         from app.training.peft_lora_train import build_command  # type: ignore[assignment]
 
@@ -843,7 +865,7 @@ def api_training_dry_run(req: TrainDryRunRequest) -> TrainDryRunResponse:
         )
 
     return TrainDryRunResponse(
-        command=" ".join(build_command(cfg)),  # type: ignore[arg-type]
+        command=" ".join(build_command(cfg)),
         n_train=r.n_train,
         n_valid=r.n_valid,
         content_hash=r.content_hash,
@@ -888,8 +910,8 @@ def api_training_run(req: TrainingStartRequest) -> TrainingStartResponse:
             num_layers=req.num_layers,
         )
     else:
-        from app.training.peft_lora_train import (
-            PeftTrainConfig as TrainConfig,  # type: ignore[assignment]
+        from app.training.peft_lora_train import (  # type: ignore[assignment]
+            PeftTrainConfig as TrainConfig,
         )
         from app.training.peft_lora_train import build_command  # type: ignore[assignment]
 
