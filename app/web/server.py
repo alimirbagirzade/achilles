@@ -42,11 +42,11 @@ from app.web.schemas import (
     BatchCardResult,
     BatchScoreResponse,
     BatchScoreResult,
-    CrossSynthesisResponse,
     CardResponse,
     CardReviewOut,
     ChainDatasetResponse,
     ConceptLinkOut,
+    CrossSynthesisResponse,
     DatasetBuildResponse,
     DrawdownScaleOut,
     EvalResultRow,
@@ -364,8 +364,9 @@ def api_card(paper_id: str) -> CardResponse:
 @app.get("/api/papers/{paper_id}/comprehension", dependencies=[api_auth])
 def api_comprehension_get(paper_id: str) -> dict:
     """Önbellekteki anlama skoru — henüz hesaplanmamışsa null döner."""
-    from app.memory.sqlite_store import SqliteStore
     import json as _json
+
+    from app.memory.sqlite_store import SqliteStore
 
     row = SqliteStore().get_comprehension_score(paper_id)
     if row is None:
@@ -384,10 +385,11 @@ def api_comprehension_get(paper_id: str) -> dict:
 @app.post("/api/papers/{paper_id}/comprehension", dependencies=[api_auth])
 def api_comprehension_compute(paper_id: str) -> dict:
     """Anlama skorunu (yeniden) hesapla ve kaydet."""
+
     from fastapi import HTTPException
+
     from app.memory.sqlite_store import SqliteStore
     from app.verification.comprehension_scorer import ComprehensionScorer
-    import json as _json
 
     store = SqliteStore()
     known = {p.paper_id for p in store.list_papers()}

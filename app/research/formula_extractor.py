@@ -120,6 +120,8 @@ class FormulaExtractor:
     def _extract_from_chunk(
         self, text: str, paper_id: str, *, force: bool = False
     ) -> list[dict[str, Any]]:
+        if not self.llm.available():
+            return self._rule_based_extract(text, paper_id)
         try:
             raw = self.llm.generate(
                 _EXTRACT_PROMPT.format(text=text[:3000]),

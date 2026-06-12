@@ -605,7 +605,7 @@ class SqliteStore:
                 is not None
             )
 
-    def save_comprehension_score(self, score: "ComprehensionScore") -> None:  # type: ignore[name-defined]
+    def save_comprehension_score(self, score: ComprehensionScore) -> None:  # type: ignore[name-defined]
         import json as _json
 
         with self.session() as s:
@@ -620,7 +620,7 @@ class SqliteStore:
             row.details_json = _json.dumps(score.details, ensure_ascii=False)
             row.computed_at = score.computed_at
 
-    def get_comprehension_score(self, paper_id: str) -> "PaperComprehension | None":
+    def get_comprehension_score(self, paper_id: str) -> PaperComprehension | None:
         with self.session() as s:
             return s.get(PaperComprehension, paper_id)
 

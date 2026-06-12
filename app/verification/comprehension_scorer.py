@@ -8,10 +8,9 @@ C. LLM Doğrulama  (ağırlık 0.30): Ollama'ya kart içeriğinden basit soru so
 """
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 WEIGHTS = {"extraction": 0.30, "retrieval": 0.40, "llm_verify": 0.30}
 
@@ -19,7 +18,7 @@ _CARD_FIELDS = ["title", "summary", "main_claim", "trading_relevance", "domain",
 
 
 def _utcnow() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 @dataclass
@@ -35,9 +34,9 @@ class ComprehensionScore:
 
 class ComprehensionScorer:
     def __init__(self) -> None:
-        from app.memory.sqlite_store import SqliteStore
         from app.memory.chroma_store import ChromaStore
         from app.memory.embedding import Embedder
+        from app.memory.sqlite_store import SqliteStore
 
         self._store = SqliteStore()
         self._chroma = ChromaStore()
