@@ -75,29 +75,34 @@ Windows/Linux → **PEFT** (torch+peft).
 
 Gerçek koşudan ölçülen **adım başına süre** (CPU fp32, batch=1, seq=512):
 
-| Model | Adım başına | Tam koşu (6 adım, 2 epoch) | eval_loss |
-|---|---|---|---|
-| Qwen2.5-1.5B | **~29 sn/adım** | 174 sn | 2.769 |
-| **Qwen3-4B** | **~74 sn/adım** (saf) | **513.7 sn** (eval dahil ~85 sn/adım) | **2.588** |
+| Config | Qwen3-4B adım başına | Tam koşu (6 adım) |
+|---|---|---|
+| İlk (pad→512, eval açık) | ~85 sn/adım | 513.7 sn |
+| **Optimize (dinamik padding, eval kapalı)** | **~40.6 sn/adım** | **243.6 sn** |
 
-> Not: `eval_strategy=epoch` her epoch sonunda ~35 sn eval ekler; çok epoch'lu
-> uzun koşularda toplam süreye bu da eklenir.
+Hız optimizasyonları (CPU): **dinamik padding** (512'ye doldurma yok → her adım yalnız
+gerçek token; batch=1 ile sıfır padding), **eval kapalı** (epoch başına ~35 sn tasarruf),
+tek checkpoint, `pin_memory=False`. Sonuç: **~2× hızlanma**.
+(Qwen2.5-1.5B referans: ~29 sn/adım.)
 
 **Toplam süre formülü:** `süre ≈ iterations × adım_süresi`
 (çünkü toplam adım ≈ `iterations`).
 
-### Qwen3-4B — iterasyona göre tahmini süre
+### Qwen3-4B — iterasyona göre tahmini süre (optimize config, ~40 sn/adım)
 
-| `--iterations` | Süre (~74 sn/adım) | Not |
+| `--iterations` | Süre | Not |
 |---|---|---|
-| 30 | **~37 dk** | hızlı deneme |
-| 60 | **~74 dk** | |
-| 100 | **~2 saat** | |
-| 300 (varsayılan) | **~6.2 saat** | tam koşu |
+| 30 | **~20 dk** | hızlı deneme |
+| 60 | **~40 dk** | döngü başına önerilen |
+| 100 | **~67 dk** | |
+| 300 (varsayılan) | **~3.3 saat** | tam koşu |
 
-> **Maksimum pratik süre:** varsayılan `iters=300` → **~6.2 saat**.
-> Daha büyük `iters` orantılı artar (1000 ≈ ~20 saat) ama küçük veri setinde
-> anlamsızdır (overfit). 1.5B kullanılırsa süreler ~2.5× kısalır.
+> **Maksimum pratik süre:** varsayılan `iters=300` → **~3.3 saat** (optimize). Daha büyük
+> `iters` orantılı artar ama küçük veri setinde anlamsızdır (overfit). 1.5B ~%30 daha hızlı.
+>
+> **24 saatlik döngü:** `scripts/train-loop.ps1` (iters=40, 2 dk cooldown) → ~24 saatte
+> ~30+ döngü. NOT: veri tavanı (5 örnek) nedeniyle her döngü aynı sonuca yakınsar —
+> hız öğrenmeyi artırmaz, sadece overfit'i hızlandırır. Asıl çözüm: veri setini büyütmek.
 
 ---
 

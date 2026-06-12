@@ -136,28 +136,23 @@ def train(cfg: PeftTrainConfig) -> dict:
     model.print_trainable_parameters()  # type: ignore[operator]
 
     train_rows = _load_jsonl(cfg.train_jsonl)
-    valid_rows = _load_jsonl(cfg.valid_jsonl)
 
     def _tokenize(rows: list[dict]) -> list[dict]:
         # Her metni TEK TEK tokenize et (batch yolu transformers'ta overflow
         # edge-case'inde IndexError verebiliyor). Boş örnekleri atla.
+        # HIZ: padding YOK — collator dinamik doldurur (batch=1 → sıfır padding,
+        # her adım yalnız gerçek token sayısını işler; 512'ye doldurmaktan ~%40 hızlı).
         out: list[dict] = []
         for r in rows:
             text = _row_to_text(r).strip()
             if not text:
                 continue
-            enc = tokenizer(
-                text,
-                truncation=True,
-                max_length=cfg.max_seq_length,
-                padding="max_length",
-            )
+            enc = tokenizer(text, truncation=True, max_length=cfg.max_seq_length)
             out.append({"input_ids": enc["input_ids"], "attention_mask": enc["attention_mask"]})
         return out
 
     # HF Dataset yerine düz liste — Trainer indekslenebilir/sized her şeyi kabul eder.
     train_ds = _tokenize(train_rows)
-    valid_ds = _tokenize(valid_rows)
     if not train_ds:
         return {"ok": False, "error": "Eğitim verisi boş (tokenize sonrası 0 örnek)."}
 
@@ -165,24 +160,26 @@ def train(cfg: PeftTrainConfig) -> dict:
     num_epochs = max(1, cfg.iterations // steps_per_epoch)
 
     output_dir = str(cfg.adapter_output_path)
+    # HIZ ayarları (CPU): eval kapalı (epoch başına ~35sn tasarruf), tek checkpoint,
+    # pin_memory kapalı (GPU yok), dinamik padding collator'da.
     args = TrainingArguments(
         output_dir=output_dir,
         num_train_epochs=num_epochs,
         per_device_train_batch_size=cfg.batch_size,
         learning_rate=cfg.learning_rate,
         fp16=(device == "cuda"),
-        logging_steps=10,
+        logging_steps=5,
         save_strategy="epoch",
-        eval_strategy="epoch",
-        load_best_model_at_end=True,
+        save_total_limit=1,
+        eval_strategy="no",
         report_to="none",
+        dataloader_pin_memory=False,
     )
 
     trainer = Trainer(
         model=model,
         args=args,
         train_dataset=train_ds,
-        eval_dataset=valid_ds,
         data_collator=DataCollatorForLanguageModeling(tokenizer, mlm=False),
     )
 
