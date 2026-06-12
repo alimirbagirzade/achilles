@@ -152,10 +152,15 @@
       .then(function (m) {
         var el = document.getElementById("ragMastery");
         if (el) {
-          el.textContent =
+          var txt =
             "RAG anladı: %" + m.coverage_percent +
-            " (" + m.papers_with_real + "/" + m.n_papers + ") · eğitim %" +
-            m.train_readiness_percent;
+            " (" + m.papers_with_real + "/" + m.n_papers + ")";
+          if (m.comprehension_percent != null) {
+            txt += " · anlama %" + m.comprehension_percent +
+                   " (" + m.papers_scored + " makale)";
+          }
+          txt += " · eğitim %" + m.train_readiness_percent;
+          el.textContent = txt;
         }
       })
       .catch(function () {});
@@ -1515,6 +1520,66 @@
         });
     });
   }
+
+  // ---------- sentez makaleleri ----------
+  function loadSynthPapers() {
+    var list = document.getElementById("synthPapersList");
+    if (!list) return;
+    api("/synthesis/reports", { method: "GET" })
+      .then(function (d) {
+        var reports = (d && d.reports) || [];
+        if (!reports.length) {
+          list.innerHTML =
+            '<p class="muted small">Henüz sentez makalesi yok — önce Agentic Araştırma çalıştır, sonra ÜRET.</p>';
+          return;
+        }
+        list.innerHTML = reports
+          .map(function (r) {
+            return (
+              '<div class="session-item">' +
+              '<a href="/api/synthesis/reports/' + encodeURIComponent(r.name) +
+              '" download>📄 ' + esc(r.name) + "</a>" +
+              '<span class="muted small"> · ' + r.size_kb + " KB · " + esc(r.modified) + "</span>" +
+              "</div>"
+            );
+          })
+          .join("");
+      })
+      .catch(function () {});
+  }
+  var genSynthBtn = document.getElementById("genSynthPaperBtn");
+  if (genSynthBtn) {
+    genSynthBtn.addEventListener("click", function () {
+      genSynthBtn.disabled = true;
+      genSynthBtn.innerHTML = '<span class="spinner"></span>ÜRETİLİYOR…';
+      var res = document.getElementById("synthPaperResult");
+      res.className = "result";
+      api("/synthesis/reports/generate", { method: "POST" })
+        .then(function (d) {
+          if (d.ok) {
+            toast("Sentez makalesi üretildi: " + d.name);
+            res.innerHTML =
+              '<div class="result-section result-body">✓ ' + esc(d.name) + " üretildi.</div>";
+            loadSynthPapers();
+          } else {
+            res.innerHTML =
+              '<div class="result-section result-body">' + esc(d.message || "Üretilemedi") + "</div>";
+          }
+        })
+        .catch(function (err) {
+          toast(err.message, true);
+          res.innerHTML =
+            '<div class="result-section result-body">Hata: ' + esc(err.message) + "</div>";
+        })
+        .finally(function () {
+          genSynthBtn.disabled = false;
+          genSynthBtn.textContent = "📄 SENTEZ MAKALESİ ÜRET";
+        });
+    });
+  }
+  var refreshSynthBtn = document.getElementById("refreshSynthPapers");
+  if (refreshSynthBtn) refreshSynthBtn.addEventListener("click", loadSynthPapers);
+  loadSynthPapers();
 
   // ---------- model değerlendirme ----------
   function loadEvalSets() {

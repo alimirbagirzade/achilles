@@ -33,7 +33,9 @@ class PeftTrainConfig:
     lora_r: int = 8
     lora_alpha: int = 16
     lora_dropout: float = 0.05
-    max_seq_length: int = 512
+    # Dinamik padding ile maliyet gerçek uzunluğa bağlı; 1024 sessiz kırpılmayı önler.
+    # RAFT (golden+distractor bağlam) verisine geçişte 2048'e çıkarılmalı.
+    max_seq_length: int = 1024
 
 
 def _check_deps() -> list[str]:
@@ -70,27 +72,26 @@ def _load_jsonl(path: Path) -> list[dict]:
     return rows
 
 
+def _row_to_messages(row: dict) -> list[dict]:
+    """Satırı chat mesaj listesine çevir (messages > system/user/assistant > text)."""
+    if "messages" in row:
+        return [m for m in row["messages"] if m.get("content")]
+    msgs = []
+    for role in ("system", "user", "assistant"):
+        if row.get(role):
+            msgs.append({"role": role, "content": row[role]})
+    if msgs:
+        return msgs
+    if row.get("text"):
+        return [{"role": "user", "content": row["text"]}]
+    return []
+
+
 def _row_to_text(row: dict) -> str:
+    """Yedek düz-metin formatı (yalnız chat template yoksa kullanılır)."""
     if "text" in row:
         return row["text"]
-    # Chat formatı: {"messages": [{"role": "system|user|assistant", "content": ...}]}
-    # (lora-dataset bu formatı üretir).
-    if "messages" in row:
-        parts = []
-        for msg in row["messages"]:
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
-            if content:
-                parts.append(f"<|{role}|>{content}<|end|>")
-        return "\n".join(parts)
-    parts = []
-    if row.get("system"):
-        parts.append(f"<|system|>{row['system']}<|end|>")
-    if row.get("user"):
-        parts.append(f"<|user|>{row['user']}<|end|>")
-    if row.get("assistant"):
-        parts.append(f"<|assistant|>{row['assistant']}<|end|>")
-    return "\n".join(parts)
+    return "\n".join(f"<|{m['role']}|>{m['content']}<|end|>" for m in _row_to_messages(row))
 
 
 def train(cfg: PeftTrainConfig) -> dict:
@@ -125,17 +126,35 @@ def train(cfg: PeftTrainConfig) -> dict:
         device_map="auto" if device == "cuda" else None,
     )
 
+    # target_modules AÇIKÇA sınırlı: Qwen3 tied-embeddings kullanır; lm_head/embed
+    # deltaları GGUF dönüşümünde sessizce atlanır ve adapter bozulur. Yalnız
+    # attention + MLP projeksiyonları hedeflenir (Ollama/llama.cpp uyumlu).
     peft_config = LoraConfig(
         task_type=TaskType.CAUSAL_LM,
         r=cfg.lora_r,
         lora_alpha=cfg.lora_alpha,
         lora_dropout=cfg.lora_dropout,
         bias="none",
+        target_modules=[
+            "q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj",
+        ],
     )
     model = get_peft_model(model, peft_config)  # type: ignore[assignment]
     model.print_trainable_parameters()  # type: ignore[operator]
 
     train_rows = _load_jsonl(cfg.train_jsonl)
+
+    def _render(r: dict) -> str:
+        # Modelin GERÇEK chat şablonu kullanılır (eğitim ↔ çıkarım format eşleşmesi
+        # şart; uydurma <|role|> formatı adapter'ı sessizce bozar). Şablon yoksa
+        # düz-metin yedeğe düşülür.
+        msgs = _row_to_messages(r)
+        if msgs and getattr(tokenizer, "chat_template", None):
+            try:
+                return str(tokenizer.apply_chat_template(msgs, tokenize=False))
+            except Exception:
+                pass
+        return _row_to_text(r).strip()
 
     def _tokenize(rows: list[dict]) -> list[dict]:
         # Her metni TEK TEK tokenize et (batch yolu transformers'ta overflow
@@ -144,7 +163,7 @@ def train(cfg: PeftTrainConfig) -> dict:
         # her adım yalnız gerçek token sayısını işler; 512'ye doldurmaktan ~%40 hızlı).
         out: list[dict] = []
         for r in rows:
-            text = _row_to_text(r).strip()
+            text = _render(r)
             if not text:
                 continue
             enc = tokenizer(text, truncation=True, max_length=cfg.max_seq_length)

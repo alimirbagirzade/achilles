@@ -1484,6 +1484,24 @@ def rag_mastery() -> None:
         )
 
 
+@app.command("synth-paper")
+def synth_paper(
+    max_sessions: int = typer.Option(5, help="Makaleye dahil edilecek son oturum sayısı"),
+    question: str = typer.Option(None, help="Yalnız bu soruyu içeren oturumlar"),
+) -> None:
+    """Araştırma oturumlarından sentez makalesi (Markdown) üret — web'den indirilebilir."""
+    from app.research.synthesis_paper import generate_synthesis_paper
+
+    path = generate_synthesis_paper(max_sessions=max_sessions, question_filter=question)
+    if path is None:
+        console.print(
+            "[yellow]Araştırma oturumu yok — önce 'achilles research \"soru\"' çalıştır.[/yellow]"
+        )
+        return
+    console.print(f"[green]✓[/green] Sentez makalesi → [bold]{path}[/bold]")
+    console.print("Web: http://127.0.0.1:8765 → Araştırma sekmesi → Sentez Makaleleri")
+
+
 @app.command("lora-registry")
 def lora_registry() -> None:
     """Adapter kayıt defterini listele."""

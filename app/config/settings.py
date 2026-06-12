@@ -60,7 +60,9 @@ class Settings(BaseSettings):
 
     # PEFT (Windows/Linux) LoRA eğitimi için HuggingFace base model.
     # MLX 4-bit formatı transformers ile yüklenemez; bu yüzden ayrı HF model gerekir.
-    peft_base_model: str = "Qwen/Qwen3-4B"
+    # DİKKAT: Ollama'daki `qwen3:4b` tag'i Instruct-2507 checkpoint'idir (256K ctx);
+    # adapter'ın Ollama'da çalışması için eğitim base'i BİREBİR aynı olmalı.
+    peft_base_model: str = "Qwen/Qwen3-4B-Instruct-2507"
 
     # --- Storage ---
     sqlite_path: Path = Field(default=Path("storage/sqlite/achilles_trader_ai.db"))

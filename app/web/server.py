@@ -440,6 +440,38 @@ def api_rag_mastery() -> dict:
     return compute_rag_mastery()
 
 
+@app.get("/api/synthesis/reports", dependencies=[api_auth])
+def api_synthesis_reports() -> dict:
+    """Üretilmiş sentez makalelerini listele (web'den incelenebilir/indirilebilir)."""
+    from app.research.synthesis_paper import list_synthesis_reports
+
+    return {"reports": list_synthesis_reports()}
+
+
+@app.get("/api/synthesis/reports/{name}", dependencies=[api_auth])
+def api_synthesis_report_download(name: str) -> FileResponse:
+    """Bir sentez makalesini indir (yalnız reports/synthesis altındaki .md)."""
+    from app.research.synthesis_paper import is_safe_report_name, synthesis_reports_dir
+
+    if not is_safe_report_name(name):
+        raise HTTPException(status_code=400, detail="Geçersiz dosya adı")
+    path = synthesis_reports_dir() / name
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Makale bulunamadı")
+    return FileResponse(path, media_type="text/markdown", filename=name)
+
+
+@app.post("/api/synthesis/reports/generate", dependencies=[api_auth])
+def api_synthesis_report_generate() -> dict:
+    """Son araştırma oturumlarından yeni bir sentez makalesi üret."""
+    from app.research.synthesis_paper import generate_synthesis_paper
+
+    path = generate_synthesis_paper()
+    if path is None:
+        return {"ok": False, "message": "Araştırma oturumu yok — önce 'research' çalıştırın."}
+    return {"ok": True, "name": path.name}
+
+
 @app.post(
     "/api/papers/comprehension/batch",
     response_model=BatchScoreResponse,
