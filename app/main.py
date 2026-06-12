@@ -1449,6 +1449,63 @@ def lora_dataset(
     console.print(f"  → [bold]{jsonl_dir}[/bold]")
 
 
+@app.command("rag-mastery")
+def rag_mastery() -> None:
+    """RAG'in ne kadar 'öğrendiğini' gösteren ustalık panosu (LLM gerektirmez)."""
+    from app.lora.dataset_builder import build_dataset
+    from app.memory.sqlite_store import SqliteStore
+
+    store = SqliteStore()
+    papers = store.list_papers()
+    n_papers = len(papers)
+    cards = store.list_approved_cards()
+    n_cards = len(cards)
+    papers_with_cards = len({c["paper_id"] for c in cards if c.get("paper_id")})
+    n_examples = len(build_dataset(cards))
+
+    scored = 0
+    total_comp = 0.0
+    for p in papers:
+        row = store.get_comprehension_score(p.paper_id)
+        if row is not None:
+            scored += 1
+            total_comp += row.total_score
+    avg_comp = (total_comp / scored) if scored else None
+
+    coverage = (papers_with_cards / n_papers * 100) if n_papers else 0.0
+    train_readiness = min(1.0, n_examples / 50.0) * 100
+    comp_component = avg_comp if avg_comp is not None else 0.0
+
+    # Bileşik ustalık = bilgi kapsamı (çıkarım) + anlama kalitesi + eğitim hazırlığı.
+    # Anlama henüz hesaplanmadıysa 0 sayılır (ölçülmemiş = kanıtlanmamış).
+    mastery = 0.40 * coverage + 0.30 * comp_component + 0.30 * train_readiness
+
+    table = Table(title="RAG Ustalık Panosu")
+    table.add_column("Metrik")
+    table.add_column("Değer", justify="right")
+    table.add_row("İçe alınan makale", str(n_papers))
+    table.add_row("Onaylı bilgi kartı", str(n_cards))
+    table.add_row("Bilgi kapsamı (kart/makale)", f"{papers_with_cards}/{n_papers}  %{coverage:.0f}")
+    table.add_row("LoRA eğitim örneği", f"{n_examples}  (hazırlık %{train_readiness:.0f})")
+    comp_txt = (
+        f"%{avg_comp:.0f} ({scored}/{n_papers} makale)"
+        if avg_comp is not None
+        else f"hesaplanmadı ({scored}/{n_papers}) — LLM ile çalıştır"
+    )
+    table.add_row("Anlama skoru", comp_txt)
+    console.print(table)
+    console.print(
+        f"\n[bold]RAG Ustalık (bileşik): %{mastery:.0f}[/bold]\n"
+        f"[dim]= kapsam %{coverage:.0f}×0.4 + anlama %{comp_component:.0f}×0.3 "
+        f"+ eğitim %{train_readiness:.0f}×0.3[/dim]"
+    )
+    if avg_comp is None:
+        console.print(
+            "[dim]Not: Anlama skoru için makale başına LLM doğrulaması gerekir "
+            "(eğitim sürerken RAM çakışır — cooldown'da çalıştır).[/dim]"
+        )
+
+
 @app.command("lora-registry")
 def lora_registry() -> None:
     """Adapter kayıt defterini listele."""

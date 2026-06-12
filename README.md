@@ -586,9 +586,11 @@ uv run achilles pine [strateji-adı]     # StrategyIR → TradingView Pine Scrip
 
 ```bash
 uv run achilles dataset                 # bilgi kartlarından eğitim JSONL üret
+uv run achilles lora-dataset            # LoRA SFT JSONL + train/valid split üret
 uv run achilles chain-dataset           # araştırma zincirleri → LoRA JSONL
+uv run achilles rag-mastery             # RAG "ne kadar öğrendi" ustalık panosu (LLM-free)
 uv run achilles train                   # LoRA — SADECE ÖNIZLEME (çalıştırmaz)
-uv run achilles train --run             # LoRA — gerçekten eğitir (macOS M1/M2/M3/M4)
+uv run achilles train --run             # LoRA — gerçekten eğitir (macOS MLX + Windows/Linux PEFT)
 uv run achilles evaluate <eval.jsonl>   # modeli failure-mode eval setiyle test et
 ```
 
