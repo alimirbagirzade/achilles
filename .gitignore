@@ -82,3 +82,6 @@ storage/*.db-*
 # büyük kaynak logo (optimize sürüm app/web/static/assets/achilles-logo.jpg)
 /achilles trading logo.png
 "BTCUSD 1H/"
+
+# kök dizine yanlışlıkla iç içe klonlanan repo kopyası (commit edilmemeli)
+/achilles/

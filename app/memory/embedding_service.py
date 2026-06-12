@@ -91,13 +91,21 @@ class EmbeddingService:
         """Eski Ollama sürümleri için tekli yedek endpoint."""
         import requests
 
-        r = requests.post(
-            f"{self.host}/api/embeddings",
-            json={"model": self.model, "prompt": text},
-            timeout=60,
-        )
-        r.raise_for_status()
-        return r.json()["embedding"]
+        # CPU makinelerde (özellikle büyük bir LLM aynı anda yüklüyken) embedding
+        # yavaşlayabilir; uzun timeout + tek retry ile geçici takılmaları tolere et.
+        last_exc: Exception | None = None
+        for _ in range(2):
+            try:
+                r = requests.post(
+                    f"{self.host}/api/embeddings",
+                    json={"model": self.model, "prompt": text},
+                    timeout=180,
+                )
+                r.raise_for_status()
+                return r.json()["embedding"]
+            except requests.RequestException as exc:  # ağ/timeout — bir kez yeniden dene
+                last_exc = exc
+        raise last_exc if last_exc else RuntimeError("embedding başarısız")
 
     # --- fallback ---------------------------------------------------------
     def _fallback_mode(self) -> str:

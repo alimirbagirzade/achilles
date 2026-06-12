@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     ollama_host: str = "http://127.0.0.1:11434"  # localhost yerine IP — Windows IPv6 sorununu önler
     llm_model: str = "qwen3:4b"
     embed_model: str = "nomic-embed-text"
+    # qwen3 gibi "thinking" modellerinde düşünme, format=json ile token bütçesini
+    # tüketip yanıtı boş bırakıyor (özellikle CPU'da yavaş). Varsayılan: kapalı.
+    ollama_think: bool = False
 
     # --- OpenAI (bulut, opsiyonel) ---
     openai_api_key: str = ""
@@ -57,6 +60,10 @@ class Settings(BaseSettings):
 
     # mlx-lm LoRA eğitimi için HuggingFace model ID (Ollama formatı geçersiz)
     mlx_base_model: str = "mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit"
+
+    # CPU LoRA eğitimi (Windows/Linux, NVIDIA/Apple GPU yok) için HuggingFace model ID.
+    # Küçük model = CPU'da pratik eğitim süresi. PyTorch + PEFT backend kullanır.
+    cpu_base_model: str = "Qwen/Qwen2.5-0.5B-Instruct"
 
     # --- Storage ---
     sqlite_path: Path = Field(default=Path("storage/sqlite/achilles_trader_ai.db"))
@@ -76,10 +83,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # --- Auto-LoRA Pipeline ---
-    auto_lora_enabled: bool = False          # otomatik döngü; varsayılan kapalı
-    auto_lora_min_cards: int = 20            # eğitim başlamadan gereken minimum kart
-    auto_lora_check_interval_min: int = 60   # kaç dakikada bir kontrol
-    auto_lora_eval_threshold: float = 0.5    # eval pass_rate eşiği
+    auto_lora_enabled: bool = False  # otomatik döngü; varsayılan kapalı
+    auto_lora_min_cards: int = 20  # eğitim başlamadan gereken minimum kart
+    auto_lora_check_interval_min: int = 60  # kaç dakikada bir kontrol
+    auto_lora_eval_threshold: float = 0.5  # eval pass_rate eşiği
 
     # --- Web (FastAPI) ---
     # Güvenlik: varsayılan olarak SADECE localhost'a bağlanır (dışarı açılmaz).

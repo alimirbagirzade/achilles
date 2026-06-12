@@ -8,7 +8,9 @@ Pipeline order (per spec):
 
 from __future__ import annotations
 
+import contextlib
 import json
+import sys
 from pathlib import Path
 
 import typer
@@ -17,6 +19,21 @@ from rich.panel import Panel
 from rich.table import Table
 
 from app.config import configure_logging, get_settings
+
+
+def _force_utf8_console() -> None:
+    """Windows konsolu (cp1254 vb.) Türkçe/kutu karakterlerinde çöküyor.
+
+    Çıktıyı UTF-8'e sabitler ki rich tabloları her platformda güvenli yazılsın.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            with contextlib.suppress(ValueError, OSError):
+                reconfigure(encoding="utf-8")
+
+
+_force_utf8_console()
 
 app = typer.Typer(
     help="Achilles Trader AI — local-first trading research system.",
@@ -319,6 +336,47 @@ def train(
                     "[yellow]Kur: uv pip install torch transformers "
                     "peft datasets accelerate[/yellow]"
                 )
+
+
+@app.command(name="train-cpu")
+def train_cpu(
+    base_model: str = typer.Option(None, help="HuggingFace model id (varsayılan: ayarlardaki)"),
+    adapter_name: str = typer.Option("achilles_cpu_lora_v1"),
+    epochs: float = typer.Option(3.0, help="Epoch sayısı"),
+    grad_accum: int = typer.Option(8, help="Gradyan biriktirme (efektif batch)"),
+    learning_rate: float = typer.Option(2e-4),
+    max_seq_len: int = typer.Option(1024),
+    max_steps: int = typer.Option(0, help=">0 → epoch yerine adım sınırı (smoke test)"),
+    run: bool = typer.Option(False, help="Eğitimi gerçekten başlat (CPU, PyTorch+PEFT)"),
+) -> None:
+    """CPU LoRA eğitimi (GPU yok — Windows/Linux). Varsayılan dry-run."""
+    from app.training.cpu_lora_train import CpuTrainConfig, build_plan, validate
+    from app.training.cpu_lora_train import run as cpu_run
+
+    settings = get_settings()
+    cfg = CpuTrainConfig(
+        base_model=base_model or settings.cpu_base_model,
+        train_jsonl=settings.jsonl_dir / "train.jsonl",
+        valid_jsonl=settings.jsonl_dir / "valid.jsonl",
+        adapter_output_path=settings.adapters_dir / adapter_name,
+        epochs=epochs,
+        grad_accum=grad_accum,
+        learning_rate=learning_rate,
+        max_seq_len=max_seq_len,
+        max_steps=max_steps,
+    )
+    problems = validate(cfg)
+    if problems:
+        console.print("[red]DOĞRULAMA HATALARI:[/red]")
+        for pr in problems:
+            console.print(f"  - {pr}")
+        raise typer.Exit(code=1)
+
+    if not run:
+        console.print(Panel.fit(build_plan(cfg), title="train-cpu (dry-run — --run ile başlat)"))
+        return
+
+    cpu_run(cfg)
 
 
 @app.command()

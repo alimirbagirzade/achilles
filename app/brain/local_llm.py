@@ -29,6 +29,7 @@ class LocalLLM:
         self._backend = s.llm_backend
         self._ollama_host = (host or s.ollama_host).rstrip("/")
         self._ollama_model = model or s.llm_model
+        self._ollama_think = s.ollama_think
         self.model = self._ollama_model  # backward compat
 
         self._openai_key = s.openai_api_key
@@ -105,23 +106,36 @@ class LocalLLM:
 
         if backend == "ollama":
             return self._generate_ollama(
-                prompt, system=system, temperature=temperature,
-                max_tokens=max_tokens, fmt=fmt, timeout=timeout,
+                prompt,
+                system=system,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                fmt=fmt,
+                timeout=timeout,
             )
         if backend == "openai":
             return self._generate_openai(
-                prompt, system=system, temperature=temperature,
-                max_tokens=max_tokens, timeout=timeout,
+                prompt,
+                system=system,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=timeout,
             )
         if backend == "anthropic":
             return self._generate_anthropic(
-                prompt, system=system, temperature=temperature,
-                max_tokens=max_tokens, timeout=timeout,
+                prompt,
+                system=system,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=timeout,
             )
         if backend == "google":
             return self._generate_google(
-                prompt, system=system, temperature=temperature,
-                max_tokens=max_tokens, timeout=timeout,
+                prompt,
+                system=system,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=timeout,
             )
 
         raise LLMUnavailable(
@@ -151,7 +165,7 @@ class LocalLLM:
             "prompt": prompt,
             "system": system or "",
             "stream": False,
-            "think": False,
+            "think": self._ollama_think,
             "options": options,
         }
         if fmt:
