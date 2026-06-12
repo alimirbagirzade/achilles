@@ -136,7 +136,74 @@ production adapter değişimi.
 
 ---
 
-## 7. Sınırlar ve uyarılar
+## 7. SÜREKLİ ÖĞRENME PROTOKOLÜ — "Trader Uzmanı" döngüsü
+
+> Amaç: model yalnız eğitilmez; **sürekli yeni kaynak okur, kavrar, sentezler ve
+> eğitilir** — her turda biraz daha "trader gibi düşünen" bir uzmana yaklaşır.
+> Çalıştır: `bash scripts/continuous-learning.sh [saat]` · Durdur: `storage/STOP_LEARNING`
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  1) ZENGİNLEŞTİR   arXiv'den 3 makale (dönüşümlü konu kuyruğu)     │
+│  2) KAVRA          kart üret (LLM) → içerikli onayla → anlama %    │
+│  3) SENTEZLE       (her 3 turda) hipotez + backtest + sentez       │
+│                    makalesi → web'den indirilebilir                │
+│  4) EĞİT           dataset tazele → LoRA 2×40 iter                 │
+│  └─→ tekrar (RAM disiplini: LLM fazı ↔ eğitim fazı asla çakışmaz)  │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+### Neden bu alanlar? (konu kuyruğu: `scripts/enrichment-topics.txt`)
+Trader uzmanlığı yalnız formül değildir; kuyruk bilinçli olarak şu eksenlerde
+zengindir:
+- **Psikoloji / davranışsal finans** — aşırı güven, kayıp kaçınma, sürü
+  davranışı, disposition etkisi → modelin "neden yanılırız"ı öğrenmesi.
+- **Belirsizlik** — Knightian belirsizlik, belirsizlik nicemleme, kuyruk riski,
+  black swan → emin görünmek yerine belirsizliği DOĞRU ifade etme davranışı.
+- **Felsefe / karar kuramı** — olasılık felsefesi, Bayesçi karar, tümevarım
+  problemi, sınırlı akılcılık → muhakeme disiplini (LoRA'nın asıl hedefi).
+- **Trading / risk** — rejim değişimi (Markov), Kelly, drawdown kontrolü,
+  momentum-ortalamaya dönüş etkileşimi.
+
+Kuyruk düz metin dosyasıdır: satır ekle/çıkar, döngü kaldığı yerden devam eder
+(`storage/learning_topic_index`).
+
+### Protokol ilkeleri
+1. **Kavramadan eğitme yok** — yeni makale önce kart + anlama skoru alır;
+   içeriksiz kart asla onaylanmaz/eğitime girmez.
+2. **Sentez = yeni bilgi** — hipotezler mevcut kartların ÜZERİNE üretilir,
+   backtest edilir (geçemeyen FAIL olarak raporlanır) ve sentez makalesi
+   olarak hem insana (web) hem RAG'a geri beslenebilir.
+3. **Dürüst metrik** — `rag-mastery` her tur sonunda loglanır; ilerleme
+   kapsam/anlama/eğitim bileşenleriyle izlenir.
+4. **RAM disiplini** — LLM fazları ve eğitim fazı sıralıdır; düşük RAM'li
+   makinede asla çakışmaz.
+
+### RAG + LoRA tek beyin entegrasyonu
+Eğitilen adapter'ın RAG ile AYNI modelde çalışması için GGUF dönüşümü ve
+RAFT-tarzı veri reçetesi: bkz. **docs/RAG_LORA_ENTEGRASYON.md** (Ollama
+ADAPTER yolu, base eşleşme kuralı, ≥1000 örnek hedefi, kaynak-yok reddi
+örnekleri, müfredat sırası).
+
+## 8. Güçlü makineye taşıma (ölçekleme rehberi)
+
+Protokol makineden bağımsızdır — yalnız şu düğmeler değişir:
+
+| Düğme | Bu laptop (CPU) | Mac M-serisi | Tek GPU (24GB) | Colab A100 |
+|---|---|---|---|---|
+| Base model | Qwen3-4B-Instruct-2507 | aynı / 9B | 9B / 14B | 30B+ |
+| Backend | PEFT (CPU) | MLX | PEFT (CUDA) | PEFT (CUDA) |
+| iters/koşu | 40 | 200+ | 300+ | 300+ |
+| max_seq | 1024 | 2048 | 2048 (RAFT) | 4096 |
+| batch_size | 1 | 4 | 8+ | 16+ |
+| Tur süresi | ~1.5-2 sa | ~20-30 dk | ~10 dk | ~5 dk |
+| Anlama skoru | seçili makale | tüm korpus | tüm korpus | tüm korpus + judge kalibrasyon |
+
+Taşıma adımları: repo'yu klonla → `.env`'de `ACHILLES_PEFT_BASE_MODEL` +
+`ACHILLES_LLM_MODEL`'i makineye göre seç (base ↔ Ollama tag EŞLEŞMELİ) →
+`bash scripts/continuous-learning.sh 72`. Hepsi bu.
+
+## 9. Sınırlar ve uyarılar
 
 - **Veri darboğazı:** şu an yalnızca **5 eğitim örneği** (3 train / 1 valid).
   LoRA için çok az — asıl performans kaldıracı **veri miktarı + kalitesi**.
