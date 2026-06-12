@@ -48,7 +48,7 @@ data/lora/raw/
 data/lora/approved/
 data/lora/review_needed/
 data/lora/rejected/
-datasets/lora/*.jsonl
+data/lora_sft/*.jsonl
 outputs/
 checkpoints/
 adapters/
@@ -65,7 +65,6 @@ registry/adapters/*.jsonl
 
 # Üretilen veri setleri
 data/training/unified_sft.jsonl
-datasets/*.jsonl
 
 # Claude worktrees (geçici ajan dizinleri)
 .claude/worktrees/

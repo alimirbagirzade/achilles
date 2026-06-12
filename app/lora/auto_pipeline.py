@@ -28,12 +28,12 @@ class PipelineStage(StrEnum):
     IDLE = "idle"
     CHECKING = "checking"
     GATE_FAILED = "gate_failed"
-    READY_TO_TRAIN = "ready_to_train"   # kullanıcı onayı bekliyor
+    READY_TO_TRAIN = "ready_to_train"  # kullanıcı onayı bekliyor
     TRAINING = "training"
     TRAIN_FAILED = "train_failed"
     EVALUATING = "evaluating"
     EVAL_FAILED = "eval_failed"
-    EVAL_PASSED = "eval_passed"         # production onayı bekliyor
+    EVAL_PASSED = "eval_passed"  # production onayı bekliyor
     PROMOTED = "promoted"
 
 
@@ -219,10 +219,11 @@ class AutoLoRAPipeline:
                 f"--iters {iters}"
             )
         else:
-            # Windows / Linux: PEFT backend (torch + peft)
+            # Windows / Linux: PEFT backend (torch + peft).
+            # MLX 4-bit modeli transformers ile yüklenemez → ayrı HF base model kullan.
             cmd = (
                 f"python -m app.training.peft_lora_train "
-                f"--model {settings.mlx_base_model} "
+                f"--model {settings.peft_base_model} "
                 f"--train data/training/jsonl/train.jsonl "
                 f"--valid data/training/jsonl/valid.jsonl "
                 f"--output models/adapters/{adapter_name} "
@@ -310,6 +311,7 @@ class AutoLoRAPipeline:
             # Eval sonuçlarını kalıcı DB'ye kaydet
             try:
                 from app.memory.sqlite_store import SqliteStore
+
                 store = SqliteStore()
                 for es in eval_sets:
                     r = scores.get(es.stem, {})
@@ -356,9 +358,7 @@ class AutoLoRAPipeline:
             record = AdapterRecord(
                 base_model=settings.mlx_base_model,
                 adapter_name=adapter_name,
-                eval_score=self._state.eval_scores.get(
-                    "discipline_core", {}
-                ).get("pass_rate"),
+                eval_score=self._state.eval_scores.get("discipline_core", {}).get("pass_rate"),
             )
             record.status = AdapterStatus.EVAL_PASSED
             adapter_id = await asyncio.to_thread(registry.register, record)
@@ -413,8 +413,7 @@ class AutoLoRAPipeline:
 
     async def background_loop(self) -> None:
         log.info(
-            "Auto-LoRA arka plan döngüsü başladı "
-            "(enabled=%s, interval=%d dk, min_cards=%d)",
+            "Auto-LoRA arka plan döngüsü başladı (enabled=%s, interval=%d dk, min_cards=%d)",
             self.auto_enabled,
             self.check_interval_min,
             self.min_eligible_cards,

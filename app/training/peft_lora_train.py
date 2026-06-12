@@ -16,7 +16,9 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-REQUIRED_PACKAGES = ["torch", "transformers", "peft", "datasets"]
+# NOT: HF 'datasets' kütüphanesi kullanılmaz — proje kökündeki yerel 'datasets/'
+# klasörü onu gölgeler (ImportError). Tokenizasyon düz Python ile yapılır.
+REQUIRED_PACKAGES = ["torch", "transformers", "peft"]
 
 
 @dataclass
@@ -71,6 +73,16 @@ def _load_jsonl(path: Path) -> list[dict]:
 def _row_to_text(row: dict) -> str:
     if "text" in row:
         return row["text"]
+    # Chat formatı: {"messages": [{"role": "system|user|assistant", "content": ...}]}
+    # (lora-dataset bu formatı üretir).
+    if "messages" in row:
+        parts = []
+        for msg in row["messages"]:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            if content:
+                parts.append(f"<|{role}|>{content}<|end|>")
+        return "\n".join(parts)
     parts = []
     if row.get("system"):
         parts.append(f"<|system|>{row['system']}<|end|>")
@@ -90,7 +102,6 @@ def train(cfg: PeftTrainConfig) -> dict:
         }
 
     import torch
-    from datasets import Dataset
     from peft import LoraConfig, TaskType, get_peft_model
     from transformers import (
         AutoModelForCausalLM,
@@ -121,24 +132,34 @@ def train(cfg: PeftTrainConfig) -> dict:
         lora_dropout=cfg.lora_dropout,
         bias="none",
     )
-    model = get_peft_model(model, peft_config)
-    model.print_trainable_parameters()
+    model = get_peft_model(model, peft_config)  # type: ignore[assignment]
+    model.print_trainable_parameters()  # type: ignore[operator]
 
     train_rows = _load_jsonl(cfg.train_jsonl)
     valid_rows = _load_jsonl(cfg.valid_jsonl)
 
-    def tokenize(examples):
-        return tokenizer(
-            examples["text"],
-            truncation=True,
-            max_length=cfg.max_seq_length,
-            padding="max_length",
-        )
+    def _tokenize(rows: list[dict]) -> list[dict]:
+        # Her metni TEK TEK tokenize et (batch yolu transformers'ta overflow
+        # edge-case'inde IndexError verebiliyor). Boş örnekleri atla.
+        out: list[dict] = []
+        for r in rows:
+            text = _row_to_text(r).strip()
+            if not text:
+                continue
+            enc = tokenizer(
+                text,
+                truncation=True,
+                max_length=cfg.max_seq_length,
+                padding="max_length",
+            )
+            out.append({"input_ids": enc["input_ids"], "attention_mask": enc["attention_mask"]})
+        return out
 
-    train_ds = Dataset.from_list([{"text": _row_to_text(r)} for r in train_rows])
-    valid_ds = Dataset.from_list([{"text": _row_to_text(r)} for r in valid_rows])
-    train_ds = train_ds.map(tokenize, batched=True, remove_columns=["text"])
-    valid_ds = valid_ds.map(tokenize, batched=True, remove_columns=["text"])
+    # HF Dataset yerine düz liste — Trainer indekslenebilir/sized her şeyi kabul eder.
+    train_ds = _tokenize(train_rows)
+    valid_ds = _tokenize(valid_rows)
+    if not train_ds:
+        return {"ok": False, "error": "Eğitim verisi boş (tokenize sonrası 0 örnek)."}
 
     steps_per_epoch = max(1, len(train_ds) // cfg.batch_size)
     num_epochs = max(1, cfg.iterations // steps_per_epoch)
@@ -205,7 +226,7 @@ def generate_colab_notebook(cfg: PeftTrainConfig, out_path: Path) -> Path:
                 "# Egitim verisini buraya kopyalayin veya Drive'dan yukleyin\n",
                 "TRAIN_DATA = []\n",
                 "VALID_DATA = []\n",
-                "# Ornek: [{\"text\": \"<|user|>soru<|end|>\\n<|assistant|>cevap<|end|>\"}]\n",
+                '# Ornek: [{"text": "<|user|>soru<|end|>\\n<|assistant|>cevap<|end|>"}]\n',
             ],
         },
         {
@@ -286,11 +307,16 @@ def build_command(cfg: PeftTrainConfig) -> list[str]:
     return [
         sys.executable,
         str(Path(__file__).resolve()),
-        "--train", str(cfg.train_jsonl),
-        "--valid", str(cfg.valid_jsonl),
-        "--output", str(cfg.adapter_output_path),
-        "--model", cfg.base_model,
-        "--iters", str(cfg.iterations),
+        "--train",
+        str(cfg.train_jsonl),
+        "--valid",
+        str(cfg.valid_jsonl),
+        "--output",
+        str(cfg.adapter_output_path),
+        "--model",
+        cfg.base_model,
+        "--iters",
+        str(cfg.iterations),
         "--run",
     ]
 

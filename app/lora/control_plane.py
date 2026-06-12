@@ -28,7 +28,7 @@ from app.lora.gates import (
 from app.memory.sqlite_store import SqliteStore
 
 DEFAULT_DATA_DIR = Path("data/lora")
-DEFAULT_DATASET_DIR = Path("datasets/lora")
+DEFAULT_DATASET_DIR = Path("data/lora_sft")
 DEFAULT_REPORT_DIR = Path("reports/lora")
 DEFAULT_REGISTRY_DIR = Path("registry/adapters")
 
@@ -132,6 +132,7 @@ class LoRAControlPlane:
         # title/içerik boş olan kartları gate'lere sokmadan ele — bunlar DB'de
         # hatalı onaylanmış (içeriksiz) kartlardır ve pipeline'ı bloklamalı değil.
         from app.lora.gates import _card_text
+
         nonempty = [c for c in cards if _card_text(c)]
 
         stages: list[GateResult] = [gate_0_source(nonempty)]

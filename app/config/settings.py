@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     # mlx-lm LoRA eğitimi için HuggingFace model ID (Ollama formatı geçersiz)
     mlx_base_model: str = "mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit"
 
+    # PEFT (Windows/Linux) LoRA eğitimi için HuggingFace base model.
+    # MLX 4-bit formatı transformers ile yüklenemez; bu yüzden ayrı HF model gerekir.
+    peft_base_model: str = "Qwen/Qwen3-4B"
+
     # --- Storage ---
     sqlite_path: Path = Field(default=Path("storage/sqlite/achilles_trader_ai.db"))
     chroma_path: Path = Field(default=Path("vector_db/chroma"))
@@ -76,10 +80,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # --- Auto-LoRA Pipeline ---
-    auto_lora_enabled: bool = False          # otomatik döngü; varsayılan kapalı
-    auto_lora_min_cards: int = 20            # eğitim başlamadan gereken minimum kart
-    auto_lora_check_interval_min: int = 60   # kaç dakikada bir kontrol
-    auto_lora_eval_threshold: float = 0.5    # eval pass_rate eşiği
+    auto_lora_enabled: bool = False  # otomatik döngü; varsayılan kapalı
+    auto_lora_min_cards: int = 20  # eğitim başlamadan gereken minimum kart
+    auto_lora_check_interval_min: int = 60  # kaç dakikada bir kontrol
+    auto_lora_eval_threshold: float = 0.5  # eval pass_rate eşiği
 
     # --- Web (FastAPI) ---
     # Güvenlik: varsayılan olarak SADECE localhost'a bağlanır (dışarı açılmaz).

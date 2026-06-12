@@ -293,7 +293,7 @@ def train(
         from app.training.peft_lora_train import train as peft_train
 
         cfg = PeftTrainConfig(  # type: ignore[assignment]
-            base_model=base_model or "Qwen/Qwen2.5-1.5B-Instruct",
+            base_model=base_model or settings.peft_base_model,
             train_jsonl=settings.jsonl_dir / "train.jsonl",
             valid_jsonl=settings.jsonl_dir / "valid.jsonl",
             adapter_output_path=settings.adapters_dir / adapter_name,
@@ -1410,7 +1410,7 @@ def lora_audit(
 @app.command("lora-dataset")
 def lora_dataset(
     output: Path = typer.Option(
-        Path("datasets/lora"), "--output", help="Çıktı dizini (JSONL buraya yazılır)."
+        Path("data/lora_sft"), "--output", help="Çıktı dizini (JSONL buraya yazılır)."
     ),
 ) -> None:
     """Onaylı kartlardan LoRA SFT JSONL veri seti üret."""
@@ -1420,15 +1420,33 @@ def lora_dataset(
     store = SqliteStore()
     cards = store.list_approved_cards()
     examples = build_dataset(cards)
-    out_dir = output if output.is_absolute() else (get_settings().root / output)
+    settings = get_settings()
+    out_dir = output if output.is_absolute() else (settings.root / output)
     out_path = out_dir / "lora_sft.jsonl"
     n = export_jsonl(examples, out_path)
     if n == 0:
         console.print(
             "[yellow]Uygun (approved + eligible) kart bulunamadı. Önce kartları onayla.[/yellow]"
         )
-    else:
-        console.print(f"[green]✓[/green] {n} LoRA örneği → [bold]{out_path}[/bold]")
+        return
+    console.print(f"[green]✓[/green] {n} LoRA örneği → [bold]{out_path}[/bold]")
+
+    # Eğitim split'i (train/valid) → jsonl_dir. PEFT/MLX eğitimi ve
+    # auto-pipeline bu dosyaları okur. Çok küçük veri setinde valid boş kalmasın.
+    from app.lora.dataset_splitter import split_dataset
+
+    split = split_dataset(examples)
+    train_ex = list(split.train) or list(examples)
+    valid_ex = list(split.valid)
+    if not valid_ex and len(train_ex) > 1:
+        valid_ex = train_ex[-1:]
+        train_ex = train_ex[:-1]
+    jsonl_dir = settings.jsonl_dir
+    jsonl_dir.mkdir(parents=True, exist_ok=True)
+    nt = export_jsonl(train_ex, jsonl_dir / "train.jsonl")
+    nv = export_jsonl(valid_ex, jsonl_dir / "valid.jsonl")
+    console.print(f"[green]✓[/green] eğitim split → train={nt}, valid={nv}")
+    console.print(f"  → [bold]{jsonl_dir}[/bold]")
 
 
 @app.command("lora-registry")

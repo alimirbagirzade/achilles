@@ -14,7 +14,7 @@ gates:
 
 paths:
   data_dir: data/lora
-  dataset_dir: datasets/lora
+  dataset_dir: data/lora_sft
   report_dir: reports/lora
   registry_dir: registry/adapters
 
