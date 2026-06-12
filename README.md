@@ -7,6 +7,8 @@
 > ⚠️ **Bu bir araştırma aracıdır — canlı bot DEĞİLDİR ve yatırım tavsiyesi VERMEZ.**
 > Tüm çıktılar test edilmesi gereken _hipotezlerdir_. Gerçek parayla kullanımın sorumluluğu tamamen size aittir.
 
+> 📘 **Yerel LoRA eğitimi (donanım, model, ölçülmüş süreler):** [docs/EGITIM_PROTOKOLU.md](docs/EGITIM_PROTOKOLU.md)
+
 ---
 
 ## ⚡ Kurulum

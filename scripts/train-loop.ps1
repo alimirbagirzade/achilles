@@ -1,0 +1,64 @@
+# Achilles — Sürekli (periyodik) LoRA eğitim döngüsü (Windows)
+#
+# Kullanım:
+#   .\scripts\train-loop.ps1                       # varsayılan: 30 iter, 180sn cooldown
+#   .\scripts\train-loop.ps1 -Iterations 60 -CooldownSec 180
+#
+# Durdurma (graceful): storage\STOP_TRAINING dosyası oluştur:
+#   New-Item storage\STOP_TRAINING
+# Döngü o anki eğitimi bitirir, sonra durur. (Veya pencereyi kapat.)
+#
+# Her döngü: dataset'i tazele (yeni onaylı kart varsa) → eğit → cooldown.
+# Tek beyin: Qwen3-4B (.env → ACHILLES_PEFT_BASE_MODEL).
+
+param(
+    [int]$Iterations = 30,
+    [int]$CooldownSec = 180,
+    [string]$Adapter = "achilles_auto"
+)
+
+$ErrorActionPreference = "Continue"
+$ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+$ProjectDir = Split-Path -Parent $ScriptDir
+Set-Location $ProjectDir
+
+$LogDir = Join-Path $ProjectDir "logs"
+New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
+$Log = Join-Path $LogDir "train-loop.log"
+$StopFile = Join-Path $ProjectDir "storage\STOP_TRAINING"
+
+# uv bul (PATH veya bilinen konumlar)
+$Uv = (Get-Command uv -ErrorAction SilentlyContinue).Source
+if (-not $Uv) { $Uv = Join-Path $env:USERPROFILE ".local\bin\uv.exe" }
+if (-not (Test-Path $Uv)) {
+    Write-Host "[HATA] uv bulunamadi." -ForegroundColor Red
+    exit 1
+}
+
+function Write-Log($msg) {
+    $line = "[{0}] {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $msg
+    Write-Host $line
+    Add-Content -Path $Log -Value $line
+}
+
+Write-Log "Surekli egitim baslatildi (iters=$Iterations, cooldown=${CooldownSec}sn, adapter=$Adapter)"
+Write-Log "Durdurmak icin: New-Item '$StopFile'"
+
+$cycle = 0
+while (-not (Test-Path $StopFile)) {
+    $cycle++
+    Write-Log "=== Dongu $cycle: dataset tazeleniyor ==="
+    & $Uv run achilles lora-dataset *>> $Log
+    Write-Log "=== Dongu $cycle: egitim ($Iterations iter) ==="
+    & $Uv run achilles train --run --backend peft --adapter-name $Adapter --iterations $Iterations *>> $Log
+    Write-Log "=== Dongu $cycle bitti -> ${CooldownSec}sn cooldown ==="
+    # Cooldown sirasinda da durdurma kontrolu
+    $waited = 0
+    while ($waited -lt $CooldownSec -and -not (Test-Path $StopFile)) {
+        Start-Sleep -Seconds 5
+        $waited += 5
+    }
+}
+
+Remove-Item $StopFile -Force -ErrorAction SilentlyContinue
+Write-Log "STOP_TRAINING algilandi — surekli egitim durdu ($cycle dongu calisti)."
