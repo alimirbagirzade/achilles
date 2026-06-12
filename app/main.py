@@ -1460,8 +1460,13 @@ def rag_mastery() -> None:
     n_papers = len(papers)
     cards = store.list_approved_cards()
     n_cards = len(cards)
-    papers_with_cards = len({c["paper_id"] for c in cards if c.get("paper_id")})
-    n_examples = len(build_dataset(cards))
+    # Yalnızca İÇERİK TAŞIYAN kartları say (boş/title'sız kabuk kartlar örnek üretmez).
+    examples = build_dataset(cards)
+    n_examples = len(examples)
+    papers_with_real = len(
+        {str(e.metadata.get("paper_id", "")) for e in examples if e.metadata.get("paper_id")}
+    )
+    empty_cards = n_cards - n_examples
 
     scored = 0
     total_comp = 0.0
@@ -1472,7 +1477,7 @@ def rag_mastery() -> None:
             total_comp += row.total_score
     avg_comp = (total_comp / scored) if scored else None
 
-    coverage = (papers_with_cards / n_papers * 100) if n_papers else 0.0
+    coverage = (papers_with_real / n_papers * 100) if n_papers else 0.0
     train_readiness = min(1.0, n_examples / 50.0) * 100
     comp_component = avg_comp if avg_comp is not None else 0.0
 
@@ -1484,8 +1489,11 @@ def rag_mastery() -> None:
     table.add_column("Metrik")
     table.add_column("Değer", justify="right")
     table.add_row("İçe alınan makale", str(n_papers))
-    table.add_row("Onaylı bilgi kartı", str(n_cards))
-    table.add_row("Bilgi kapsamı (kart/makale)", f"{papers_with_cards}/{n_papers}  %{coverage:.0f}")
+    table.add_row("Onaylı bilgi kartı", f"{n_cards}  ({empty_cards} içeriksiz/atlandı)")
+    table.add_row(
+        "Bilgi kapsamı (gerçek kart/makale)",
+        f"{papers_with_real}/{n_papers}  %{coverage:.0f}",
+    )
     table.add_row("LoRA eğitim örneği", f"{n_examples}  (hazırlık %{train_readiness:.0f})")
     comp_txt = (
         f"%{avg_comp:.0f} ({scored}/{n_papers} makale)"
