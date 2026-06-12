@@ -27,9 +27,9 @@ log "=== SÜREKLİ ÖĞRENME BAŞLADI (max ${MAX_HOURS}sa) ==="
 # --- Devralma: eski eğitim döngüsünü nazikçe durdur -------------------------
 touch storage/STOP_TRAINING
 log "Devralma: STOP_TRAINING bırakıldı; mevcut eğitim koşusunun bitmesi bekleniyor"
-for i in $(seq 1 160); do  # max ~40 dk
+for i in $(seq 1 360); do  # max ~90 dk (uzun eğitim koşusunu da kapsar)
   if ! powershell -NoProfile -Command \
-      "if (Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { \$_.CommandLine -like '*peft_lora_train*' }) { exit 1 } else { exit 0 }" \
+      "if (Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { \$_.CommandLine -like '*peft_lora_train*' -or (\$_.CommandLine -like '*achilles*' -and \$_.CommandLine -like '*train*--run*') }) { exit 1 } else { exit 0 }" \
       >/dev/null 2>&1; then
     sleep 15
   else
