@@ -12,8 +12,9 @@
 # Tek beyin: Qwen3-4B (.env → ACHILLES_PEFT_BASE_MODEL).
 
 param(
-    [int]$Iterations = 30,
-    [int]$CooldownSec = 180,
+    [int]$Iterations = 40,
+    [int]$CooldownSec = 120,
+    [int]$MaxHours = 24,
     [string]$Adapter = "achilles_auto"
 )
 
@@ -41,11 +42,12 @@ function Write-Log($msg) {
     Add-Content -Path $Log -Value $line
 }
 
-Write-Log "Surekli egitim baslatildi (iters=$Iterations, cooldown=${CooldownSec}sn, adapter=$Adapter)"
+$EndTime = (Get-Date).AddHours($MaxHours)
+Write-Log "Surekli egitim baslatildi (iters=$Iterations, cooldown=${CooldownSec}sn, adapter=$Adapter, max=${MaxHours}sa)"
 Write-Log "Durdurmak icin: New-Item '$StopFile'"
 
 $cycle = 0
-while (-not (Test-Path $StopFile)) {
+while (-not (Test-Path $StopFile) -and (Get-Date) -lt $EndTime) {
     $cycle++
     Write-Log "=== Dongu $cycle: dataset tazeleniyor ==="
     & $Uv run achilles lora-dataset *>> $Log
