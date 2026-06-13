@@ -110,11 +110,16 @@ class ModelEvaluator:
         total_flags = sum(len(r.flags) for r in rows)
         score = 1.0 - (total_flags / max(1, len(rows)))
         eval_name = Path(eval_set_path).stem
+        passed = sum(1 for r in rows if not r.flags)
         results = {
             "eval_set": eval_name,
             "model": self.llm.model,
             "adapter_version": adapter_version,
             "score": round(score, 4),
+            # auto_pipeline + eval-history bu anahtarları okur (önceden yoktu → hep 0):
+            "pass_rate": round(score, 4),
+            "passed": passed,
+            "total": len(rows),
             "n_items": len(rows),
             "total_flags": total_flags,
             "rows": [{"q": r.question, "a": r.answer, "flags": r.flags} for r in rows],
