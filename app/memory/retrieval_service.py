@@ -3,10 +3,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
 
 from app.config import get_settings
 from app.memory.chroma_store import ChromaStore
 from app.memory.embedding_service import EmbeddingService
+
+
+class Retriever(Protocol):
+    """Retrieval arayüzü — `RetrievalService`, `RerankingRetriever`, test stub'ları
+    ve diğer sarmalayıcılar bu protokolü uygular. RAG/eval kodunun somut sınıfa
+    değil arayüze bağlanmasını sağlar."""
+
+    def retrieve(self, query: str, top_k: int | None = None) -> list[RetrievedChunk]: ...
 
 
 @dataclass

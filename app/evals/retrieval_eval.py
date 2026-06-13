@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from app.evals.golden_dataset import GoldenQuestion
 from app.evals.metrics import mrr, ndcg_at_k, precision_at_k, recall_at_k
-from app.memory.retrieval_service import RetrievalService
+from app.memory.retrieval_service import Retriever
 
 
 @dataclass
@@ -24,7 +24,9 @@ class RetrievalEvalResult:
 class RetrievalEvaluator:
     """Altın veri setiyle retrieval sistemini değerlendiren sınıf."""
 
-    def __init__(self, retriever: RetrievalService) -> None:
+    def __init__(self, retriever: Retriever) -> None:
+        # `Retriever` arayüzü: düz `RetrievalService` veya robust `RerankingRetriever`
+        # (over-fetch + rerank) geçilebilir → eval, canlı RAG yolunu ölçebilir.
         self._retriever = retriever
 
     def evaluate(self, questions: list[GoldenQuestion]) -> list[RetrievalEvalResult]:

@@ -21,7 +21,8 @@ from dataclasses import dataclass
 
 from app.brain.local_llm import LLMUnavailable, LocalLLM
 from app.brain.prompt_loader import load_prompt
-from app.memory.retrieval_service import RetrievalService, RetrievedChunk
+from app.memory.reranking_retriever import RerankingRetriever
+from app.memory.retrieval_service import RetrievedChunk, Retriever
 
 _BILINGUAL_FORMAT = """\
 Answer using the following bilingual format (English first, Turkish below each section):
@@ -75,10 +76,12 @@ def _format_context(chunks: list[RetrievedChunk]) -> str:
 class RagAnswerer:
     def __init__(
         self,
-        retriever: RetrievalService | None = None,
+        retriever: Retriever | None = None,
         llm: LocalLLM | None = None,
     ) -> None:
-        self.retriever = retriever or RetrievalService()
+        # Varsayılan: over-fetch + heuristik rerank (robust RAG yolu). Stub/özel
+        # retriever enjekte edilirse aynen kullanılır (test izolasyonu korunur).
+        self.retriever = retriever or RerankingRetriever()
         self.llm = llm or LocalLLM()
 
     def answer(self, question: str, top_k: int | None = None) -> RagAnswer:

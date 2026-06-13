@@ -91,10 +91,12 @@ _settings = get_settings()
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     import asyncio as _asyncio
+
     configure_logging()
     get_settings().ensure_dirs()
     logger.info("Achilles web başladı — host=%s port=%s", _settings.web_host, _settings.web_port)
     from app.lora.auto_pipeline import get_auto_pipeline
+
     _bg_task = _asyncio.create_task(get_auto_pipeline().background_loop())
     _bg_task.add_done_callback(lambda _t: None)
     yield
@@ -257,7 +259,7 @@ def api_ask(req: AskRequest) -> AskResponse:
     if req.adapter_version:
         # MLX adapter ile yanıtla (Ollama bypass)
         from app.brain.mlx_llm import MlxLLM, MlxLLMUnavailable
-        from app.memory.retrieval_service import RetrievalService
+        from app.memory.reranking_retriever import RerankingRetriever
         from app.training.adapter_registry import AdapterRegistry
 
         entry = AdapterRegistry().get(req.adapter_version)
@@ -269,7 +271,7 @@ def api_ask(req: AskRequest) -> AskResponse:
             )
 
         mlx = MlxLLM(base_model=entry["base_model"], adapter_path=entry["adapter_path"])
-        retriever = RetrievalService()
+        retriever = RerankingRetriever()
         chunks = retriever.retrieve(req.question, top_k=req.top_k)
         if not chunks:
             # Kaynak yoksa LLM'i HİÇ çağırma — uydurma/halüsinasyon yasak (CLAUDE.md kural 7).
@@ -518,8 +520,11 @@ def api_comprehension_batch(
             if existing is not None:
                 results.append(
                     BatchScoreResult(
-                        paper_id=pid, title=paper.title, status="skip",
-                        score=existing.total_score, message="zaten hesaplanmış",
+                        paper_id=pid,
+                        title=paper.title,
+                        status="skip",
+                        score=existing.total_score,
+                        message="zaten hesaplanmış",
                     )
                 )
                 continue
@@ -528,8 +533,11 @@ def api_comprehension_batch(
             store.save_comprehension_score(result)  # KALICI yap (önceden kaydetmiyordu)
             results.append(
                 BatchScoreResult(
-                    paper_id=pid, title=paper.title, status="ok",
-                    score=result.total, message=f"{result.total:.0f}%",
+                    paper_id=pid,
+                    title=paper.title,
+                    status="ok",
+                    score=result.total,
+                    message=f"{result.total:.0f}%",
                 )
             )
         except Exception as exc:
@@ -1387,15 +1395,20 @@ def api_learning_summary() -> dict:
     from sqlalchemy import select as _sel
 
     from app.memory.sqlite_store import Chunk, KnowledgeCard, SqliteStore
+
     store = SqliteStore()
     papers = store.list_papers()
     approved = store.list_approved_cards()
     with store.session() as s:
         n_chunks = s.scalar(_sel(func.count()).select_from(Chunk)) or 0
-        n_pending = s.scalar(
-            _sel(func.count()).select_from(KnowledgeCard)
-            .where(KnowledgeCard.review_status == "pending")
-        ) or 0
+        n_pending = (
+            s.scalar(
+                _sel(func.count())
+                .select_from(KnowledgeCard)
+                .where(KnowledgeCard.review_status == "pending")
+            )
+            or 0
+        )
     return {
         "n_papers": len(papers),
         "n_chunks": n_chunks,
@@ -1408,6 +1421,7 @@ def api_learning_summary() -> dict:
 def api_learning_eval_history() -> dict:
     """Tüm adapter versiyonlarının eval skor geçmişi."""
     from app.memory.sqlite_store import SqliteStore
+
     rows = SqliteStore().list_eval_history()
     return {"rows": rows}
 
@@ -1416,19 +1430,26 @@ def api_learning_eval_history() -> dict:
 def api_learning_training_runs() -> dict:
     """Kayıtlı loss curve JSON dosyalarını listele."""
     import json as _json
+
     runs = []
     for f in sorted(Path("reports/training").glob("*_loss.json")):
         try:
             data = _json.loads(f.read_text())
-            runs.append({
-                "adapter_name": data.get("adapter_name", f.stem),
-                "started_at": data.get("started_at", ""),
-                "finished_at": data.get("finished_at", ""),
-                "total_iters": data.get("total_iters", 0),
-                "final_train_loss": data["curve"][-1]["train_loss"] if data.get("curve") else None,
-                "final_val_loss": data["curve"][-1].get("val_loss") if data.get("curve") else None,
-                "curve": data.get("curve", []),
-            })
+            runs.append(
+                {
+                    "adapter_name": data.get("adapter_name", f.stem),
+                    "started_at": data.get("started_at", ""),
+                    "finished_at": data.get("finished_at", ""),
+                    "total_iters": data.get("total_iters", 0),
+                    "final_train_loss": data["curve"][-1]["train_loss"]
+                    if data.get("curve")
+                    else None,
+                    "final_val_loss": data["curve"][-1].get("val_loss")
+                    if data.get("curve")
+                    else None,
+                    "curve": data.get("curve", []),
+                }
+            )
         except Exception:
             pass
     return {"runs": runs}
@@ -1438,6 +1459,7 @@ def api_learning_training_runs() -> dict:
 def api_learning_card_growth() -> dict:
     """Günlük onaylı kart büyüme verisi."""
     from app.memory.sqlite_store import SqliteStore
+
     rows = SqliteStore().list_card_growth()
     return {"rows": rows}
 
@@ -1460,8 +1482,10 @@ def api_hardware_profile() -> dict:
         "cuda": p.gpu.cuda,
         "lora_supported": p.os == "macOS" and p.arch == "arm64",
         "lora_backend": (
-            "mlx" if (p.os == "macOS" and p.arch == "arm64")
-            else "peft_cuda" if p.gpu.cuda
+            "mlx"
+            if (p.os == "macOS" and p.arch == "arm64")
+            else "peft_cuda"
+            if p.gpu.cuda
             else "peft_cpu"
         ),
     }
@@ -1493,6 +1517,7 @@ def api_model_recommend() -> dict:
 async def api_auto_lora_status() -> dict:
     """Auto-LoRA pipeline durumu."""
     from app.lora.auto_pipeline import get_auto_pipeline
+
     return get_auto_pipeline().get_status()
 
 
@@ -1500,6 +1525,7 @@ async def api_auto_lora_status() -> dict:
 async def api_auto_lora_enable(enabled: bool = True) -> dict:
     """Otomatik periyodik kontrolü aç/kapat."""
     from app.lora.auto_pipeline import get_auto_pipeline
+
     get_auto_pipeline().set_enabled(enabled)
     return {"ok": True, "auto_enabled": enabled}
 
@@ -1508,6 +1534,7 @@ async def api_auto_lora_enable(enabled: bool = True) -> dict:
 async def api_auto_lora_check() -> dict:
     """Gate 0-8 kontrolünü manuel tetikle."""
     from app.lora.auto_pipeline import get_auto_pipeline
+
     return await get_auto_pipeline().check_and_prepare()
 
 
@@ -1515,6 +1542,7 @@ async def api_auto_lora_check() -> dict:
 async def api_auto_lora_train(adapter_name: str, iters: int = 300) -> dict:
     """Kullanıcı onayıyla eğitimi başlat (READY_TO_TRAIN durumu gerekir)."""
     from app.lora.auto_pipeline import get_auto_pipeline
+
     return await get_auto_pipeline().start_training(adapter_name, iters)
 
 
@@ -1522,6 +1550,7 @@ async def api_auto_lora_train(adapter_name: str, iters: int = 300) -> dict:
 async def api_auto_lora_promote() -> dict:
     """Kullanıcı onayıyla adapter'ı production'a terfi et (EVAL_PASSED gerekir)."""
     from app.lora.auto_pipeline import get_auto_pipeline
+
     return await get_auto_pipeline().promote_to_production()
 
 
@@ -1529,6 +1558,7 @@ async def api_auto_lora_promote() -> dict:
 async def api_auto_lora_reset() -> dict:
     """Pipeline'ı IDLE'a sıfırla."""
     from app.lora.auto_pipeline import get_auto_pipeline
+
     await get_auto_pipeline().reset()
     return {"ok": True}
 

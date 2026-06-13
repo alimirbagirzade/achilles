@@ -72,6 +72,11 @@ class Settings(BaseSettings):
     rag_top_k: int = 6
     chunk_size: int = 1200
     chunk_overlap: int = 200
+    # Retrieval robustluğu (eğitimsiz kalite artışı — yazılı ama bağlanmamış
+    # bileşenleri canlı yola alır). Hepsi LLM-free; çevrimdışı testlerle uyumlu.
+    rag_rerank: bool = True  # over-fetch + heuristik reranker (semantik+kw+bölüm+formül)
+    rag_overfetch: int = 4  # dense'ten top_k * overfetch aday çek, rerank et, top_k'ya kes
+    rag_hybrid: bool = False  # BM25 + dense hibrit (BM25 indeksi dolunca aç — Faz A3)
 
     # --- Trading ---
     default_market: str = "XAUUSD"
