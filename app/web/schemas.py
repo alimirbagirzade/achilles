@@ -7,8 +7,8 @@ from pydantic import BaseModel, Field
 
 class StatusResponse(BaseModel):
     llm_model: str
-    llm_backend: str = "auto"       # ayarlanan backend ("ollama"/"openai"/"auto")
-    active_backend: str = "none"    # gerçekte kullanılan backend
+    llm_backend: str = "auto"  # ayarlanan backend ("ollama"/"openai"/"auto")
+    active_backend: str = "none"  # gerçekte kullanılan backend
     ollama_available: bool
     embedding_mode: str
     n_papers: int
@@ -188,7 +188,7 @@ class DatasetBuildResponse(BaseModel):
 
 
 class TrainDryRunRequest(BaseModel):
-    base_model: str = "mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit"
+    base_model: str = ""  # boş → sunucu backend'e göre seçer (PEFT: 4B brain, MLX: mlx_base_model)
     iterations: int = Field(default=300, ge=50, le=5000)
     batch_size: int = Field(default=2, ge=1, le=16)
     learning_rate: float = Field(default=1e-4, gt=0)
@@ -205,7 +205,7 @@ class TrainDryRunResponse(BaseModel):
 
 # ---------- Training run (web UI) ----------
 class TrainingStartRequest(BaseModel):
-    base_model: str = "mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit"
+    base_model: str = ""  # boş → sunucu backend'e göre seçer (PEFT: 4B brain, MLX: mlx_base_model)
     adapter_name: str = "achilles_lora"
     iterations: int = 500
     batch_size: int = 2

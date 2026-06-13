@@ -119,6 +119,19 @@ def test_training_dry_run_ok(client: TestClient) -> None:
     assert "test-model" in body["command"]
 
 
+def test_training_dry_run_empty_base_uses_brain_not_1p5b(client: TestClient) -> None:
+    # Boş base → sunucu backend'e göre seçmeli; eski 1.5B hardcode ASLA dönmemeli
+    # (adapter Ollama qwen3:4b ile uyumsuz olurdu — tek beyin 4B).
+    r = client.post(
+        "/api/training/dry-run",
+        json={"base_model": "", "iterations": 100, "batch_size": 2, "num_layers": 4},
+    )
+    assert r.status_code == 200
+    command = r.json()["command"]
+    assert "Qwen2.5-1.5B-Instruct" not in command
+    assert "Qwen2.5-Coder-1.5B" not in command
+
+
 # ---- backtest geçmişi ----
 def test_backtest_history_empty(client: TestClient) -> None:
     r = client.get("/api/backtests")

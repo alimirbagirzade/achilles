@@ -317,7 +317,9 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="PEFT LoRA trainer (Windows/Linux)")
-    parser.add_argument("--model", default="Qwen/Qwen2.5-1.5B-Instruct")
+    parser.add_argument(
+        "--model", default="Qwen/Qwen3-4B-Instruct-2507"
+    )  # tek beyin (Ollama qwen3:4b)
     parser.add_argument("--train", required=True)
     parser.add_argument("--valid", required=True)
     parser.add_argument("--output", default="models/adapters/achilles_lora_peft")

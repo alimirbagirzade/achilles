@@ -908,7 +908,7 @@ def api_training_dry_run(req: TrainDryRunRequest) -> TrainDryRunResponse:
         from app.training.mlx_lora_train import TrainConfig, build_command
 
         cfg = TrainConfig(
-            base_model=req.base_model,
+            base_model=req.base_model or s.mlx_base_model,
             train_jsonl=r.train_path,
             valid_jsonl=r.valid_path,
             adapter_output_path=s.adapters_dir / f"adapter_{ts}",
@@ -924,7 +924,7 @@ def api_training_dry_run(req: TrainDryRunRequest) -> TrainDryRunResponse:
         from app.training.peft_lora_train import build_command  # type: ignore[assignment]
 
         cfg = TrainConfig(
-            base_model=req.base_model or "Qwen/Qwen2.5-1.5B-Instruct",
+            base_model=req.base_model or s.peft_base_model,
             train_jsonl=r.train_path,
             valid_jsonl=r.valid_path,
             adapter_output_path=s.adapters_dir / f"adapter_{ts}",
@@ -967,7 +967,7 @@ def api_training_run(req: TrainingStartRequest) -> TrainingStartResponse:
         from app.training.mlx_lora_train import TrainConfig, build_command
 
         cfg = TrainConfig(
-            base_model=req.base_model,
+            base_model=req.base_model or s.mlx_base_model,
             train_jsonl=r.train_path,
             valid_jsonl=r.valid_path,
             adapter_output_path=s.adapters_dir / adapter_name,
@@ -994,7 +994,7 @@ def api_training_run(req: TrainingStartRequest) -> TrainingStartResponse:
                 message=f"PEFT paketleri eksik: {missing}. Kur: uv pip install {' '.join(missing)}",
             )
         cfg = TrainConfig(
-            base_model=req.base_model or "Qwen/Qwen2.5-1.5B-Instruct",
+            base_model=req.base_model or s.peft_base_model,
             train_jsonl=r.train_path,
             valid_jsonl=r.valid_path,
             adapter_output_path=s.adapters_dir / adapter_name,
@@ -1037,8 +1037,10 @@ def api_training_colab_notebook() -> Response:
         valid_path = s.jsonl_dir / "valid.jsonl"
 
     ts = dt.datetime.now(dt.UTC).strftime("%Y%m%d_%H%M%S")
+    # Tek beyin: 4B (Ollama qwen3:4b ile birebir). Eski 1.5B hardcode adapter'ı
+    # uyumsuz kılıyordu — base mutlaka peft_base_model olmalı.
     cfg = PeftTrainConfig(
-        base_model="Qwen/Qwen2.5-1.5B-Instruct",
+        base_model=s.peft_base_model,
         train_jsonl=train_path,
         valid_jsonl=valid_path,
         adapter_output_path=s.adapters_dir / f"achilles_lora_colab_{ts}",

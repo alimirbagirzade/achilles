@@ -897,7 +897,7 @@
   if (startTrainBtn) {
     startTrainBtn.addEventListener("click", function () {
       var payload = {
-        base_model: (document.getElementById("drBaseModel") || {}).value || "mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit",
+        base_model: (document.getElementById("drBaseModel") || {}).value || "",
         adapter_name: (document.getElementById("trAdapterName") || {}).value || "achilles_lora",
         iterations: parseInt((document.getElementById("drIterations") || {}).value, 10) || 500,
         batch_size: parseInt((document.getElementById("drBatch") || {}).value, 10) || 2,

@@ -338,8 +338,8 @@
           <p class="muted small">Aşağıdaki değerleri değiştirerek eğitimi özelleştirebilirsin.</p>
           <div class="dry-run-form">
             <div class="setting-group">
-              <label>Temel model<input type="text" id="drBaseModel" value="mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit" /></label>
-              <p class="setting-desc">Eğitilecek dil modelinin adı. macOS'ta MLX formatı (<code>mlx-community/…</code>), Windows/Linux'ta standart HuggingFace formatı kullanılır. Modeli değiştirirsen önceki adapter'lar uyumsuz hale gelir.</p>
+              <label>Temel model<input type="text" id="drBaseModel" value="" placeholder="boş = otomatik (Windows/Linux: 4B brain, macOS: MLX)" /></label>
+              <p class="setting-desc">Boş bırakırsan sunucu backend'e göre seçer: Windows/Linux PEFT → <code>Qwen3-4B-Instruct-2507</code> (tek beyin, Ollama <code>qwen3:4b</code> ile uyumlu), macOS → MLX modeli. Elle girersen o model kullanılır; değiştirirsen önceki adapter'lar uyumsuz olur.</p>
             </div>
             <div class="setting-group">
               <label>Adapter adı<input type="text" id="trAdapterName" value="achilles_lora" /></label>
