@@ -14,7 +14,9 @@ from datetime import UTC, datetime
 
 WEIGHTS = {"extraction": 0.30, "retrieval": 0.40, "llm_verify": 0.30}
 
-_CARD_FIELDS = ["title", "summary", "main_claim", "trading_relevance", "domain", "methods", "formulas"]
+_CARD_FIELDS = [
+    "title", "summary", "main_claim", "trading_relevance", "domain", "methods", "formulas",
+]
 
 
 def _utcnow() -> str:
@@ -35,12 +37,12 @@ class ComprehensionScore:
 class ComprehensionScorer:
     def __init__(self) -> None:
         from app.memory.chroma_store import ChromaStore
-        from app.memory.embedding import Embedder
+        from app.memory.embedding_service import EmbeddingService
         from app.memory.sqlite_store import SqliteStore
 
         self._store = SqliteStore()
         self._chroma = ChromaStore()
-        self._embedder = Embedder()
+        self._embedder = EmbeddingService()
 
     def score(self, paper_id: str) -> ComprehensionScore:
         card_json = self._store.get_latest_knowledge_card(paper_id)
@@ -52,7 +54,8 @@ class ComprehensionScorer:
         c = self._score_llm(card_json)
 
         total = round(
-            (a * WEIGHTS["extraction"] + b * WEIGHTS["retrieval"] + c * WEIGHTS["llm_verify"]) * 100,
+            (a * WEIGHTS["extraction"] + b * WEIGHTS["retrieval"] + c * WEIGHTS["llm_verify"])
+            * 100,
             1,
         )
         return ComprehensionScore(
@@ -72,7 +75,8 @@ class ComprehensionScorer:
         filled = sum(
             1
             for f in _CARD_FIELDS
-            if card_json.get(f) and str(card_json[f]).strip() not in ("", "[]", "{}", "null", "None")
+            if card_json.get(f)
+            and str(card_json[f]).strip() not in ("", "[]", "{}", "null", "None")
         )
         return filled / len(_CARD_FIELDS)
 
@@ -85,7 +89,7 @@ class ComprehensionScorer:
         if not query_text:
             return 0.0
         try:
-            embedding = self._embedder.embed(query_text)
+            embedding = self._embedder.embed_one(query_text)
             results = self._chroma.query(embedding, top_k=5)
             if not results:
                 return 0.0
