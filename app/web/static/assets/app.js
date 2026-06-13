@@ -3,7 +3,7 @@
   "use strict";
 
   var TOKEN_KEY = "achilles_api_token";
-  var MAX_UPLOAD_MB = 50; // /api/status'tan dinamik güncellenir
+  var MAX_UPLOAD_MB = 100; // backend varsayılanı (settings.max_upload_mb); /api/status'tan güncellenir
   // localStorage artifact ortamında engelli olabilir; güvenli sarmalayıcı:
   function getToken() {
     try {
