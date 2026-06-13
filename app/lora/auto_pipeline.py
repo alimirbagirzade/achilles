@@ -33,6 +33,7 @@ class PipelineStage(StrEnum):
     TRAIN_FAILED = "train_failed"
     EVALUATING = "evaluating"
     EVAL_FAILED = "eval_failed"
+    EVAL_SKIPPED = "eval_skipped"  # eval seti yok — TERFİ EDİLEMEZ (Anayasa II/VI)
     EVAL_PASSED = "eval_passed"  # production onayı bekliyor
     PROMOTED = "promoted"
 
@@ -287,9 +288,12 @@ class AutoLoRAPipeline:
             eval_sets = list(eval_dir.glob("*.jsonl")) if eval_dir.exists() else []
 
             if not eval_sets:
-                log.warning("Auto-LoRA: eval seti yok, EVAL_PASSED varsayılıyor")
+                # Anayasa II/VI: test edilmeden "geçti" deme. Eval seti yoksa
+                # EVAL_PASSED VARSAYMA — EVAL_SKIPPED yap (promote_to_production
+                # yalnız EVAL_PASSED'i terfi ettirir, bu durum terfiyi bloklar).
+                log.warning("Auto-LoRA: eval seti yok → EVAL_SKIPPED (terfi edilemez)")
                 async with self._lock:
-                    self._state.stage = PipelineStage.EVAL_PASSED
+                    self._state.stage = PipelineStage.EVAL_SKIPPED
                     self._save_state()
                 await self._register_adapter(adapter_name)
                 return
@@ -360,7 +364,13 @@ class AutoLoRAPipeline:
                 adapter_name=adapter_name,
                 eval_score=self._state.eval_scores.get("discipline_core", {}).get("pass_rate"),
             )
-            record.status = AdapterStatus.EVAL_PASSED
+            # Eval gerçekten geçtiyse EVAL_PASSED; eval atlandıysa yalnız SMOKE_PASSED
+            # (registry de yanlış "eval geçti" damgası vurmasın — Anayasa II/VI).
+            record.status = (
+                AdapterStatus.EVAL_PASSED
+                if self._state.stage == PipelineStage.EVAL_PASSED
+                else AdapterStatus.SMOKE_PASSED
+            )
             adapter_id = await asyncio.to_thread(registry.register, record)
             async with self._lock:
                 self._state.adapter_id = adapter_id

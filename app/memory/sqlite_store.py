@@ -15,7 +15,10 @@ import json
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from app.verification.comprehension_scorer import ComprehensionScore
 
 from sqlalchemy import (
     Float,
@@ -605,7 +608,7 @@ class SqliteStore:
                 is not None
             )
 
-    def save_comprehension_score(self, score: ComprehensionScore) -> None:  # type: ignore[name-defined]
+    def save_comprehension_score(self, score: ComprehensionScore) -> None:
         import json as _json
 
         with self.session() as s:

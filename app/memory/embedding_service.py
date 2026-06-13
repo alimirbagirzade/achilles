@@ -52,7 +52,9 @@ class EmbeddingService:
             try:
                 results.extend(self._embed_ollama_batch(batch))
             except Exception:
-                logger.debug("Toplu embedding basarisiz (%d metin), tekli moda geciliyor", len(batch))
+                logger.debug(
+                    "Toplu embedding basarisiz (%d metin), tekli moda geciliyor", len(batch)
+                )
                 results.extend(self._embed_ollama_single(t) for t in batch)
         return results
 
