@@ -1547,6 +1547,92 @@ def synth_qa(
         console.print(f"[dim]Hedef ≥1000 satır; şu an {total}. Döngü üretmeye devam etsin.[/dim]")
 
 
+@app.command("synth-qa-bulk")
+def synth_qa_bulk(
+    per_chunk: int = typer.Option(4, "--per-chunk", help="Chunk başına QA"),
+    max_chunks: int = typer.Option(8, "--max-chunks", help="Makale başına maks chunk"),
+    batch: int = typer.Option(5, "--batch", help="Kaç makalede bir checkpoint yazılsın"),
+    seed: int = typer.Option(0, "--seed"),
+    target: int = typer.Option(1000, "--target", help="Bu örnek sayısına ulaşınca dur"),
+    output: Path = typer.Option(Path("data/lora_sft"), "--output"),
+) -> None:
+    """TÜM korpustan checkpoint'li bulk sentetik QA üret (Stage 2 eşiğine hızlı ulaşım).
+
+    synth-qa (yalnız en yeni N makale) yerine TÜM makaleleri batch'ler hâlinde işler;
+    her batch sonrası dosyaya yazar (çökme-güvenli, atomik). Hedefe ulaşınca durur.
+    Eğitim BAŞLATMAZ (CLAUDE.md kural 8); yalnız veri üretir.
+    """
+    import os
+
+    from app.brain.local_llm import LocalLLM
+    from app.brain.synthetic_qa_builder import dedup_jsonl_lines, generate_synthetic_dataset
+    from app.memory.sqlite_store import SqliteStore
+
+    llm = LocalLLM()
+    if not llm.available():
+        console.print("[red]LLM kullanılamıyor.[/red] Ollama'yı başlat veya API anahtarı ekle.")
+        raise typer.Exit(code=1)
+
+    store = SqliteStore()
+    all_ids = [p.paper_id for p in store.list_papers()]
+    if not all_ids:
+        console.print("[yellow]Makale yok — önce ingest et.[/yellow]")
+        return
+
+    settings = get_settings()
+    out_dir = output if output.is_absolute() else (settings.root / output)
+    out_path = out_dir / "synthetic_qa.jsonl"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    def _read_existing() -> list[str]:
+        if out_path.exists():
+            return [ln for ln in out_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        return []
+
+    def _atomic_write(lines: list[str]) -> None:
+        tmp = out_path.with_suffix(".jsonl.tmp")
+        tmp.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+        os.replace(tmp, out_path)
+
+    n_batches = (len(all_ids) + batch - 1) // batch
+    console.print(
+        f"[cyan]Bulk sentetik üretim[/cyan] ({len(all_ids)} makale, {n_batches} batch, "
+        f"hedef={target}, backend={llm.active_backend()})…"
+    )
+    total = len(dedup_jsonl_lines(_read_existing()))
+    for bi, i in enumerate(range(0, len(all_ids), batch), 1):
+        if total >= target:
+            console.print(f"[green]Hedef {target} aşıldı ({total}) — bulk üretim durdu.[/green]")
+            break
+        batch_ids = all_ids[i : i + batch]
+        try:
+            examples, _stats = generate_synthetic_dataset(
+                store,
+                llm=llm,
+                per_chunk=per_chunk,
+                max_chunks_per_paper=max_chunks,
+                paper_ids=batch_ids,
+                seed=seed,
+            )
+        except Exception as exc:  # bir batch çökerse diğerleri devam
+            console.print(f"  [red]batch {bi} HATA[/red]: {exc}")
+            continue
+        merged = dedup_jsonl_lines([*_read_existing(), *[ex.to_jsonl_line() for ex in examples]])
+        added = len(merged) - total
+        total = len(merged)
+        _atomic_write(merged)  # checkpoint
+        console.print(f"  batch {bi}/{n_batches} ({len(batch_ids)} makale): +{added} → {total}")
+
+    console.print(
+        f"[green]✓[/green] Bulk üretim bitti → toplam {total} örnek → [bold]{out_path}[/bold]"
+    )
+    if total >= 1000:
+        console.print(
+            "[green]≥1000 örnek: Stage 2 nicelik eşiği karşılandı.[/green] Sıra: "
+            "[bold]lora-audit[/bold] → onay → [bold]lora-cloud-prep[/bold]."
+        )
+
+
 @app.command("lora-readiness")
 def lora_readiness(
     threshold: int = typer.Option(

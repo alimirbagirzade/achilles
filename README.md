@@ -588,6 +588,7 @@ uv run achilles pine [strateji-adı]     # StrategyIR → TradingView Pine Scrip
 ```bash
 # Stage 1 — lokal veri üret (büyüme motoru)
 uv run achilles synth-qa                # chunk'lardan sentetik grounded QA üret (Ollama)
+uv run achilles synth-qa-bulk           # TÜM korpustan checkpoint'li bulk üretim (1000'e hızlı)
 uv run achilles lora-readiness          # Stage 2 eşik durumu (≥1000 örnek mi?)
 bash scripts/continuous-learning.sh 72  # sürekli üretim döngüsü (eğitim DEĞİL)
 
