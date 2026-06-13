@@ -17,9 +17,17 @@ eğitim gerektirmez (bkz. docs/RAG_EGITIM_YENIDEN_TASARIM.md).
 
 from __future__ import annotations
 
+from typing import Protocol
+
 from app.config import get_settings
 from app.memory.reranker import Reranker
 from app.memory.retrieval_service import RetrievalService, RetrievedChunk
+
+
+class RerankerLike(Protocol):
+    """Heuristik `Reranker` ve `CrossEncoderReranker` bu arayüzü uygular."""
+
+    def rerank(self, query: str, chunks: list[RetrievedChunk]) -> list[RetrievedChunk]: ...
 
 
 class RerankingRetriever:
@@ -36,18 +44,27 @@ class RerankingRetriever:
     def __init__(
         self,
         base: RetrievalService | None = None,
-        reranker: Reranker | None = None,
+        reranker: RerankerLike | None = None,
         overfetch: int | None = None,
         enabled: bool | None = None,
         hybrid: bool | None = None,
     ) -> None:
         self.settings = get_settings()
         self.base = base or RetrievalService()
-        self.reranker = reranker or Reranker()
+        self.reranker: RerankerLike = reranker or self._default_reranker()
         self.overfetch = overfetch if overfetch is not None else self.settings.rag_overfetch
         self.enabled = enabled if enabled is not None else self.settings.rag_rerank
         # Hibrit: dense aday havuzunu BM25 (keyword) eşleşmeleriyle genişlet (Faz A3).
         self.hybrid = hybrid if hybrid is not None else self.settings.rag_hybrid
+
+    def _default_reranker(self) -> RerankerLike:
+        # Cross-encoder OPT-IN (Faz A8); açıksa onu kullan (model yoksa kendi içinde
+        # heuristiğe düşer). Kapalıysa doğrudan heuristik Reranker.
+        if self.settings.rag_cross_encoder:
+            from app.memory.cross_encoder_reranker import CrossEncoderReranker
+
+            return CrossEncoderReranker()
+        return Reranker()
 
     def retrieve(self, query: str, top_k: int | None = None) -> list[RetrievedChunk]:
         k = top_k or self.settings.rag_top_k

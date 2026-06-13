@@ -60,12 +60,17 @@ Achilles'te eksik olan teknoloji değil, **entegrasyon.**
 
 | Sıra | İyileştirme | Achilles'te somut | Durum |
 |------|-------------|-------------------|-------|
-| **P0** | Over-fetch + rerank + truncate | `RerankingRetriever` (yeni) → `RagAnswerer` varsayılanı | ✅ Faz A |
-| **P0** | BM25'i doldur → hybrid'i aç | ingestion `bm25.add_document` + `HybridRetriever` enjekte | ⏳ Faz A |
-| **P1** | Cross-encoder reranker (bge-reranker-v2-m3, Ollama) | yeni `cross_encoder_reranker.py`, fallback heuristik | ⏳ Faz A |
-| **P2** | Contextual Retrieval (chunk prefix `başlık/bölüm: …`) | `paper_loader.py` embed adımı; +%35 retrieval doğruluğu | ⏳ Faz A |
-| **P3** | Prompt: tek format + zorunlu satır-içi atıf + 1 few-shot | `rag_answer.md` ↔ `_BILINGUAL_FORMAT` çatışmasını gider | ⏳ Faz A |
-| **P4** | Eval'i gerçek yola yönelt | `retrieval_eval.py` hybrid+rerank yolunu ölçsün | ⏳ Faz A |
+| **P0** | Over-fetch + rerank + truncate | `RerankingRetriever` → `RagAnswerer` varsayılanı | ✅ tamam |
+| **P0** | BM25'i doldur → hybrid'i aç | `bm25_corpus.py` (Chroma'dan lazy/cache) + `RerankingRetriever` genişletir; `rag_hybrid=True` | ✅ tamam |
+| **P1** | Cross-encoder reranker | `cross_encoder_reranker.py` (sentence-transformers, graceful fallback); OPT-IN `rag_cross_encoder` | ✅ tamam (opt-in) |
+| **P2** | Contextual Retrieval (chunk prefix `başlık/bölüm: …`) | `paper_loader.py` embed adımı; +%35 doğruluk — **korpusu yeniden-embed gerektirir** | ⏳ follow-up |
+| **P3** | Prompt: tek format + zorunlu satır-içi atıf + 1 few-shot | `rag_answer.md` tek kaynak; `_BILINGUAL_FORMAT` kaldırıldı | ✅ tamam |
+| **P4** | Eval'i gerçek yola yönelt | `retrieval_eval.py` `Retriever` protokolünü alır → `RerankingRetriever` geçilebilir | ✅ etkin |
+
+> **Cross-encoder'ı açmak (P1, opsiyonel):** `uv pip install sentence-transformers` +
+> `ACHILLES_RAG_CROSS_ENCODER=true`. Model (bge-reranker-base, ~280MB) ilk kullanımda
+> iner; i7 CPU'da her sorguya latency ekler — bu yüzden varsayılan kapalı. Model
+> yoksa otomatik heuristik reranker'a düşer (sistem her zaman çalışır).
 
 **Korunan güçlü taraf:** Refusal-on-empty zaten DOĞRULANDI
 (`rag_answerer.py` "kaynak bulunamadı") → `CLAUDE.md` kural 7 ile uyumlu. Bozma.

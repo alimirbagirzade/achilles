@@ -79,6 +79,11 @@ class Settings(BaseSettings):
     # BM25 + dense hibrit (Faz A3): keyword adaylarını ekler. Korpus Chroma'dan lazy
     # kurulur; boşsa sessizce dense-only kalır → çevrimdışı testlerde davranış değişmez.
     rag_hybrid: bool = True
+    # Cross-encoder reranker (Faz A8): en yüksek etkili sıralayıcı ama ağır (model
+    # indirme + CPU latency). OPT-IN. Açmak için: ACHILLES_RAG_CROSS_ENCODER=true +
+    # `uv pip install sentence-transformers`. Model yoksa heuristik reranker'a düşer.
+    rag_cross_encoder: bool = False
+    rag_cross_encoder_model: str = "BAAI/bge-reranker-base"  # çok dilli (TR+EN+ES), ~280MB
 
     # --- Trading ---
     default_market: str = "XAUUSD"
