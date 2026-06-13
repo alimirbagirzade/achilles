@@ -4,7 +4,7 @@
 #   ZENGİNLEŞTİR (arXiv: psikoloji/belirsizlik/felsefe/trading, dönüşümlü konu)
 #     → KAVRA (kart üret + içerikli onayla + anlama skorla)
 #     → SENTEZLE (her 3 turda: research hipotezi + sentez makalesi)
-#     → EĞİT (LoRA, 2 koşu × 40 iter)
+#     → EĞİT (LoRA, 2 koşu × 20 iter)
 #     → tekrar.
 #
 # RAM disiplini: LLM fazları ile eğitim fazı ASLA çakışmaz (sıralı).
@@ -108,13 +108,13 @@ for pid in sorted(p for p in pids if p):
     uv run achilles synth-paper >> "$LOG" 2>&1
   fi
 
-  # --- 4) EĞİT: dataset tazele + 2 koşu × 40 iter ---------------------------
-  log "4) Dataset + eğitim (2×40 iter)"
+  # --- 4) EĞİT: dataset tazele + 2 koşu × 20 iter ---------------------------
+  log "4) Dataset + eğitim (2×20 iter)"
   uv run achilles lora-dataset >> "$LOG" 2>&1
   for t in 1 2; do
     [ -f "$STOP" ] && break
     uv run achilles train --run --backend peft \
-      --adapter-name achilles_auto --iterations 40 >> "$LOG" 2>&1 \
+      --adapter-name achilles_auto --iterations 20 >> "$LOG" 2>&1 \
       || log "   eğitim HATA (koşu $t)"
   done
 

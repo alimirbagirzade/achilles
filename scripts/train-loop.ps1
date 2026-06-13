@@ -12,7 +12,7 @@
 # Tek beyin: Qwen3-4B (.env → ACHILLES_PEFT_BASE_MODEL).
 
 param(
-    [int]$Iterations = 40,
+    [int]$Iterations = 20,
     [int]$CooldownSec = 120,
     [int]$MaxHours = 24,
     [string]$Adapter = "achilles_auto"

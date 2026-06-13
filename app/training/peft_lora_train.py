@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -113,7 +114,13 @@ def train(cfg: PeftTrainConfig) -> dict:
     )
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    logger.info("PEFT LoRA egitimi basladi. Cihaz: %s", device)
+    # CPU base dtype: fp32 (varsayılan, kararlı) veya bf16 (ACHILLES_TRAIN_DTYPE=bf16).
+    # bf16: model 16→8GB, bellek trafiği yarı → bellek-bağımlı CPU'da potansiyel ~2×.
+    # Uyarı: AVX512-BF16'sız CPU'da (örn. Tiger Lake) bf16 emüle edilir; önce ölç.
+    _want_bf16 = os.environ.get("ACHILLES_TRAIN_DTYPE", "fp32") == "bf16"
+    cpu_dtype = torch.bfloat16 if _want_bf16 else torch.float32
+    dtype = torch.float16 if device == "cuda" else cpu_dtype
+    logger.info("PEFT LoRA egitimi basladi. Cihaz: %s, dtype: %s", device, dtype)
 
     tokenizer = AutoTokenizer.from_pretrained(cfg.base_model, trust_remote_code=True)
     if tokenizer.pad_token is None:
@@ -122,7 +129,7 @@ def train(cfg: PeftTrainConfig) -> dict:
     model = AutoModelForCausalLM.from_pretrained(
         cfg.base_model,
         trust_remote_code=True,
-        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+        torch_dtype=dtype,
         device_map="auto" if device == "cuda" else None,
     )
 

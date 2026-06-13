@@ -85,6 +85,18 @@ gerçek token; batch=1 ile sıfır padding), **eval kapalı** (epoch başına ~3
 tek checkpoint, `pin_memory=False`. Sonuç: **~2× hızlanma**.
 (Qwen2.5-1.5B referans: ~29 sn/adım.)
 
+### CPU hız analizi — neler işe YARAMADI (ölçüldü, bu makine: i7-1165G7)
+Per-adım ~76 sn'nin asıl sebebi: **4B fp32 (16GB) bellek-bağımlı** (örnekler kısa,
+medyan 253 token → seq sorun değil). Denenenler:
+- **IPEX (Intel oneDNN):** Windows'ta **wheel YOK** (yalnız Linux). Colab/Linux'ta çalışır.
+- **bf16 (`ACHILLES_TRAIN_DTYPE=bf16`):** Tiger Lake'te AVX512-BF16 olmadığından **emüle**;
+  ölçüldü **95–117 sn/adım — fp32'den YAVAŞ**. (Sapphire Rapids gibi BF16'lı CPU'da işe yarar.)
+- **Thread:** torch zaten 4 (fiziksel çekirdek) — optimal.
+
+**İşe YARAYAN:** döngü **iters 40→20** (2× hızlı tur + 15 örnekte daha az overfit; loss zaten
+~adım 20'de düşüyor). **Gerçek hız** için: GPU/Colab (IPEX+fp16/bf16 orada çalışır) veya
+döngüde küçük model (Qwen2.5-1.5B ~29 sn/adım). Bu Windows CPU'da 4B per-adım tabanı ~76 sn.
+
 **Toplam süre formülü:** `süre ≈ iterations × adım_süresi`
 (çünkü toplam adım ≈ `iterations`).
 
