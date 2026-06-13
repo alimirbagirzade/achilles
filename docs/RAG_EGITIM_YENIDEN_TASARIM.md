@@ -63,7 +63,7 @@ Achilles'te eksik olan teknoloji değil, **entegrasyon.**
 | **P0** | Over-fetch + rerank + truncate | `RerankingRetriever` → `RagAnswerer` varsayılanı | ✅ tamam |
 | **P0** | BM25'i doldur → hybrid'i aç | `bm25_corpus.py` (Chroma'dan lazy/cache) + `RerankingRetriever` genişletir; `rag_hybrid=True` | ✅ tamam |
 | **P1** | Cross-encoder reranker | `cross_encoder_reranker.py` (sentence-transformers, graceful fallback); OPT-IN `rag_cross_encoder` | ✅ tamam (opt-in) |
-| **P2** | Contextual Retrieval (chunk prefix `başlık/bölüm: …`) | `paper_loader.py` embed adımı; +%35 doğruluk — **korpusu yeniden-embed gerektirir** | ⏳ follow-up |
+| **P2** | Contextual Retrieval (chunk prefix `başlık/bölüm: …`) | `paper_indexer.build_embed_text` + `rag_contextual_embed` flag + `reindex-contextual` CLI | ✅ kod hazır (re-index kullanıcı-tetikli) |
 | **P3** | Prompt: tek format + zorunlu satır-içi atıf + 1 few-shot | `rag_answer.md` tek kaynak; `_BILINGUAL_FORMAT` kaldırıldı | ✅ tamam |
 | **P4** | Eval'i gerçek yola yönelt | `retrieval_eval.py` `Retriever` protokolünü alır → `RerankingRetriever` geçilebilir | ✅ etkin |
 
@@ -71,6 +71,11 @@ Achilles'te eksik olan teknoloji değil, **entegrasyon.**
 > `ACHILLES_RAG_CROSS_ENCODER=true`. Model (bge-reranker-base, ~280MB) ilk kullanımda
 > iner; i7 CPU'da her sorguya latency ekler — bu yüzden varsayılan kapalı. Model
 > yoksa otomatik heuristik reranker'a düşer (sistem her zaman çalışır).
+>
+> **Contextual Retrieval'ı açmak (P2, opsiyonel):** `uv run achilles reindex-contextual`
+> (tüm korpusu "başlık/bölüm:" ön-ekiyle yeniden embed eder — AĞIR, Ollama) → sonra
+> `.env`'e `ACHILLES_RAG_CONTEXTUAL_EMBED=true`. Varsayılan kapalı: yarı-prefix'li
+> korpus tutarsız olurdu, bu yüzden hep-veya-hiç (re-index zorunlu).
 
 **Korunan güçlü taraf:** Refusal-on-empty zaten DOĞRULANDI
 (`rag_answerer.py` "kaynak bulunamadı") → `CLAUDE.md` kural 7 ile uyumlu. Bozma.

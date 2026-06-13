@@ -84,6 +84,11 @@ class Settings(BaseSettings):
     # `uv pip install sentence-transformers`. Model yoksa heuristik reranker'a düşer.
     rag_cross_encoder: bool = False
     rag_cross_encoder_model: str = "BAAI/bge-reranker-base"  # çok dilli (TR+EN+ES), ~280MB
+    # Contextual Retrieval (Faz P2): chunk'ı embed etmeden önce "başlık / bölüm:" ön-eki
+    # ekler (orijinal metin Chroma document'ında korunur). Tutarlılık için TÜM korpus
+    # aynı ayarla embed edilmeli → açmadan önce `achilles reindex-contextual` çalıştır.
+    # Varsayılan kapalı (yarı-prefix'li korpus tutarsızlık yaratırdı).
+    rag_contextual_embed: bool = False
 
     # --- Trading ---
     default_market: str = "XAUUSD"

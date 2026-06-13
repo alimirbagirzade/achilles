@@ -1727,6 +1727,69 @@ def lora_cloud_prep(
     )
 
 
+@app.command("reindex-contextual")
+def reindex_contextual(
+    max_papers: int = typer.Option(0, "--max-papers", help="İşlenecek makale sınırı (0=tümü)"),
+) -> None:
+    """Korpusu Contextual Retrieval (P2) ile YENİDEN embed et — AĞIR (Ollama).
+
+    Her chunk'a "başlık / bölüm:" ön-eki eklenerek yeniden embed edilir (retrieval
+    doğruluğu ↑); Chroma document'ı (orijinal metin) + metadata değişmez. Bittiğinde
+    .env'e ACHILLES_RAG_CONTEXTUAL_EMBED=true ekle ki yeni makaleler de eşleşsin.
+    Detay: docs/RAG_EGITIM_YENIDEN_TASARIM.md (P2).
+    """
+    from app.memory.chroma_store import ChromaStore
+    from app.memory.embedding_service import EmbeddingService
+    from app.memory.paper_indexer import build_embed_text
+    from app.memory.sqlite_store import SqliteStore
+
+    store = SqliteStore()
+    chroma = ChromaStore()
+    embedder = EmbeddingService()
+    papers = store.list_papers()
+    if max_papers:
+        papers = papers[:max_papers]
+    if not papers:
+        console.print("[yellow]Makale yok — önce ingest et.[/yellow]")
+        return
+
+    console.print(f"[cyan]Contextual yeniden-embed başlıyor[/cyan] ({len(papers)} makale, Ollama)…")
+    total = 0
+    for i, p in enumerate(papers, 1):
+        chunks = store.list_chunks(p.paper_id)
+        if not chunks:
+            continue
+        embed_texts = [build_embed_text(c.text, p.title, c.section_name, True) for c in chunks]
+        try:
+            embeddings = embedder.embed(embed_texts)
+        except Exception as exc:
+            console.print(f"  [red]HATA[/red] {p.paper_id}: {exc}")
+            continue
+        chroma.add(
+            ids=[c.chunk_id for c in chunks],
+            embeddings=embeddings,
+            documents=[c.text for c in chunks],
+            metadatas=[
+                {
+                    "paper_id": c.paper_id,
+                    "chunk_index": c.chunk_index,
+                    "page_number": c.page_number if c.page_number is not None else -1,
+                    "section_name": c.section_name or "",
+                    "title": p.title or "",
+                }
+                for c in chunks
+            ],
+        )
+        total += len(chunks)
+        console.print(f"  [{i}/{len(papers)}] {p.paper_id}: {len(chunks)} chunk")
+
+    console.print(f"[green]✓[/green] {total} chunk contextual yeniden embed edildi.")
+    console.print(
+        "[bold].env'e ekle:[/bold] ACHILLES_RAG_CONTEXTUAL_EMBED=true "
+        "(yeni makalelerin de eşleşmesi için)."
+    )
+
+
 @app.command("rag-mastery")
 def rag_mastery() -> None:
     """RAG'in ne kadar 'öğrendiğini' gösteren ustalık panosu (LLM gerektirmez)."""

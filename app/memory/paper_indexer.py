@@ -34,6 +34,19 @@ class IngestResult:
     notes: list[str] = field(default_factory=list)
 
 
+def build_embed_text(text: str, title: str | None, section: str | None, contextual: bool) -> str:
+    """Embed edilecek metni kur (Contextual Retrieval, Faz P2).
+
+    `contextual=True` ise chunk'a "başlık / bölüm:" ön-eki eklenir (retrieval
+    doğruluğunu artırır). Ön-ek YALNIZ embedding içindir; Chroma `document` olarak
+    orijinal `text` saklanır (Anthropic yaklaşımı; sorguya ön-ek EKLENMEZ).
+    """
+    if not contextual:
+        return text
+    prefix = " / ".join(p.strip() for p in (title or "", section or "") if p and p.strip())
+    return f"{prefix}: {text}" if prefix else text
+
+
 class PaperIndexer:
     def __init__(
         self,
@@ -118,8 +131,11 @@ class PaperIndexer:
             ]
         )
 
-        # embed + write to chroma
-        embeddings = self.embedder.embed([c.text for c in chunks])
+        # embed + write to chroma. Contextual (P2): embed metni ön-ekli, document orijinal.
+        contextual = self.settings.rag_contextual_embed
+        embeddings = self.embedder.embed(
+            [build_embed_text(c.text, meta.title, c.section_name, contextual) for c in chunks]
+        )
         self.chroma.add(
             ids=[c.chunk_id for c in chunks],
             embeddings=embeddings,
@@ -141,6 +157,7 @@ class PaperIndexer:
         # 1. Formül çıkarma — LLM yoksa kural tabanlı yedek, hata ingestion'ı bloklamaz
         try:
             from app.research.formula_extractor import FormulaExtractor
+
             n_formulas = len(FormulaExtractor().extract_from_paper(disc.paper_id))
             if n_formulas:
                 notes.append(f"formulas={n_formulas}")
@@ -151,6 +168,7 @@ class PaperIndexer:
         # 2. Kavram grafiği yeniden oluştur — tüm makaleler arası ilişkileri güncelle
         try:
             from app.research.concept_graph import ConceptGraph
+
             n_links = ConceptGraph().build_from_papers()
             if n_links:
                 notes.append(f"concept_links={n_links}")
@@ -161,6 +179,7 @@ class PaperIndexer:
         # 3. Çapraz makale sentezi — yeni kategori çiftleri için eğitim verisi üret
         try:
             from app.research.cross_paper_synthesizer import CrossPaperSynthesizer
+
             n_synth = CrossPaperSynthesizer().synthesize_all()
             if n_synth:
                 notes.append(f"synthesis_examples={n_synth}")
