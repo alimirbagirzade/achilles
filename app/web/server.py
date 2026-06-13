@@ -271,7 +271,17 @@ def api_ask(req: AskRequest) -> AskResponse:
         mlx = MlxLLM(base_model=entry["base_model"], adapter_path=entry["adapter_path"])
         retriever = RetrievalService()
         chunks = retriever.retrieve(req.question, top_k=req.top_k)
-        context = "\n\n".join(c.text[:600] for c in chunks) if chunks else "(kaynak yok)"
+        if not chunks:
+            # Kaynak yoksa LLM'i HİÇ çağırma — uydurma/halüsinasyon yasak (CLAUDE.md kural 7).
+            # (Varsayılan RagAnswerer yolu da aynısını yapar; adapter yolu da yapmalı.)
+            return AskResponse(
+                answer="İlgili kaynak bulunamadı; bu soruyu yanıtlayacak indekslenmiş içerik yok.",
+                sources=[],
+                llm_used=False,
+                embedding_mode=EmbeddingService().mode,
+                adapter_used=None,
+            )
+        context = "\n\n".join(c.text[:600] for c in chunks)
         prompt = (
             f"Aşağıdaki akademik bağlamı kullanarak soruyu yanıtla.\n\n"
             f"BAĞLAM:\n{context}\n\n"
@@ -303,7 +313,10 @@ def api_ask(req: AskRequest) -> AskResponse:
             adapter_used=adapter_used,
         )
 
-    ans = RagAnswerer().answer(req.question, top_k=req.top_k)
+    try:
+        ans = RagAnswerer().answer(req.question, top_k=req.top_k)
+    except Exception as exc:  # embedding/Chroma/Ollama hatası → 503 (500 yerine)
+        raise HTTPException(status_code=503, detail=f"RAG yanıtlayıcı hatası: {exc}") from exc
     sources = [
         SourceOut(
             paper_id=c.paper_id,
@@ -479,8 +492,8 @@ def api_synthesis_report_generate() -> dict:
 )
 def api_comprehension_batch(skip_existing: bool = False) -> BatchScoreResponse:
     """Tüm makaleler için anlama skoru hesapla (kartı olan makaleler için)."""
-    from app.brain.comprehension_scorer import ComprehensionScorer
     from app.memory.sqlite_store import SqliteStore
+    from app.verification.comprehension_scorer import ComprehensionScorer
 
     store = SqliteStore()
     papers = store.list_papers()
@@ -509,7 +522,7 @@ def api_comprehension_batch(skip_existing: bool = False) -> BatchScoreResponse:
             results.append(
                 BatchScoreResult(
                     paper_id=pid, title=paper.title, status="ok",
-                    score=result.total, message=f"{result.total:.0%}",
+                    score=result.total, message=f"{result.total:.0f}%",
                 )
             )
         except Exception as exc:
@@ -660,14 +673,18 @@ def api_extract_formulas(paper_id: str | None = None) -> dict:
     from app.research.formula_extractor import FormulaExtractor
 
     extractor = FormulaExtractor()
-    if paper_id:
-        formulas = extractor.extract_from_paper(paper_id)
-        n_formulas = len(formulas)
-    else:
-        results = extractor.extract_from_all_papers()
-        n_formulas = sum(len(v) for v in results.values())
-
-    n_links = ConceptGraph().build_from_papers()
+    try:
+        if paper_id:
+            formulas = extractor.extract_from_paper(paper_id)
+            n_formulas = len(formulas)
+        else:
+            results = extractor.extract_from_all_papers()
+            n_formulas = sum(len(v) for v in results.values())
+        n_links = ConceptGraph().build_from_papers()
+    except Exception as exc:  # LLM kapalı/hata → 503 (500 yerine)
+        raise HTTPException(
+            status_code=503, detail=f"Formül çıkarımı başarısız (LLM gerekli): {exc}"
+        ) from exc
     return {
         "n_formulas": n_formulas,
         "n_links": n_links,
@@ -681,7 +698,10 @@ def api_research_run(req: ResearchRequest) -> ResearchRunResponse:
     from app.research.orchestrator import ResearchOrchestrator
 
     orchestrator = ResearchOrchestrator(max_iterations=req.max_iterations)
-    result = orchestrator.run(req.question, paper_ids=req.paper_ids)
+    try:
+        result = orchestrator.run(req.question, paper_ids=req.paper_ids)
+    except Exception as exc:  # LLM/backtest hatası → 503 (unhandled 500 yerine)
+        raise HTTPException(status_code=503, detail=f"Araştırma döngüsü başarısız: {exc}") from exc
 
     return ResearchRunResponse(
         question=result.question,
@@ -981,7 +1001,7 @@ def api_training_stop() -> dict:
     return {"ok": True}
 
 
-@app.get("/api/training/colab-notebook")
+@app.get("/api/training/colab-notebook", dependencies=[api_auth])
 def api_training_colab_notebook() -> Response:
     """Google Colab egitim notebook'u olustur ve indir (.ipynb)."""
     import datetime as dt
@@ -1469,7 +1489,7 @@ async def api_auto_lora_status() -> dict:
     return get_auto_pipeline().get_status()
 
 
-@app.post("/api/auto-lora/enable")
+@app.post("/api/auto-lora/enable", dependencies=[api_auth])
 async def api_auto_lora_enable(enabled: bool = True) -> dict:
     """Otomatik periyodik kontrolü aç/kapat."""
     from app.lora.auto_pipeline import get_auto_pipeline
@@ -1477,28 +1497,28 @@ async def api_auto_lora_enable(enabled: bool = True) -> dict:
     return {"ok": True, "auto_enabled": enabled}
 
 
-@app.post("/api/auto-lora/check")
+@app.post("/api/auto-lora/check", dependencies=[api_auth])
 async def api_auto_lora_check() -> dict:
     """Gate 0-8 kontrolünü manuel tetikle."""
     from app.lora.auto_pipeline import get_auto_pipeline
     return await get_auto_pipeline().check_and_prepare()
 
 
-@app.post("/api/auto-lora/train")
+@app.post("/api/auto-lora/train", dependencies=[api_auth])
 async def api_auto_lora_train(adapter_name: str, iters: int = 300) -> dict:
     """Kullanıcı onayıyla eğitimi başlat (READY_TO_TRAIN durumu gerekir)."""
     from app.lora.auto_pipeline import get_auto_pipeline
     return await get_auto_pipeline().start_training(adapter_name, iters)
 
 
-@app.post("/api/auto-lora/promote")
+@app.post("/api/auto-lora/promote", dependencies=[api_auth])
 async def api_auto_lora_promote() -> dict:
     """Kullanıcı onayıyla adapter'ı production'a terfi et (EVAL_PASSED gerekir)."""
     from app.lora.auto_pipeline import get_auto_pipeline
     return await get_auto_pipeline().promote_to_production()
 
 
-@app.post("/api/auto-lora/reset")
+@app.post("/api/auto-lora/reset", dependencies=[api_auth])
 async def api_auto_lora_reset() -> dict:
     """Pipeline'ı IDLE'a sıfırla."""
     from app.lora.auto_pipeline import get_auto_pipeline
@@ -1685,10 +1705,15 @@ def api_export_package(strategy_name: str) -> PackageExportResponse:
 @app.post("/api/package/export", response_model=PackageExportResponse, dependencies=[api_auth])
 def api_export_package_from_ir(ir_json: dict) -> PackageExportResponse:
     """Ham StrategyIR JSON'ından .achpkg üret (strateji DB'de kayıtlı olmak zorunda değil)."""
+    from pydantic import ValidationError
+
     from app.trading.package_exporter import export_strategy
     from app.trading.strategy_ir import StrategyIR
 
-    ir = StrategyIR.model_validate(ir_json)
+    try:
+        ir = StrategyIR.model_validate(ir_json)
+    except ValidationError as exc:  # geçersiz IR → 422 (unhandled 500 yerine)
+        raise HTTPException(status_code=422, detail=f"Geçersiz StrategyIR: {exc}") from exc
     pkg = export_strategy(ir)
     return PackageExportResponse(
         name=pkg.name,
