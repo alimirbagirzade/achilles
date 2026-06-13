@@ -108,15 +108,18 @@ for pid in sorted(p for p in pids if p):
     uv run achilles synth-paper >> "$LOG" 2>&1
   fi
 
-  # --- 4) EĞİT: dataset tazele + 2 koşu × 20 iter ---------------------------
-  log "4) Dataset + eğitim (2×20 iter)"
+  # --- 4) VERİ-ÜRET: kart dataset'i tazele + sentetik QA üret ---------------
+  # DEĞİŞİKLİK (2026-06-13): Sürekli CPU-LoRA DURDURULDU. Kanıt: 4B CPU'da
+  # ~76sn/adım = haftalar; 15-50 örnek overfit eder (anlamlı LoRA ~1000 örnek
+  # ister). Döngü artık EĞİTMEZ; VERİ ÜRETİR (15→1000+ büyüme motoru). Eğitim,
+  # ≥1000 örnek olunca bulut-GPU'da, açık --run ile yapılır (CLAUDE.md kural 8).
+  # Detay: docs/RAG_EGITIM_YENIDEN_TASARIM.md
+  log "4) Dataset tazele + sentetik QA üret (bu turun yeni makaleleri)"
   uv run achilles lora-dataset >> "$LOG" 2>&1
-  for t in 1 2; do
-    [ -f "$STOP" ] && break
-    uv run achilles train --run --backend peft \
-      --adapter-name achilles_auto --iterations 20 >> "$LOG" 2>&1 \
-      || log "   eğitim HATA (koşu $t)"
-  done
+  # En yeni 2 makaleyi sentetik QA'ya çevir; dosyaya BİRİKİR (append). CPU'da
+  # ~100sn/chunk; 2 makale × 6 chunk × 3 QA ~ 20-25dk → 3600sn timeout'a rahat sığar.
+  timeout 3600 uv run achilles synth-qa --per-chunk 3 --max-chunks 6 --max-papers 2 \
+    >> "$LOG" 2>&1 || log "   synth-qa HATA/timeout (devam)"
 
   # Tur özeti (rag-mastery LLM'siz)
   uv run achilles rag-mastery >> "$LOG" 2>&1

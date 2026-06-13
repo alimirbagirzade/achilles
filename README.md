@@ -587,6 +587,7 @@ uv run achilles pine [strateji-adı]     # StrategyIR → TradingView Pine Scrip
 ```bash
 uv run achilles dataset                 # bilgi kartlarından eğitim JSONL üret
 uv run achilles lora-dataset            # LoRA SFT JSONL + train/valid split üret
+uv run achilles synth-qa                # chunk'lardan sentetik grounded QA üret (büyüme motoru, Ollama)
 uv run achilles chain-dataset           # araştırma zincirleri → LoRA JSONL
 uv run achilles rag-mastery             # RAG "ne kadar öğrendi" ustalık panosu (LLM-free)
 uv run achilles train                   # LoRA — SADECE ÖNIZLEME (çalıştırmaz)

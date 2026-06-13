@@ -100,28 +100,49 @@ class LocalLLM:
         max_tokens: int | None = None,
         fmt: str | None = None,
         timeout: int = 600,
+        seed: int | None = None,
     ) -> str:
+        # seed: determinizm (CLAUDE.md kural 6). Ollama/OpenAI/Google destekler;
+        # Anthropic API seed desteklemez (sessizce yok sayılır).
         backend = self.active_backend()
 
         if backend == "ollama":
             return self._generate_ollama(
-                prompt, system=system, temperature=temperature,
-                max_tokens=max_tokens, fmt=fmt, timeout=timeout,
+                prompt,
+                system=system,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                fmt=fmt,
+                timeout=timeout,
+                seed=seed,
             )
         if backend == "openai":
             return self._generate_openai(
-                prompt, system=system, temperature=temperature,
-                max_tokens=max_tokens, timeout=timeout,
+                prompt,
+                system=system,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                fmt=fmt,
+                timeout=timeout,
+                seed=seed,
             )
         if backend == "anthropic":
             return self._generate_anthropic(
-                prompt, system=system, temperature=temperature,
-                max_tokens=max_tokens, timeout=timeout,
+                prompt,
+                system=system,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=timeout,
             )
         if backend == "google":
             return self._generate_google(
-                prompt, system=system, temperature=temperature,
-                max_tokens=max_tokens, timeout=timeout,
+                prompt,
+                system=system,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                fmt=fmt,
+                timeout=timeout,
+                seed=seed,
             )
 
         raise LLMUnavailable(
@@ -142,10 +163,13 @@ class LocalLLM:
         max_tokens: int | None,
         fmt: str | None,
         timeout: int,
+        seed: int | None = None,
     ) -> str:
         options: dict = {"temperature": temperature}
         if max_tokens:
             options["num_predict"] = max_tokens
+        if seed is not None:
+            options["seed"] = seed
         payload: dict = {
             "model": self._ollama_model,
             "prompt": prompt,
@@ -174,6 +198,8 @@ class LocalLLM:
         temperature: float,
         max_tokens: int | None,
         timeout: int,
+        fmt: str | None = None,
+        seed: int | None = None,
     ) -> str:
         messages: list[dict] = []
         if system:
@@ -187,6 +213,10 @@ class LocalLLM:
         }
         if max_tokens:
             payload["max_tokens"] = max_tokens
+        if fmt == "json":
+            payload["response_format"] = {"type": "json_object"}
+        if seed is not None:
+            payload["seed"] = seed
 
         headers = {
             "Authorization": f"Bearer {self._openai_key}",
@@ -236,6 +266,8 @@ class LocalLLM:
         temperature: float,
         max_tokens: int | None,
         timeout: int,
+        fmt: str | None = None,
+        seed: int | None = None,
     ) -> str:
         try:
             from google import genai as _genai
@@ -249,6 +281,8 @@ class LocalLLM:
             temperature=temperature,
             max_output_tokens=max_tokens,
             system_instruction=system,
+            seed=seed,
+            response_mime_type="application/json" if fmt == "json" else None,
         )
         response = client.models.generate_content(
             model=self._google_model,

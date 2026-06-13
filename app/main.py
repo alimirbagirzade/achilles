@@ -1449,6 +1449,129 @@ def lora_dataset(
     console.print(f"  → [bold]{jsonl_dir}[/bold]")
 
 
+@app.command("synth-qa")
+def synth_qa(
+    per_chunk: int = typer.Option(5, "--per-chunk", help="Chunk başına üretilecek QA sayısı"),
+    max_chunks: int = typer.Option(12, "--max-chunks", help="Makale başına maksimum chunk"),
+    max_papers: int = typer.Option(0, "--max-papers", help="İşlenecek makale sınırı (0=tümü)"),
+    output: Path = typer.Option(
+        Path("data/lora_sft"), "--output", help="Çıktı dizini (synthetic_qa.jsonl buraya)."
+    ),
+    append: bool = typer.Option(
+        True, "--append/--overwrite", help="Mevcut JSONL'e ekle (döngüde birikim) / üzerine yaz."
+    ),
+    seed: int = typer.Option(
+        0,
+        "--seed",
+        help="Determinizm tabanı; örneklemeyi sabitler (CPU'da yaklaşık tekrar-üretim).",
+    ),
+) -> None:
+    """Makale chunk'larından LLM ile sentetik, grounded QA eğitim seti üret.
+
+    15-50 şablon örneğinden ~1000+ çeşitli örneğe geçiş motoru (büyüme motoru).
+    Eğitim BAŞLATMAZ (CLAUDE.md kural 8); yalnız veri üretir. Ollama gerektirir.
+    Detay: docs/RAG_EGITIM_YENIDEN_TASARIM.md (Faz A6).
+    """
+    import os
+
+    from app.brain.local_llm import LocalLLM
+    from app.brain.synthetic_qa_builder import generate_synthetic_dataset
+    from app.lora.quality_filter import _content_hash
+    from app.memory.sqlite_store import SqliteStore
+
+    llm = LocalLLM()
+    if not llm.available():
+        console.print(
+            "[red]LLM kullanılamıyor.[/red] Ollama'yı başlat veya bir API anahtarı ekle "
+            "(sentetik üretim LLM gerektirir)."
+        )
+        raise typer.Exit(code=1)
+
+    store = SqliteStore()
+    console.print(
+        f"[cyan]Sentetik QA üretimi başlıyor[/cyan] (backend={llm.active_backend()}, "
+        f"chunk başına {per_chunk}, makale başına ≤{max_chunks} chunk)…"
+    )
+    examples, stats = generate_synthetic_dataset(
+        store,
+        llm=llm,
+        per_chunk=per_chunk,
+        max_chunks_per_paper=max_chunks,
+        max_papers=(max_papers or None),
+        seed=seed,
+    )
+
+    settings = get_settings()
+    out_dir = output if output.is_absolute() else (settings.root / output)
+    out_path = out_dir / "synthetic_qa.jsonl"
+
+    def _content_key(line: str) -> str:
+        """Satırı içerik (çıplak soru + cevap) hash'ine indir → metadata/bağlam
+        farkına dayanıklı dedup (turlar-arası near-duplicate de yakalanır).
+        Parse edilemezse satırın kendisi anahtar olur."""
+        try:
+            msgs = json.loads(line).get("messages", [])
+        except (json.JSONDecodeError, AttributeError, TypeError):
+            return line
+        user = next((str(m.get("content", "")) for m in msgs if m.get("role") == "user"), "")
+        asst = next((str(m.get("content", "")) for m in msgs if m.get("role") == "assistant"), "")
+        q = user.split("SORU:", 1)[-1].strip() if "SORU:" in user else user.strip()
+        return _content_hash(q, asst)
+
+    # Birikim: mevcut JSONL + yeni örnekler, İÇERİK-temelli dedup (döngüde 1000'e büyür).
+    new_lines = [ex.to_jsonl_line() for ex in examples]
+    existing: list[str] = []
+    if append and out_path.exists():
+        existing = [ln for ln in out_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    seen: set[str] = set()
+    merged: list[str] = []
+    for ln in existing:  # önce mevcut (kendi içinde de dedup'lanır)
+        k = _content_key(ln)
+        if k not in seen:
+            seen.add(k)
+            merged.append(ln)
+    base = len(merged)
+    for ln in new_lines:  # sonra bu turun yenileri
+        k = _content_key(ln)
+        if k not in seen:
+            seen.add(k)
+            merged.append(ln)
+    added = len(merged) - base
+    total = len(merged)
+
+    # Atomik yaz: tmp'ye yaz → os.replace. Timeout/SIGKILL birikmiş dosyayı bozmasın.
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = out_path.with_suffix(".jsonl.tmp")
+    tmp_path.write_text("\n".join(merged) + ("\n" if merged else ""), encoding="utf-8")
+    os.replace(tmp_path, out_path)
+
+    table = Table(title="Sentetik QA Üretimi")
+    table.add_column("Metrik")
+    table.add_column("Değer", justify="right")
+    table.add_row("İşlenen makale", str(stats["papers"]))
+    table.add_row("Ham örnek", str(stats["raw"]))
+    table.add_row("Net (bu tur)", str(stats["kept"]))
+    table.add_row("Elenen (dup+kalite)", str(stats["rejected"]))
+    table.add_row("Dosyaya yeni eklenen", str(added))
+    table.add_row("Toplam satır (birikmiş)", str(total))
+    console.print(table)
+    if total == 0:
+        console.print(
+            "[yellow]Hiç örnek üretilmedi.[/yellow] Önce makale ingest et "
+            "(uv run achilles arxiv/ingest); chunk'lar gerekli."
+        )
+        return
+    console.print(f"[green]✓[/green] +{added} yeni → toplam {total} → [bold]{out_path}[/bold]")
+    # NOT: Bu yalnız SATIR SAYISI; eğitim hazırlığı DEĞİL (CLAUDE.md kural 2).
+    if total >= 1000:
+        console.print(
+            "[green]≥1000 satır birikti.[/green] Bu yalnız satır-sayısı eşiğidir — "
+            "eğitimden önce kalite denetimi (grounding + dedup + OOS bölme) gerekir."
+        )
+    else:
+        console.print(f"[dim]Hedef ≥1000 satır; şu an {total}. Döngü üretmeye devam etsin.[/dim]")
+
+
 @app.command("rag-mastery")
 def rag_mastery() -> None:
     """RAG'in ne kadar 'öğrendiğini' gösteren ustalık panosu (LLM gerektirmez)."""
