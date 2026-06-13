@@ -1475,8 +1475,7 @@ def synth_qa(
     import os
 
     from app.brain.local_llm import LocalLLM
-    from app.brain.synthetic_qa_builder import generate_synthetic_dataset
-    from app.lora.quality_filter import _content_hash
+    from app.brain.synthetic_qa_builder import dedup_jsonl_lines, generate_synthetic_dataset
     from app.memory.sqlite_store import SqliteStore
 
     llm = LocalLLM()
@@ -1505,37 +1504,13 @@ def synth_qa(
     out_dir = output if output.is_absolute() else (settings.root / output)
     out_path = out_dir / "synthetic_qa.jsonl"
 
-    def _content_key(line: str) -> str:
-        """Satırı içerik (çıplak soru + cevap) hash'ine indir → metadata/bağlam
-        farkına dayanıklı dedup (turlar-arası near-duplicate de yakalanır).
-        Parse edilemezse satırın kendisi anahtar olur."""
-        try:
-            msgs = json.loads(line).get("messages", [])
-        except (json.JSONDecodeError, AttributeError, TypeError):
-            return line
-        user = next((str(m.get("content", "")) for m in msgs if m.get("role") == "user"), "")
-        asst = next((str(m.get("content", "")) for m in msgs if m.get("role") == "assistant"), "")
-        q = user.split("SORU:", 1)[-1].strip() if "SORU:" in user else user.strip()
-        return _content_hash(q, asst)
-
-    # Birikim: mevcut JSONL + yeni örnekler, İÇERİK-temelli dedup (döngüde 1000'e büyür).
+    # Birikim: içerik-hash + near-duplicate (token Jaccard) dedup (Faz A7).
     new_lines = [ex.to_jsonl_line() for ex in examples]
     existing: list[str] = []
     if append and out_path.exists():
         existing = [ln for ln in out_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
-    seen: set[str] = set()
-    merged: list[str] = []
-    for ln in existing:  # önce mevcut (kendi içinde de dedup'lanır)
-        k = _content_key(ln)
-        if k not in seen:
-            seen.add(k)
-            merged.append(ln)
-    base = len(merged)
-    for ln in new_lines:  # sonra bu turun yenileri
-        k = _content_key(ln)
-        if k not in seen:
-            seen.add(k)
-            merged.append(ln)
+    base = len(dedup_jsonl_lines(existing))
+    merged = dedup_jsonl_lines([*existing, *new_lines])
     added = len(merged) - base
     total = len(merged)
 
@@ -1646,10 +1621,8 @@ def lora_cloud_prep(
     doğrulanmış unsloth notebook'u (Kaggle/Colab), Ollama Modelfile + adım talimatları.
     Detay: docs/PROTOKOL_BULUT_EGITIM.md.
     """
-    import json as _json
-
+    from app.brain.synthetic_qa_builder import dedup_jsonl_lines
     from app.lora.dataset_builder import build_dataset
-    from app.lora.quality_filter import _content_hash
     from app.memory.sqlite_store import SqliteStore
     from app.training.cloud_notebook import build_stage2_notebook, write_modelfile
 
@@ -1657,17 +1630,7 @@ def lora_cloud_prep(
     lora_dir = settings.root / "data" / "lora_sft"
     synth_path = lora_dir / "synthetic_qa.jsonl"
 
-    # 1) Birleşik dataset: sentetik + kart örnekleri, içerik-temelli dedup.
-    def _key(line: str) -> str:
-        try:
-            msgs = _json.loads(line).get("messages", [])
-        except (_json.JSONDecodeError, AttributeError, TypeError):
-            return line
-        user = next((str(m.get("content", "")) for m in msgs if m.get("role") == "user"), "")
-        asst = next((str(m.get("content", "")) for m in msgs if m.get("role") == "assistant"), "")
-        q = user.split("SORU:", 1)[-1].strip() if "SORU:" in user else user.strip()
-        return _content_hash(q, asst)
-
+    # 1) Birleşik dataset: sentetik + kart örnekleri, hash + near-duplicate dedup (A7).
     lines: list[str] = []
     if synth_path.exists():
         lines += [ln for ln in synth_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
@@ -1676,13 +1639,7 @@ def lora_cloud_prep(
         lines += [ex.to_jsonl_line() for ex in build_dataset(store.list_approved_cards())]
     except Exception:
         pass
-    seen: set[str] = set()
-    merged: list[str] = []
-    for ln in lines:
-        k = _key(ln)
-        if k not in seen:
-            seen.add(k)
-            merged.append(ln)
+    merged = dedup_jsonl_lines(lines)
 
     combined = lora_dir / "lora_sft.jsonl"
     combined.parent.mkdir(parents=True, exist_ok=True)

@@ -407,3 +407,62 @@ def generate_synthetic_dataset(
         stats["rejected"],
     )
     return kept, stats
+
+
+_WORD_RE = re.compile(r"\w+", re.UNICODE)
+
+
+def _line_qa(line: str) -> tuple[str, str] | None:
+    """JSONL satırından (çıplak soru, cevap) çıkar. Parse edilemezse None."""
+    try:
+        msgs = json.loads(line).get("messages", [])
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        return None
+    user = next((str(m.get("content", "")) for m in msgs if m.get("role") == "user"), "")
+    asst = next((str(m.get("content", "")) for m in msgs if m.get("role") == "assistant"), "")
+    q = user.split("SORU:", 1)[-1].strip() if "SORU:" in user else user.strip()
+    return q, asst
+
+
+def dedup_jsonl_lines(lines: list[str], jaccard_threshold: float = 0.9) -> list[str]:
+    """JSONL satırlarını dedup et: tam içerik-hash + near-duplicate (token Jaccard).
+
+    Faz A7. LLM benzer chunk'lardan paraphrase-dup üretebilir; tam-hash bunları
+    kaçırır. (soru+cevap) token kümeleri Jaccard ≥ eşik ise near-dup sayılır ve
+    elenir (eşik muhafazakâr 0.9 → yalnız neredeyse-aynılar; meşru farklı örnekler
+    korunur). Sıra korunur; ilk görülen tutulur.
+    """
+    from app.lora.quality_filter import _content_hash
+
+    seen_hash: set[str] = set()
+    kept: list[str] = []
+    kept_tokens: list[set[str]] = []
+    for ln in lines:
+        qa = _line_qa(ln)
+        if qa is None:  # parse edilemeyen satır → yalnız tam-satır dedup
+            if ln in seen_hash:
+                continue
+            seen_hash.add(ln)
+            kept.append(ln)
+            kept_tokens.append(set())
+            continue
+        q, a = qa
+        h = _content_hash(q, a)
+        if h in seen_hash:
+            continue
+        toks = set(_WORD_RE.findall((q + " " + a).lower()))
+        is_near_dup = False
+        for kt in kept_tokens:
+            if not kt or not toks:
+                continue
+            inter = len(toks & kt)
+            union = len(toks | kt)
+            if union and inter / union >= jaccard_threshold:
+                is_near_dup = True
+                break
+        if is_near_dup:
+            continue
+        seen_hash.add(h)
+        kept.append(ln)
+        kept_tokens.append(toks)
+    return kept

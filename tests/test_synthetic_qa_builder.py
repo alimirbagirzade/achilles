@@ -6,12 +6,52 @@ rotasyonu ve dedup doğrulanır.
 
 from __future__ import annotations
 
+import json
+
 from app.brain.synthetic_qa_builder import (
     SyntheticQABuilder,
     _coerce_json_list,
     _is_grounded,
+    dedup_jsonl_lines,
     generate_synthetic_dataset,
 )
+
+
+def _jsonl(q: str, a: str) -> str:
+    return json.dumps(
+        {
+            "messages": [
+                {"role": "system", "content": "S"},
+                {"role": "user", "content": f"BAĞLAM:\nX\n\nSORU: {q}"},
+                {"role": "assistant", "content": a},
+            ]
+        },
+        ensure_ascii=False,
+    )
+
+
+def test_dedup_removes_exact_duplicate() -> None:
+    ln = _jsonl("ATR nedir", "ATR ortalama gercek araliktir ve volatilite olcer.")
+    assert len(dedup_jsonl_lines([ln, ln])) == 1
+
+
+def test_dedup_removes_near_duplicate() -> None:
+    # Tek kelime farkı (~%92 Jaccard) → near-dup elenir.
+    a1 = "ATR ortalama gercek araliktir ve volatilite olcer bu yuzden onemli"
+    a2 = "ATR ortalama gercek araliktir ve volatilite olcer bu yuzden cok onemli"
+    out = dedup_jsonl_lines([_jsonl("ATR nedir", a1), _jsonl("ATR nedir", a2)])
+    assert len(out) == 1
+
+
+def test_dedup_keeps_distinct() -> None:
+    out = dedup_jsonl_lines(
+        [
+            _jsonl("ATR nedir", "ATR ortalama gercek araliktir, volatilite olcer."),
+            _jsonl("Sharpe orani nedir", "Sharpe getiriyi riske boler, risk-ayarli olcum."),
+        ]
+    )
+    assert len(out) == 2
+
 
 # Anchor'lı (sayı + teknik terim) pasaj — grounding kontrolü anlamlı olsun.
 _CHUNK = (
