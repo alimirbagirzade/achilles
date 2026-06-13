@@ -44,14 +44,20 @@ class ComprehensionScorer:
         self._chroma = ChromaStore()
         self._embedder = EmbeddingService()
 
-    def score(self, paper_id: str) -> ComprehensionScore:
+    def score(self, paper_id: str, use_llm: bool = True) -> ComprehensionScore:
+        """Anlama skoru hesapla.
+
+        ``use_llm=False`` → HIZLI mod: yalnız A (doluluk) + B (RAG precision) gerçek
+        hesaplanır; C (LLM doğrulama, tek yavaş kısım) nötr 0.5 alınır. Tüm korpusu
+        saniyeler içinde skorlamak için (web/loop). C sonradan refine edilebilir.
+        """
         card_json = self._store.get_latest_knowledge_card(paper_id)
         if not card_json:
             return ComprehensionScore(paper_id=paper_id, details={"error": "kart yok"})
 
         a = self._score_extraction(card_json)
         b = self._score_retrieval(paper_id, card_json)
-        c = self._score_llm(card_json)
+        c = self._score_llm(card_json) if use_llm else 0.5
 
         total = round(
             (a * WEIGHTS["extraction"] + b * WEIGHTS["retrieval"] + c * WEIGHTS["llm_verify"])
@@ -68,6 +74,7 @@ class ComprehensionScorer:
                 "a_extraction": round(a, 3),
                 "b_retrieval": round(b, 3),
                 "c_llm": round(c, 3),
+                "llm_verified": use_llm,
             },
         )
 

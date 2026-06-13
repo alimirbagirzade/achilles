@@ -490,8 +490,14 @@ def api_synthesis_report_generate() -> dict:
     response_model=BatchScoreResponse,
     dependencies=[api_auth],
 )
-def api_comprehension_batch(skip_existing: bool = False) -> BatchScoreResponse:
-    """Tüm makaleler için anlama skoru hesapla (kartı olan makaleler için)."""
+def api_comprehension_batch(
+    skip_existing: bool = False, use_llm: bool = True
+) -> BatchScoreResponse:
+    """Tüm makaleler için anlama skoru hesapla (kartı olan makaleler için).
+
+    `use_llm=false` → HIZLI mod (yalnız doluluk + RAG precision; LLM atlanır) →
+    tüm korpus saniyeler içinde skorlanır.
+    """
     from app.memory.sqlite_store import SqliteStore
     from app.verification.comprehension_scorer import ComprehensionScorer
 
@@ -518,7 +524,8 @@ def api_comprehension_batch(skip_existing: bool = False) -> BatchScoreResponse:
                 )
                 continue
         try:
-            result = scorer.score(pid)
+            result = scorer.score(pid, use_llm=use_llm)
+            store.save_comprehension_score(result)  # KALICI yap (önceden kaydetmiyordu)
             results.append(
                 BatchScoreResult(
                     paper_id=pid, title=paper.title, status="ok",
