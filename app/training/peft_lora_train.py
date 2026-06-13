@@ -202,12 +202,51 @@ def train(cfg: PeftTrainConfig) -> dict:
         data_collator=DataCollatorForLanguageModeling(tokenizer, mlm=False),
     )
 
+    import datetime as _dt
+
+    started_at = _dt.datetime.now().isoformat(timespec="seconds")
     trainer.train()
+    finished_at = _dt.datetime.now().isoformat(timespec="seconds")
     model.save_pretrained(output_dir)
     tokenizer.save_pretrained(output_dir)
 
+    # Loss eğrisini reports/training/<adapter>_loss.json'a yaz → web "Eğitim grafiği"
+    # bu dosyaları okur (/api/learning/training-runs). CLI eğitimi de artık kaydeder.
+    _write_loss_curve(cfg, trainer.state.log_history, started_at, finished_at)
+
     logger.info("Adapter kaydedildi: %s", output_dir)
     return {"ok": True, "adapter_path": output_dir, "device": device}
+
+
+def _write_loss_curve(
+    cfg: PeftTrainConfig, log_history: list[dict], started_at: str, finished_at: str
+) -> None:
+    """Trainer log_history'den loss eğrisi çıkar; web grafiğinin okuduğu JSON'u yaz."""
+    curve: list[dict] = []
+    for entry in log_history:
+        if "loss" in entry:  # eğitim loss'u (logging_steps'te)
+            curve.append(
+                {
+                    "step": int(entry.get("step", len(curve) + 1)),
+                    "train_loss": round(float(entry["loss"]), 4),
+                    "val_loss": (
+                        round(float(entry["eval_loss"]), 4) if "eval_loss" in entry else None
+                    ),
+                }
+            )
+    report = {
+        "adapter_name": cfg.adapter_output_path.name,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "total_iters": cfg.iterations,
+        "base_model": cfg.base_model,
+        "curve": curve,
+    }
+    out_dir = Path("reports/training")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / f"{cfg.adapter_output_path.name}_loss.json").write_text(
+        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 def generate_colab_notebook(cfg: PeftTrainConfig, out_path: Path) -> Path:
