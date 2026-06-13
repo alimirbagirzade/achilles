@@ -199,6 +199,23 @@ async def api_upload(
     content = await file.read()
     safe_name = security.validate_pdf_upload(file.filename or "", content)
 
+    # Senkron dedup: birebir aynı dosya (aynı file_hash) zaten yüklüyse parse beklemeden
+    # hemen bildir. (Aynı makalenin FARKLI bytes'lı kopyası başlık-dedup ile arka planda
+    # yakalanır — bkz. PaperIndexer.ingest_one.)
+    import hashlib
+
+    from app.memory.sqlite_store import SqliteStore
+
+    file_hash = hashlib.sha256(content).hexdigest()
+    existing = SqliteStore().get_paper_by_hash(file_hash)
+    if existing is not None:
+        return IngestResponse(
+            ingested=0,
+            skipped=1,
+            papers=[],
+            message=f"Bu dosya zaten yüklü, atlandı: {existing.title or safe_name}",
+        )
+
     s = get_settings()
     dest = security.safe_destination(s.raw_pdf_dir, safe_name)
     dest.parent.mkdir(parents=True, exist_ok=True)

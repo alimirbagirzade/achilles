@@ -1117,7 +1117,8 @@
     }
     var i = 0,
       ok = 0,
-      fail = 0;
+      fail = 0,
+      dup = 0;
     function next() {
       if (i >= files.length) {
         done();
@@ -1133,8 +1134,10 @@
       var fd = new FormData();
       fd.append("file", f);
       api("/papers/upload", { method: "POST", body: fd })
-        .then(function () {
-          ok++;
+        .then(function (resp) {
+          // skipped=1 → sunucu birebir aynı dosyayı zaten var diye atladı (dedup).
+          if (resp && resp.skipped) dup++;
+          else ok++;
         })
         .catch(function () {
           fail++;
@@ -1143,7 +1146,12 @@
     }
 
     function done() {
-      var msg = ok + " PDF sunucuya aktarıldı" + (fail ? ", " + fail + " atlandı/hata" : "") + ". İndeksleniyor…";
+      var msg =
+        ok +
+        " PDF aktarıldı" +
+        (dup ? ", " + dup + " zaten vardı (atlandı)" : "") +
+        (fail ? ", " + fail + " hata" : "") +
+        ". İndeksleniyor…";
       toast(msg);
       api("/papers")
         .then(function (data) {

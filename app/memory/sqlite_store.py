@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -45,6 +46,16 @@ from app.config import get_settings
 
 def _utcnow() -> str:
     return dt.datetime.now(dt.UTC).isoformat()
+
+
+_TITLE_NORM_RE = re.compile(r"[\W_]+", re.UNICODE)
+
+
+def _normalize_title(title: str) -> str:
+    """Başlığı dedup karşılaştırması için normalize et: küçük harf, alfanümerik-dışı
+    karakterleri tek boşluğa indir, kırp. (Farklı PDF export'ların noktalama/boşluk
+    farklarına dayanıklı; başlık aynıysa eşleşir.)"""
+    return _TITLE_NORM_RE.sub(" ", title.lower()).strip()
 
 
 class Base(DeclarativeBase):
@@ -552,6 +563,22 @@ class SqliteStore:
     def get_paper_by_hash(self, file_hash: str) -> Paper | None:
         with self.session() as s:
             return s.scalar(select(Paper).where(Paper.file_hash == file_hash))
+
+    def find_paper_by_title(self, title: str | None) -> Paper | None:
+        """Normalize edilmiş başlığı eşleşen mevcut makaleyi döndür (paper-düzeyi dedup).
+
+        Aynı makale farklı bytes'la (yeniden indirilmiş / farklı PDF export) yüklenirse
+        file_hash farklı olur ama başlık aynıdır → RAG'a 2. kez girmesini engeller.
+        Başlık boş/çok kısa ise None döner (güvenilmez eşleşmeyi önler).
+        """
+        norm = _normalize_title(title or "")
+        if len(norm) < 12:  # çok kısa/boş başlık → dedup uygulama (yanlış eşleşme riski)
+            return None
+        with self.session() as s:
+            for p in s.scalars(select(Paper)):
+                if _normalize_title(p.title or "") == norm:
+                    return p
+        return None
 
     def add_chunks(self, chunks: list[dict[str, Any]]) -> int:
         with self.session() as s:
@@ -1123,7 +1150,6 @@ class SqliteStore:
                 for r in rows
             ]
 
-
     # ------------------------------------------------------------------ eval history
 
     def save_eval_history(
@@ -1147,13 +1173,7 @@ class SqliteStore:
 
     def list_eval_history(self, limit: int = 200) -> list[dict[str, Any]]:
         with self.session() as s:
-            rows = list(
-                s.scalars(
-                    select(EvalHistory)
-                    .order_by(EvalHistory.scored_at)
-                    .limit(limit)
-                )
-            )
+            rows = list(s.scalars(select(EvalHistory).order_by(EvalHistory.scored_at).limit(limit)))
             return [
                 {
                     "adapter_name": r.adapter_name,

@@ -79,6 +79,25 @@ class PaperIndexer:
         if not meta.title:
             meta.title = disc.path.stem.replace("_", " ").replace("-", " ").strip()
 
+        # Paper-düzeyi dedup: aynı başlıklı makale zaten varsa (farklı bytes/hash olsa
+        # bile — yeniden indirilmiş, farklı PDF export, farklı arxiv sürümü) RAG'a 2.
+        # kez girmesin. file_hash kontrolü yalnız birebir aynı dosyayı yakalar.
+        if not force:
+            dup = self.store.find_paper_by_title(meta.title)
+            if dup is not None and dup.paper_id != disc.paper_id:
+                logger.info(
+                    "Ayni baslikli makale zaten var (%s) — atlaniyor: %s",
+                    dup.paper_id,
+                    meta.title,
+                )
+                return IngestResult(
+                    paper_id=dup.paper_id,
+                    title=dup.title,
+                    n_chunks=0,
+                    skipped=True,
+                    notes=["duplicate_title"],
+                )
+
         # save extracted text + metadata to disk
         (self.settings.extracted_text_dir / f"{disc.paper_id}.txt").write_text(
             parsed.text, encoding="utf-8"
