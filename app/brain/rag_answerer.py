@@ -24,35 +24,17 @@ from app.brain.prompt_loader import load_prompt
 from app.memory.reranking_retriever import RerankingRetriever
 from app.memory.retrieval_service import RetrievedChunk, Retriever
 
-_BILINGUAL_FORMAT = """\
-Answer using the following bilingual format (English first, Turkish below each section):
+# NOT: Cevap formatı ARTIK tek kaynakta — app/prompts/rag_answer.md (sistem
+# prompt'u olarak yüklenir). Eskiden burada ayrı bir _BILINGUAL_FORMAT vardı ve
+# .md ile çatışıyordu (model iki farklı format alıyordu); birleştirildi (Faz A4).
+# Kullanıcı prompt'una format enjekte edilmez; yalnız KAYNAKLAR + SORU verilir.
 
-1. Short Answer / Kısa Cevap
-2. Sources Used / Kullanılan Kaynaklar
-   - paper_id, chunk_id, section, page_number (if available)
-3. Context Quality / Bağlam Kalitesi
-   - Is the context complete? / Bağlam tam mı?
-   - Any cut formula or argument? / Formül veya argüman kesilmiş mi?
-4. Academic Finding / Akademik Bulgu
-5. Formula or Argument Analysis / Formül veya Argüman Analizi
-   - Formula / Formül
-   - Variable meanings / Değişkenlerin anlamı
-   - Context / Bağlam
-   - Limitations / Sınırlamalar
-6. Trading Hypothesis / Trading Hipotezi
-   - Only if applicable / Yalnızca uygulanabilirse
-   - If not applicable, write: "This finding cannot be directly converted to a trading rule."
-     / "Bu bulgu doğrudan trading kuralına çevrilemez."
-7. Test Plan / Test Planı
-   - Market, timeframe, data, indicator, backtest method, out-of-sample, costs
-   / Piyasa, zaman dilimi, veri, indikatör, backtest yöntemi, OOS, maliyetler
-8. Risks / Riskler
-   - Overfit, data leakage, look-ahead bias, survivorship bias, spread/slippage
-9. Next Step / Sonraki Adım
-
-Do NOT invent any source, formula, dataset, or conclusion not present in the retrieved context.
-Kaynaklarda olmayan herhangi bir kaynak, formül, veri seti veya sonuç uydurmayın.
-"""
+_FALLBACK_SYSTEM = (
+    "Yalnızca verilen KAYNAKLAR'a dayan; kaynak yoksa 'kaynak bulunamadı' de, uydurma. "
+    "Her iddiadan sonra [paper_id:chunk_id] satır-içi atıf ver. İki dilli (EN+TR) "
+    "yapısal cevap: Kısa Cevap, Kaynaklar, Akademik Bulgu, Trading Hipotezi (test "
+    "edilmemiş), Test Planı (OOS+maliyet+look-ahead yok), Riskler. Yatırım tavsiyesi verme."
+)
 
 
 @dataclass
@@ -103,18 +85,12 @@ class RagAnswerer:
 
         context = _format_context(chunks)
         try:
-            system = load_prompt("rag_answer")
+            system = load_prompt("rag_answer")  # tek kaynak format + grounding kuralları
         except FileNotFoundError:
-            system = (
-                "Answer ONLY from the provided sources. Do not invent facts. "
-                "Use bilingual format (English + Turkish).\n"
-                "Yalnızca verilen kaynaklara dayan. Gerçek uydurmayın. "
-                "İki dilli format kullan (İngilizce + Türkçe)."
-            )
+            system = _FALLBACK_SYSTEM
 
-        prompt = (
-            f"SOURCES / KAYNAKLAR:\n{context}\n\nQUESTION / SORU: {question}\n\n{_BILINGUAL_FORMAT}"
-        )
+        # Format sistem prompt'undan gelir; kullanıcı prompt'u yalnız bağlam + soru.
+        prompt = f"SOURCES / KAYNAKLAR:\n{context}\n\nQUESTION / SORU: {question}"
 
         try:
             text = self.llm.generate(prompt, system=system, temperature=0.2)

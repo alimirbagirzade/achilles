@@ -92,6 +92,27 @@ class ChromaStore:
         col = self._ensure()
         return int(col.count())
 
+    def get_all(self) -> list[dict[str, Any]]:
+        """Tüm chunk'ları döndür (BM25 korpus indeksi kurmak için).
+
+        Her öğe: {chunk_id, document, metadata}. Boş koleksiyonda boş liste.
+        """
+        col = self._ensure()
+        res = col.get(include=["documents", "metadatas"])
+        ids = res.get("ids", []) or []
+        docs = res.get("documents", []) or []
+        metas = res.get("metadatas", []) or []
+        out: list[dict[str, Any]] = []
+        for i, cid in enumerate(ids):
+            out.append(
+                {
+                    "chunk_id": cid,
+                    "document": docs[i] if i < len(docs) else "",
+                    "metadata": metas[i] if i < len(metas) else {},
+                }
+            )
+        return out
+
     def reset(self) -> None:
         self._ensure()
         self._client.reset()

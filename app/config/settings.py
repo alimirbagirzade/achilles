@@ -76,7 +76,9 @@ class Settings(BaseSettings):
     # bileşenleri canlı yola alır). Hepsi LLM-free; çevrimdışı testlerle uyumlu.
     rag_rerank: bool = True  # over-fetch + heuristik reranker (semantik+kw+bölüm+formül)
     rag_overfetch: int = 4  # dense'ten top_k * overfetch aday çek, rerank et, top_k'ya kes
-    rag_hybrid: bool = False  # BM25 + dense hibrit (BM25 indeksi dolunca aç — Faz A3)
+    # BM25 + dense hibrit (Faz A3): keyword adaylarını ekler. Korpus Chroma'dan lazy
+    # kurulur; boşsa sessizce dense-only kalır → çevrimdışı testlerde davranış değişmez.
+    rag_hybrid: bool = True
 
     # --- Trading ---
     default_market: str = "XAUUSD"

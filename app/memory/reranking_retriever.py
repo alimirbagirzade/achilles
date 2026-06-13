@@ -39,12 +39,15 @@ class RerankingRetriever:
         reranker: Reranker | None = None,
         overfetch: int | None = None,
         enabled: bool | None = None,
+        hybrid: bool | None = None,
     ) -> None:
         self.settings = get_settings()
         self.base = base or RetrievalService()
         self.reranker = reranker or Reranker()
         self.overfetch = overfetch if overfetch is not None else self.settings.rag_overfetch
         self.enabled = enabled if enabled is not None else self.settings.rag_rerank
+        # Hibrit: dense aday havuzunu BM25 (keyword) eşleşmeleriyle genişlet (Faz A3).
+        self.hybrid = hybrid if hybrid is not None else self.settings.rag_hybrid
 
     def retrieve(self, query: str, top_k: int | None = None) -> list[RetrievedChunk]:
         k = top_k or self.settings.rag_top_k
@@ -55,8 +58,29 @@ class RerankingRetriever:
         # Geniş aday havuzu çek (en az k; ideal olarak k * overfetch).
         candidate_k = max(k, k * max(1, self.overfetch))
         candidates = self.base.retrieve(query, top_k=candidate_k)
+
+        # Hibrit: BM25 keyword adaylarını ekle (dense'in kaçırdığı teknik terimler:
+        # ATR, Sharpe, RSI…). Korpus boş/erişilemezse sessizce dense-only kalır.
+        if self.hybrid:
+            candidates = self._add_bm25_candidates(query, candidates, candidate_k)
+
         if not candidates:
             return []
 
         ranked = self.reranker.rerank(query, candidates)
         return ranked[:k]
+
+    def _add_bm25_candidates(
+        self, query: str, candidates: list[RetrievedChunk], candidate_k: int
+    ) -> list[RetrievedChunk]:
+        from app.memory.bm25_corpus import get_corpus_bm25
+
+        bm25, chunk_map = get_corpus_bm25()
+        if bm25 is None:
+            return candidates
+        have = {c.chunk_id for c in candidates}
+        for cid, _score in bm25.search(query, candidate_k):
+            if cid not in have and cid in chunk_map:
+                candidates.append(chunk_map[cid])
+                have.add(cid)
+        return candidates
