@@ -584,14 +584,23 @@ uv run achilles pine [strateji-adı]     # StrategyIR → TradingView Pine Scrip
 
 ### Eğitim
 
+**Aşamalı eğitim** (CPU sürekli-eğitimi YOK — bkz. `docs/PROTOKOL_ASAMALI_EGITIM.md`):
 ```bash
+# Stage 1 — lokal veri üret (büyüme motoru)
+uv run achilles synth-qa                # chunk'lardan sentetik grounded QA üret (Ollama)
+uv run achilles lora-readiness          # Stage 2 eşik durumu (≥1000 örnek mi?)
+bash scripts/continuous-learning.sh 72  # sürekli üretim döngüsü (eğitim DEĞİL)
+
+# Stage 2 — bulut-GPU LoRA (eşik dolunca, kullanıcı onayıyla)
+uv run achilles lora-cloud-prep         # veri paketle + unsloth notebook + Modelfile üret
+#   → notebook'u Kaggle/Colab'da çalıştır → GGUF indir → ollama create achilles
+
+# Yardımcı / klasik
 uv run achilles dataset                 # bilgi kartlarından eğitim JSONL üret
 uv run achilles lora-dataset            # LoRA SFT JSONL + train/valid split üret
-uv run achilles synth-qa                # chunk'lardan sentetik grounded QA üret (büyüme motoru, Ollama)
-uv run achilles chain-dataset           # araştırma zincirleri → LoRA JSONL
 uv run achilles rag-mastery             # RAG "ne kadar öğrendi" ustalık panosu (LLM-free)
 uv run achilles train                   # LoRA — SADECE ÖNIZLEME (çalıştırmaz)
-uv run achilles train --run             # LoRA — gerçekten eğitir (macOS MLX + Windows/Linux PEFT)
+uv run achilles train --run             # LoRA — yerel (smoke; ağır 4B için bulut tercih et)
 uv run achilles evaluate <eval.jsonl>   # modeli failure-mode eval setiyle test et
 ```
 

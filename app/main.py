@@ -1572,6 +1572,161 @@ def synth_qa(
         console.print(f"[dim]Hedef ≥1000 satır; şu an {total}. Döngü üretmeye devam etsin.[/dim]")
 
 
+@app.command("lora-readiness")
+def lora_readiness(
+    threshold: int = typer.Option(
+        1000, "--threshold", help="Stage 2 (bulut-GPU) eşik örnek sayısı"
+    ),
+) -> None:
+    """Stage 1→Stage 2 eşik durumu: sentetik + kart örnekleri ≥ eşik mi?
+
+    Aşamalı eğitim kapısı (bkz. docs/PROTOKOL_ASAMALI_EGITIM.md). Eğitim BAŞLATMAZ.
+    """
+    from app.lora.dataset_builder import build_dataset
+    from app.memory.sqlite_store import SqliteStore
+
+    settings = get_settings()
+    synth_path = settings.root / "data" / "lora_sft" / "synthetic_qa.jsonl"
+    synth_n = 0
+    if synth_path.exists():
+        synth_n = sum(1 for ln in synth_path.read_text(encoding="utf-8").splitlines() if ln.strip())
+
+    try:
+        store = SqliteStore()
+        card_n = len(build_dataset(store.list_approved_cards()))
+    except Exception:
+        card_n = 0
+
+    total = synth_n + card_n
+    pct = min(100, round(total * 100 / threshold)) if threshold else 0
+    gate_ok = total >= threshold
+
+    table = Table(title="LoRA Eğitim Hazırlığı (Stage 1 → Stage 2)")
+    table.add_column("Metrik")
+    table.add_column("Değer", justify="right")
+    table.add_row("Sentetik örnek (synth-qa)", str(synth_n))
+    table.add_row("Kart örneği (approved)", str(card_n))
+    table.add_row("Toplam", str(total))
+    table.add_row("Eşik (bulut-GPU)", str(threshold))
+    table.add_row("İlerleme", f"%{pct}")
+    console.print(table)
+
+    if gate_ok:
+        console.print(
+            "[green]✓ Nicelik eşiği karşılandı.[/green] Sıradaki kapılar (Stage 2'den önce):\n"
+            "  1) [bold]uv run achilles lora-audit[/bold] (Gate 0-7 kalite denetimi)\n"
+            "  2) Kullanıcı onayı (gerçek eğitim yalnız açık komutla — CLAUDE.md kural 8)\n"
+            "  3) [bold]uv run achilles lora-cloud-prep[/bold] → bulut-GPU notebook"
+        )
+    else:
+        kalan = threshold - total
+        console.print(
+            f"[yellow]Henüz eşik altında[/yellow] — {kalan} örnek daha gerekli. "
+            "Stage 1 üretimine devam: [bold]bash scripts/continuous-learning.sh 72[/bold] "
+            "veya [bold]uv run achilles synth-qa[/bold]."
+        )
+
+
+@app.command("lora-cloud-prep")
+def lora_cloud_prep(
+    hf_repo: str = typer.Option(
+        "KULLANICI/achilles-lora-sft",
+        "--hf-repo",
+        help="HF private dataset repo (kendi kullanıcı adınla)",
+    ),
+    adapter_name: str = typer.Option("achilles_lora_cloud", "--adapter-name"),
+    lora_r: int = typer.Option(16, "--lora-r", help="LoRA rank (4B için 16-32)"),
+    epochs: int = typer.Option(2, "--epochs", help="Epoch (≥1000 örnek için 2-3)"),
+    max_seq_len: int = typer.Option(2048, "--max-seq-len", help="T4 güvenli 2048"),
+    output: Path = typer.Option(Path("notebooks"), "--output", help="Notebook + Modelfile dizini"),
+) -> None:
+    """Stage 2 bulut-GPU eğitimini HAZIRLA: veri paketle + notebook + Modelfile üret.
+
+    Eğitim BAŞLATMAZ (CLAUDE.md kural 8). Üretir: birleşik JSONL (HF'e yüklenecek),
+    doğrulanmış unsloth notebook'u (Kaggle/Colab), Ollama Modelfile + adım talimatları.
+    Detay: docs/PROTOKOL_BULUT_EGITIM.md.
+    """
+    import json as _json
+
+    from app.lora.dataset_builder import build_dataset
+    from app.lora.quality_filter import _content_hash
+    from app.memory.sqlite_store import SqliteStore
+    from app.training.cloud_notebook import build_stage2_notebook, write_modelfile
+
+    settings = get_settings()
+    lora_dir = settings.root / "data" / "lora_sft"
+    synth_path = lora_dir / "synthetic_qa.jsonl"
+
+    # 1) Birleşik dataset: sentetik + kart örnekleri, içerik-temelli dedup.
+    def _key(line: str) -> str:
+        try:
+            msgs = _json.loads(line).get("messages", [])
+        except (_json.JSONDecodeError, AttributeError, TypeError):
+            return line
+        user = next((str(m.get("content", "")) for m in msgs if m.get("role") == "user"), "")
+        asst = next((str(m.get("content", "")) for m in msgs if m.get("role") == "assistant"), "")
+        q = user.split("SORU:", 1)[-1].strip() if "SORU:" in user else user.strip()
+        return _content_hash(q, asst)
+
+    lines: list[str] = []
+    if synth_path.exists():
+        lines += [ln for ln in synth_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    try:
+        store = SqliteStore()
+        lines += [ex.to_jsonl_line() for ex in build_dataset(store.list_approved_cards())]
+    except Exception:
+        pass
+    seen: set[str] = set()
+    merged: list[str] = []
+    for ln in lines:
+        k = _key(ln)
+        if k not in seen:
+            seen.add(k)
+            merged.append(ln)
+
+    combined = lora_dir / "lora_sft.jsonl"
+    combined.parent.mkdir(parents=True, exist_ok=True)
+    combined.write_text("\n".join(merged) + ("\n" if merged else ""), encoding="utf-8")
+    n = len(merged)
+
+    # 2) Notebook + Modelfile üret (doğrulanmış unsloth şablonu).
+    out_dir = output if output.is_absolute() else (settings.root / output)
+    nb_path = out_dir / "achilles_lora_stage2.ipynb"
+    build_stage2_notebook(
+        base_model=settings.peft_base_model,
+        adapter_name=adapter_name,
+        hf_dataset_repo=hf_repo,
+        max_seq_length=max_seq_len,
+        lora_r=lora_r,
+        learning_rate=2e-4,
+        num_epochs=epochs,
+        out_path=nb_path,
+    )
+    mf_path = write_modelfile(out_dir)
+
+    # 3) Özet + talimat.
+    console.print(f"[green]✓[/green] Birleşik veri: [bold]{combined}[/bold] ({n} örnek)")
+    if n < 1000:
+        console.print(
+            f"[yellow]UYARI:[/yellow] {n} örnek < 1000. Az veride overfit eder; önce "
+            "[bold]uv run achilles synth-qa[/bold] ile büyüt (Stage 1)."
+        )
+    console.print(f"[green]✓[/green] Notebook: [bold]{nb_path}[/bold]")
+    console.print(f"[green]✓[/green] Modelfile: [bold]{mf_path}[/bold]")
+    console.print(
+        "\n[bold]Sıradaki adımlar (docs/PROTOKOL_BULUT_EGITIM.md):[/bold]\n"
+        f"  1) HF private dataset: [bold]huggingface-cli upload {hf_repo} "
+        f"{combined} lora_sft.jsonl --repo-type dataset[/bold]\n"
+        "  2) HF READ token → Kaggle Secrets / Colab userdata: ad=HF_TOKEN\n"
+        "  3) Kaggle (T4×2, Internet ON) veya Colab (T4) → notebook'u Run All\n"
+        "  4) İndir: achilles-Q4_K_M.gguf + Modelfile → aynı klasör\n"
+        "  5) [bold]ollama create achilles -f Modelfile[/bold]\n"
+        "  6) Eval gate: [bold]$env:ACHILLES_LLM_MODEL='achilles'; "
+        "uv run achilles evaluate evals/discipline_core.jsonl[/bold]\n"
+        "  7) Onaylıysa promote (yalnız kullanıcı onayıyla — kural 8)"
+    )
+
+
 @app.command("rag-mastery")
 def rag_mastery() -> None:
     """RAG'in ne kadar 'öğrendiğini' gösteren ustalık panosu (LLM gerektirmez)."""

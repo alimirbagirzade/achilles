@@ -143,7 +143,13 @@ def train(cfg: PeftTrainConfig) -> dict:
         lora_dropout=cfg.lora_dropout,
         bias="none",
         target_modules=[
-            "q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj",
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
         ],
     )
     model = get_peft_model(model, peft_config)  # type: ignore[assignment]
@@ -256,111 +262,35 @@ def _write_loss_curve(
     )
 
 
-def generate_colab_notebook(cfg: PeftTrainConfig, out_path: Path) -> Path:
-    """Kullanici Google Colab'da calistirabilecegi bir .ipynb olusturur."""
-    cells = [
-        {
-            "cell_type": "markdown",
-            "source": [
-                "# Achilles LoRA Egitimi - Google Colab\n",
-                "T4 GPU ile ~30 dakikada tamamlanir. Runtime > Run All ile calistirin.\n",
-            ],
-        },
-        {
-            "cell_type": "code",
-            "source": ["!pip install -q peft transformers datasets accelerate\n"],
-        },
-        {
-            "cell_type": "code",
-            "source": [
-                "import json, pathlib\n",
-                f"BASE_MODEL = '{cfg.base_model}'\n",
-                f"ADAPTER_NAME = '{cfg.adapter_output_path.name}'\n",
-                f"MAX_SEQ_LEN = {cfg.max_seq_length}\n",
-                f"LORA_R = {cfg.lora_r}\n",
-                f"LEARNING_RATE = {cfg.learning_rate}\n",
-                f"NUM_EPOCHS = {max(1, cfg.iterations // 10)}\n",
-            ],
-        },
-        {
-            "cell_type": "code",
-            "source": [
-                "# Egitim verisini buraya kopyalayin veya Drive'dan yukleyin\n",
-                "TRAIN_DATA = []\n",
-                "VALID_DATA = []\n",
-                '# Ornek: [{"text": "<|user|>soru<|end|>\\n<|assistant|>cevap<|end|>"}]\n',
-            ],
-        },
-        {
-            "cell_type": "code",
-            "source": [
-                "import torch\n",
-                "from datasets import Dataset\n",
-                "from peft import LoraConfig, TaskType, get_peft_model\n",
-                "from transformers import (\n",
-                "    AutoModelForCausalLM, AutoTokenizer,\n",
-                "    DataCollatorForLanguageModeling, Trainer, TrainingArguments\n",
-                ")\n",
-                "tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, trust_remote_code=True)\n",
-                "if tokenizer.pad_token is None:\n",
-                "    tokenizer.pad_token = tokenizer.eos_token\n",
-                "model = AutoModelForCausalLM.from_pretrained(\n",
-                "    BASE_MODEL, trust_remote_code=True,\n",
-                "    torch_dtype=torch.float16, device_map='auto'\n",
-                ")\n",
-                "peft_cfg = LoraConfig(\n",
-                "    task_type=TaskType.CAUSAL_LM, r=LORA_R,\n",
-                "    lora_alpha=LORA_R*2, lora_dropout=0.05, bias='none'\n",
-                ")\n",
-                "model = get_peft_model(model, peft_cfg)\n",
-                "model.print_trainable_parameters()\n",
-                "def tokenize(ex):\n",
-                "    return tokenizer(ex['text'], truncation=True,\n",
-                "                      max_length=MAX_SEQ_LEN, padding='max_length')\n",
-                "train_ds = Dataset.from_list(TRAIN_DATA).map(tokenize, batched=True, remove_columns=['text'])\n",  # noqa: E501
-                "valid_ds = Dataset.from_list(VALID_DATA).map(tokenize, batched=True, remove_columns=['text'])\n",  # noqa: E501
-                "args = TrainingArguments(\n",
-                "    output_dir=ADAPTER_NAME, num_train_epochs=NUM_EPOCHS,\n",
-                "    per_device_train_batch_size=4, learning_rate=LEARNING_RATE,\n",
-                "    fp16=True, logging_steps=5, save_strategy='epoch',\n",
-                "    eval_strategy='epoch', report_to='none'\n",
-                ")\n",
-                "trainer = Trainer(\n",
-                "    model=model, args=args,\n",
-                "    train_dataset=train_ds, eval_dataset=valid_ds,\n",
-                "    data_collator=DataCollatorForLanguageModeling(tokenizer, mlm=False)\n",
-                ")\n",
-                "trainer.train()\n",
-                "model.save_pretrained(ADAPTER_NAME)\n",
-                "tokenizer.save_pretrained(ADAPTER_NAME)\n",
-                "print('Adapter kaydedildi:', ADAPTER_NAME)\n",
-            ],
-        },
-    ]
+def generate_colab_notebook(
+    cfg: PeftTrainConfig,
+    out_path: Path,
+    *,
+    hf_dataset_repo: str = "KULLANICI/achilles-lora-sft",
+    num_epochs: int = 2,
+) -> Path:
+    """Stage 2 bulut-GPU (Kaggle/Colab) eğitim notebook'u + Ollama Modelfile üretir.
 
-    notebook = {
-        "nbformat": 4,
-        "nbformat_minor": 5,
-        "metadata": {
-            "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"}
-        },
-        "cells": [
-            {
-                **c,
-                "metadata": {},
-                "id": f"cell_{i}",
-                "outputs": [],
-                "execution_count": None,
-            }
-            if c["cell_type"] == "code"
-            else {**c, "metadata": {}, "id": f"cell_{i}"}
-            for i, c in enumerate(cells)
-        ],
-    }
+    Doğrulanmış unsloth şablonunu (Qwen3-4B-Instruct-2507 → GGUF Q4_K_M → Ollama)
+    `app/training/cloud_notebook.py` üzerinden doldurur. Eski düz-transformers
+    notebook'u (5 bilinen hata: target_modules eksik, {messages} okunmuyor, uydurma
+    chat formatı, padding='max_length', GGUF export yok) tamamen değiştirildi.
+    Detay: docs/PROTOKOL_BULUT_EGITIM.md.
+    """
+    from app.training.cloud_notebook import build_stage2_notebook, write_modelfile
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(notebook, ensure_ascii=False, indent=2), encoding="utf-8")
-    logger.info("Colab notebook olusturuldu: %s", out_path)
+    build_stage2_notebook(
+        base_model=cfg.base_model,
+        adapter_name=cfg.adapter_output_path.name,
+        hf_dataset_repo=hf_dataset_repo,
+        max_seq_length=cfg.max_seq_length,
+        lora_r=cfg.lora_r,
+        learning_rate=cfg.learning_rate,
+        num_epochs=num_epochs,
+        out_path=out_path,
+    )
+    write_modelfile(out_path.parent)
+    logger.info("Stage 2 bulut notebook + Modelfile olusturuldu: %s", out_path)
     return out_path
 
 
