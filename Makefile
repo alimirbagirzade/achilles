@@ -3,7 +3,7 @@
 
 UV := $(shell command -v uv 2> /dev/null)
 
-.PHONY: help install test lint format typecheck run clean gen-data ci web web-start web-stop web-log
+.PHONY: help install test lint format typecheck run clean gen-data ci audit web web-start web-stop web-log
 
 help:
 	@echo "Hedefler:"
@@ -12,6 +12,7 @@ help:
 	@echo "  lint       - ruff check"
 	@echo "  format     - ruff format"
 	@echo "  typecheck  - mypy"
+	@echo "  audit      - bağımlılık güvenlik taraması (pip-audit, CVE)"
 	@echo "  ci         - lint + typecheck + test (CI ile aynı)"
 	@echo "  gen-data   - sentetik OHLCV üret"
 	@echo "  clean      - cache/artefakt temizle"
@@ -54,6 +55,14 @@ else
 endif
 
 ci: lint typecheck test
+
+# Bağımlılık güvenlik taraması — bilinen CVE'ler (PyPI advisory DB; ağ gerekir).
+audit:
+ifdef UV
+	uv run --with pip-audit pip-audit
+else
+	pip-audit
+endif
 
 gen-data:
 ifdef UV

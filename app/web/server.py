@@ -112,6 +112,16 @@ app = FastAPI(
 )
 
 _rate_limiter = security.RateLimiter(_settings.rate_limit_per_min)
+# Yükleme uçlarına ayrı, daha sıkı limit (ağ DoS / disk doldurma).
+_upload_rate_limiter = security.RateLimiter(_settings.upload_rate_limit_per_min)
+_UPLOAD_PATHS = ("/api/papers/upload", "/api/backtest/csv")
+
+# Host-header saldırısına karşı — yalnız trusted_hosts ayarlıysa (ağa açarken).
+_trusted_hosts = [h.strip() for h in _settings.trusted_hosts.split(",") if h.strip()]
+if _trusted_hosts:
+    from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=_trusted_hosts)
 
 
 @app.middleware("http")
@@ -120,6 +130,8 @@ async def _security_middleware(request: Request, call_next):
     if request.url.path.startswith("/api/"):
         try:
             _rate_limiter.check(security.client_ip(request))
+            if request.url.path in _UPLOAD_PATHS:
+                _upload_rate_limiter.check(security.client_ip(request))
         except Exception as exc:  # HTTPException
             from fastapi import HTTPException
 
@@ -132,6 +144,10 @@ async def _security_middleware(request: Request, call_next):
     response = await call_next(request)
     for k, v in security.SECURITY_HEADERS.items():
         response.headers.setdefault(k, v)
+    if _settings.hsts_enabled:  # yalnız TLS arkasında anlamlı
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=63072000; includeSubDomains"
+        )
     return response
 
 

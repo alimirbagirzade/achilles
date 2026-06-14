@@ -18,6 +18,11 @@ dışarı kapalı, katmanlı savunma.**
 | Veritabanı | SQL injection | SQLAlchemy ORM (parametreli sorgular) |
 | Strateji girdisi | Kod enjeksiyonu | `eval`/`exec` YOK; kurallar yalnız güvenli regex ile parse edilir |
 | Sırlar | Kod içinde sızıntı | `.env` (Git-ignore); kodda hardcoded sır yok |
+| Host başlığı | Host-header / DNS-rebinding | `TrustedHostMiddleware` — `ACHILLES_TRUSTED_HOSTS` ayarlıysa zorunlu |
+| Yükleme uçları | Disk doldurma / DoS | Boyut limiti + ayrı sıkı hız sınırı (`ACHILLES_UPLOAD_RATE_LIMIT_PER_MIN`) |
+| Bağımlılıklar | Bilinen CVE'li paket | `make audit` (pip-audit) + düzenli güncelleme |
+| Git geçmişi | Kazara sır commit'i | pre-commit: gitleaks + detect-private-key |
+| Aktarım | Token'ın düz HTTP'de açık gitmesi | TLS (reverse proxy) + `ACHILLES_HSTS_ENABLED=true` |
 
 ## Varsayılan davranış (güvenli)
 
@@ -26,18 +31,40 @@ dışarı kapalı, katmanlı savunma.**
 - Tüm yanıtlara güvenlik başlıkları eklenir.
 - Yüklenen PDF'ler `data/papers/raw_pdf/`, CSV'ler `data/market/raw/` içinde temizlenmiş adla saklanır (path-traversal korumalı).
 
-## Sunucuyu ağa/uzağa açacaksan (zorunlu adımlar)
+## Sunucuyu ağa / uzağa (kiralık CPU) açacaksan — sertleştirme checklist
 
-1. **Güçlü token ata**:
+> Lokal kullanımda bunların hiçbiri gerekmez. **Yalnız ağa açarken** (örn. uzaktan
+> kiralanan CPU) sırayla uygula. En güvenlisi: sunucuyu hiç internete açmamak.
+
+**P0 — açmadan ÖNCE (zorunlu):**
+
+1. **Güçlü token ata** (yoksa auth tamamen KAPALIDIR):
    ```bash
    # .env
    ACHILLES_API_TOKEN=$(openssl rand -hex 32)
    ```
-2. Tüm `/api/*` istekleri `Authorization: Bearer <token>` gerektirir.
-3. Tercihen bir **reverse proxy** (nginx/caddy) arkasında **TLS** ile sun.
-   Uygulamayı doğrudan internete koyma.
-4. Gerekirse `ACHILLES_WEB_HOST` ve `ACHILLES_CORS_ORIGINS`'i daralt.
-5. Hız sınırını sıkılaştır: `ACHILLES_RATE_LIMIT_PER_MIN`.
+   Tüm `/api/*` istekleri `Authorization: Bearer <token>` gerektirir.
+2. **Doğrudan internete AÇMA.** Tercih sırası:
+   - **VPN / SSH tüneli** (Tailscale, WireGuard, `ssh -L 8765:127.0.0.1:8765 …`) —
+     `ACHILLES_WEB_HOST=127.0.0.1` kalır, dışarıdan yalnız tünelle erişilir. **En iyisi.**
+   - Olmazsa **reverse proxy (Caddy/nginx) + TLS** + güvenlik duvarında **tek IP allowlist**.
+   - `ACHILLES_WEB_HOST=0.0.0.0` + public IP = **en kötü senaryo**, yapma.
+3. **TLS (HTTPS) şart** — token düz HTTP'de açık gider. Caddy otomatik TLS en kolayı.
+   TLS varsa: `ACHILLES_HSTS_ENABLED=true`.
+
+**P1 — uygulama knobları:**
+
+4. **Host-header koruması:** `ACHILLES_TRUSTED_HOSTS=alanadi.com,127.0.0.1`
+   (boşken kısıt yok; ayarlanınca `TrustedHostMiddleware` devreye girer).
+5. **Hız sınırlarını sıkılaştır:** `ACHILLES_RATE_LIMIT_PER_MIN` (ağda 120 yüksek),
+   yükleme için ayrıca `ACHILLES_UPLOAD_RATE_LIMIT_PER_MIN`.
+6. `ACHILLES_CORS_ORIGINS`'i kendi alan adına daralt; `ACHILLES_MAX_UPLOAD_MB`'yi makul tut.
+
+**P2 — operasyon / hijyen:**
+
+7. **Bağımlılık taraması:** `make audit` (pip-audit) — bilinen CVE'leri yakala, düzenli güncelle.
+8. **Sır taraması:** `uv run pre-commit install` → her commit'te gitleaks + private-key kontrolü.
+9. `storage/` (DB + adapter registry) **yedeği**; süreç en az yetkili kullanıcıyla; erişim logu izle.
 
 ## Bilinçli kapsam dışı (MVP)
 

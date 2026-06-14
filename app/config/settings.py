@@ -117,6 +117,12 @@ class Settings(BaseSettings):
     max_upload_mb: int = 100
     # Basit hız sınırı: IP başına dakikadaki istek.
     rate_limit_per_min: int = 120
+    # Yükleme uçlarına (PDF/CSV) ek, daha sıkı limit — ağ DoS / disk doldurma.
+    upload_rate_limit_per_min: int = 20
+    # Host-header saldırısı: boş = kısıt yok (lokal). Ağa açarken "alanadi.com,1.2.3.4" ver.
+    trusted_hosts: str = ""
+    # TLS (reverse proxy/HTTPS) arkasındaysan true → Strict-Transport-Security başlığı.
+    hsts_enabled: bool = False
 
     # --- Derived dirs (not env-configurable) ---
     @property
