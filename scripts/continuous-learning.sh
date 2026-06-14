@@ -47,15 +47,11 @@ while [ ! -f "$STOP" ] && [ "$(date +%s)" -lt "$END" ]; do
   round=$((round+1))
   log "──── TUR $round ────"
 
-  # --- 1) ZENGİNLEŞTİR: sıradaki konudan 3 makale --------------------------
-  IDX=$(cat "$STATE" 2>/dev/null || echo 0)
-  mapfile -t TOPICS < <(grep -v '^#' scripts/enrichment-topics.txt | grep -v '^[[:space:]]*$')
-  NT=${#TOPICS[@]}
-  TOPIC="${TOPICS[$((IDX % NT))]}"
-  echo $(( (IDX + 1) % NT )) > "$STATE"
-  log "1) Zenginleştir: '$TOPIC'"
-  timeout 1200 uv run achilles arxiv "$TOPIC" --max-results 3 --auto-ingest >> "$LOG" 2>&1 \
-    || log "   arxiv HATA/timeout (devam)"
+  # --- 1) ZENGİNLEŞTİR: KAPATILDI (2026-06-14, kullanıcı isteği) -----------
+  # Sistem kendi kendine arxiv'den makale ÇEKMEZ. Makaleler YALNIZCA kullanıcının
+  # web arayüzünden elle yüklediğiyle gelir. Döngü dış kaynak indirmez; yalnız
+  # MEVCUT (kullanıcı-onaylı) makaleler üzerinde kart/kavrama/synth-qa yapar.
+  log "1) Otomatik arxiv çekme DEVRE DIŞI (yalnız elle yükleme)"
 
   # --- 2) KAVRA: kartsızlara kart + içerikli onay + anlama skoru -----------
   PIDS=$(uv run python -c "
