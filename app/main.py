@@ -1633,6 +1633,44 @@ def synth_qa_bulk(
         )
 
 
+@app.command("lora-split")
+def lora_split(
+    source: Path = typer.Option(
+        Path("data/lora_sft/lora_sft.jsonl"), "--source", help="Bölünecek birleşik JSONL"
+    ),
+    valid_ratio: float = typer.Option(0.05, "--valid-ratio", help="Doğrulama oranı"),
+    seed: int = typer.Option(42, "--seed", help="Determinist bölme (CLAUDE.md kural 6)"),
+) -> None:
+    """Birleşik dataset'i (lora_sft.jsonl) train/valid'e böl → jsonl_dir.
+
+    Lokal/uzak PEFT eğitimi `data/training/jsonl/{train,valid}.jsonl` okur. Bu komut
+    1266-örneklik birleşik dataset'i (synth-qa + kart) o yola yazar. Eğitim BAŞLATMAZ.
+    """
+    import random
+
+    settings = get_settings()
+    src = source if source.is_absolute() else (settings.root / source)
+    if not src.exists():
+        console.print(f"[red]Kaynak yok:[/red] {src} — önce 'lora-cloud-prep' çalıştır.")
+        raise typer.Exit(code=1)
+
+    lines = [ln for ln in src.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    if not lines:
+        console.print("[yellow]Kaynak boş.[/yellow]")
+        return
+    random.Random(seed).shuffle(lines)
+    n_valid = max(1, int(len(lines) * valid_ratio)) if len(lines) > 1 else 0
+    valid, train = lines[:n_valid], lines[n_valid:]
+
+    jd = settings.jsonl_dir
+    jd.mkdir(parents=True, exist_ok=True)
+    (jd / "train.jsonl").write_text("\n".join(train) + ("\n" if train else ""), encoding="utf-8")
+    (jd / "valid.jsonl").write_text("\n".join(valid) + ("\n" if valid else ""), encoding="utf-8")
+    console.print(
+        f"[green]✓[/green] train=[bold]{len(train)}[/bold] valid=[bold]{len(valid)}[/bold] → {jd}"
+    )
+
+
 @app.command("lora-readiness")
 def lora_readiness(
     threshold: int = typer.Option(
