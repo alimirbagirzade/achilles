@@ -112,6 +112,77 @@ Script şunları yapar: sunucuyu durdur → yerel değişiklikleri sakla → `gi
 
 ---
 
+## 🟢 EN BASİT KULLANIM (yeni başlayan için, adım adım)
+
+> Hiç teknik bilgi gerekmez. 3 şey yaparsın: **aç → makale ekle → soru sor.**
+
+### 1) Web arayüzünü aç
+Tarayıcıda şunu yaz:  **http://127.0.0.1:8765**
+(Açılmıyorsa terminalde: `uv run achilles-web` yaz, sonra tekrar aç.)
+
+### 2) Makale ekle (kendi PDF'lerin)
+- Üstte **02 · MAKALELER** sekmesine tıkla.
+- PDF'leri kutuya **sürükle-bırak** (birden fazlasını birden seçebilirsin, maks 100 MB).
+- Sistem otomatik okur ve indeksler. **Aynı makaleyi 2 kez yüklersen otomatik atlar.**
+
+### 3) Soru sor
+- **01 · ARAŞTIRMA** sekmesine git.
+- Sorunu yaz (örn. _"Momentum yüksek volatilitede nasıl çalışır?"_) → **SORGULA**.
+- Cevap **yalnızca senin makalelerine** dayanır; kaynak yoksa "bulunamadı" der (uydurmaz).
+
+### Sekmeler ne işe yarar? (9 sekme)
+| Sekme | Ne yapar (basitçe) |
+|-------|--------------------|
+| **01 ARAŞTIRMA** | Soru sor → makalelerden kaynaklı cevap (hipotez + test noktası) |
+| **02 MAKALELER** | PDF yükle / kütüphaneni gör |
+| **03 TRADER BEYİN** | Çıkarılan formüller ve kavramlar |
+| **04 BACKTEST** | Stratejiyi sentetik/CSV veriyle test et (maliyet dahil) |
+| **05 EĞİTİM** | LoRA eğitim durumu / başlatma |
+| **06 ONAY** | Üretilen bilgi kartlarını onayla/ele |
+| **07 DEĞERLENDİRME** | Modeli güvenlik/disiplin testinden geçir |
+| **08 SİSTEM** | Model, RAM, makale/parça sayısı — genel durum |
+| **09 ÖĞRENME** | Otomatik öğrenme döngüsünün panosu (aşağıya bak) |
+
+> İlk kez: **08 SİSTEM** ile durumu gör → **02** makale ekle → **01** soru sor.
+
+---
+
+## 🔄 OTOMATİK ÖĞRENME DÖNGÜSÜ (Loop) — adım adım
+
+Arka planda çalışan, sistemi sürekli geliştiren döngü. **Her turda sırayla:**
+
+1. **KART ÜRET** — senin yüklediğin (kartı olmayan) makalelere bilgi kartı çıkarır.
+2. **ONAYLA + SKORLA** — içerikli kartları onaylar, "ne kadar anladı" skoru verir.
+3. **SENTEZLE** — her 3 turda bir: araştırma hipotezi + sentez makalesi üretir.
+4. **VERİ ÜRET** — makalelerden sentetik soru-cevap (LoRA eğitim verisi) üretir, birikir.
+
+> ⚠️ **ÖNEMLİ:** Döngü **kendi kendine internetten makale ÇEKMEZ** (o özellik kapatıldı).
+> Yalnızca **senin elle yüklediğin** makaleler üzerinde çalışır. Kontrol tamamen sende.
+
+### Elle başlat / durdur (komutlar)
+```powershell
+# Başlat (72 saat çalışır):
+.\scripts\start-loop.ps1
+#   veya doğrudan:  bash scripts/continuous-learning.sh 72
+
+# Durdur:
+.\scripts\start-loop.ps1 -Stop
+#   veya:  New-Item storage\STOP_LEARNING   (tur bitince temiz durur)
+
+# Durum gör:
+.\scripts\start-loop.ps1 -Status
+```
+
+### Otomatik başlatma (her Windows açılışında kendiliğinden)
+```powershell
+# Aç (bir kez çalıştır — her login'de döngü otomatik başlar):
+.\scripts\start-loop.ps1 -Install
+
+# Kapat (otomatik başlatmayı geri al):
+.\scripts\start-loop.ps1 -Uninstall
+```
+> Akıllı koruma: **eğitim (LoRA) çalışıyorsa döngü otomatik ertelenir** — ikisi çakışmaz.
+
 ---
 
 ## 📊 Sistem Durumu
