@@ -1755,7 +1755,7 @@
         URL.revokeObjectURL(url);
         toast(".achpkg indirildi ✓");
       })
-      .catch(function (err) { toast("İndirme hatası: " + esc(err.message), true); });
+      .catch(function (err) { toast("İndirme hatası: " + esc(err.message || "Bilinmeyen hata"), true); });
   }
 
   // ---------- Pine Script modal ----------
@@ -2056,9 +2056,10 @@
 
   // ---------- token ----------
   var tokenInput = document.getElementById("tokenInput");
-  tokenInput.value = getToken();
-  document.getElementById("saveToken").addEventListener("click", function () {
-    setToken(tokenInput.value.trim());
+  if (tokenInput) tokenInput.value = getToken();
+  var saveTokenBtn = document.getElementById("saveToken");
+  if (saveTokenBtn) saveTokenBtn.addEventListener("click", function () {
+    setToken(tokenInput ? tokenInput.value.trim() : "");
     toast("Token kaydedildi.");
     refreshStatus();
   });
@@ -2081,12 +2082,12 @@
     var label = _STAGE_LABELS[d.stage] || d.stage;
     var color = _STAGE_COLORS[d.stage] || '#94a3b8';
     var rows = [
-      ['Durum', '<strong style="color:' + color + '">' + label + '</strong>'],
-      ['Onaylı kart', d.approved_cards_at_last_check + ' / min ' + d.min_eligible_cards],
-      ['Son kontrol', d.last_check ? d.last_check.slice(0,16).replace('T',' ') : '—'],
-      ['Gate özeti', d.gate_summary || '—'],
-      ['Adapter', d.adapter_id || '—'],
-      ['Hata', d.last_error || '—']
+      ['Durum', '<strong style="color:' + color + '">' + esc(label) + '</strong>'],
+      ['Onaylı kart', esc(d.approved_cards_at_last_check) + ' / min ' + esc(d.min_eligible_cards)],
+      ['Son kontrol', d.last_check ? esc(d.last_check.slice(0,16).replace('T',' ')) : '—'],
+      ['Gate özeti', esc(d.gate_summary || '—')],
+      ['Adapter', esc(d.adapter_id || '—')],
+      ['Hata', esc(d.last_error || '—')]
     ];
     var html = '<table style="width:100%;border-collapse:collapse;font-size:12px">';
     rows.forEach(function(r) {
@@ -2108,8 +2109,7 @@
   function loadAutoLoraStatus() {
     var body = document.getElementById('autoLoraStatusBody');
     if (!body) return;
-    fetch('/api/auto-lora/status')
-      .then(function(r) { return r.json(); })
+    api('/auto-lora/status', { method: 'GET' })  // api() = auth header + hata yönetimi
       .then(function(d) { body.innerHTML = renderAutoLoraStatus(d); })
       .catch(function() { body.innerHTML = '<span class="muted small">Durum alınamadı</span>'; });
   }
@@ -2132,52 +2132,54 @@
   if (autoLoraRefreshBtn) autoLoraRefreshBtn.addEventListener('click', loadAutoLoraStatus);
 
   if (autoLoraEnableBtn) autoLoraEnableBtn.addEventListener('click', function() {
-    fetch('/api/auto-lora/enable?enabled=true', {method:'POST'})
-      .then(function() { autoLoraMsg('Otomatik kontrol açıldı.', true); loadAutoLoraStatus(); });
+    api('/auto-lora/enable?enabled=true', { method: 'POST' })
+      .then(function() { autoLoraMsg('Otomatik kontrol açıldı.', true); loadAutoLoraStatus(); })
+      .catch(function(e) { autoLoraMsg('Bağlantı hatası: ' + e.message, false); });
   });
   if (autoLoraDisableBtn) autoLoraDisableBtn.addEventListener('click', function() {
-    fetch('/api/auto-lora/enable?enabled=false', {method:'POST'})
-      .then(function() { autoLoraMsg('Otomatik kontrol kapatıldı.', true); loadAutoLoraStatus(); });
+    api('/auto-lora/enable?enabled=false', { method: 'POST' })
+      .then(function() { autoLoraMsg('Otomatik kontrol kapatıldı.', true); loadAutoLoraStatus(); })
+      .catch(function(e) { autoLoraMsg('Bağlantı hatası: ' + e.message, false); });
   });
   if (autoLoraCheckBtn) autoLoraCheckBtn.addEventListener('click', function() {
     autoLoraMsg('Gate 0-8 kontrol ediliyor…', true);
-    fetch('/api/auto-lora/check', {method:'POST'})
-      .then(function(r) { return r.json(); })
+    api('/auto-lora/check', { method: 'POST' })
       .then(function(d) {
         autoLoraMsg(d.ok ? 'Gate geçti: ' + (d.summary||'') : 'Gate başarısız: ' + (d.reason||''), d.ok);
         loadAutoLoraStatus();
-      }).catch(function() { autoLoraMsg('Bağlantı hatası', false); });
+      }).catch(function(e) { autoLoraMsg('Bağlantı hatası: ' + e.message, false); });
   });
   if (autoLoraTrainBtn) autoLoraTrainBtn.addEventListener('click', function() {
     var nameEl = document.getElementById('autoLoraAdapterName') || document.getElementById('trAdapterName');
     var itersEl = document.getElementById('autoLoraIters') || document.getElementById('drIterations');
     var name = (nameEl && nameEl.value.trim()) || ('achilles_auto_' + Date.now());
     var iters = parseInt((itersEl && itersEl.value) || '300', 10);
-    if (!name) { autoLoraMsg('Adapter adı boş bırakılamaz.', false); return; }
+    // Backend ile aynı kısıt (path-traversal/arg güvenliği) — erken, net geri bildirim.
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(name)) {
+      autoLoraMsg('Adapter adı yalnız harf, rakam, _ ve - içerebilir (en çok 64).', false); return;
+    }
     if (iters < 50 || iters > 5000) { autoLoraMsg('İterasyon 50–5000 arasında olmalı.', false); return; }
     if (!confirm('Eğitim başlatılacak:\nAdapter: ' + name + '\nİterasyon: ' + iters + '\n\nOnaylıyor musun?')) return;
     autoLoraMsg('Eğitim başlatılıyor…', true);
-    fetch('/api/auto-lora/train?adapter_name=' + encodeURIComponent(name) + '&iters=' + iters, {method:'POST'})
-      .then(function(r) { return r.json(); })
+    api('/auto-lora/train?adapter_name=' + encodeURIComponent(name) + '&iters=' + iters, { method: 'POST' })
       .then(function(d) {
-        autoLoraMsg(d.ok ? '✓ Eğitim başladı: ' + d.adapter_name + ' (' + iters + ' iter)' : 'Hata: ' + (d.reason || 'bilinmiyor'), d.ok);
+        autoLoraMsg(d.ok ? '✓ Eğitim başladı: ' + esc(d.adapter_name) + ' (' + iters + ' iter)' : 'Hata: ' + (d.reason || 'bilinmiyor'), d.ok);
         loadAutoLoraStatus();
-      }).catch(function() { autoLoraMsg('Bağlantı hatası', false); });
+      }).catch(function(e) { autoLoraMsg('Bağlantı hatası: ' + e.message, false); });
   });
   if (autoLoraPromoteBtn) autoLoraPromoteBtn.addEventListener('click', function() {
     if (!confirm('Bu adapter production\'a terfi ettirilecek. Onaylıyor musun?')) return;
-    fetch('/api/auto-lora/promote', {method:'POST'})
-      .then(function(r) { return r.json(); })
+    api('/auto-lora/promote', { method: 'POST' })
       .then(function(d) {
-        autoLoraMsg(d.ok ? 'Terfi edildi: '+d.adapter_id : 'Hata: '+d.reason, d.ok);
+        autoLoraMsg(d.ok ? 'Terfi edildi: ' + esc(d.adapter_id) : 'Hata: ' + (d.reason || 'bilinmiyor'), d.ok);
         loadAutoLoraStatus();
-      });
+      }).catch(function(e) { autoLoraMsg('Bağlantı hatası: ' + e.message, false); });
   });
   if (autoLoraResetBtn) autoLoraResetBtn.addEventListener('click', function() {
     if (!confirm('Pipeline IDLE\'a sıfırlanacak. Devam?')) return;
-    fetch('/api/auto-lora/reset', {method:'POST'}).then(function() {
-      autoLoraMsg('Sıfırlandı.', true); loadAutoLoraStatus();
-    });
+    api('/auto-lora/reset', { method: 'POST' })
+      .then(function() { autoLoraMsg('Sıfırlandı.', true); loadAutoLoraStatus(); })
+      .catch(function(e) { autoLoraMsg('Bağlantı hatası: ' + e.message, false); });
   });
 
   loadAutoLoraStatus();
@@ -2336,11 +2338,11 @@
       const pct = (r.pass_rate * 100).toFixed(1);
       const color = r.pass_rate >= 0.5 ? '#4a4' : '#a44';
       html += `<tr>
-        <td style="padding:.3rem .5rem;font-family:monospace">${r.adapter_name}</td>
-        <td style="padding:.3rem .5rem">${r.eval_set}</td>
+        <td style="padding:.3rem .5rem;font-family:monospace">${esc(r.adapter_name)}</td>
+        <td style="padding:.3rem .5rem">${esc(r.eval_set)}</td>
         <td style="text-align:right;padding:.3rem .5rem;color:${color}"><strong>${pct}%</strong></td>
-        <td style="text-align:right;padding:.3rem .5rem">${r.passed_items}/${r.total_items}</td>
-        <td style="padding:.3rem .5rem;color:#888;font-size:.75rem">${(r.scored_at||'').slice(0,10)}</td>
+        <td style="text-align:right;padding:.3rem .5rem">${r.passed_items || 0}/${r.total_items || 0}</td>
+        <td style="padding:.3rem .5rem;color:#888;font-size:.75rem">${esc((r.scored_at||'').slice(0,10))}</td>
       </tr>`;
     });
     html += '</tbody></table>';
@@ -2351,32 +2353,28 @@
 
   async function loadLearningDashboard() {
     try {
-      const [sumRes, evalRes, runsRes, growthRes] = await Promise.all([
-        fetch('/api/learning/summary'),
-        fetch('/api/learning/eval-history'),
-        fetch('/api/learning/training-runs'),
-        fetch('/api/learning/card-growth'),
+      const [sum, evalData, runsData, growthData] = await Promise.all([
+        api('/learning/summary', { method: 'GET' }),       // api() = auth header + hata
+        api('/learning/eval-history', { method: 'GET' }),
+        api('/learning/training-runs', { method: 'GET' }),
+        api('/learning/card-growth', { method: 'GET' }),
       ]);
-      const sum = await sumRes.json();
       document.getElementById('lrn-papers').textContent  = sum.n_papers   ?? '—';
       document.getElementById('lrn-chunks').textContent  = sum.n_chunks   ?? '—';
       document.getElementById('lrn-approved').textContent= sum.n_approved_cards ?? '—';
       document.getElementById('lrn-pending').textContent = sum.n_pending_cards  ?? '—';
 
-      const evalData = await evalRes.json();
       renderEvalTable(evalData.rows || []);
 
-      const runsData = await runsRes.json();
       _lrnRuns = runsData.runs || [];
       const sel = document.getElementById('lrnRunSelect');
       if (sel) {
         sel.innerHTML = _lrnRuns.length
-          ? _lrnRuns.map((r, i) => `<option value="${i}">${r.adapter_name}</option>`).join('')
+          ? _lrnRuns.map((r, i) => `<option value="${i}">${esc(r.adapter_name)}</option>`).join('')
           : '<option value="">— yok —</option>';
         if (_lrnRuns.length) renderLossCurve(_lrnRuns[0].curve);
       }
 
-      const growthData = await growthRes.json();
       renderCardGrowth(growthData.rows || []);
     } catch (e) {
       console.error('learning dashboard yüklenemedi', e);
@@ -2449,6 +2447,18 @@
     }
     var meta = document.getElementById("trainMeta");
     if (meta && t.adapter) meta.textContent = "Adapter: " + t.adapter + "  ·  kaynak: detached";
+    // Detached eğitimde SSE beslenmez → son log satırlarını çekip göster (boş kalmasın).
+    var logEl = document.getElementById("trainLog");
+    if (logEl) {
+      api("/training/logs?lines=40", { method: "GET" })
+        .then(function (d) {
+          if (d && d.lines && d.lines.length) {
+            logEl.textContent = d.lines.join("\n");
+            logEl.scrollTop = logEl.scrollHeight;
+          }
+        })
+        .catch(function () {});
+    }
   }
 
   function refreshTrain() {

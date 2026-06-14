@@ -35,7 +35,9 @@ MIN_READY_EXAMPLES = 200
 _SPLIT_SEED = 42
 _VALID_RATIO = 0.05
 # Log'a son yazımdan bu kadar dakika geçmediyse eğitim "canlı" sayılır.
-_LIVE_LOG_AGE_MIN = 15.0
+# Yavaş CPU eğitiminde adım ~dakikalar sürer + log seyrek yazılabilir → 45 dk
+# (tamamlanma zaten step>=total ile anında algılanır; bu yalnız ara boşluklar için).
+_LIVE_LOG_AGE_MIN = 45.0
 # Geçerli adapter adı (path traversal/CLI argüman güvenliği): yalnız harf/rakam/_/-.
 _ADAPTER_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 # Çift-başlatma yarışını kapatan atomik kilit (log yazılmadan önceki pencere için).

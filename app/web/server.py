@@ -313,6 +313,7 @@ def api_ask(req: AskRequest) -> AskResponse:
         except MlxLLMUnavailable as exc:
             answer = f"[MLX adapter kullanılamadı: {exc}]"
             llm_used = False
+            adapter_used = None  # adapter başarısız → yanıtta adapter iddia etme
 
         sources = [
             SourceOut(
@@ -1024,14 +1025,14 @@ def api_training_colab_notebook() -> Response:
     )
 
 
-@app.get("/api/training/progress")
+@app.get("/api/training/progress", dependencies=[api_auth])
 def api_training_progress() -> dict:
     from app.web.training_manager import get_training_manager
 
     return get_training_manager().progress.to_dict()
 
 
-@app.get("/api/training/live")
+@app.get("/api/training/live", dependencies=[api_auth])
 def api_training_live() -> dict:
     """Gercek egitim durumu (ust-bar rozeti icin).
 
@@ -1044,11 +1045,37 @@ def api_training_live() -> dict:
     return training_status()
 
 
+@app.get("/api/training/logs", dependencies=[api_auth])
+def api_training_logs(lines: int = 40) -> dict:
+    """Detached eğitim için son log satırları (SSE beslenmeyen durumda sekme gösterimi)."""
+    s = get_settings()
+    logf = s.root / "logs" / "train-full-err.log"
+    if not logf.exists():
+        return {"lines": []}
+    try:
+        raw = logf.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return {"lines": []}
+    # tqdm \r ile satır üzerine yazar → \r ve \n'e böl, anlamlı son satırları al.
+    parts = [p.strip() for p in raw.replace("\r", "\n").split("\n") if p.strip()]
+    n = max(1, min(int(lines), 200))
+    return {"lines": parts[-n:]}
+
+
 @app.get("/api/training/stream")
 async def api_training_stream(request: Request) -> Response:
     import json
+    import secrets as _secrets
 
+    from fastapi import HTTPException as _HTTPException
     from fastapi.responses import StreamingResponse
+
+    # EventSource özel başlık gönderemez → token query param ile doğrulanır.
+    _tok = get_settings().api_token.strip()
+    if _tok:
+        _provided = (request.query_params.get("token") or "").strip()
+        if not _secrets.compare_digest(_provided.encode("utf-8"), _tok.encode("utf-8")):
+            raise _HTTPException(status_code=401, detail="Geçersiz veya eksik API token.")
 
     from app.web.training_manager import get_training_manager
 
@@ -1372,7 +1399,7 @@ def api_backtest_pine(backtest_id: str) -> PineExportResponse:
 
 
 # ---------- arXiv makale arama ve indirme ----------
-@app.get("/api/learning/summary")
+@app.get("/api/learning/summary", dependencies=[api_auth])
 def api_learning_summary() -> dict:
     """Makale / chunk / kart istatistikleri — dashboard özeti."""
     from sqlalchemy import func
@@ -1401,7 +1428,7 @@ def api_learning_summary() -> dict:
     }
 
 
-@app.get("/api/learning/eval-history")
+@app.get("/api/learning/eval-history", dependencies=[api_auth])
 def api_learning_eval_history() -> dict:
     """Tüm adapter versiyonlarının eval skor geçmişi."""
     from app.memory.sqlite_store import SqliteStore
@@ -1410,7 +1437,7 @@ def api_learning_eval_history() -> dict:
     return {"rows": rows}
 
 
-@app.get("/api/learning/training-runs")
+@app.get("/api/learning/training-runs", dependencies=[api_auth])
 def api_learning_training_runs() -> dict:
     """Kayıtlı loss curve JSON dosyalarını listele."""
     import json as _json
@@ -1439,7 +1466,7 @@ def api_learning_training_runs() -> dict:
     return {"runs": runs}
 
 
-@app.get("/api/learning/card-growth")
+@app.get("/api/learning/card-growth", dependencies=[api_auth])
 def api_learning_card_growth() -> dict:
     """Günlük onaylı kart büyüme verisi."""
     from app.memory.sqlite_store import SqliteStore
@@ -1497,7 +1524,7 @@ def api_model_recommend() -> dict:
     return {"recommended": recommended, "rejected": rejected}
 
 
-@app.get("/api/auto-lora/status")
+@app.get("/api/auto-lora/status", dependencies=[api_auth])
 async def api_auto_lora_status() -> dict:
     """Auto-LoRA pipeline durumu."""
     from app.lora.auto_pipeline import get_auto_pipeline

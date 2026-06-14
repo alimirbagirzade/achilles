@@ -191,7 +191,7 @@
             LLM tüm formülleri sentezler → yeni indikatör önerir → backtest eder → yansıtır → iyileştirir.
           </p>
           <div class="research-form">
-            <textarea id="researchQuestion" rows="3"
+            <textarea id="researchQuestion" rows="3" maxlength="1000"
               placeholder="örn: Momentum göstergelerini yüksek volatilite dönemlerinde nasıl filtreleriz? RSI + ATR kombinasyonu çalışır mı?"></textarea>
             <div class="research-row">
               <label>Maksimum iterasyon
@@ -331,6 +331,7 @@
           <h3>1 · Veri Seti</h3>
           <p class="muted small">Onaylı bilgi kartlarından train/valid JSONL oluşturur.</p>
           <button class="btn btn-primary" id="buildDatasetBtn">DATASET OLUŞTUR</button>
+          <div id="trainingStatus" class="muted small" style="margin-top:8px"></div>
           <div id="datasetResult" class="result hidden"></div>
         </div>
 

@@ -113,7 +113,10 @@ class TrainingManager:
 
     def _read_output(self) -> None:
         proc = self._proc
-        assert proc and proc.stdout
+        # assert yerine açık guard: -O (optimize) modunda assert kaybolur, None deref'i
+        # önlemek için erken dön (yaris/durma anında proc None olabilir).
+        if proc is None or proc.stdout is None:
+            return
         try:
             for raw in proc.stdout:
                 line = raw.rstrip()
@@ -143,11 +146,13 @@ class TrainingManager:
             self._progress.train_loss = float(m.group(2))
             total = self._progress.total_iters or 1
             self._progress.pct = min(it / total * 100, 100.0)
-            self._progress.loss_curve.append({
-                "iter": it,
-                "train_loss": self._progress.train_loss,
-                "val_loss": self._progress.val_loss,
-            })
+            self._progress.loss_curve.append(
+                {
+                    "iter": it,
+                    "train_loss": self._progress.train_loss,
+                    "val_loss": self._progress.val_loss,
+                }
+            )
 
         m = _VAL_RE.search(line)
         if m:
@@ -161,11 +166,13 @@ class TrainingManager:
         m = _PEFT_LOSS_RE.search(line)
         if m:
             self._progress.train_loss = float(m.group(1))
-            self._progress.loss_curve.append({
-                "iter": self._progress.current_iter,
-                "train_loss": self._progress.train_loss,
-                "val_loss": self._progress.val_loss,
-            })
+            self._progress.loss_curve.append(
+                {
+                    "iter": self._progress.current_iter,
+                    "train_loss": self._progress.train_loss,
+                    "val_loss": self._progress.val_loss,
+                }
+            )
 
         m = _PEFT_EVAL_RE.search(line)
         if m:
@@ -189,13 +196,18 @@ class TrainingManager:
             out_dir = Path("reports") / "training"
             out_dir.mkdir(parents=True, exist_ok=True)
             out = out_dir / f"{self._progress.adapter_name}_loss.json"
-            out.write_text(json.dumps({
-                "adapter_name": self._progress.adapter_name,
-                "started_at": self._progress.started_at,
-                "finished_at": self._progress.finished_at,
-                "total_iters": self._progress.total_iters,
-                "curve": self._progress.loss_curve,
-            }, indent=2))
+            out.write_text(
+                json.dumps(
+                    {
+                        "adapter_name": self._progress.adapter_name,
+                        "started_at": self._progress.started_at,
+                        "finished_at": self._progress.finished_at,
+                        "total_iters": self._progress.total_iters,
+                        "curve": self._progress.loss_curve,
+                    },
+                    indent=2,
+                )
+            )
         except Exception:
             pass
 
@@ -207,6 +219,7 @@ class TrainingManager:
             except asyncio.QueueFull:
                 dead.append(q)
         import contextlib
+
         for q in dead:
             with contextlib.suppress(ValueError):
                 self._subscribers.remove(q)
@@ -226,6 +239,7 @@ class TrainingManager:
                     break
         finally:
             import contextlib
+
             with contextlib.suppress(ValueError):
                 self._subscribers.remove(q)
 
