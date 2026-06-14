@@ -481,18 +481,20 @@ Soruyu yaz → Sentezle → Strateji öner → Backtest → Değerlendir → İy
 **Akış:**
 
 ```
-02 MAKALELER → Kart üret
+02 MAKALELER → kart + sentetik soru-cevap üretilir (data/lora_sft/lora_sft.jsonl)
       ↓
-05 EĞİTİM → DATASET OLUŞTUR   (bilgi kartlarından JSONL)
+05 EĞİTİM → veri hazır olunca → TEK TIK BAŞLAT
+            (üst-bar "▶ EĞİTİME HAZIR" rozeti  veya  sekmedeki "▶ EĞİTİMİ BAŞLAT")
       ↓
-      KOMUT ÖNIZLE             (eğitim komutunu gösterir, çalıştırmaz)
+Eğitim DETACHED çalışır — web/terminal kapansa da sürer (PC açık kaldıkça)
       ↓
-Terminal → achilles train --run  (gerçekten eğitir — macOS M1/M2/M3/M4)
-      ↓
-Adapter kaydedilir → 01 ARAŞTIRMA'da seçilebilir
+Adapter kaydedilir → 01 ARAŞTIRMA'da "model" menüsünden seçilir
 ```
 
-> 🔒 **Web arayüzü eğitimi başlatmaz** — güvenlik gereği. Terminal gerekir.
+> ▶ **Web'den tek tıkla** (üst-bar "EĞİTİME HAZIR" rozeti / sekmedeki BAŞLAT, onay sorulur)
+> **veya terminalden** (`uv run achilles train --run` · Windows'ta `.\scripts\start-train.ps1`)
+> başlatılır. Eğitim her durumda **DETACHED** çalışır — başlatan pencere kapansa da sürer.
+> Backend otomatik seçilir: macOS Apple Silicon → MLX, Windows/Linux → PEFT/CPU.
 
 ---
 
