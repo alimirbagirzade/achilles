@@ -24,6 +24,7 @@ $ScriptDir  = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $My
 $ProjectDir = Split-Path -Parent $ScriptDir
 $LogOut     = Join-Path $ProjectDir "logs\train-full.log"
 $LogErr     = Join-Path $ProjectDir "logs\train-full-err.log"
+$StatusFile = Join-Path $ProjectDir "storage\train_status.json"
 
 function Find-Uv {
     $fromPath = (Get-Command uv -ErrorAction SilentlyContinue).Source
@@ -54,6 +55,7 @@ if ($Stop) {
     $p = Get-TrainProcs
     if ($p) { $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Write-Host "  [OK] Egitim durduruldu." -ForegroundColor Yellow }
     else    { Write-Host "  Zaten calismiyor." -ForegroundColor Gray }
+    Remove-Item $StatusFile -Force -ErrorAction SilentlyContinue
     exit 0
 }
 
@@ -74,6 +76,10 @@ Start-Process -FilePath $uv `
     -RedirectStandardOutput $LogOut `
     -RedirectStandardError $LogErr `
     -WindowStyle Hidden
+# Rozet/durum icin: adapter adini storage'a yaz (web /api/training/live okur)
+$null = New-Item -ItemType Directory -Path (Split-Path $StatusFile) -Force
+('{"adapter":"' + $Adapter + '","dtype":"' + $Dtype + '","iterations":' + $Iterations + '}') |
+    Out-File -FilePath $StatusFile -Encoding ascii -Force
 Write-Host "  [OK] Egitim DETACHED baslatildi (dtype=$Dtype, adapter=$Adapter, iters=$Iterations)." -ForegroundColor Green
 Write-Host "       Claude Code/terminal kapansa da surer. PC acik + oturum acik kalmali." -ForegroundColor Cyan
 Write-Host "       Ilerleme: logs\train-full-err.log" -ForegroundColor Gray

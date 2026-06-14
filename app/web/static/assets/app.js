@@ -2398,7 +2398,35 @@
     btn.addEventListener('click', loadLearningDashboard);
   });
 
+  // ---------- egitim rozeti (ust bar) ----------
+  // Gercek egitim durumunu gosterir: web'den VEYA detached/CLI ile baslatilan.
+  function refreshTrain() {
+    var el = document.getElementById("trainBadge");
+    if (!el) return;
+    api("/training/live", { method: "GET" })
+      .then(function (t) {
+        if (t && t.running) {
+          el.className = "conn-ok";
+          el.style.fontWeight = "700";
+          var who = t.adapter ? (" " + t.adapter) : "";
+          var eta = t.eta ? ("  ETA " + t.eta) : "";
+          el.textContent = "🔴 EĞİTİM:" + who + " " + t.step + "/" + t.total + " (%" + t.pct + ")" + eta;
+          el.title = "Eğitim çalışıyor (" + (t.source === "web" ? "web" : "detached/CLI") + ") — adapter: " + (t.adapter || "LoRA");
+        } else {
+          el.className = "muted";
+          el.style.fontWeight = "400";
+          el.textContent = "eğitim yok";
+          el.title = "Aktif LoRA eğitimi yok";
+        }
+      })
+      .catch(function () {
+        el.textContent = "eğitim: —";
+      });
+  }
+
   // ---------- init ----------
   refreshStatus();
   setInterval(refreshStatus, 30000);
+  refreshTrain();
+  setInterval(refreshTrain, 15000);
 })();

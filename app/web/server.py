@@ -1079,6 +1079,72 @@ def api_training_progress() -> dict:
     return get_training_manager().progress.to_dict()
 
 
+@app.get("/api/training/live")
+def api_training_live() -> dict:
+    """Gercek egitim durumu (ust-bar rozeti icin).
+
+    Hem web'den baslatilani (training_manager) HEM de detached/CLI ile baslatilani
+    (logs/train-full-err.log tqdm satirindan) algilar. Calismiyorsa running=False.
+    """
+    import contextlib as _ctx
+    import json as _json
+    import re as _re
+    import time as _time
+
+    s = get_settings()
+
+    # 1) Web'den baslatilan egitim (training_manager)
+    try:
+        from app.web.training_manager import get_training_manager
+
+        prog = get_training_manager().progress
+        state = getattr(getattr(prog, "state", None), "value", "")
+        if state == "running":
+            return {
+                "running": True,
+                "source": "web",
+                "adapter": getattr(prog, "adapter_name", "LoRA"),
+                "step": getattr(prog, "current_iter", 0),
+                "total": getattr(prog, "total_iters", 0),
+                "pct": round(getattr(prog, "pct", 0.0), 1),
+                "eta": "",
+            }
+    except Exception:
+        pass
+
+    # 2) Detached/CLI egitim — log tazeligi + tqdm satiri
+    log = s.root / "logs" / "train-full-err.log"
+    if log.exists():
+        age_min = (_time.time() - log.stat().st_mtime) / 60.0
+        if age_min < 15:  # son 15 dk yazilmissa egitim aktif sayilir
+            try:
+                txt = log.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                txt = ""
+            # tqdm orn: "30/1203 [1:28:58<48:43:23, 149.53s/it]"
+            m = _re.findall(r"(\d+)/(\d+)\s*\[[^<\]]*<([^,\]]*)", txt)
+            if m:
+                step, total, eta = int(m[-1][0]), int(m[-1][1]), m[-1][2].strip()
+                if total > 0 and step < total:
+                    adapter = "LoRA"
+                    st = s.root / "storage" / "train_status.json"
+                    if st.exists():
+                        with _ctx.suppress(Exception):
+                            adapter = _json.loads(st.read_text(encoding="utf-8")).get(
+                                "adapter", "LoRA"
+                            )
+                    return {
+                        "running": True,
+                        "source": "detached",
+                        "adapter": adapter,
+                        "step": step,
+                        "total": total,
+                        "pct": round(step * 100 / total, 1),
+                        "eta": eta,
+                    }
+    return {"running": False}
+
+
 @app.get("/api/training/stream")
 async def api_training_stream(request: Request) -> Response:
     import json
