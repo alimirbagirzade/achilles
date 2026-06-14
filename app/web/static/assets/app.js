@@ -2406,20 +2406,21 @@
     api("/training/live", { method: "GET" })
       .then(function (t) {
         if (t && t.running) {
-          el.className = "conn-ok";
-          el.style.fontWeight = "700";
+          el.className = "train-live"; // nabız atan nokta (CSS) + turuncu — CVD-safe
+          el.style.fontWeight = "";
           var who = t.adapter ? (" " + t.adapter) : "";
           var eta = t.eta ? ("  ETA " + t.eta) : "";
-          el.textContent = "🔴 EĞİTİM:" + who + " " + t.step + "/" + t.total + " (%" + t.pct + ")" + eta;
+          el.textContent = "EĞİTİM:" + who + " " + t.step + "/" + t.total + " (%" + t.pct + ")" + eta;
           el.title = "Eğitim çalışıyor (" + (t.source === "web" ? "web" : "detached/CLI") + ") — adapter: " + (t.adapter || "LoRA");
         } else {
-          el.className = "muted";
-          el.style.fontWeight = "400";
+          el.className = "train-idle";
+          el.style.fontWeight = "";
           el.textContent = "eğitim yok";
           el.title = "Aktif LoRA eğitimi yok";
         }
       })
       .catch(function () {
+        el.className = "train-idle";
         el.textContent = "eğitim: —";
       });
   }

@@ -29,6 +29,11 @@
   --warn-soft: #fffbeb;
   --warn-border: #fde68a;
 
+  --ok: #0d9488; /* teal-600 — bağlı/olumlu — CVD-safe (YEŞİL DEĞİL; kırmızıyla karışmaz) */
+  --ok-ring: rgba(13, 148, 136, 0.18);
+  --live: #c2410c; /* orange-700 — canlı eğitim — CVD-safe, nabızla pekişir */
+  --live-ring: rgba(194, 65, 12, 0.45);
+
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --display: "Fraunces", Georgia, serif;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -125,13 +130,13 @@ body {
 }
 /* Durum: renge ek olarak ŞEKİL (ok=daire · warn=baklava · err=kare). */
 .dot-ok {
-  background: #16a34a; /* canlı yeşil — bağlı olduğu net belli olsun */
+  background: var(--ok); /* teal — bağlı; renk körü için daire şekli + metin de var */
   border-radius: 50%;
-  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.18);
+  box-shadow: 0 0 0 3px var(--ok-ring);
 }
 /* bağlantı durumu metni (renge ek olarak metin zaten durumu söyler) */
 .conn-ok {
-  color: #16a34a;
+  color: var(--ok);
   font-weight: 600;
 }
 .conn-warn {
@@ -150,6 +155,49 @@ body {
 .dot-err {
   background: var(--neg);
   border-radius: 1px;
+}
+
+/* ---------- eğitim rozeti (üst bar) ----------
+   Canlı eğitim: renk (turuncu) + NABIZ (hareket) ile belli olur.
+   Renk körü kullanıcı "canlı" olduğunu yanıp sönen noktanın hareketinden anlar;
+   emoji/renk tek başına bilgi taşımaz. */
+.train-live {
+  color: var(--live);
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.train-live::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--live);
+  box-shadow: 0 0 0 0 var(--live-ring);
+  animation: trainPulse 1.4s ease-out infinite;
+}
+@keyframes trainPulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--live-ring);
+  }
+  70% {
+    box-shadow: 0 0 0 7px rgba(194, 65, 12, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(194, 65, 12, 0);
+  }
+}
+/* Hareketi azalt tercihinde nabzı kapat ama statik halka kalsın (yine de görünür). */
+@media (prefers-reduced-motion: reduce) {
+  .train-live::before {
+    animation: none;
+    box-shadow: 0 0 0 3px var(--live-ring);
+  }
+}
+.train-idle {
+  color: var(--muted);
+  font-weight: 400;
 }
 
 /* ---------- disclaimer ---------- */
