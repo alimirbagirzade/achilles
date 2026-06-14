@@ -114,8 +114,10 @@ for pid in sorted(p for p in pids if p):
   # ister). Döngü artık EĞİTMEZ; VERİ ÜRETİR (15→1000+ büyüme motoru). Eğitim,
   # ≥1000 örnek olunca bulut-GPU'da, açık --run ile yapılır (CLAUDE.md kural 8).
   # Detay: docs/RAG_EGITIM_YENIDEN_TASARIM.md
-  log "4) Dataset tazele + sentetik QA üret (bu turun yeni makaleleri)"
-  uv run achilles lora-dataset >> "$LOG" 2>&1
+  # NOT (2026-06-14): 'lora-dataset' KALDIRILDI — her turda data/lora_sft/lora_sft.jsonl'i
+  # (Stage 2 birleşik dataset, lora-cloud-prep üretir) kart-only veriyle EZİYORDU. Veri
+  # synthetic_qa.jsonl'de birikir; birleşik dataset gerektiğinde lora-cloud-prep üretir.
+  log "4) Sentetik QA üret (bu turun yeni makaleleri)"
   # En yeni 2 makaleyi sentetik QA'ya çevir; dosyaya BİRİKİR (append). CPU'da
   # ~100sn/chunk; 2 makale × 6 chunk × 3 QA ~ 20-25dk → 3600sn timeout'a rahat sığar.
   timeout 3600 uv run achilles synth-qa --per-chunk 3 --max-chunks 6 --max-papers 2 \
