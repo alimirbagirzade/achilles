@@ -1,6 +1,6 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-06-11 (gece) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Son güncelleme: 2026-06-14 (sabah) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
@@ -16,17 +16,65 @@ LLM'i "trader gibi düşünen" bir araştırma motoru yapmak:
 3. Otomatik backtest et → sonuçtan öğren → LoRA eğitim verisi üret
 4. 3B modeli test eder; gerçek çıktı için 120B kullanılacak
 
-### Mevcut durum (2026-06-11 gece)
-- **405 test** geçiyor (2 deselected: ollama+slow) · ruff temiz · mypy temiz · Python 3.12
-- **8 sekme** web UI: Araştırma · Makaleler · Trader Beyin · Backtest · Eğitim · Onay · Değerlendirme · Sistem
-- **Ollama:** qwen3:8b (Windows) / qwen2.5-coder:3b (macOS) + nomic-embed-text
-- **27 makale** indekslenmiş · 4194 chunk · 142 formül · 121 eğitim örneği (19 çapraz sentez)
-- **26 onaylı knowledge card** (8 içeriksiz kart reject edildi)
-- **LoRA adapter'lar:** `models/adapters/achilles_lora_v1..v4` — macOS'ta eğitildi
-- **Auto-LoRA pipeline:** `ready_to_train` — 9/9 gate PASS, Windows'ta eğitime hazır
-- **macOS:** LaunchAgent aktif (`com.achilles.web.plist`) — login'de otomatik başlar
-- **Windows:** Task Scheduler (`AchillesWeb`) — login'de Ollama + web server birlikte başlar
-- **Son commit:** `47ffd4c`
+### Mevcut durum (2026-06-14 sabah)
+- **Tüm test suite yeşil** · ruff + mypy temiz · Python 3.12 (bu seansta ~40 yeni test)
+- **MİMARİ PİVOT:** Sürekli CPU-LoRA **DURDURULDU** (haftalar + overfit). Yeni yol:
+  RAG-first robust + lokal sentetik veri + **bulut-GPU** eğitim. Detay:
+  `docs/RAG_EGITIM_YENIDEN_TASARIM.md`, `docs/PROTOKOL_ASAMALI_EGITIM.md`.
+- **🎯 STAGE 1 BİTTİ:** `data/lora_sft/lora_sft.jsonl` = **1266 örnek** (sentetik + kart).
+  `lora-audit` Gate 0-7 PASS · güvenlik taraması temiz.
+- **🚀 STAGE 2 HAZIR (kullanıcı tetikler):** `notebooks/achilles_lora_stage2.ipynb`
+  (unsloth, Kaggle/Colab T4) + `notebooks/Modelfile`. Adımlar: `docs/PROTOKOL_BULUT_EGITIM.md`.
+- **RAG robustluk TAMAM:** A2 rerank · A3 hybrid BM25 (`bm25_corpus.py`) · A4 prompt
+  birleştirme · A7 near-dup dedup · A8 cross-encoder (opt-in) · P2 contextual (opt-in).
+- **Ollama:** qwen3:4b (tek beyin) + nomic-embed-text · **108 makale** indeksli
+- **Gece döngüsü** (`scripts/continuous-learning.sh` 48sa): enrich→kart→synth-qa,
+  RAG + veri büyütüyor (artık EĞİTMEZ, CPU-LoRA yok).
+- **Yeni CLI:** `synth-qa` · `synth-qa-bulk` · `lora-readiness` · `lora-cloud-prep` ·
+  `reindex-contextual` · `card`/`arxiv` (mevcut)
+- **Base model:** `Qwen/Qwen3-4B-Instruct-2507` (Ollama qwen3:4b ile birebir) — eski
+  1.5B hardcode 5 katmanda düzeltildi.
+- **Upload limiti:** 100 MB · **Paper dedup:** file_hash + başlık-normalize (RAG'a 2 kez girmez)
+- **Son commit:** `61df8dd`
+
+---
+
+## ✅ Bu Seansta Tamamlananlar (2026-06-13 → 06-14) — BÜYÜK PİVOT
+
+**Tema:** "RAG eğitiminin sağlamlığını araştır, yeniden yaz, push." → 4-ajan
+araştırma → dürüst teşhis → RAG-first robust + aşamalı (lokal-veri → bulut-GPU) eğitim.
+
+### Commit'ler (sırayla)
+- `2422c5d` RAG: Reranker'ı canlı yola bağla (over-fetch + rerank) — A2
+- `ab1220b` Sentetik QA motoru (`synthetic_qa_builder.py`) + sürekli CPU-eğitimi durdur
+- `ca39070` Aşamalı eğitim protokolü (Stage 1/2 doc + skill + `cloud_notebook.py`)
+- `5d31657` **fix:** 4B base-model 1.5B hardcode (şema/sunucu/UI/CLI 5 katman)
+- `96e55b7` RAG: hybrid BM25 (A3) + prompt birleştirme (A4)
+- `ae2b998` RAG: cross-encoder reranker (A8, opt-in)
+- `ec2fd4c` RAG: contextual retrieval (P2, opt-in + `reindex-contextual`)
+- `4212b30` LoRA: near-duplicate dedup (A7)
+- `85d61de` LoRA: `synth-qa-bulk` (checkpoint'li bulk üretim)
+- `383860c` fix: upload limiti 100 MB tutarlı
+- `e24cd80` feat: paper-düzeyi dedup (başlık-normalize)
+- `61df8dd` fix: gece döngüsü `lora-dataset` clobber'ı kaldır (Stage 2 dataset korunsun)
+
+### Önemli bilgiler
+- **Gerçek 4B eğitimi CPU'da YAPILMAZ** (haftalar + overfit). Yalnız bulut-GPU.
+- Sentetik veri synthetic_qa.jsonl'de **birikir**; birleşik Stage 2 dataset'i
+  `lora-cloud-prep` üretir (lora_sft.jsonl). Döngü artık bu dosyayı ezmiyor.
+- `.env`: `ACHILLES_MAX_UPLOAD_MB=100` · Fable 5 erişimi YOK (hesap/plan).
+
+### ▶️ SABAH SIRADAKİ İŞ: Stage 2 gerçek eğitim (~30 dk, bulut-GPU)
+1. `huggingface-cli upload <kullanıcı>/achilles-lora-sft data/lora_sft/lora_sft.jsonl lora_sft.jsonl --repo-type dataset`
+2. HF READ token → Kaggle Secrets (ad: `HF_TOKEN`)
+3. Kaggle T4×2 + Internet ON → `notebooks/achilles_lora_stage2.ipynb` → `HF_DATASET_REPO`'ya kullanıcı adı → Run All
+4. İndir GGUF + Modelfile → `ollama create achilles -f Modelfile`
+5. Eval: `$env:ACHILLES_LLM_MODEL='achilles'; uv run achilles evaluate evals/discipline_core.jsonl`
+Detay: `docs/PROTOKOL_BULUT_EGITIM.md` · skill: `/bulut-egitim-protokolu`
+
+### Opsiyonel (kullanıcı tetikler)
+- `reindex-contextual` → P2 aktive (korpusu yeniden-embed, sonra `.env` `ACHILLES_RAG_CONTEXTUAL_EMBED=true`)
+- Cross-encoder: `uv pip install sentence-transformers` + `ACHILLES_RAG_CROSS_ENCODER=true`
 
 ---
 
