@@ -1,6 +1,6 @@
 # Achilles — Eğitim Protokolü (Windows / yerel)
 
-_Bu makineye özel ölçülmüş değerlerle. Son güncelleme: 2026-06-12._
+_Bu makineye özel ölçülmüş değerlerle. Son güncelleme: 2026-06-14._
 
 Bu belge **bu bilgisayarda** Achilles LoRA eğitiminin nasıl çalıştığını,
 donanım/model özelliklerini ve **ölçülmüş eğitim sürelerini** içerir.
@@ -71,6 +71,50 @@ Windows/Linux → **PEFT** (torch+peft).
 
 ---
 
+## 3.5 Eğitim BAŞLATMA — DETACHED + tek-tık (2026-06-14)
+
+**Eğitim artık web/terminal kapansa da sürer** (DETACHED süreç; PC + oturum açık
+kaldıkça). Eski in-process yol (`training_manager`) web çökünce/yeniden başlayınca
+eğitimi öldürüyordu (`auto_lora_state`'teki "Eğitim COMPLETED olmadı" bundandı).
+Yeni yol: **`app/training/detached_launch.py`** (`launch()` / `training_status()` /
+`readiness()`).
+
+### Veri akışı — TEK doğru kaynak
+```
+data/lora_sft/lora_sft.jsonl   (synth-qa + kart birleşik, ~1266 örnek; lora-cloud-prep üretir)
+        │   achilles lora-split   (seed=42, valid_ratio=0.05 → train≈1203 + valid≈63)
+        ▼
+data/training/jsonl/{train,valid}.jsonl   ← "achilles train --run" BUNU okur
+```
+- ⚠️ **CLOBBER tuzağı:** `DatasetBuilder.build()` (kart-DB tabanlı) aynı `train.jsonl`'e
+  yazar; DB'de uygun (`lora_eligible+approved`) örnek yoksa **0 satıra ezer**. Sentetik
+  veri yolunda KULLANMA. (Eski `/api/training/run` + loop'taki `lora-dataset` bu yüzden
+  veriyi boşaltıyordu — ikisi de kaldırıldı.)
+- **Clobber-proof:** hem `launch()` hem `start-train.ps1`, başlatmadan ÖNCE `lora-split`
+  çalıştırır → boş/eski `train.jsonl` otomatik onarılır.
+
+### Başlatma yolları (üçü de DETACHED + clobber-proof)
+1. **Web tek-tık (önerilen):** veri hazır olunca üst-bar'da **▶ EĞİTİME HAZIR (N örnek)
+   — BAŞLAT** rozeti belirir → tıkla / Tab+Enter → onayla. Kural 8 korunur (yalnız açık
+   kullanıcı eylemi; otomatik başlama YOK).
+2. **Web · 05 EĞİTİM sekmesi:** "▶ EĞİTİMİ BAŞLAT" butonu (`POST /api/training/run`).
+3. **Terminal:** `.\scripts\start-train.ps1` — durdur `-Stop`, durum `-Status`.
+
+`--iterations` verilmezse **1 epoch** (= train örnek sayısı; 1266 veri → 1203 adım).
+İlerleme: üst-bar rozeti (15 sn) · `GET /api/training/live` · `logs/train-full-err.log`.
+**dtype varsayılan bf16** (~8 GB): web/Ollama ile BİRLİKTE çalışabilsin diye (fp32 ~16 GB
+ve daha hızlı ama tek başına; bkz. §4 dtype analizi).
+
+### Güvenlik rayları (2026-06-14 çok-ajanlı düşmanca inceleme sonrası)
+- **Atomik kilit** (`storage/.training_launching`, `O_EXCL`): çift-tık / eş-zamanlı istek
+  iki eğitim süreci başlatamaz (log yazılmadan önceki yarış penceresi kapatıldı).
+- **adapter_name doğrulama** (`^[A-Za-z0-9_-]{1,64}$`): path-traversal / argüman güvenliği.
+- `Popen` try/except + mesaj "başlatıldı" (Kural 2: doğrulanmadan "çalışıyor" denmez).
+- `auto_pipeline.start_training` (web "Aç" oto-modu) da detached'e taşındı; bitişi
+  `training_status()` poll'u ile algılar → eval.
+
+---
+
 ## 4. Ölçülmüş eğitim süreleri (bu makine)
 
 Gerçek koşudan ölçülen **adım başına süre** (CPU fp32, batch=1, seq=512):
@@ -137,11 +181,18 @@ Sabit "her saat" yerine **makine kapasitesine** göre:
 ```bash
 uv run achilles lora-status          # genel durum
 uv run achilles lora-audit           # Gate 0-7
-uv run achilles lora-dataset         # JSONL + train/valid split üret
+# SENTETİK veri yolu (önerilen, ~1266 örnek):
+uv run achilles lora-cloud-prep      # synth-qa + kart → data/lora_sft/lora_sft.jsonl
+uv run achilles lora-split           # lora_sft.jsonl → data/training/jsonl/{train,valid}
+# Eğitim (detached başlatıcılar lora-split'i zaten otomatik çalıştırır):
 uv run achilles train --run --backend peft \
-    --adapter-name <ad> --iterations <n>   # gerçek eğitim (CPU)
+    --adapter-name <ad> --iterations <n>   # gerçek eğitim (CPU); iters yoksa 1 epoch
+.\scripts\start-train.ps1            # DETACHED (önerilen; kapansa da sürer)
 uv run achilles lora-registry        # adapter listesi
 ```
+
+> ⚠️ `lora-dataset` (kart-DB → JSONL) `train.jsonl`'i **EZER**; sentetik veri yolunda
+> kullanma — sentetik 1266 örneği `lora-split` köprüler. Detayı §3.5.
 
 Onay gerektirenler: smoke test (200+ örnek), adapter promote, GGUF export,
 production adapter değişimi.
@@ -217,8 +268,10 @@ Taşıma adımları: repo'yu klonla → `.env`'de `ACHILLES_PEFT_BASE_MODEL` +
 
 ## 9. Sınırlar ve uyarılar
 
-- **Veri darboğazı:** şu an yalnızca **5 eğitim örneği** (3 train / 1 valid).
-  LoRA için çok az — asıl performans kaldıracı **veri miktarı + kalitesi**.
+- **Veri (2026-06-14):** kart-DB darboğazı (içeriksiz kabuk kartlar) **sentetik veri
+  motoruyla** aşıldı → `data/lora_sft/lora_sft.jsonl` **~1266 örnek** (synth-qa + kart).
+  Eğitim bunu `lora-split` ile okur (kart-DB `lora-dataset`'i DEĞİL; bkz. §3.5).
+  Asıl performans kaldıracı yine **veri miktarı + kalitesi** (anlama %28 hâlâ düşük).
 - **CPU yavaşlığı:** ciddi/uzun eğitim için **Colab/GPU** önerilir
   (`peft_lora_train.generate_colab_notebook` notebook üretir).
 - **Bellek:** 4B eğitimi ~16 GB RAM kullanır; aynı anda büyük Ollama modeli
