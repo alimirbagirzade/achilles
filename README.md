@@ -145,6 +145,18 @@ Tarayıcıda şunu yaz:  **http://127.0.0.1:8765**
 
 > İlk kez: **08 SİSTEM** ile durumu gör → **02** makale ekle → **01** soru sor.
 
+### Üst şerit (header) — her zaman görünür, canlı
+Sayfanın en üstünde durum şeridi vardır; hepsi **canlı** güncellenir:
+- 🟢 **ollama bağlı · embed · papers** — bağlantı + makale sayısı (30 sn'de bir).
+- **RAG anladı %** — kaç makaleyi anlayıp eğitim verisine çevirdi (30 sn'de bir).
+- **Eğitim göstergesi** — üç hali olur:
+  - **🔴 EĞİTİM: … adım/…** (nabız atan nokta) → eğitim **şu an çalışıyor** (15 sn'de bir).
+  - **▶ EĞİTİME HAZIR (N örnek) — BAŞLAT** → veri hazır; **tıkla, onayla, eğitim başlar.**
+    Eğitim arka planda (detached) başlar; **web/terminal kapansa da sürer** (PC açık kaldıkça).
+  - **eğitim yok** → henüz yeterli veri yok.
+
+> Renkler **renk körü dostu** (teal/turuncu + şekil/hareket ipucu) — anlam yalnız renge bağlı değil.
+
 ---
 
 ## 🔄 OTOMATİK ÖĞRENME DÖNGÜSÜ (Loop) — adım adım

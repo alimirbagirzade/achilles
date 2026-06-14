@@ -69,6 +69,8 @@ if (-not $uv) { Write-Host "  [HATA] uv bulunamadi." -ForegroundColor Red; exit 
 
 $null = New-Item -ItemType Directory -Path (Split-Path $LogOut) -Force
 $env:ACHILLES_TRAIN_DTYPE = $Dtype
+# Egitim verisi: lora_sft.jsonl -> train/valid (clobber-proof; bos train.jsonl onarilir)
+& $uv run --project "$ProjectDir" achilles lora-split | Out-Null
 Start-Process -FilePath $uv `
     -ArgumentList "run", "--project", "`"$ProjectDir`"", "achilles", "train", "--run", `
                   "--backend", "peft", "--adapter-name", $Adapter, "--iterations", "$Iterations" `

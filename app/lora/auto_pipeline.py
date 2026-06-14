@@ -191,7 +191,12 @@ class AutoLoRAPipeline:
     # ------------------------------------------------------------------ train
 
     async def start_training(self, adapter_name: str, iters: int = 300) -> dict:
-        """Kullanıcı onayıyla eğitimi başlatır. READY_TO_TRAIN durumu gerekir."""
+        """Kullanıcı onayıyla eğitimi DETACHED başlatır. READY_TO_TRAIN gerekir.
+
+        Eskiden in-process `training_manager` kullanıyordu → web çökünce/yeniden
+        başlayınca eğitim ölüyordu (state'teki "Eğitim COMPLETED olmadı" bundandı).
+        Artık manuel buton ile aynı detached yolu kullanır (clobber-proof split dahil).
+        """
         async with self._lock:
             if self._state.stage != PipelineStage.READY_TO_TRAIN:
                 return {
@@ -202,39 +207,11 @@ class AutoLoRAPipeline:
                     ),
                 }
 
-        from app.config.settings import get_settings
-        from app.training.backend import detect_lora_backend
-        from app.web.training_manager import get_training_manager
+        from app.training.detached_launch import launch
 
-        settings = get_settings()
-        manager = get_training_manager()
-        backend = detect_lora_backend()
-
-        if backend == "mlx":
-            cmd = (
-                f"python -m mlx_lm.lora "
-                f"--model {settings.mlx_base_model} "
-                f"--train "
-                f"--data data/training/jsonl "
-                f"--adapter-path models/adapters/{adapter_name} "
-                f"--iters {iters}"
-            )
-        else:
-            # Windows / Linux: PEFT backend (torch + peft).
-            # MLX 4-bit modeli transformers ile yüklenemez → ayrı HF base model kullan.
-            cmd = (
-                f"python -m app.training.peft_lora_train "
-                f"--model {settings.peft_base_model} "
-                f"--train data/training/jsonl/train.jsonl "
-                f"--valid data/training/jsonl/valid.jsonl "
-                f"--output models/adapters/{adapter_name} "
-                f"--iters {iters} "
-                f"--run"
-            )
-
-        ok = manager.start(cmd.split(), adapter_name, iters)
-        if not ok:
-            return {"ok": False, "reason": "TrainingManager başlatılamadı (başka eğitim çalışıyor)"}
+        res = await asyncio.to_thread(launch, adapter_name, iters)
+        if not res.get("ok"):
+            return {"ok": False, "reason": res.get("message", "Eğitim başlatılamadı")}
 
         async with self._lock:
             self._state.stage = PipelineStage.TRAINING
@@ -248,26 +225,34 @@ class AutoLoRAPipeline:
         return {"ok": True, "adapter_name": adapter_name}
 
     async def _watch_training(self, adapter_name: str) -> None:
-        """Eğitim tamamlanınca otomatik eval çalıştır."""
-        from app.web.training_manager import TrainState, get_training_manager
+        """Detached eğitimi yokla; bitince (adapter çıktısı varsa) eval çalıştır."""
+        from app.config.settings import get_settings
+        from app.training.detached_launch import training_status
 
-        manager = get_training_manager()
+        settings = get_settings()
         try:
-            async for _progress in manager.subscribe():
-                if manager._progress.state in (
-                    TrainState.COMPLETED,
-                    TrainState.FAILED,
-                    TrainState.STOPPED,
-                ):
+            # 1) Sürecin başlamasını bekle (ilk log birkaç sn; en çok ~3 dk).
+            started = False
+            for _ in range(36):
+                await asyncio.sleep(5)
+                if training_status().get("running"):
+                    started = True
                     break
 
-            if manager._progress.state == TrainState.COMPLETED:
-                log.info("Auto-LoRA: Eğitim tamamlandı → eval başlatılıyor")
+            # 2) Bitene kadar periyodik yokla (detached; manager pipe'ı yok).
+            if started:
+                while training_status().get("running"):
+                    await asyncio.sleep(30)
+
+            # 3) Sonuç: adapter çıktısı oluştuysa tamam → eval; yoksa başarısız.
+            adapter_dir = settings.adapters_dir / adapter_name
+            if adapter_dir.exists() and any(adapter_dir.iterdir()):
+                log.info("Auto-LoRA: Eğitim tamamlandı (detached) → eval başlatılıyor")
                 await self._run_eval(adapter_name)
             else:
                 async with self._lock:
                     self._state.stage = PipelineStage.TRAIN_FAILED
-                    self._state.last_error = "Eğitim COMPLETED olmadı"
+                    self._state.last_error = "Eğitim tamamlanmadı (adapter çıktısı yok)"
                     self._save_state()
         except Exception as exc:
             async with self._lock:

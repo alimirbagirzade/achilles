@@ -911,7 +911,8 @@
       api("/training/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
         .then(function (data) {
           toast(data.message, !data.ok);
-          if (data.ok) startSSE();
+          // Detached eğitim: SSE yerine /api/training/live poll'u (mirrorTrainTab) besler.
+          if (data.ok) refreshTrain();
         })
         .catch(function (err) { toast(err.message, true); });
     });
@@ -2399,27 +2400,102 @@
   });
 
   // ---------- egitim rozeti (ust bar) ----------
-  // Gercek egitim durumunu gosterir: web'den VEYA detached/CLI ile baslatilan.
+  // Uc durum: CANLI (nabizli) · HAZIR (tek tikla baslat) · YOK.
+  // Gercek egitimi web'den VEYA detached/CLI'dan algilar (/api/training/live).
+  var _trainStarting = false;
+
+  function startTrainingFromBadge(examples) {
+    if (_trainStarting) return;
+    var msg =
+      "LoRA eğitimi başlatılsın mı?\n\n" +
+      examples + " örnek · ~1 epoch.\n" +
+      "Uzun sürer (saatlerce); bilgisayar açık kalmalı.\n" +
+      "Eğitim, web/terminal kapansa da arka planda sürer.";
+    if (!window.confirm(msg)) return;
+    _trainStarting = true;
+    var stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "");
+    api("/training/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ adapter_name: "achilles_auto_" + stamp, iterations: 0 }),
+    })
+      .then(function (d) {
+        toast(d.message, !d.ok);
+        refreshTrain();
+      })
+      .catch(function (e) {
+        toast(e.message, true);
+      })
+      .finally(function () {
+        _trainStarting = false;
+      });
+  }
+
+  // Detached eğitimde SSE beslenmediği için EĞİTİM sekmesi ilerlemesini de
+  // /api/training/live'dan aynala (sekme boş kalmasın).
+  function mirrorTrainTab(t) {
+    var section = document.getElementById("trainProgressSection");
+    var bar = document.getElementById("trainProgressBar");
+    var pctLbl = document.getElementById("trainPctLabel");
+    var iterLbl = document.getElementById("trainIterLabel");
+    var stateLbl = document.getElementById("trainStateLabel");
+    if (section) section.style.display = "";
+    if (bar) bar.style.width = (t.pct || 0) + "%";
+    if (pctLbl) pctLbl.textContent = (t.pct || 0) + "%";
+    if (iterLbl) iterLbl.textContent = (t.step || 0) + " / " + (t.total || 0) + " iter";
+    if (stateLbl) {
+      stateLbl.textContent = "eğitiliyor… (detached)";
+      stateLbl.className = "badge badge-warn";
+    }
+    var meta = document.getElementById("trainMeta");
+    if (meta && t.adapter) meta.textContent = "Adapter: " + t.adapter + "  ·  kaynak: detached";
+  }
+
   function refreshTrain() {
     var el = document.getElementById("trainBadge");
     if (!el) return;
+    // Klavye/erişilebilirlik ipuçlarını her döngüde sıfırla (yalnız HAZIR iken aktif).
+    function clearInteractive() {
+      el.onclick = null;
+      el.onkeydown = null;
+      el.style.cursor = "";
+      el.removeAttribute("role");
+      el.removeAttribute("tabindex");
+    }
     api("/training/live", { method: "GET" })
       .then(function (t) {
+        clearInteractive();
         if (t && t.running) {
           el.className = "train-live"; // nabız atan nokta (CSS) + turuncu — CVD-safe
-          el.style.fontWeight = "";
           var who = t.adapter ? (" " + t.adapter) : "";
           var eta = t.eta ? ("  ETA " + t.eta) : "";
           el.textContent = "EĞİTİM:" + who + " " + t.step + "/" + t.total + " (%" + t.pct + ")" + eta;
           el.title = "Eğitim çalışıyor (" + (t.source === "web" ? "web" : "detached/CLI") + ") — adapter: " + (t.adapter || "LoRA");
+          mirrorTrainTab(t);
+        } else if (t && t.ready) {
+          el.className = "train-ready"; // teal + ▶ — tıklanabilir davet (CVD-safe)
+          el.textContent = "▶ EĞİTİME HAZIR (" + t.ready_examples + " örnek) — BAŞLAT";
+          el.title = "Tıkla / Enter → LoRA eğitimini başlat (onay sorulur). " + t.ready_label;
+          el.style.cursor = "pointer";
+          // Klavye erişimi: span'i buton gibi davranıştır (Tab + Enter/Space).
+          el.setAttribute("role", "button");
+          el.setAttribute("tabindex", "0");
+          var start = function () { startTrainingFromBadge(t.ready_examples); };
+          el.onclick = start;
+          el.onkeydown = function (e) {
+            if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+              e.preventDefault();
+              start();
+            }
+          };
         } else {
           el.className = "train-idle";
-          el.style.fontWeight = "";
-          el.textContent = "eğitim yok";
+          el.textContent = "eğitim yok" + (t && t.ready_label ? " (" + t.ready_label + ")" : "");
           el.title = "Aktif LoRA eğitimi yok";
         }
       })
       .catch(function () {
+        clearInteractive();
         el.className = "train-idle";
         el.textContent = "eğitim: —";
       });

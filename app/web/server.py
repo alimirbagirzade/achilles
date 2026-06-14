@@ -959,70 +959,22 @@ def api_training_dry_run(req: TrainDryRunRequest) -> TrainDryRunResponse:
 
 @app.post("/api/training/run", response_model=TrainingStartResponse, dependencies=[api_auth])
 def api_training_run(req: TrainingStartRequest) -> TrainingStartResponse:
-    """Gerçek LoRA eğitimini başlat (subprocess, SSE ile izle)."""
-    import datetime as dt
+    """Gerçek LoRA eğitimini DETACHED başlat (web/terminal kapansa da sürer).
 
-    from app.config import get_settings
-    from app.training.backend import detect_lora_backend
-    from app.training.dataset_builder import DatasetBuilder
-    from app.web.training_manager import get_training_manager
+    Eski yol eğitimi web süreci içinde çalıştırıyordu → web çökünce/yeniden
+    başlayınca eğitim de ölüyordu. Artık detached süreç; ilerleme
+    /api/training/live ile (log'dan) izlenir. Veri `lora_sft.jsonl`'den yeniden
+    bölünür (DatasetBuilder kaynaklı train.jsonl clobber'ı başlatmada onarılır).
+    iterations<=0 → 1 epoch (örnek sayısı kadar adım).
+    """
+    from app.training.detached_launch import launch
 
-    mgr = get_training_manager()
-    if mgr.progress.state.value == "running":
-        return TrainingStartResponse(ok=False, message="Zaten eğitim çalışıyor.")
-
-    r = DatasetBuilder().build()
-    if r.n_train == 0:
-        return TrainingStartResponse(ok=False, message="Eğitim verisi yok — önce dataset oluştur.")
-
-    s = get_settings()
-    ts = dt.datetime.now(dt.UTC).strftime("%Y%m%d_%H%M%S")
-    adapter_name = f"{req.adapter_name}_{ts}"
-    backend = detect_lora_backend()
-
-    if backend == "mlx":
-        from app.training.mlx_lora_train import TrainConfig, build_command
-
-        cfg = TrainConfig(
-            base_model=req.base_model or s.mlx_base_model,
-            train_jsonl=r.train_path,
-            valid_jsonl=r.valid_path,
-            adapter_output_path=s.adapters_dir / adapter_name,
-            iterations=req.iterations,
-            batch_size=req.batch_size,
-            learning_rate=req.learning_rate,
-            num_layers=req.num_layers,
-        )
-    else:
-        from app.training.peft_lora_train import (  # type: ignore[assignment]
-            PeftTrainConfig as TrainConfig,
-        )
-        from app.training.peft_lora_train import build_command  # type: ignore[assignment]
-
-        missing = []
-        for pkg in ["torch", "transformers", "peft", "datasets"]:
-            try:
-                __import__(pkg)
-            except ImportError:
-                missing.append(pkg)
-        if missing:
-            return TrainingStartResponse(
-                ok=False,
-                message=f"PEFT paketleri eksik: {missing}. Kur: uv pip install {' '.join(missing)}",
-            )
-        cfg = TrainConfig(
-            base_model=req.base_model or s.peft_base_model,
-            train_jsonl=r.train_path,
-            valid_jsonl=r.valid_path,
-            adapter_output_path=s.adapters_dir / adapter_name,
-            iterations=req.iterations,
-        )
-
-    cmd = build_command(cfg)
-    mgr.start(cmd, adapter_name=adapter_name, total_iters=req.iterations)
-    return TrainingStartResponse(
-        ok=True, message=f"Eğitim başladı [{backend}]: {adapter_name} ({r.n_train} örnek)"
+    res = launch(
+        adapter_name=req.adapter_name or "achilles_lora",
+        iterations=req.iterations,
+        base_model=req.base_model or None,
     )
+    return TrainingStartResponse(ok=res["ok"], message=res["message"])
 
 
 @app.post("/api/training/stop", dependencies=[api_auth])
@@ -1084,65 +1036,12 @@ def api_training_live() -> dict:
     """Gercek egitim durumu (ust-bar rozeti icin).
 
     Hem web'den baslatilani (training_manager) HEM de detached/CLI ile baslatilani
-    (logs/train-full-err.log tqdm satirindan) algilar. Calismiyorsa running=False.
+    (logs/train-full-err.log tqdm satirindan) algilar. Calismiyorsa running=False
+    + hazirlik bilgisi (ready/ready_examples/ready_label) doner.
     """
-    import contextlib as _ctx
-    import json as _json
-    import re as _re
-    import time as _time
+    from app.training.detached_launch import training_status
 
-    s = get_settings()
-
-    # 1) Web'den baslatilan egitim (training_manager)
-    try:
-        from app.web.training_manager import get_training_manager
-
-        prog = get_training_manager().progress
-        state = getattr(getattr(prog, "state", None), "value", "")
-        if state == "running":
-            return {
-                "running": True,
-                "source": "web",
-                "adapter": getattr(prog, "adapter_name", "LoRA"),
-                "step": getattr(prog, "current_iter", 0),
-                "total": getattr(prog, "total_iters", 0),
-                "pct": round(getattr(prog, "pct", 0.0), 1),
-                "eta": "",
-            }
-    except Exception:
-        pass
-
-    # 2) Detached/CLI egitim — log tazeligi + tqdm satiri
-    log = s.root / "logs" / "train-full-err.log"
-    if log.exists():
-        age_min = (_time.time() - log.stat().st_mtime) / 60.0
-        if age_min < 15:  # son 15 dk yazilmissa egitim aktif sayilir
-            try:
-                txt = log.read_text(encoding="utf-8", errors="ignore")
-            except Exception:
-                txt = ""
-            # tqdm orn: "30/1203 [1:28:58<48:43:23, 149.53s/it]"
-            m = _re.findall(r"(\d+)/(\d+)\s*\[[^<\]]*<([^,\]]*)", txt)
-            if m:
-                step, total, eta = int(m[-1][0]), int(m[-1][1]), m[-1][2].strip()
-                if total > 0 and step < total:
-                    adapter = "LoRA"
-                    st = s.root / "storage" / "train_status.json"
-                    if st.exists():
-                        with _ctx.suppress(Exception):
-                            adapter = _json.loads(st.read_text(encoding="utf-8")).get(
-                                "adapter", "LoRA"
-                            )
-                    return {
-                        "running": True,
-                        "source": "detached",
-                        "adapter": adapter,
-                        "step": step,
-                        "total": total,
-                        "pct": round(step * 100 / total, 1),
-                        "eta": eta,
-                    }
-    return {"running": False}
+    return training_status()
 
 
 @app.get("/api/training/stream")
