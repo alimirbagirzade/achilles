@@ -59,10 +59,11 @@ Kurulum açılır ve **18 model seçeneği** sunar:
    ```
 3. Bittiğinde tarayıcıda **`Cmd + Shift + R`** yap (sayfayı tazele).
 
-**Güncelleme olmuyorsa / hata veriyorsa** — şu **tek satırı** kopyala-yapıştır (her şeyi düzeltir,
-verilerin silinmez):
+**Güncelleme olmuyorsa / hata veriyorsa** (ör. `cd ~/achilles` "no such file" diyorsa) —
+şu **tek satırı** kopyala-yapıştır. Achilles klasörünü **kendisi bulur**, girer ve günceller
+(her şeyi düzeltir, verilerin silinmez, izin/`chmod` gerekmez):
 ```bash
-cd ~/achilles && git fetch origin main && git reset --hard origin/main && bash update.sh
+cd "$(find ~ -type d -name achilles 2>/dev/null | head -1)" && git fetch origin main && git reset --hard origin/main && bash update.sh
 ```
 
 ---
