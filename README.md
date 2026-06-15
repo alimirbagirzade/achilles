@@ -101,14 +101,27 @@ cd "$env:USERPROFILE\achilles"
 
 Bu komut şunları yapar: web servisi login'de otomatik başlar + her gece **03:00**'de `update.ps1` ile güncelleme zamanlanır.
 
-**Güncelleme (geliştirici yeni sürüm yayınlayınca):**
+**Güncelleme — KURULU makinede TEK KOMUT** (yeni sürüm yayınlandığında):
 
 ```powershell
 cd "$env:USERPROFILE\achilles"
 .\update.ps1
 ```
 
-Script şunları yapar: sunucuyu durdur → yerel değişiklikleri sakla → `git pull` → `uv sync` → saklanmış değişiklikleri geri al → sunucuyu yeniden başlat.
+Script şunları yapar: web sunucusunu durdur (port 8765) → `git pull` → **`uv sync --extra web`** →
+web'i yeniden başlat → sağlık kontrolü. **Eğitime dokunmaz.**
+
+> 🔴 **Güncelledikten sonra tarayıcıda `Ctrl + Shift + R`** (sert yenileme) yap —
+> yoksa arayüz eski JS/CSS'i önbellekten gösterir, "değişmemiş" gibi görünür.
+
+**"git pull olmuyor / değişiklik çekmiyor" ise** (yerel değişiklik veya çakışma engelliyordur):
+
+```powershell
+.\update.ps1 -Force      # yerel KOD değişikliklerini atıp origin/main ile birebir eşitler
+```
+
+`-Force` yalnız **tracked kod** dosyalarını sıfırlar; verilerin (`data/`, `storage/`, `vector_db/`,
+adapter'lar) git'te izlenmediği için **silinmez**. Salt-kopya kurulumlarda güvenle kullanılır.
 
 ---
 

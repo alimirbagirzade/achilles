@@ -73,6 +73,15 @@ data/training/unified_sft.jsonl
 storage/*.db
 storage/*.db-*
 
+# Runtime state (her makinede değişir → COMMIT EDİLMEZ; izlenirse git pull'u kilitler)
+storage/auto_lora_state.json
+storage/train_status.json
+storage/STOP_LEARNING
+storage/STOP_TRAINING
+storage/learning_topic_index
+storage/.training_launching
+storage/_commit_msg.txt
+
 # OS / editor
 .DS_Store
 .idea/
