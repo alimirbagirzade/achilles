@@ -89,4 +89,10 @@ storage/_commit_msg.txt
 
 # büyük kaynak logo (optimize sürüm app/web/static/assets/achilles-logo.jpg)
 /achilles trading logo.png
-"BTCUSD 1H/"
+
+# TradingView dışa aktarımları ve MLX model dosyaları
+BTCUSD 1H/
+models/mlx/
+
+# Colab notebook'lar (reports/ altında .ipynb)
+reports/*.ipynb
