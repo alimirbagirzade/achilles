@@ -3,7 +3,7 @@
 
 UV := $(shell command -v uv 2> /dev/null)
 
-.PHONY: help install test lint format typecheck run clean gen-data ci audit web web-start web-stop web-log
+.PHONY: help install test lint format typecheck run clean gen-data ci audit update web web-start web-stop web-log
 
 help:
 	@echo "Hedefler:"
@@ -13,6 +13,7 @@ help:
 	@echo "  format     - ruff format"
 	@echo "  typecheck  - mypy"
 	@echo "  audit      - bağımlılık güvenlik taraması (pip-audit, CVE)"
+	@echo "  update     - GitHub'dan son sürüme güncelle (update.sh; macOS/Linux)"
 	@echo "  ci         - lint + typecheck + test (CI ile aynı)"
 	@echo "  gen-data   - sentetik OHLCV üret"
 	@echo "  clean      - cache/artefakt temizle"
@@ -55,6 +56,10 @@ else
 endif
 
 ci: lint typecheck test
+
+# Tek komut güncelleme (macOS/Linux) — git pull + uv sync --extra web + web restart.
+update:
+	@bash update.sh
 
 # Bağımlılık güvenlik taraması — bilinen CVE'ler (PyPI advisory DB; ağ gerekir).
 audit:

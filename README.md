@@ -103,21 +103,31 @@ Bu komut şunları yapar: web servisi login'de otomatik başlar + her gece **03:
 
 **Güncelleme — KURULU makinede TEK KOMUT** (yeni sürüm yayınlandığında):
 
+**Windows (PowerShell):**
 ```powershell
 cd "$env:USERPROFILE\achilles"
 .\update.ps1
 ```
 
-Script şunları yapar: web sunucusunu durdur (port 8765) → `git pull` → **`uv sync --extra web`** →
-web'i yeniden başlat → sağlık kontrolü. **Eğitime dokunmaz.**
+**macOS / Linux (bash terminal):**
+```bash
+cd ~/achilles            # Achilles'in kurulu olduğu klasör
+./update.sh
+```
 
-> 🔴 **Güncelledikten sonra tarayıcıda `Ctrl + Shift + R`** (sert yenileme) yap —
-> yoksa arayüz eski JS/CSS'i önbellekten gösterir, "değişmemiş" gibi görünür.
+Her iki script de şunu yapar: web sunucusunu durdur (port 8765) → `git pull` →
+**`uv sync --extra web`** → web'i yeniden başlat → sağlık kontrolü. **Eğitime dokunmaz.**
+
+> 🔴 **Güncelledikten sonra tarayıcıda sert yenileme yap:** Windows/Linux **`Ctrl + Shift + R`**,
+> macOS **`Cmd + Shift + R`** — yoksa arayüz eski JS/CSS'i önbellekten gösterir, "değişmemiş" gibi görünür.
 
 **"git pull olmuyor / değişiklik çekmiyor" ise** (yerel değişiklik veya çakışma engelliyordur):
 
 ```powershell
-.\update.ps1 -Force      # yerel KOD değişikliklerini atıp origin/main ile birebir eşitler
+.\update.ps1 -Force      # Windows — yerel KOD değişikliklerini atıp origin/main'e eşitler
+```
+```bash
+./update.sh --force      # macOS / Linux — aynısı
 ```
 
 `-Force` yalnız **tracked kod** dosyalarını sıfırlar; verilerin (`data/`, `storage/`, `vector_db/`,
