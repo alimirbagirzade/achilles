@@ -55,14 +55,14 @@ Kurulum açılır ve **18 model seçeneği** sunar:
 2. Aşağıdaki **iki satırı** kopyala, Terminal'e yapıştır, **Enter**:
    ```bash
    cd ~/achilles
-   ./update.sh
+   bash update.sh
    ```
 3. Bittiğinde tarayıcıda **`Cmd + Shift + R`** yap (sayfayı tazele).
 
 **Güncelleme olmuyorsa / hata veriyorsa** — şu **tek satırı** kopyala-yapıştır (her şeyi düzeltir,
 verilerin silinmez):
 ```bash
-cd ~/achilles && git fetch origin main && git reset --hard origin/main && chmod +x update.sh && ./update.sh
+cd ~/achilles && git fetch origin main && git reset --hard origin/main && bash update.sh
 ```
 
 ---
@@ -82,8 +82,8 @@ Kurulum başında 18 model seçeneği çıkar — bulut model seçersen Ollama a
 
 > Linux'ta LoRA eğitimi **PEFT/CPU ile desteklenir**. Kurulumda "LoRA paketleri kurulsun mu?" sorusuna E de. Hız macOS MLX'e göre yavaş olur ama çalışır.
 
-**🔄 Sonradan güncelleme** (kurduğun klasörde): `./update.sh` (takılırsa
-`./update.sh --force`). `update.sh` yoksa: `git fetch origin main && git reset --hard origin/main && chmod +x update.sh && ./update.sh`. Detay: aşağıdaki **Güncelleme** bölümü.
+**🔄 Sonradan güncelleme** (kurduğun klasörde): `bash update.sh` (takılırsa
+`bash update.sh --force`). `update.sh` yoksa: `git fetch origin main && git reset --hard origin/main && bash update.sh`. Detay: aşağıdaki **Güncelleme** bölümü.
 
 ---
 
@@ -131,7 +131,7 @@ cd "$env:USERPROFILE\achilles"
 **macOS / Linux (bash terminal):**
 ```bash
 cd ~/achilles            # Achilles'in kurulu olduğu klasör
-./update.sh
+bash update.sh
 ```
 
 Her iki script de şunu yapar: web sunucusunu durdur (port 8765) → `git pull` →
@@ -146,7 +146,7 @@ Her iki script de şunu yapar: web sunucusunu durdur (port 8765) → `git pull` 
 .\update.ps1 -Force      # Windows — yerel KOD değişikliklerini atıp origin/main'e eşitler
 ```
 ```bash
-./update.sh --force      # macOS / Linux — aynısı
+bash update.sh --force      # macOS / Linux — aynısı
 ```
 
 `-Force` yalnız **tracked kod** dosyalarını sıfırlar; verilerin (`data/`, `storage/`, `vector_db/`,
@@ -161,8 +161,7 @@ adapter'lar) git'te izlenmediği için **silinmez**. Salt-kopya kurulumlarda gü
 cd ~/achilles                  # Achilles klasörü (başka yerdeyse oraya gir)
 git fetch origin main
 git reset --hard origin/main   # son hale eşitle — yalnız KOD; verilerin SİLİNMEZ
-chmod +x update.sh
-./update.sh                     # bundan sonra her güncellemede sadece bunu çalıştır
+bash update.sh                 # bundan sonra her güncellemede sadece bunu çalıştır
 ```
 
 Eğer `not a git repository` veya `no such file or directory` hatası alırsan, o klasör git deposu
