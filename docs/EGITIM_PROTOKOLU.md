@@ -176,6 +176,36 @@ Sabit "her saat" yerine **makine kapasitesine** göre:
 
 ---
 
+## 5.5 Eğitim ESNASINDA (downtime) — bu süre boşa geçmesin
+
+CPU eğitimi **saatler/günler** sürer. Bu uzun pencerede sistem boş beklememeli;
+**eğitimi BOZMADAN** şu kalite/araştırma işleri yapılır:
+
+**Yapılacaklar (öncelik sırasıyla):**
+1. **Çok-ajanlı bug avı / kod denetimi** — özellikle **anayasa-kritik** eksenler:
+   look-ahead bias (Kural 4), maliyet=komisyon+slippage (Kural 3), determinizm/seed
+   (Kural 6), `eval`/`exec` yokluğu (Kural 5). Hem web (`app/web/*`) hem çekirdek
+   (`app/trading/*` backtest/strateji/indikatör/risk, `app/memory/*` RAG retrieval).
+2. **Bulguları düzelt** → `make format && lint && typecheck` + **hedefli** test.
+3. **Doküman/protokol** iyileştir (README, bu dosya, SECURITY.md) — son kullanıcı gözüyle.
+4. **Post-training hazırlık**: eval setlerini (`evals/*.jsonl`) gözden geçir, adapter
+   değerlendirme/promote protokolünü hazırla (eğitim bitince hemen çalıştırmak için).
+
+**KISITLAR (eğitim sürerken ihlal etme):**
+- **RAM dar** (4B eğitimi ~16 GB). Ağır yerel iş YOK: LLM sorgusu, **full `pytest`**,
+  embedding, ikinci eğitim. Ajanlar **salt-okunur** (Read/Grep); doğrulama **hedefli**
+  (değişen dosyalar) + her adımda boş RAM kontrolü.
+- **OOM riski** (boş RAM < 2 GB): Ollama modelini boşalt (`ollama stop <model>` — Ollama'yı
+  öldürmez, sorgu gelince yeniden yükler), eğitimi önceliklendir.
+- **Eğitim süreçlerine DOKUNMA.** Web yeniden başlatmak güvenlidir (ayrı süreç, detached
+  eğitimi öldürmez) ama `achilles train --run` süreçlerini durdurma.
+- Değişiklikler küçük commit'lerle; ağır/riskli refactor eğitim bitince.
+
+**Sağlık nöbeti (periyodik):** `logs/train-full-err.log` ilerliyor mu (≤45 dk tazelik),
+boş RAM > 2 GB, web (8765) + Ollama ayakta. Müdahale edersen ne yaptığını **logla**.
+
+---
+
 ## 6. Komutlar
 
 ```bash
