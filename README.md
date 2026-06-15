@@ -164,6 +164,13 @@ git reset --hard origin/main   # son hale eşitle — yalnız KOD; verilerin Sİ
 bash update.sh                 # bundan sonra her güncellemede sadece bunu çalıştır
 ```
 
+**`cd ~/achilles` "no such file or directory" diyorsa** (klasör başka yerde) — şu **tek satır**
+klasörü kendisi bulur, girer ve günceller (kopyala-yapıştır, izin/`chmod` gerekmez):
+
+```bash
+cd "$(find ~ -type d -name achilles 2>/dev/null | head -1)" && git fetch origin main && git reset --hard origin/main && bash update.sh
+```
+
 Eğer `not a git repository` veya `no such file or directory` hatası alırsan, o klasör git deposu
 değildir (ör. ZIP olarak indirilmiş) — **sıfırdan temiz indir:**
 
