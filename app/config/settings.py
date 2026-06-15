@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     # --- Ollama (yerel) ---
     ollama_host: str = "http://127.0.0.1:11434"  # localhost yerine IP — Windows IPv6 sorununu önler
     llm_model: str = "qwen3:4b"
+    # Modeli sorgu sonrası ne kadar yüklü tutsun. RAM darsa (ör. aynı anda LoRA eğitimi)
+    # "0" → hemen boşalt (eğitimle ~7GB çakışmayı önler). Varsayılan "30s"; büyük
+    # makinede ".env: ACHILLES_OLLAMA_KEEP_ALIVE=5m" hızlı ardışık sorgu için.
+    ollama_keep_alive: str = "30s"
     embed_model: str = "nomic-embed-text"
 
     # --- OpenAI (bulut, opsiyonel) ---

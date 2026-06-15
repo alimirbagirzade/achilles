@@ -30,6 +30,7 @@ class LocalLLM:
         self._ollama_host = (host or s.ollama_host).rstrip("/")
         self._ollama_model = model or s.llm_model
         self.model = self._ollama_model  # backward compat
+        self._ollama_keep_alive = s.ollama_keep_alive  # RAM darsa "0" → sorgu sonrası boşalt
 
         self._openai_key = s.openai_api_key
         self._openai_model = s.openai_model
@@ -176,6 +177,7 @@ class LocalLLM:
             "system": system or "",
             "stream": False,
             "think": False,
+            "keep_alive": self._ollama_keep_alive,
             "options": options,
         }
         if fmt:
