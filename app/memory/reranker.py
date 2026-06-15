@@ -116,10 +116,11 @@ class Reranker:
         scored: list[tuple[RetrievedChunk, float]] = []
 
         for chunk in chunks:
+            text = chunk.text or ""  # boş/None text'e karşı güvenli (hybrid stub, eksik veri)
             sem = _semantic_score(chunk.distance)
-            kw = _keyword_overlap_score(query, chunk.text)
+            kw = _keyword_overlap_score(query, text)
             sec = _section_priority_score(chunk.section_name)
-            formula = 1.0 if _has_formula(chunk.text) else 0.0
+            formula = 1.0 if _has_formula(text) else 0.0
 
             final = (
                 self.WEIGHTS["semantic"] * sem

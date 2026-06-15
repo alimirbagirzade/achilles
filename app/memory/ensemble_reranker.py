@@ -23,9 +23,9 @@ class EnsembleReranker:
         reranker: Temel Reranker örneği.
     """
 
-    def __init__(self, reranker: Reranker) -> None:
+    def __init__(self, reranker: Reranker, seed: int = 42) -> None:
         self._reranker = reranker
-        self._rng = random.Random(42)  # Deterministik
+        self._rng = random.Random(seed)  # Deterministik (Kural 6: seed parametreli)
 
     def rerank(
         self,

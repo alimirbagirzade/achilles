@@ -43,6 +43,20 @@ def load_ohlcv(path: str | Path) -> pd.DataFrame:
         raise ValueError(f"CSV eksik kolonlar: {missing}")
     df = df[[*_REQUIRED, "volume"]].dropna(subset=_REQUIRED)
     df = df.astype(dict.fromkeys([*_REQUIRED, "volume"], "float64"))
+    # OHLC bütünlüğü: high en yüksek, low en düşük olmalı. Bozuk barlar (high<low,
+    # high<open/close, low>open/close) backtest/indikatörü sessizce bozar → reddet.
+    bad = (
+        (df["high"] < df["low"])
+        | (df["high"] < df["open"])
+        | (df["high"] < df["close"])
+        | (df["low"] > df["open"])
+        | (df["low"] > df["close"])
+    )
+    if bad.any():
+        raise ValueError(
+            f"Geçersiz OHLC barı ({int(bad.sum())} satır): high/low, open/close ile "
+            "tutarsız (high<low gibi). Veri bozuk — düzelt veya kaynağı değiştir."
+        )
     return df
 
 

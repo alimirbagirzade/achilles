@@ -13,6 +13,7 @@ This is deliberately simple and auditable. It is NOT a live trading engine.
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from dataclasses import dataclass, field
 
@@ -22,15 +23,28 @@ import pandas as pd
 from app.config import get_settings
 from app.memory.sqlite_store import SqliteStore
 from app.trading.indicators import compute_indicator
+from app.trading.risk_manager import _extract_trade_returns
 from app.trading.strategy_ir import StrategyIR, parse_rule
 
+log = logging.getLogger(__name__)
+
+# Yıllıklandırma faktörü (yılda ~bar sayısı). Bilinmeyen timeframe SESSİZCE yanlış
+# faktör kullanmasın (Kural 3: metrik doğruluğu) → uyarı + makul yedek (15m).
 _BARS_PER_YEAR = {
     "1m": 525600,
+    "3m": 175200,
     "5m": 105120,
+    "10m": 52560,
     "15m": 35040,
+    "30m": 17520,
     "1h": 8760,
+    "2h": 4380,
     "4h": 2190,
+    "6h": 1460,
+    "8h": 1095,
+    "12h": 730,
     "1d": 252,
+    "1w": 52,
 }
 
 
@@ -115,10 +129,20 @@ def _metrics(returns: pd.Series, position: pd.Series, timeframe: str) -> Backtes
     equity = (1 + returns).cumprod()
     total_return = float(equity.iloc[-1] - 1) * 100 if len(equity) else 0.0
 
-    ann = _BARS_PER_YEAR.get(timeframe, 35040)
+    ann = _BARS_PER_YEAR.get(timeframe)
+    if ann is None:
+        log.warning(
+            "Bilinmeyen timeframe %r — yıllıklandırma 15m (%d) varsayıldı; "
+            "Sharpe/Sortino yanıltıcı olabilir.",
+            timeframe,
+            35040,
+        )
+        ann = 35040
     mean, std = returns.mean(), returns.std()
     sharpe = float((mean / std) * np.sqrt(ann)) if std and not np.isnan(std) else 0.0
-    downside = returns[returns < 0].std()
+    # Sortino downside sapması: tüm barlar üzerinden sqrt(mean(min(r,0)^2))
+    # (yalnız negatiflerin std'si DEĞİL — o farklı/yanlış bir büyüklük).
+    downside = float(np.sqrt((returns.clip(upper=0.0) ** 2).mean())) if len(returns) else 0.0
     sortino = (
         float((mean / downside) * np.sqrt(ann)) if downside and not np.isnan(downside) else 0.0
     )
@@ -129,7 +153,10 @@ def _metrics(returns: pd.Series, position: pd.Series, timeframe: str) -> Backtes
 
     # trades = transitions 0->1
     trades = int(((position.shift(1).fillna(0) == 0) & (position == 1)).sum())
-    trade_rets = returns[position.shift(1).fillna(0) == 1]
+    # Trade BAZLI (bar bazlı DEĞİL): her pozisyon bloğunu bileşik tek getiriye indir.
+    # Bar bazlı sayım profit_factor/win_rate'i çok-barlı işlemlerde yanıltır (her kazanan
+    # barı ayrı sayar). Net getiri üzerinden → giriş+çıkış maliyeti bloğa dahil.
+    trade_rets = _extract_trade_returns(position, returns)
     wins = trade_rets[trade_rets > 0].sum()
     losses = -trade_rets[trade_rets < 0].sum()
     profit_factor = float(wins / losses) if losses > 0 else (float("inf") if wins > 0 else 0.0)
@@ -155,6 +182,10 @@ class BacktestResult:
 
 
 def run_backtest(df: pd.DataFrame, ir: StrategyIR) -> BacktestResult:
+    required = {"open", "high", "low", "close"}
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"Veri çerçevesinde eksik kolon(lar): {sorted(missing)}")
     enriched = _compute_columns(df, ir)
     position = _position_series(enriched, ir)
 

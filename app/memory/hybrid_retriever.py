@@ -18,7 +18,9 @@ def _normalize_scores(scores: dict[str, float]) -> dict[str, float]:
     max_s = max(scores.values())
     rng = max_s - min_s
     if rng == 0:
-        return dict.fromkeys(scores, 1.0)
+        # Tüm skorlar eşit → nötr 0.5 (1.0 değil): alpha karışımı anlamını korur,
+        # tek kaynak hibrit sıralamayı domine etmez.
+        return dict.fromkeys(scores, 0.5)
     return {k: (v - min_s) / rng for k, v in scores.items()}
 
 
@@ -100,18 +102,9 @@ class HybridRetriever:
         for cid, _ in sorted_ids:
             if cid in chunk_by_id:
                 result.append(chunk_by_id[cid])
-            # BM25-only sonuçlar için stub oluştur
-            else:
-                result.append(
-                    RetrievedChunk(
-                        chunk_id=cid,
-                        paper_id=cid.split("_c")[0] if "_c" in cid else "unknown",
-                        text="",
-                        page_number=None,
-                        section_name=None,
-                        title=None,
-                        distance=None,
-                    )
-                )
+            # BM25-only id'ler için elimizde METİN yok. Boş-text stub döndürmek RAG
+            # alıntısını bozar (boş kaynak → LLM'e içeriksiz blok, Kural 7'ye aykırı
+            # "kaynak var" izlenimi). Metni getiremediğimiz için bunları ATLIYORUZ;
+            # semantik tarafta gerçek-metinli chunk'lar zaten dönüyor.
 
         return result
