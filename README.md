@@ -133,6 +133,29 @@ Her iki script de şunu yapar: web sunucusunu durdur (port 8765) → `git pull` 
 `-Force` yalnız **tracked kod** dosyalarını sıfırlar; verilerin (`data/`, `storage/`, `vector_db/`,
 adapter'lar) git'te izlenmediği için **silinmez**. Salt-kopya kurulumlarda güvenle kullanılır.
 
+### Mac/Linux'ta `update.sh` HENÜZ YOKSA veya `git pull` hiç çalışmıyorsa (ilk seferlik kurtarma)
+
+> Bu komutlar **GitHub sitesinde değil**, Mac'in **Terminal** uygulamasında çalışır.
+> Terminal'i aç: `Cmd + Boşluk` → "**Terminal**" yaz → Enter. Sonra aşağıdakileri kopyala-yapıştır.
+
+```bash
+cd ~/achilles                  # Achilles klasörü (başka yerdeyse oraya gir)
+git fetch origin main
+git reset --hard origin/main   # son hale eşitle — yalnız KOD; verilerin SİLİNMEZ
+chmod +x update.sh
+./update.sh                     # bundan sonra her güncellemede sadece bunu çalıştır
+```
+
+Eğer `not a git repository` veya `no such file or directory` hatası alırsan, o klasör git deposu
+değildir (ör. ZIP olarak indirilmiş) — **sıfırdan temiz indir:**
+
+```bash
+cd ~
+git clone https://github.com/alimirbagirzade/achilles.git
+cd achilles
+bash setup.sh                  # kurulum sihirbazı (backend/model/veritabanı)
+```
+
 ---
 
 ## 🟢 EN BASİT KULLANIM (yeni başlayan için, adım adım)
