@@ -49,6 +49,17 @@ Kurulum açılır ve **18 model seçeneği** sunar:
 > Bu makinede LoRA eğitimi **destekleniyor** (Apple Silicon — MLX ile hızlı).
 > Homebrew sadece Ollama seçildiğinde ve kurulu değilse otomatik yüklenir.
 
+**🔄 Sonradan güncelleme** (yeni sürüm çıkınca — kurduğun klasörde, Terminal'de):
+```bash
+cd ~/achilles
+./update.sh          # git pull + uv sync --extra web + web yeniden başlat
+```
+`update.sh` yoksa ya da güncelleme hiç olmuyorsa **ilk seferlik kurtarma** (tek satır):
+```bash
+cd ~/achilles && git fetch origin main && git reset --hard origin/main && chmod +x update.sh && ./update.sh
+```
+> Sonra tarayıcıda **Cmd+Shift+R** (sert yenileme). Detay: aşağıdaki **Güncelleme** bölümü.
+
 ---
 
 ### Linux (Ubuntu 20.04+ / Debian / Fedora)
@@ -65,6 +76,9 @@ uv run achilles-web # → http://127.0.0.1:8765
 Kurulum başında 18 model seçeneği çıkar — bulut model seçersen Ollama adımı atlanır, yerel model seçersen RAM/disk kontrolü yapılır ve Ollama + model otomatik indirilir (kurulum `sudo` gerektirebilir, systemd servisi oluşturur).
 
 > Linux'ta LoRA eğitimi **PEFT/CPU ile desteklenir**. Kurulumda "LoRA paketleri kurulsun mu?" sorusuna E de. Hız macOS MLX'e göre yavaş olur ama çalışır.
+
+**🔄 Sonradan güncelleme** (kurduğun klasörde): `./update.sh` (takılırsa
+`./update.sh --force`). `update.sh` yoksa: `git fetch origin main && git reset --hard origin/main && chmod +x update.sh && ./update.sh`. Detay: aşağıdaki **Güncelleme** bölümü.
 
 ---
 
