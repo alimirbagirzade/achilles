@@ -231,6 +231,33 @@ Sayfanın en üstünde durum şeridi vardır; hepsi **canlı** güncellenir:
 
 ---
 
+## 🧠 RAG ve LoRA nasıl çalışır? (kafa karışmasın)
+
+İki ayrı parça var; **ayrı kurulur, birlikte (zincir) kullanılır:**
+
+| | **RAG** | **LoRA** |
+|---|---|---|
+| Ne sağlar? | **BİLGİ** (makalelerden) | **ÜSLUP / DİSİPLİN** |
+| Eğitilir mi? | ❌ Hayır — indekslenir | ✅ Evet — offline eğitilir |
+| Makale eklenince? | **anında** kullanılır | etkilenmez |
+| Bilgi tutar mı? | evet (asıl yer) | hayır (sadece davranış) |
+
+**Kurulum: AYRI.**
+- RAG: makaleler → parçala → vektör DB. (Eğitim yok.)
+- LoRA: sentetik soru-cevap → küçük adapter eğit. (Offline, ayrı.)
+
+**Kullanım: ZİNCİR ("tek beyin"):**
+```
+Soru → RAG ilgili makale parçalarını getirir → (base model + LoRA) cevaplar → Cevap
+        └── BİLGİ ──┘                          └── ÜSLUP ──┘
+```
+
+> Yani: **RAG ne bilineceğini, LoRA nasıl söyleneceğini** belirler. Bilgi için eğitim
+> gerekmez (RAG halleder); LoRA sadece "trader gibi disiplinli" düşünmeyi keskinleştirir.
+> Uçtan uca akış + eğitim reçetesi: **`docs/PROTOKOL_RAG_LORA_ZINCIR.md`**.
+
+---
+
 ## 🔄 OTOMATİK ÖĞRENME DÖNGÜSÜ (Loop) — adım adım
 
 Arka planda çalışan, sistemi sürekli geliştiren döngü. **Her turda sırayla:**

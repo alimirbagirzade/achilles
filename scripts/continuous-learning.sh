@@ -99,7 +99,7 @@ for pid in sorted(p for p in pids if p):
   if [ $(( round % 3 )) -eq 1 ]; then
     log "3) Research + sentez makalesi"
     timeout 3600 uv run achilles research \
-      "Davranissal yanlilik (asiri guven, kayip kacinma), belirsizlik ve rejim degisimi kavramlarini birlestirerek yeni bir trading indikatoru veya filtre oner ve test et." \
+      "Markov zinciri / gizli Markov modeli (HMM) ile piyasa REJIM DEGISIMINI (trend / yatay / yuksek-volatilite gecisleri) modelleyen YENI bir trading indikatoru veya filtresi oner; davranissal yanlilik ve belirsizlik kavramlariyla birlestir; backtest ile test et (maliyet dahil, look-ahead yok)." \
       --iterations 1 >> "$LOG" 2>&1 || log "   research HATA/timeout"
     uv run achilles synth-paper >> "$LOG" 2>&1
   fi
