@@ -13,14 +13,30 @@ yoksa skor 'insufficient_data' bayrağıyla döner (CLAUDE.md Kural 2).
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 from app.verification.exams.l3_application import ExamResult
 from app.verification.exams.l5_composition import CompositionResult
 
-__all__ = ["UnderstandingScore", "aggregate", "composition_to_result"]
+__all__ = [
+    "RagAnswerLike",
+    "UnderstandingScore",
+    "aggregate",
+    "composition_to_result",
+    "rag_answers_to_results",
+]
 
-_GRADED = ("passed", "failed")
+
+class RagAnswerLike(Protocol):
+    """RagExamRunner.ExamAnswer'ın yapısal arabirimi (ağır import'tan kaçınmak için)."""
+
+    question_type: str
+    requires_abstention: bool
+    answer_text: str
+    citation_score: float
+    grounding_score: float
+    abstention_correct: bool
+    hallucination_detected: bool
 
 
 @dataclass
@@ -62,6 +78,54 @@ def composition_to_result(comp: CompositionResult) -> ExamResult:
         seed=0,
         detail={"gates": [g.gate for g in comp.gates if not g.passed]},
     )
+
+
+def rag_answers_to_results(answers: list[RagAnswerLike]) -> list[ExamResult]:
+    """RAG sınavı (citation/grounding/abstention) cevaplarını merdiven sonuçlarına çevirir.
+
+    - abstention soruları → "Taban" (Dürüstlük): doğru çekimserlik mi.
+    - diğerleri → L1 (Çıkarım/retrieval: doğru kaynağı buldu/alıntıladı mı) + L2
+      (Sadakat: cevap dayanaklı mı, halüsinasyon yok mu).
+    Cevap yoksa (retrieval boş) → L1/L2 'no_data' (test edilemedi, paydaya girmez).
+    """
+    out: list[ExamResult] = []
+    for a in answers:
+        no_answer = not (a.answer_text or "").strip()
+        if a.requires_abstention:
+            p = bool(a.abstention_correct)
+            out.append(_mk("Taban", a.question_type, p, {"abstention_correct": p}))
+            continue
+        if no_answer:
+            out.append(_mk_status("L1", a.question_type, "no_data"))
+            out.append(_mk_status("L2", a.question_type, "no_data"))
+            continue
+        l1 = a.citation_score >= 0.3
+        out.append(_mk("L1", a.question_type, l1, {"citation_score": a.citation_score}))
+        l2 = a.grounding_score >= 0.4 and not a.hallucination_detected
+        out.append(
+            _mk(
+                "L2",
+                a.question_type,
+                l2,
+                {"grounding_score": a.grounding_score, "hallucination": a.hallucination_detected},
+            )
+        )
+    return out
+
+
+def _mk(level: str, name: str, passed: bool, detail: dict[str, Any]) -> ExamResult:
+    return ExamResult(
+        level=level,
+        name=name,
+        passed=passed,
+        status="passed" if passed else "failed",
+        seed=0,
+        detail=detail,
+    )
+
+
+def _mk_status(level: str, name: str, status: str) -> ExamResult:
+    return ExamResult(level=level, name=name, passed=False, status=status, seed=0, detail={})
 
 
 def aggregate(results: list[ExamResult]) -> UnderstandingScore:

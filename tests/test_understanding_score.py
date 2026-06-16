@@ -2,12 +2,26 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from app.verification.exams.l3_application import ExamResult
 from app.verification.exams.l5_composition import CompositionResult, GateResult
 from app.verification.exams.understanding_score import (
     aggregate,
     composition_to_result,
+    rag_answers_to_results,
 )
+
+
+@dataclass
+class _Ans:
+    question_type: str = "main_claim"
+    requires_abstention: bool = False
+    answer_text: str = "geçerli bir cevap"
+    citation_score: float = 1.0
+    grounding_score: float = 1.0
+    abstention_correct: bool = False
+    hallucination_detected: bool = False
 
 
 def _r(level: str, status: str) -> ExamResult:
@@ -88,3 +102,47 @@ def test_composition_substantif_red_failed() -> None:
         ],
     )
     assert composition_to_result(comp).status == "failed"
+
+
+# ---------------------------------------------------------------- RAG L1/L2 adaptörü
+def test_rag_iyi_cevap_l1_l2_passed() -> None:
+    levels = {r.level: r for r in rag_answers_to_results([_Ans()])}
+    assert levels["L1"].status == "passed"
+    assert levels["L2"].status == "passed"
+
+
+def test_rag_halusinasyon_l2_failed() -> None:
+    res = rag_answers_to_results([_Ans(hallucination_detected=True)])
+    l2 = next(r for r in res if r.level == "L2")
+    assert l2.status == "failed"
+
+
+def test_rag_dusuk_citation_l1_failed() -> None:
+    res = rag_answers_to_results([_Ans(citation_score=0.1)])
+    l1 = next(r for r in res if r.level == "L1")
+    assert l1.status == "failed"
+
+
+def test_rag_abstention_dogru_taban_passed() -> None:
+    res = rag_answers_to_results(
+        [_Ans(requires_abstention=True, abstention_correct=True, answer_text="")]
+    )
+    assert len(res) == 1
+    assert res[0].level == "Taban"
+    assert res[0].status == "passed"
+
+
+def test_rag_cevap_yok_no_data() -> None:
+    res = rag_answers_to_results([_Ans(answer_text="")])
+    assert all(r.status == "no_data" for r in res)
+    assert aggregate(res).graded == 0  # no_data paydaya girmez
+
+
+def test_rag_l3_birlesik_skor() -> None:
+    combined = [
+        *rag_answers_to_results([_Ans(), _Ans(hallucination_detected=True)]),
+        _r("L3", "passed"),
+    ]
+    score = aggregate(combined)
+    assert {"L1", "L2", "L3"}.issubset(score.by_level)
+    assert score.graded == score.passed + score.failed
