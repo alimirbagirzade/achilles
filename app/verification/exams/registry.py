@@ -84,6 +84,20 @@ _SPECS: dict[str, ExamSpec] = {
         atol=1e-3,
         monotonic={"period": "periyot artarsa daha pürüzsüz (daha az oynak)"},
     ),
+    "PERMENTROPY": ExamSpec(
+        name="PERMENTROPY",
+        definition=(
+            "PERMENTROPY(p): Bandt-Pompe permütasyon entropisi (gömme boyutu order=3), "
+            "[0,1] normalize. Son p bar üzerinde, ardışık 3'lü kapanış pencerelerinin "
+            "SIRALAMA (ordinal) desenleri sayılır; desen dağılımının Shannon entropisi "
+            "log2(3!)=log2(6) ile bölünür. Monoton seri → tek desen → 0; tüm desenler "
+            "eşit olasılıkta → 1. Yalnız geçmiş pencere (look-ahead yok)."
+        ),
+        default_period=8,
+        rtol=1e-3,
+        atol=1e-3,
+        monotonic={"period": "periyot artarsa daha pürüzsüz (daha kararlı tahmin)"},
+    ),
 }
 
 

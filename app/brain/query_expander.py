@@ -54,7 +54,15 @@ _MATH_SYNONYMS: dict[str, list[str]] = {
     "fourier": ["Fourier transform", "spectral analysis", "frequency domain", "DFT"],
     "eigenvalue": ["eigenvalue", "eigendecomposition", "PCA", "principal component"],
     "convex": ["convex optimization", "gradient descent", "saddle point", "Lagrangian"],
-    "entropy": ["entropy", "information content", "Shannon entropy", "KL divergence"],
+    "entropy": [
+        "entropy",
+        "information content",
+        "Shannon entropy",
+        "KL divergence",
+        "permutation entropy",
+        "ordinal pattern",
+        "Bandt-Pompe",
+    ],
     "regression": ["regression", "OLS", "least squares", "linear model"],
     "covariance": ["covariance matrix", "correlation matrix", "variance-covariance"],
 }

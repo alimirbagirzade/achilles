@@ -42,8 +42,11 @@ LLM'i "trader gibi düşünen" bir araştırma motoru yapmak:
   RAG'a yükleyecek.** Bu indirme LOOP — yeni makaleler aynı klasöre eklenecek.
 
 **BEKLEYEN BACKLOG (yeni seans buradan devam — kullanıcı: "loop olarak çözene kadar"):**
-1. **L5 → synthesis_engine bağla** — model Markov+entropi önerince otomatik 3 kapı (orchestrator.py).
-2. **Registry'yi genişlet** — permütasyon entropi + daha çok Markov/entropi göstergesi + yeni makale indir.
+1. ✅ **L5 → synthesis_engine bağlandı** (`18cabd4`) — orchestrator her iterasyonda L5
+   CompositionGate koşar (math+novelty+backtest); sonuç IterationResult + session + web API.
+2. **Registry'yi genişlet** — ✅ permütasyon entropi (Bandt-Pompe, `PERMENTROPY`) eklendi
+   (indicators + exams registry + L5 _REGISTRY + query_expander); KALAN: daha çok Markov/entropi
+   göstergesi (ör. transfer entropi, rejim/HMM tabanlı) + yeni makale indir.
 3. **Web** — kaba "anlama %"yi `understanding-score` (objektif) ile değiştir.
 4. **RAFT reçetesini düzelt** (seed'i yüzlerce örneğe ölçekle) → SONRA eğit (körlemesine 47h retrain YOK).
 5. Eğitim: reçete düzeltilince → eğit → eval → koşullu terfi → bug-fix loop.

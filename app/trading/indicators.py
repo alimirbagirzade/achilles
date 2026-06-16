@@ -7,6 +7,8 @@ input index.
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pandas as pd
 
@@ -82,6 +84,55 @@ def entropy(close: pd.Series, period: int = 14) -> pd.Series:
     return _binary_entropy(p_up)
 
 
+def _ordinal_codes(values: np.ndarray, order: int) -> np.ndarray:
+    """Her t için [t-order+1..t] penceresinin ordinal (sıralama) desen kodu (0..order!-1).
+
+    İlk ``order-1`` konum -1 (tanımsız). Kodlama Lehmer (faktöriyel sayı sistemi);
+    eşit değerlerde 'stable' argsort → deterministik (CLAUDE.md Kural 6). Döngü yalnız
+    küçük ``order`` üzerindedir, veri ekseni vektörizedir.
+    """
+    n = values.shape[0]
+    codes = np.full(n, -1, dtype=np.int64)
+    if n < order:
+        return codes
+    windows = np.lib.stride_tricks.sliding_window_view(values, order)  # (n-order+1, order)
+    perms = np.argsort(windows, axis=1, kind="stable")  # ordinal desen
+    idx = np.zeros(perms.shape[0], dtype=np.int64)
+    for i in range(order):
+        smaller = (perms[:, i + 1 :] < perms[:, i : i + 1]).sum(axis=1)
+        idx += smaller * math.factorial(order - 1 - i)
+    codes[order - 1 :] = idx
+    return codes
+
+
+def permutation_entropy(close: pd.Series, period: int = 14, order: int = 3) -> pd.Series:
+    """Bandt-Pompe permütasyon entropisi (normalize [0,1]) — ordinal-desen karmaşıklığı.
+
+    Her bar için son ``period`` ordinal deseni (gömme boyutu ``order``) sayılır; desen
+    dağılımının Shannon entropisi log2(order!) ile normalize edilir. 0 = tam düzenli /
+    öngörülebilir (monoton), 1 = maksimum karmaşıklık / rastgelelik. Yalnız geçmiş
+    pencereyi kullanır (look-ahead yok). ENTROPY yön ORANINI yakalar; bu, ardışık fiyat
+    seviyelerinin SIRALAMA yapısını — entropi+Markov sentezinin ikinci yapı taşı.
+    """
+    if order < 2:
+        raise ValueError("permutation_entropy: order >= 2 olmalı")
+    values = close.to_numpy(dtype=float)
+    codes = _ordinal_codes(values, order)
+    n_patterns = math.factorial(order)
+    # one-hot: geçersiz (-1) satırlar tüm-sıfır → rolling sayımına katkı vermez.
+    onehot = np.zeros((values.shape[0], n_patterns), dtype=float)
+    valid = codes >= 0
+    onehot[np.where(valid)[0], codes[valid]] = 1.0
+    counts = pd.DataFrame(onehot, index=close.index).rolling(period).sum()
+    total = counts.sum(axis=1)
+    probs = counts.div(total, axis=0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        logp = np.log2(probs.where(probs > 0))
+    pe = -(probs * logp).sum(axis=1) / np.log2(n_patterns)
+    pe[total < period] = np.nan  # tam pencere yoksa (yetersiz geçerli desen) tanımsız
+    return pe
+
+
 # Registry used by the strategy engine to compute indicators by name.
 def compute_indicator(name: str, df: pd.DataFrame, period: int = 14) -> pd.Series:
     name = name.upper()
@@ -97,4 +148,6 @@ def compute_indicator(name: str, df: pd.DataFrame, period: int = 14) -> pd.Serie
         return macd(df["close"])[0]
     if name == "ENTROPY":
         return entropy(df["close"], period)
+    if name == "PERMENTROPY":
+        return permutation_entropy(df["close"], period)
     raise ValueError(f"Bilinmeyen gösterge: {name}")
