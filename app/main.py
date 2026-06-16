@@ -336,6 +336,46 @@ def evaluate(eval_set: Path, adapter_version: str = typer.Option(None)) -> None:
     )
 
 
+@app.command("lora-eval")
+def lora_eval(
+    adapter: str = typer.Argument(
+        ..., help="Adapter klasör adı (models/adapters/<ad>) veya tam yol"
+    ),
+    eval_set: Path = typer.Option(
+        Path("evals/discipline_core.jsonl"), "--eval-set", help="Eval seti (.jsonl)"
+    ),
+    n: int = typer.Option(0, "--n", help="Yalnız ilk N soru (0=hepsi; hızlı doğrulama için 1-2)"),
+) -> None:
+    """Eğitilen PEFT adapter'ı GERÇEKTEN değerlendir: base vs adapter (Kural 2 dürüst gate).
+
+    `evaluate`/ModelEvaluator base Ollama'yı ölçer, adapter'ı yüklemez. Bu komut adapter'ı
+    transformers/PEFT ile yükleyip base ile kıyaslar. AĞIR (CPU'da 4B inference).
+    """
+    from app.config import get_settings
+    from app.training.adapter_eval import evaluate_adapter
+
+    s = get_settings()
+    adir = adapter if Path(adapter).exists() else str(s.adapters_dir / adapter)
+    if not Path(adir).exists():
+        console.print(f"[red]Adapter bulunamadı:[/red] {adir}")
+        raise typer.Exit(code=1)
+
+    console.print(f"[cyan]Değerlendiriliyor (ağır, CPU 4B):[/cyan] {adir} ← {eval_set}")
+    res = evaluate_adapter(adir, eval_set, n=(n or None))
+    color = {"accept": "green", "reject": "red", "inconclusive": "yellow"}.get(res.verdict, "white")
+    console.print(
+        Panel.fit(
+            f"adapter: {res.adapter}\neval: {res.eval_set} (n={res.n})\n"
+            f"base    skor: {res.base_score}  (flags {res.base_flags})\n"
+            f"adapter skor: {res.adapter_score}  (flags {res.adapter_flags})\n"
+            f"[{color}]VERDICT: {res.verdict.upper()}"
+            + ("  — GERİLEME (terfi etme)" if res.regression else "")
+            + "[/]",
+            title="adapter eval (base vs adapter)",
+        )
+    )
+
+
 # --------------------------------------------------------------------------
 # trading / backtest
 # --------------------------------------------------------------------------

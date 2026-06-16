@@ -1,0 +1,155 @@
+"""Gerçek PEFT adapter değerlendirmesi: base vs adapter (Kural 2 — dürüst gate).
+
+`ModelEvaluator` base Ollama'yı kullanır, eğitilen PEFT adapter'ı YÜKLEMEZ — bu yüzden
+adapter'ı gerçekte ölçmez. Bu modül adapter'ı transformers/PEFT ile GERÇEKTEN yükler,
+eval sorularına cevap ürettirir, red-flag sezgileriyle (evaluate_model.check_flags) +
+dejenerasyon (tekrar döngüsü) cezasıyla puanlar ve **base ile yan yana** kıyaslar.
+
+AĞIR: CPU'da 4B inference (her soru dakikalar). Eğitim bittikten sonra çalıştır (RAM serbest).
+Verdict: adapter base'den iyi → accept, kötü → reject (terfi etme), eşit → inconclusive.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from app.config import get_settings
+from app.training.evaluate_model import check_flags, load_eval_set
+
+
+def _is_degenerate(answer: str) -> bool:
+    """Aynı cümlenin tekrarı (overfit / bozuk üretim) — kaba sezgi."""
+    sents = [s.strip() for s in answer.split(".") if len(s.strip()) > 15]
+    return len(sents) >= 3 and len(set(sents)) <= max(1, len(sents) // 2)
+
+
+def _flags_for(answer: str, must_avoid: list[str]) -> list[str]:
+    flags = check_flags(answer, must_avoid)
+    if _is_degenerate(answer):
+        flags.append("degenerate_repetition")
+    return flags
+
+
+@dataclass
+class AdapterEvalResult:
+    eval_set: str
+    base_model: str
+    adapter: str
+    n: int
+    base_score: float
+    adapter_score: float
+    base_flags: int
+    adapter_flags: int
+    regression: bool
+    verdict: str  # accept | reject | inconclusive
+    rows: list[dict] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "eval_set": self.eval_set,
+            "base_model": self.base_model,
+            "adapter": self.adapter,
+            "n": self.n,
+            "base_score": self.base_score,
+            "adapter_score": self.adapter_score,
+            "base_flags": self.base_flags,
+            "adapter_flags": self.adapter_flags,
+            "regression": self.regression,
+            "verdict": self.verdict,
+            "rows": self.rows,
+        }
+
+
+def _load_model(base_model: str, adapter_dir: str | None):
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    tok = AutoTokenizer.from_pretrained(base_model)
+    model = AutoModelForCausalLM.from_pretrained(base_model, dtype=torch.bfloat16)
+    if adapter_dir:
+        from peft import PeftModel
+
+        model = PeftModel.from_pretrained(model, adapter_dir)  # type: ignore[assignment]
+    model.eval()
+    return tok, model
+
+
+def _generate(tok, model, question: str, max_new_tokens: int = 220) -> str:
+    import torch
+
+    msgs = [{"role": "user", "content": question}]
+    text = tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
+    ids = tok(text, return_tensors="pt")
+    with torch.no_grad():
+        out = model.generate(
+            **ids, max_new_tokens=max_new_tokens, do_sample=False
+        )  # greedy=determinist
+    return tok.decode(out[0][ids["input_ids"].shape[1] :], skip_special_tokens=True).strip()
+
+
+def evaluate_adapter(
+    adapter_dir: str | Path,
+    eval_set: str | Path,
+    *,
+    base_model: str | None = None,
+    n: int | None = None,
+) -> AdapterEvalResult:
+    """Base vs adapter karşılaştırmalı eval. (Kural 6: greedy determinist üretim.)"""
+    s = get_settings()
+    base_model = base_model or s.peft_base_model
+    items = load_eval_set(eval_set)
+    if n:
+        items = items[:n]
+
+    # 1) BASE (adapter yok) — tek tek üret, sonra belleği boşalt
+    tok, model = _load_model(base_model, None)
+    base_ans = [_generate(tok, model, it.question) for it in items]
+    del model
+
+    # 2) ADAPTER (base + PEFT)
+    tok, model = _load_model(base_model, str(adapter_dir))
+    adapt_ans = [_generate(tok, model, it.question) for it in items]
+    del model
+
+    base_flag_total = 0
+    adapt_flag_total = 0
+    rows: list[dict] = []
+    for it, b, a in zip(items, base_ans, adapt_ans, strict=True):
+        bf = _flags_for(b, it.must_avoid)
+        af = _flags_for(a, it.must_avoid)
+        base_flag_total += len(bf)
+        adapt_flag_total += len(af)
+        rows.append(
+            {"q": it.question, "base": b, "adapter": a, "base_flags": bf, "adapter_flags": af}
+        )
+
+    denom = max(1, len(items))
+    base_score = round(1.0 - base_flag_total / denom, 4)
+    adapter_score = round(1.0 - adapt_flag_total / denom, 4)
+    regression = adapter_score < base_score
+    if regression:
+        verdict = "reject"
+    elif adapter_score > base_score:
+        verdict = "accept"
+    else:
+        verdict = "inconclusive"
+
+    result = AdapterEvalResult(
+        eval_set=Path(eval_set).stem,
+        base_model=base_model,
+        adapter=str(adapter_dir),
+        n=len(items),
+        base_score=base_score,
+        adapter_score=adapter_score,
+        base_flags=base_flag_total,
+        adapter_flags=adapt_flag_total,
+        regression=regression,
+        verdict=verdict,
+        rows=rows,
+    )
+    out = s.reports_dir / "evals" / f"adapter_eval_{Path(adapter_dir).name}_{result.eval_set}.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(result.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+    return result
