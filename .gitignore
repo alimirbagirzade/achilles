@@ -96,3 +96,6 @@ models/mlx/
 
 # Colab notebook'lar (reports/ altında .ipynb)
 reports/*.ipynb
+
+# pytest yerel basetemp (Temp izin sorunu workaround)
+.pytest_tmp/
