@@ -9,12 +9,26 @@ from __future__ import annotations
 import json
 
 from app.brain.synthetic_qa_builder import (
+    _ONESHOT_EXAMPLE,
     SyntheticQABuilder,
     _coerce_json_list,
     _is_grounded,
     dedup_jsonl_lines,
     generate_synthetic_dataset,
 )
+
+
+def test_oneshot_example_has_no_leaky_prefix() -> None:
+    # v5 sızıntı dersi: one-shot örnek cevapları SABİT "Pasaja gore" öneğiyle
+    # başlamamalı (model bunu koşulsuz açılış olarak ezberliyordu). Açılışlar çeşitli olmalı.
+    pairs = json.loads(_ONESHOT_EXAMPLE)["pairs"]
+    answers = [p["answer"] for p in pairs]
+    assert len(answers) >= 2
+    for ans in answers:
+        assert not ans.lower().startswith("pasaja"), f"sızıntılı önek: {ans[:30]!r}"
+    # Açılış token'ları homojen olmasın (ilk kelimeler farklı).
+    first_words = {a.split()[0].lower() for a in answers}
+    assert len(first_words) == len(answers)
 
 
 def _jsonl(q: str, a: str) -> str:

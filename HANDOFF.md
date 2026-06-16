@@ -52,6 +52,14 @@ LLM'i "trader gibi düşünen" bir araştırma motoru yapmak:
    (L3/L4 sınav geçme oranı; LLM yoksa insufficient_data). Ortak `score_indicator_exams`
    helper (CLI + web). KALAN: web'de L5 kompozisyon sonucunu da göstermek (opsiyonel).
 4. **RAFT reçetesini düzelt** (seed'i yüzlerce örneğe ölçekle) → SONRA eğit (körlemesine 47h retrain YOK).
+   - 🔬 **TEŞHİS (v5 batış kök sebebi, koddan doğrulandı):** (1) `synthetic_qa_builder._ONESHOT_EXAMPLE`
+     her cevaba "Pasaja gore" öneki → model koşulsuz açılış ezberledi (bağlamsız evalde de). (2) Üretici
+     yalnız "pasajdan cevapla" örneği üretiyor; adversarial disiplin örneği YOK (`raft_discipline_seed.jsonl`'de
+     6 var ama ölçeklenip karıştırılmamış). (3) overfit/tekrar. → adapter maliyetsiz %20 getiri uydurdu (REJECT).
+   - ✅ **Fix A yapıldı:** `_ONESHOT_EXAMPLE` açılışı çeşitlendi, "Pasaja gore" sızıntı öneki kaldırıldı + test.
+   - ⏭️ **Fix B (ASIL, sıradaki):** disiplin dataset üreticisi — 6 seed → yüzlerce adversarial örnek
+     (strateji türü × tuzak: garanti/backtest'siz/maliyetsiz/kaynak-yok/look-ahead/overfit/kaldıraç),
+     SFT'ye ~%25 karıştır. Fix C: mix oranı + adım sayısı (overfit azalt).
 5. Eğitim: reçete düzeltilince → eğit → eval → koşullu terfi → bug-fix loop.
 
 **🎯 EĞİTİM LOOP KARARI (2026-06-16, kullanıcı):** Donanım = **Bulut GPU (Kaggle T4×2)**

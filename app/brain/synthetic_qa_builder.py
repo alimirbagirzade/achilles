@@ -67,14 +67,18 @@ _SIG_NUM_RE = re.compile(r"\d+[.,]\d+|\d+%|\d{2,}")
 # One-shot DOLU örnek — qwen3:4b JSON-mode'da prompt'u "doğrula" sanıp {"error":...}
 # döndürebiliyor; somut doldurulmuş örnek modeli ÜRETİME yönlendirir (canlı test edildi).
 # Obje formu ({"pairs":[...]}) qwen'de çıplak diziden daha güvenilir.
+# v5 SIZINTI DERSİ: eski örnek HER iki cevaba da "Pasaja gore" öneki koyuyordu →
+# model bunu KOŞULSUZ açılış olarak ezberledi ve bağlamsız evalde bile "Pasaja gore..."
+# dedi (v5 regresyonu). Açılışlar artık ÇEŞİTLİ ve öneksiz (grounding _is_grounded ile
+# zaten ayrı garanti edilir; açılış token'ı sabitlenmemeli).
 _ONESHOT_EXAMPLE = (
     '{"pairs": [\n'
     '  {"question": "Bu calismada ATR hangi amacla kullanilir?", '
-    '"answer": "Pasaja gore ATR, volatiliteyi olcmek ve pozisyon buyuklugunu '
-    'ayarlamak icin kullanilir."},\n'
+    '"answer": "ATR, volatiliteyi olcmek ve pozisyon buyuklugunu ayarlamak icin '
+    'kullaniliyor; yuksek ATR daha genis stop anlamina gelir."},\n'
     '  {"question": "Yontemin temel varsayimi nedir?", '
-    '"answer": "Pasaja gore yontem, gecmis volatilitenin gelecekteki riski '
-    'temsil ettigini varsayar."}\n'
+    '"answer": "Yontem, gecmis volatilitenin gelecekteki riski temsil ettigini '
+    'varsayar; bu varsayim rejim degisiminde zayiflayabilir."}\n'
     "]}"
 )
 # Pasaj prompt'a gömülürken üst sınır (CPU üretim süresini sınırlar).
