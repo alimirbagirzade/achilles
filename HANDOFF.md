@@ -47,7 +47,10 @@ LLM'i "trader gibi düşünen" bir araştırma motoru yapmak:
 2. **Registry'yi genişlet** — ✅ permütasyon entropi (Bandt-Pompe, `PERMENTROPY`) eklendi
    (indicators + exams registry + L5 _REGISTRY + query_expander); KALAN: daha çok Markov/entropi
    göstergesi (ör. transfer entropi, rejim/HMM tabanlı) + yeni makale indir.
-3. **Web** — kaba "anlama %"yi `understanding-score` (objektif) ile değiştir.
+3. ✅ **Web objektif anlama skoru** — kaba "anlama %" dürüstçe "öz-değ. %" diye yeniden
+   adlandırıldı; header'a tıklanabilir "obj. anlama" rozeti + `GET /api/understanding-score`
+   (L3/L4 sınav geçme oranı; LLM yoksa insufficient_data). Ortak `score_indicator_exams`
+   helper (CLI + web). KALAN: web'de L5 kompozisyon sonucunu da göstermek (opsiyonel).
 4. **RAFT reçetesini düzelt** (seed'i yüzlerce örneğe ölçekle) → SONRA eğit (körlemesine 47h retrain YOK).
 5. Eğitim: reçete düzeltilince → eğit → eval → koşullu terfi → bug-fix loop.
 

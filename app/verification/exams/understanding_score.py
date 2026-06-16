@@ -24,6 +24,7 @@ __all__ = [
     "aggregate",
     "composition_to_result",
     "rag_answers_to_results",
+    "score_indicator_exams",
 ]
 
 
@@ -126,6 +127,26 @@ def _mk(level: str, name: str, passed: bool, detail: dict[str, Any]) -> ExamResu
 
 def _mk_status(level: str, name: str, status: str) -> ExamResult:
     return ExamResult(level=level, name=name, passed=False, status=status, seed=0, detail={})
+
+
+def score_indicator_exams(seed: int = 0) -> UnderstandingScore:
+    """L3+L4 sınavlarını tüm registry spec'lerinde koşar → objektif UnderstandingScore.
+
+    Kaba öz-değerlendirme %'sinin yerine geçen objektif skor (CLI + web ortak yolu).
+    LLM gerektirir; çevrimdışıysa sınavlar 'skipped' olur → graded=0 → status
+    'insufficient_data' (sahte yüksek skor üretmeyiz, CLAUDE.md Kural 2).
+    """
+    from app.verification.exams.l3_application import ApplicationExam
+    from app.verification.exams.l4_counterfactual import CounterfactualExam
+    from app.verification.exams.registry import list_specs
+
+    l3 = ApplicationExam()
+    l4 = CounterfactualExam()
+    results: list[ExamResult] = []
+    for spec in list_specs():
+        results.append(l3.run(spec, seed=seed))
+        results.append(l4.run(spec, seed=seed))
+    return aggregate(results)
 
 
 def aggregate(results: list[ExamResult]) -> UnderstandingScore:

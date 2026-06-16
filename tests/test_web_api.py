@@ -34,6 +34,22 @@ def test_status_ok(client: TestClient) -> None:
     assert body["embedding_mode"] in {"fake", "ollama"}
 
 
+def test_understanding_score_endpoint(client: TestClient) -> None:
+    # Objektif anlama skoru (L3/L4). Çevrimdışı sözleşme: LLM yokmuş gibi davran →
+    # sınavlar 'skipped' → graded=0 → status 'insufficient_data' (sahte skor yok).
+    from unittest.mock import patch
+
+    with patch("app.brain.local_llm.LocalLLM.available", return_value=False):
+        r = client.get("/api/understanding-score")
+    assert r.status_code == 200
+    body = r.json()
+    assert {"total", "passed", "failed", "skipped", "graded", "pass_rate"} <= set(body)
+    assert body["status"] == "insufficient_data"
+    assert body["graded"] == 0
+    assert body["pass_rate"] is None
+    assert body["skipped"] > 0  # tüm spec'ler LLM yokluğunda atlandı
+
+
 def test_security_headers_present(client: TestClient) -> None:
     r = client.get("/api/status")
     assert "content-security-policy" in {k.lower() for k in r.headers}

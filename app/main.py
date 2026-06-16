@@ -2119,21 +2119,9 @@ def understanding_score_cmd(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """Objektif ANLAMA SKORU — L3+L4 sınavları → geçme oranı (kaba %'nin yerine)."""
-    from app.verification.exams import (
-        ApplicationExam,
-        CounterfactualExam,
-        ExamResult,
-        list_specs,
-    )
-    from app.verification.exams.understanding_score import aggregate
+    from app.verification.exams.understanding_score import score_indicator_exams
 
-    l3 = ApplicationExam()
-    l4 = CounterfactualExam()
-    results: list[ExamResult] = []
-    for spec in list_specs():
-        results.append(l3.run(spec, seed=seed))
-        results.append(l4.run(spec, seed=seed))
-    score = aggregate(results)
+    score = score_indicator_exams(seed=seed)
     if as_json:
         console.print_json(json.dumps(score.to_dict(), ensure_ascii=False))
         return

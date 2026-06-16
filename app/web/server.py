@@ -489,6 +489,18 @@ def api_rag_mastery() -> dict:
     return compute_rag_mastery()
 
 
+@app.get("/api/understanding-score", dependencies=[api_auth])
+def api_understanding_score(seed: int = 0) -> dict:
+    """Objektif anlama skoru — L3+L4 sınav geçme oranı (kaba öz-değerlendirme %'nin yerine).
+
+    LLM gerektirir (model formülü uygular); çevrimdışıysa sınavlar 'skipped' olur ve
+    status 'insufficient_data' döner — sahte skor üretmeyiz (CLAUDE.md Kural 2).
+    """
+    from app.verification.exams.understanding_score import score_indicator_exams
+
+    return score_indicator_exams(seed=seed).to_dict()
+
+
 @app.get("/api/synthesis/reports", dependencies=[api_auth])
 def api_synthesis_reports() -> dict:
     """Üretilmiş sentez makalelerini listele (web'den incelenebilir/indirilebilir)."""

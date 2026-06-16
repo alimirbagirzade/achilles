@@ -156,7 +156,8 @@
             "RAG anladı: %" + m.coverage_percent +
             " (" + m.papers_with_real + "/" + m.n_papers + ")";
           if (m.comprehension_percent != null) {
-            txt += " · anlama %" + m.comprehension_percent +
+            // Kaba öz-değerlendirme — objektif değil; objektif skor için "obj. anlama" rozeti.
+            txt += " · öz-değ. %" + m.comprehension_percent +
                    " (" + m.papers_scored + " makale)";
           }
           txt += " · eğitim %" + m.train_readiness_percent;
@@ -1020,6 +1021,36 @@
         .finally(function () {
           batchScoreBtn.disabled = false;
           batchScoreBtn.textContent = "🧪 TÜM SKORLARI HESAPLA";
+        });
+    });
+  }
+
+  // ---------- objektif anlama skoru (L3/L4 sınav geçme oranı, kaba %'nin yerine) ----------
+  var objUnderstandingEl = document.getElementById("objUnderstanding");
+  if (objUnderstandingEl) {
+    objUnderstandingEl.addEventListener("click", function () {
+      var prev = objUnderstandingEl.textContent;
+      objUnderstandingEl.textContent = "obj. anlama: …";
+      api("/understanding-score", { method: "GET" })
+        .then(function (s) {
+          if (s.status !== "scored" || s.pass_rate == null) {
+            objUnderstandingEl.textContent = "obj. anlama: veri yok";
+            objUnderstandingEl.title =
+              "Objektif sınav notlanamadı (LLM çevrimdışı olabilir). Notlanan: " +
+              s.graded + " · atlanan: " + s.skipped;
+            toast("Objektif anlama: notlanan sınav yok (LLM çevrimdışı?).", true);
+            return;
+          }
+          var pct = Math.round(s.pass_rate * 100);
+          objUnderstandingEl.textContent = "obj. anlama %" + pct;
+          objUnderstandingEl.title =
+            "Objektif L3/L4 sınav geçme oranı — geçti " + s.passed + "/" + s.graded +
+            " (atlanan " + s.skipped + ", veri yok " + s.no_data + ")";
+          toast("Objektif anlama skoru: %" + pct + " (" + s.graded + " sınav)");
+        })
+        .catch(function (err) {
+          objUnderstandingEl.textContent = prev;
+          toast(err.message, true);
         });
     });
   }
