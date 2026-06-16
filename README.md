@@ -258,6 +258,47 @@ Soru → RAG ilgili makale parçalarını getirir → (base model + LoRA) cevapl
 
 ---
 
+## 🧠 Achilles okuduğunu *anladı* mı? (Anlama Doğrulama)
+
+**Ana fikir:** "Anlama" bir yüzdeyle ölçülmez, **kanıtlanır.** Achilles bir bilgiyi
+"anladı" demek = o bilgiyi **doğru kullanıp**, ondan **test edilebilir yeni bir şey
+üretebildi** demektir. Web panelindeki "anlama %" yalnızca kaba bir gösterge sayacıdır —
+gerçek kanıt aşağıdaki sınavdır.
+
+> ℹ️ **Bu merdiven nereden geliyor?** Aşağıdaki basamaklar, `CLAUDE.md` kuralları ile
+> [`docs/PROTOKOL_RAG_LORA_ZINCIR.md`](docs/PROTOKOL_RAG_LORA_ZINCIR.md) ilkelerinin
+> **gündelik bir okuması**dır; protokolün resmî numaralandırması değildir. Protokolün
+> kendi terimleri şunlardır: **"%100 ANLA / anlama skoru"** (`achilles rag-mastery`),
+> **"RAFT veri reçetesi"** ve **"dürüst gate (Kural 2)"**. Aşağıdaki "Taban · Dürüstlük"
+> basamağı protokoldeki **RAFT reddet** disiplinine, "Kompozisyon" basamağı ise
+> protokol aşama 3b'deki **Markov-zinciri indikatör sentezi → backtest** fikrine karşılık gelir.
+
+Anlama merdiveni — her basamak **test edilebilir bir davranıştır** (⚠️ *yüzde kanıt değildir*):
+
+| Basamak | Soru | Nasıl test edilir |
+|---|---|---|
+| **Taban · Dürüstlük** | Bilmediğinde uyduruyor mu? | Kaynak yoksa "yok" demeli (RAFT disiplini, Kural 7) |
+| **1 · Çıkarım** | Formülü doğru aldı mı? | Makaledeki formülü yeniden türetip orijinaliyle karşılaştır |
+| **2 · Sadakat** | Uydurmuyor mu? | Her iddia bir kaynağa izlenebiliyor mu |
+| **3 · Uygulama ★** | Yeni veride doğru hesaplıyor mu? | Formül + verilen sayılarla çıkan sonuç, tanımla eşleşiyor mu |
+| **4 · Karşıolgu** | Parametre değişince ne olur? | "Lookback 2 katı olsa?" → matematiksel olarak tutarlı mı (*"aday" iddiası taşıyacaksa maliyet dahil backtest + OOS de gerekir*) |
+| **5 · Kompozisyon ★** | Yeni formül üretebiliyor mu? | 2+ kavramı birleştir → matematiği geçerli **ve** maliyet dahil backtest + OOS geçti mi |
+
+★ = en güçlü anlama sinyalleri. **5. basamak (Kompozisyon) = nihai hedef** (örneğin
+Markov zinciri + entropi üzerine yeni bir indikatör) — **aynı zamanda** anlamanın en
+güçlü kanıtıdır, çünkü anlamadığın bir şeyi birleştirip backtest'ten geçiremezsin.
+
+**Dürüst kapı (Kural 2):** Üretilen "yeni formül" ancak (a) matematiksel olarak geçerliyse
+**ve** (b) maliyet (komisyon + slippage) dahil backtest + out-of-sample testini geçerse
+bir **"aday"** olur. Geçemezse halüsinasyondur ve dürüstçe öyle raporlanır — asla
+"hazır" ya da "başarılı" denmez. Bir parametre değişikliği (4. basamak) "aday" iddiası
+taşıyacaksa o da aynı kapıdan geçmek zorundadır; tek başına "matematik tutarlı" demek
+"çalışıyor" anlamına gelmez.
+
+Detay: [`docs/PROTOKOL_RAG_LORA_ZINCIR.md`](docs/PROTOKOL_RAG_LORA_ZINCIR.md)
+
+---
+
 ## 🔄 OTOMATİK ÖĞRENME DÖNGÜSÜ (Loop) — adım adım
 
 Arka planda çalışan, sistemi sürekli geliştiren döngü. **Her turda sırayla:**

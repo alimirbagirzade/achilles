@@ -5,6 +5,12 @@ _Son güncelleme: 2026-06-16. Teknik detay: [`RAG_LORA_ENTEGRASYON.md`](RAG_LORA
 > **Tek cümle:** RAG ve LoRA **ayrı inşa edilir**, **zincir olarak birlikte kullanılır.**
 > RAG **bilgiyi** (makalelerden) sağlar, LoRA **üslubu/disiplini** sağlar.
 
+> **🧠 ANA FİKİR (anlama):** Achilles bir bilgiyi "anladı" demek = onu **doğru kullanıp**
+> ondan **test edilebilir yeni bir şey üretebildi** demektir. Anlama bir yüzdeyle değil bir
+> **sınavla** kanıtlanır: uygula (L3) → karşıolgu (L4) → yeni formül üret (L5) → matematik
+> geçerli + maliyet dahil backtest/OOS geçir. Geçmeyen "yeni formül" halüsinasyondur (Kural 2).
+> Okunabilir özet: README → "Achilles okuduğunu *anladı* mı?".
+
 ---
 
 ## 1. Mimari — ayrı inşa, zincir kullanım
