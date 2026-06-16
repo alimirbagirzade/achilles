@@ -69,6 +69,12 @@ LoRA, RAG ile **birlikte** çalışacak şekilde eğitilmeli (Retrieval-Augmente
 - **Adversarial disiplin örnekleri** veriye dahil (garanti-kâr → reddet, backtest şart, maliyet dahil).
 - ❌ "Pasaja göre cevapla" reflexini sızdırma (v5 olmayan pasaja atıf yapıp uydurdu).
 
+**📄 Somut SAF örnek:** [`examples/raft_discipline_seed.jsonl`](examples/raft_discipline_seed.jsonl)
+— 6 elle yazılmış RAFT/disiplin örneği (eğitim formatında: `{"messages":[system,user,assistant]}`):
+bağlam-VAR→kullan+belirsizlik, bağlam-YOK→reddet (uydurma), garanti-kâr→reddet, backtest-şart,
+maliyetsiz-rakam→reddet, alakasız-bağlam→"yetersiz". v5'te bu tür örnekler **yoktu** —
+sonraki dataset'e bu reçete karıştırılmalı.
+
 ### 3d · LoRA eğitim
 - Lokal CPU (detached): web/terminal kapansa da sürer. `keep_alive=0` (OOM önle).
 - Eğitim BAŞLATMA: web "▶ EĞİTİME HAZIR" tek-tık / `.\scripts\start-train.ps1` / `achilles train --run`.
