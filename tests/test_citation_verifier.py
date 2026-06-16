@@ -39,6 +39,18 @@ def test_valid_citation() -> None:
     assert results[0].chunk_id == "paper1_c0001"
 
 
+def test_citation_with_page_suffix() -> None:
+    """Sayfalı atıf ([paper:chunk, s.N]) — sistemin kendi ürettiği gerçek format."""
+    verifier = CitationVerifier()
+    chunk = _make_chunk("paper1_c0007", "paper1")
+    assert chunk.citation == "[paper1:paper1_c0007, s.1]"  # RetrievedChunk gerçek çıktısı
+    answer = f"İddia {chunk.citation} doğru."
+    results = verifier.verify(answer, [chunk])
+    assert len(results) == 1
+    assert results[0].chunk_id == "paper1_c0007"  # ", s.1" ayıklandı
+    assert results[0].exists is True
+
+
 def test_invalid_citation() -> None:
     """Sahte atıf exists=False döndürmeli."""
     verifier = CitationVerifier()

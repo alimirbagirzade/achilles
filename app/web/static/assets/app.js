@@ -999,7 +999,7 @@
           toast(data.computed + " skor hesaplandı, " + data.skipped + " atlandı, " + data.errors + " hata.");
           var rows = (data.results || []).map(function (r) {
             var cls = r.status === "ok" ? "pos" : r.status === "error" ? "neg" : "muted";
-            var scoreStr = r.score != null ? " — " + Math.round(r.score * 100) + "%" : "";
+            var scoreStr = r.score != null ? " — " + Math.round(r.score) + "%" : "";
             return (
               '<div class="batch-row">' +
               '<span class="' + cls + '">' + esc(r.status.toUpperCase()) + "</span> " +

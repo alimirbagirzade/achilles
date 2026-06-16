@@ -11,6 +11,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from app.lora.safety_scanner import tr_fold
+
 # İstatistiksel kırmızı bayraklar — varlığı uyarı doğurur.
 STATISTICAL_FLAGS: list[str] = [
     "lookahead",
@@ -102,16 +104,18 @@ def verify_math_content(text: str) -> MathVerifyResult:
     if not text:
         return MathVerifyResult(passed=True)
 
-    lowered = text.lower()
+    # Türkçe-bilinçli normalize: "KESİNLİKLE"/"GARANTİ" gibi büyük harf yazımlar
+    # str.lower() ile (İ→i + birleşik nokta) taramayı atlatabiliyordu — tr_fold engeller.
+    folded = tr_fold(text)
     issues: list[str] = []
 
     for flag in STATISTICAL_FLAGS:
-        if flag in lowered:
+        if tr_fold(flag) in folded:
             issues.append(f"istatistiksel risk işareti: '{flag}'")
 
     overconfident_found = False
     for phrase in OVERCONFIDENT_PHRASES:
-        if phrase in lowered:
+        if tr_fold(phrase) in folded:
             issues.append(f"aşırı emin yatırım ifadesi: '{phrase}'")
             overconfident_found = True
 

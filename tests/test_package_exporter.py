@@ -84,6 +84,8 @@ def test_python_code_has_all_indicators(simple_ir: StrategyIR) -> None:
     code = _ir_to_python(simple_ir)
     assert "ewm(span=20" in code  # EMA 20
     assert "rsi_14" in code  # RSI 14
+    # RSI Wilder ewm ile üretilmeli (backtest ile aynı; SMA rolling değil).
+    assert "ewm(alpha=1/14" in code
     assert "PACKAGE_NAME" in code
 
 

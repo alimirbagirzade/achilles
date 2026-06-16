@@ -27,6 +27,13 @@ def test_overconfident_phrase_fails() -> None:
     assert any("garanti" in issue for issue in result.issues)
 
 
+def test_overconfident_uppercase_fails() -> None:
+    """BÜYÜK HARF aşırı emin ifade de blocker olmalı (Türkçe İ bypass'ı kapalı)."""
+    result = verify_math_content("BU STRATEJİ KESİNLİKLE GARANTİ KAZANDIRIR.")
+    assert result.passed is False
+    assert result.issues
+
+
 def test_suspicious_high_return_flagged() -> None:
     """Aşırı yüksek getiri iddiası inceleme işaretlemeli."""
     result = verify_math_content("Yıllık getiri %5000 olur.")

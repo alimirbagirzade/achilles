@@ -74,9 +74,22 @@ def _load_jsonl(path: Path) -> list[dict]:
 
 
 def _row_to_messages(row: dict) -> list[dict]:
-    """Satırı chat mesaj listesine çevir (messages > system/user/assistant > text)."""
+    """Satırı chat mesaj listesine çevir.
+
+    Desteklenen formatlar (öncelik sırası): messages > prompt/completion >
+    system/user/assistant > text. ``prompt``/``completion`` MLX-LM 'completions'
+    formatıdır ve ``DatasetBuilder`` bunu üretir — eksikse PEFT eğitimi tüm
+    örnekleri sessizce atıp boş veriyle çökerdi.
+    """
     if "messages" in row:
         return [m for m in row["messages"] if m.get("content")]
+    if row.get("prompt") or row.get("completion"):
+        msgs = []
+        if row.get("prompt"):
+            msgs.append({"role": "user", "content": row["prompt"]})
+        if row.get("completion"):
+            msgs.append({"role": "assistant", "content": row["completion"]})
+        return msgs
     msgs = []
     for role in ("system", "user", "assistant"):
         if row.get(role):

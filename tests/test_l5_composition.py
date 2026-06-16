@@ -34,6 +34,19 @@ def test_math_rsi_100_uzeri_fail() -> None:
     assert any("RSI" in d for d in math_gate.details)
 
 
+def test_math_entropy_out_of_bounds_fail() -> None:
+    # ENTROPY ∈ [0,1]; "entropy_4 > 5" mantıksal olarak imkansız → math kapısı reddetmeli.
+    ir = StrategyIR(
+        name="entropy_imkansiz",
+        indicators=[IndicatorSpec(name="ENTROPY", period=4), IndicatorSpec(name="EMA", period=20)],
+        entry_rules=["entropy_4 > 5"],
+        exit_rules=["ema_20 < entropy_4"],
+    )
+    math_gate = _gate_named(CompositionGate().evaluate_composition(ir), "math")
+    assert math_gate.passed is False
+    assert any("ENTROPY" in d for d in math_gate.details)
+
+
 def test_math_periyot_1_fail() -> None:
     ir = StrategyIR(
         name="periyot1",

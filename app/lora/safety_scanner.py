@@ -8,7 +8,23 @@ kişisel veri ve kesin finansal yönlendirme arar.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
+
+
+def tr_fold(text: str) -> str:
+    """Türkçe-bilinçli normalize: büyük/küçük harf + aksan farklarını eşitle.
+
+    Python ``str.lower()`` Türkçe büyük 'İ'yi 'i' + birleşik nokta (U+0307)
+    dizisine çevirir; bu yüzden ``"ŞİMDİ AL".lower()`` içinde "şimdi al" GEÇMEZ.
+    Bu fonksiyon İ/I'yı doğru eşler, casefold uygular ve birleşik aksanları
+    temizler — böylece büyük harf / aksanlı yazımlar finansal-yönlendirme
+    taramasını atlatamaz (BLOCKER gate güvenliği).
+    """
+    folded = text.replace("İ", "i").replace("I", "ı").casefold()
+    decomposed = unicodedata.normalize("NFKD", folded)
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+
 
 # (etiket, derlenmiş regex) çiftleri.
 FORBIDDEN_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
@@ -67,9 +83,12 @@ def scan_for_secrets(text: str) -> SafetyResult:
         if pattern.search(text):
             violations.append(f"yasak desen: {label}")
 
-    lowered = text.lower()
+    folded = tr_fold(text)
+    seen_directives: set[str] = set()
     for directive in FINANCIAL_DIRECTIVES:
-        if directive in lowered:
+        folded_directive = tr_fold(directive)
+        if folded_directive in folded and folded_directive not in seen_directives:
+            seen_directives.add(folded_directive)
             violations.append(f"finansal yönlendirme: '{directive}'")
 
     return SafetyResult(passed=not violations, violations=violations)

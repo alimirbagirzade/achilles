@@ -164,25 +164,33 @@ class DatasetBuilder:
             records = self.collect(lora_eligible_only=lora_eligible_only)
 
         rng.shuffle(records)
-        # valid set en az 4 örnek içermeli (mlx_lm batch_size=4 zorunluluğu).
-        # Toplam < 8 ise tüm örnekler train, valid için ilk 4'ü kopyala (bootstrap).
-        if not records:
+        # Valid seti train'den AYRIK olmalı (OOS garantisi, CLAUDE.md Kural 2):
+        # eski "bootstrap" kopyalama (valid ⊂ train) KALDIRILDI → sahte OOS yok.
+        # Az veride valid azınlıkta kalır; train daima çoğunluk.
+        if len(records) < 2:
             n_valid = 0
-            valid: list[dict] = []
-            train: list[dict] = []
         elif len(records) < 8:
-            n_valid = 0
-            train = records
-            valid = records[: min(4, len(records))]  # bootstrap: kopyala
+            n_valid = max(1, int(len(records) * valid_ratio))
         else:
             n_valid = max(4, int(len(records) * valid_ratio))
-            valid = records[:n_valid]
-            train = records[n_valid:]
+        valid = records[:n_valid]
+        train = records[n_valid:]
 
         out_dir = self.settings.jsonl_dir
         out_dir.mkdir(parents=True, exist_ok=True)
         train_path = out_dir / "train.jsonl"
         valid_path = out_dir / "valid.jsonl"
+
+        # CLOBBER KORUMASI: üretilecek train boşsa (collect() geçici boş döndüyse)
+        # mevcut hazır train.jsonl/valid.jsonl dosyalarını SIFIRLAMA — veri kaybı önlenir.
+        if not train:
+            return DatasetResult(
+                train_path=train_path,
+                valid_path=valid_path,
+                n_train=0,
+                n_valid=0,
+                content_hash="",
+            )
 
         hasher = hashlib.sha256()
         with open(train_path, "w", encoding="utf-8") as f:

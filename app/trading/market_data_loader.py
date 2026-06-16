@@ -71,9 +71,13 @@ def generate_synthetic_ohlcv(
     drift = np.where(np.arange(n) < n // 2, 0.0001, -0.00005)
     rets = drift + rng.normal(0, 0.004, n)
     close = start_price * np.exp(np.cumsum(rets))
-    high = close * (1 + np.abs(rng.normal(0, 0.002, n)))
-    low = close * (1 - np.abs(rng.normal(0, 0.002, n)))
     open_ = np.concatenate([[start_price], close[:-1]])
+    # high/low open VE close'u kapsamalı; aksi halde open aralık dışına taşar ve
+    # load_ohlcv OHLC bütünlük kontrolü barı "bozuk veri" diye reddeder (round-trip kırılır).
+    base_hi = np.maximum(open_, close)
+    base_lo = np.minimum(open_, close)
+    high = base_hi * (1 + np.abs(rng.normal(0, 0.002, n)))
+    low = base_lo * (1 - np.abs(rng.normal(0, 0.002, n)))
     vol = rng.uniform(100, 1000, n)
     idx = pd.date_range("2023-01-01", periods=n, freq=freq, tz="UTC")
     return pd.DataFrame(

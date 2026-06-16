@@ -94,11 +94,14 @@ class AutoLoRAPipeline:
         check_interval_min: int = 60,
         eval_pass_threshold: float = 0.5,
         auto_enabled: bool = False,
+        eval_sample_n: int = 8,
     ) -> None:
         self.min_eligible_cards = min_eligible_cards
         self.check_interval_min = check_interval_min
         self.eval_pass_threshold = eval_pass_threshold
         self.auto_enabled = auto_enabled
+        # CPU'da 4B inference ağır — eval başına soru sayısını sınırla (None=tümü).
+        self.eval_sample_n = eval_sample_n
         self._state = self._load_state()
         self._lock = asyncio.Lock()
 
@@ -283,19 +286,38 @@ class AutoLoRAPipeline:
                 await self._register_adapter(adapter_name)
                 return
 
-            from app.training.evaluate_model import ModelEvaluator
+            # GERÇEK adapter eval (Kural 2): base Ollama'yı değil, eğitilen PEFT
+            # adapter'ını yükleyip base ile KARŞILAŞTIR. Eski ModelEvaluator base
+            # modeli ölçüp körlemesine 'EVAL_PASSED' damgalıyordu → v5 adapter
+            # regresyonunun kök sebebi (adapter base'den kötüydü ama terfi adayı oldu).
+            from app.config import get_settings
+            from app.training.adapter_eval import evaluate_adapter
 
-            evaluator = ModelEvaluator()
+            adapter_dir = get_settings().adapters_dir / adapter_name
             scores: dict[str, Any] = {}
-            total = 0.0
+            regression_any = False
+            improved_any = False
+            try:
+                for es in eval_sets:
+                    res = await asyncio.to_thread(
+                        evaluate_adapter, adapter_dir, es, n=self.eval_sample_n
+                    )
+                    scores[es.stem] = res.to_dict()
+                    regression_any = regression_any or res.regression
+                    improved_any = improved_any or (res.verdict == "accept")
+            except ImportError as exc:
+                # torch/transformers/peft kurulu değil → adapter GERÇEKTEN ölçülemez.
+                # Anayasa II/VI: ölçmeden 'geçti' deme → EVAL_SKIPPED (terfi edilemez).
+                log.warning("Auto-LoRA: adapter eval bağımlılıkları yok (%s) → EVAL_SKIPPED", exc)
+                async with self._lock:
+                    self._state.stage = PipelineStage.EVAL_SKIPPED
+                    self._state.last_error = f"Adapter eval bağımlılıkları eksik: {exc}"
+                    self._save_state()
+                await self._register_adapter(adapter_name)
+                return
 
-            for es in eval_sets:
-                result = await asyncio.to_thread(evaluator.run_eval, es, adapter_name)
-                scores[es.stem] = result
-                total += result.get("pass_rate", 0.0)
-
-            avg = total / len(eval_sets)
-            passed = avg >= self.eval_pass_threshold
+            # Terfi yalnız adapter base'den İYİ ise: hiç regresyon yok + en az bir gelişme.
+            passed = improved_any and not regression_any
 
             # Eval sonuçlarını kalıcı DB'ye kaydet
             try:
@@ -304,12 +326,14 @@ class AutoLoRAPipeline:
                 store = SqliteStore()
                 for es in eval_sets:
                     r = scores.get(es.stem, {})
+                    n_items = int(r.get("n", 0))
+                    adapter_score = float(r.get("adapter_score", 0.0))
                     store.save_eval_history(
                         adapter_name=adapter_name,
                         eval_set=es.stem,
-                        pass_rate=float(r.get("pass_rate", 0.0)),
-                        total_items=int(r.get("total", 0)),
-                        passed_items=int(r.get("passed", 0)),
+                        pass_rate=adapter_score,
+                        total_items=n_items,
+                        passed_items=round(adapter_score * n_items),
                     )
             except Exception:
                 log.warning("Auto-LoRA: eval_history kaydedilemedi")
@@ -318,16 +342,19 @@ class AutoLoRAPipeline:
                 self._state.eval_scores = scores
                 if passed:
                     self._state.stage = PipelineStage.EVAL_PASSED
-                    log.info("Auto-LoRA: Eval geçti (%.2f) → production onayı bekleniyor", avg)
-                else:
+                    log.info("Auto-LoRA: Adapter base'den İYİ → EVAL_PASSED (terfi onayı bekliyor)")
+                elif regression_any:
                     self._state.stage = PipelineStage.EVAL_FAILED
-                    self._state.last_error = (
-                        f"Eval başarısız: ort={avg:.2f} < eşik={self.eval_pass_threshold}"
-                    )
-                    log.warning("Auto-LoRA: Eval başarısız: %.2f", avg)
+                    self._state.last_error = "Adapter base'e göre GERİLEDİ (regresyon) — terfi YOK"
+                    log.warning("Auto-LoRA: Adapter regresyon → EVAL_FAILED")
+                else:
+                    # eşit/inconclusive → terfi etme ama adapter'ı SMOKE_PASSED olarak kaydet.
+                    self._state.stage = PipelineStage.EVAL_SKIPPED
+                    self._state.last_error = "Adapter base ile eşit (inconclusive) — terfi YOK"
+                    log.info("Auto-LoRA: Adapter base ile eşit → EVAL_SKIPPED")
                 self._save_state()
 
-            if passed:
+            if self._state.stage in (PipelineStage.EVAL_PASSED, PipelineStage.EVAL_SKIPPED):
                 await self._register_adapter(adapter_name)
 
         except Exception as exc:

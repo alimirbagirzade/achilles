@@ -36,7 +36,8 @@ _DOCS_SPEC = [
 ]
 
 _CSS = """
-body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #1a1a1a; }
+body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11pt;
+       line-height: 1.5; color: #1a1a1a; }
 h1 { color: #1d4ed8; border-bottom: 2px solid #1d4ed8; padding-bottom: 4px; }
 h2 { color: #0369a1; border-bottom: 1px solid #cbd5e1; padding-bottom: 2px; }
 h3 { color: #334155; }
@@ -44,7 +45,8 @@ h4 { color: #475569; }
 a { color: #2563eb; }
 code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px;
        font-family: 'Consolas', 'Courier New', monospace; font-size: 9.5pt; }
-pre { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px; font-size: 9pt; }
+pre { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px;
+      padding: 8px; font-size: 9pt; }
 table { border-collapse: collapse; }
 th, td { border: 1px solid #cbd5e1; padding: 4px 8px; text-align: left; font-size: 10pt; }
 th { background: #eff6ff; }

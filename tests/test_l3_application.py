@@ -95,6 +95,47 @@ def test_carpik_json_ayni_seed_deterministik() -> None:
     assert res.passed is True
 
 
+def test_rsi_exam_reference_masks_warmup() -> None:
+    # RSI sınav referansı fillna(50) konvansiyonunu KULLANMAZ: bar 0 NaN, tanımlı
+    # bölge bitişik bir sonek (ortada delik yok) — doğru model haksızca fail almaz.
+    from app.verification.exams.registry import get_spec
+
+    closes = ReferenceOracle.synthetic_closes(20, 0)
+    df = pd.DataFrame({"close": closes})
+    ref = get_spec("RSI").reference(df, 14).to_numpy(dtype=float)
+    assert np.isnan(ref[0])
+    defined = ~np.isnan(ref)
+    first = int(np.argmax(defined))
+    assert defined[first:].all()
+
+
+def test_rsi_l3_pass_with_correct_values() -> None:
+    from app.verification.exams.registry import get_spec
+
+    closes = ReferenceOracle.synthetic_closes(20, 0)
+    df = pd.DataFrame({"close": closes})
+    ref = get_spec("RSI").reference(df, 14).to_numpy(dtype=float)
+    ref_vals = ref[~np.isnan(ref)].tolist()
+    stub = _StubLLM(json.dumps({"values": ref_vals}))
+    res = ApplicationExam(llm=stub).run_by_name("RSI", period=14, n_points=20, seed=0)
+    assert res.status == "passed"
+
+
+def test_permentropy_l3_not_dead_exam() -> None:
+    # min_points uygulanmazsa 8 nokta → referans hep NaN → no_data (ölü sınav).
+    from app.verification.exams.registry import get_spec
+
+    spec = get_spec("PERMENTROPY")
+    closes = ReferenceOracle.synthetic_closes(max(8, spec.min_points), 0)
+    df = pd.DataFrame({"close": closes})
+    ref = spec.reference(df, spec.default_period).to_numpy(dtype=float)
+    ref_vals = ref[~np.isnan(ref)].tolist()
+    assert ref_vals  # tanımlı değer var
+    stub = _StubLLM(json.dumps({"values": ref_vals}))
+    res = ApplicationExam(llm=stub).run_by_name("PERMENTROPY", n_points=8, seed=0)
+    assert res.status == "passed"  # no_data DEĞİL
+
+
 def test_parse_values_birimleri() -> None:
     assert _parse_values('{"values": [1, 2.5, 3]}') == [1.0, 2.5, 3.0]
     assert _parse_values("[4, 5]") == [4.0, 5.0]

@@ -13,6 +13,9 @@ from app.memory.retrieval_service import RetrievedChunk
 
 # [paper_id:chunk_id] formatındaki atıf deseni
 _CITATION_RE = re.compile(r"\[([^:\]]+):([^\]]+)\]")
+# RetrievedChunk.citation sayfalı atıf üretir: "[paper:chunk, s.5]". Doğrulama için
+# chunk_id'den ", s.N" son-ekini ayıkla (aksi halde chunk_id eşleşmesi hep başarısız olur).
+_PAGE_SUFFIX_RE = re.compile(r",\s*s\.\d+\s*$")
 
 
 @dataclass
@@ -60,7 +63,7 @@ class CitationVerifier:
 
         for match in _CITATION_RE.finditer(answer_text):
             paper_id = match.group(1).strip()
-            chunk_id = match.group(2).strip()
+            chunk_id = _PAGE_SUFFIX_RE.sub("", match.group(2).strip()).strip()
             context = _extract_context(answer_text, match.start())
 
             # Chunk doğrudan mevcutsa

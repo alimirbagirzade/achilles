@@ -123,19 +123,22 @@ def _ir_to_python(ir: StrategyIR) -> str:
         elif name == "SMA":
             lines.append(f'    df["{col}"] = df["close"].rolling({p}).mean()')
         elif name == "RSI":
+            # Wilder ewm(alpha=1/p) — backtest indicators.py ile AYNI; SMA değil
+            # (aksi halde dışa aktarılan strateji doğrulanan davranıştan sapar).
             lines += [
                 '    _d = df["close"].diff()',
-                f"    _g = _d.clip(lower=0).rolling({p}).mean()",
-                f"    _l = (-_d).clip(lower=0).rolling({p}).mean()",
+                f"    _g = _d.clip(lower=0).ewm(alpha=1/{p}, adjust=False).mean()",
+                f"    _l = (-_d).clip(lower=0).ewm(alpha=1/{p}, adjust=False).mean()",
                 f'    df["{col}"] = 100 - (100 / (1 + _g / _l.replace(0, 1e-10)))',
             ]
         elif name == "ATR":
+            # Wilder ewm — backtest ATR ile AYNI (SMA rolling değil).
             lines += [
                 '    _hl = df["high"] - df["low"]',
                 '    _hc = (df["high"] - df["close"].shift()).abs()',
                 '    _lc = (df["low"] - df["close"].shift()).abs()',
                 "    _tr = pd.concat([_hl, _hc, _lc], axis=1).max(axis=1)",
-                f'    df["{col}"] = _tr.rolling({p}).mean()',
+                f'    df["{col}"] = _tr.ewm(alpha=1/{p}, adjust=False).mean()',
             ]
         elif name == "MACD":
             lines += [

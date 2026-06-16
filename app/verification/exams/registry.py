@@ -13,13 +13,33 @@ OHLC/çok-çıktı gerektirir, sonraki turda eklenir.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
+import numpy as np
 import pandas as pd
 
 from app.trading.indicators import compute_indicator
 
 __all__ = ["ExamSpec", "get_spec", "list_specs"]
+
+
+def _rsi_exam_reference(df: pd.DataFrame, period: int) -> pd.Series:
+    """RSI referansı — üretim ``fillna(50)`` konvansiyonu OLMADAN (tanımsız bölge NaN).
+
+    Üretim RSI'si warmup'ı (bar 0 + ilk düşüş öncesi) 50 ile doldurur; bu artefakt
+    TANIMDA yok, dolayısıyla doğru hesaplayan modeli bile L3'te haksızca fail
+    ettiriyordu. NaN bırakılınca ``defined`` maskesi bu bitişik öneki dışlar ve
+    sınav yalnız tanımdan TÜRETİLEBİLİR barları puanlar.
+    """
+    close = df["close"]
+    delta = close.diff()
+    gain = delta.clip(lower=0.0)
+    loss = -delta.clip(upper=0.0)
+    avg_gain = gain.ewm(alpha=1 / period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1 / period, adjust=False).mean()
+    rs = avg_gain / avg_loss.replace(0.0, np.nan)
+    return 100 - (100 / (1 + rs))
 
 
 @dataclass(frozen=True)
@@ -32,9 +52,15 @@ class ExamSpec:
     needs_ohlc: bool = False
     # L4 için: parametre adı -> beklenen monoton yön (insan-okur + işaret testi notu)
     monotonic: dict[str, str] = field(default_factory=dict)
+    # L3 için gereken minimum nokta sayısı (ör. permütasyon entropi geniş pencere ister).
+    min_points: int = 0
+    # Sınava özel referans (üretim konvansiyonlarından arındırılmış); None → compute_indicator.
+    ref_override: Callable[[pd.DataFrame, int], pd.Series] | None = None
 
     def reference(self, df: pd.DataFrame, period: int) -> pd.Series:
-        """Referans seri — daima güvenli compute_indicator registry'si."""
+        """Referans seri — sınav-özel override varsa onu, yoksa compute_indicator'ı kullan."""
+        if self.ref_override is not None:
+            return self.ref_override(df, period)
         return compute_indicator(self.name, df, period)
 
 
@@ -71,6 +97,7 @@ _SPECS: dict[str, ExamSpec] = {
         rtol=1e-2,
         atol=1e-2,
         monotonic={"period": "periyot artarsa daha az uç değer (daha pürüzsüz)"},
+        ref_override=_rsi_exam_reference,
     ),
     "ENTROPY": ExamSpec(
         name="ENTROPY",
@@ -97,6 +124,8 @@ _SPECS: dict[str, ExamSpec] = {
         rtol=1e-3,
         atol=1e-3,
         monotonic={"period": "periyot artarsa daha pürüzsüz (daha kararlı tahmin)"},
+        # order=3 + period=8 → ilk tanımlı bar ~10. konumda; L3 yeterli pencere ister.
+        min_points=16,
     ),
 }
 

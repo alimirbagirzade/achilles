@@ -153,18 +153,29 @@ class CompositionGate:
         )
 
 
+# Sınırlı (bounded) göstergeler: kural sabiti bu aralık dışındaysa kural imkansızdır.
+_BOUNDED_INDICATORS: dict[str, tuple[float, float]] = {
+    "RSI": (0.0, 100.0),
+    "ENTROPY": (0.0, 1.0),
+    "PERMENTROPY": (0.0, 1.0),
+}
+
+
 def _rule_bound_problems(rule: str) -> list[str]:
-    """Mantıksal olarak imkansız kuralları yakala (ör. RSI ∈ [0,100] dışı)."""
+    """Mantıksal olarak imkansız kuralları yakala (ör. RSI ∈ [0,100], ENTROPY ∈ [0,1] dışı)."""
     lhs, op, rhs = parse_rule(rule)
     if not re.match(r"^-?\d", rhs):
         return []  # rhs bir kolon; sayısal sınır kontrolü yok
     val = float(rhs)
     name, _ = _parse_col(lhs)
-    if name == "RSI":
-        if val < 0 or val > 100:
-            return [f"RSI kuralı aralık dışı: {rule!r} (RSI ∈ [0,100])"]
-        if op in (">", ">=") and val >= 100:
-            return [f"RSI kuralı asla doğru olamaz: {rule!r}"]
-        if op in ("<", "<=") and val <= 0:
-            return [f"RSI kuralı asla doğru olamaz: {rule!r}"]
+    bounds = _BOUNDED_INDICATORS.get(name)
+    if bounds is None:
+        return []
+    lo, hi = bounds
+    if val < lo or val > hi:
+        return [f"{name} kuralı aralık dışı: {rule!r} ({name} ∈ [{lo:g},{hi:g}])"]
+    if op in (">", ">=") and val >= hi:
+        return [f"{name} kuralı asla doğru olamaz: {rule!r}"]
+    if op in ("<", "<=") and val <= lo:
+        return [f"{name} kuralı asla doğru olamaz: {rule!r}"]
     return []

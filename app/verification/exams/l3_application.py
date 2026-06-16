@@ -74,6 +74,9 @@ class ApplicationExam:
         self, spec: ExamSpec, *, period: int | None = None, n_points: int = 8, seed: int = 0
     ) -> ExamResult:
         p = period or spec.default_period
+        # Bazı göstergeler (ör. permütasyon entropi) geniş pencere ister; yetersiz
+        # nokta → referans hep NaN → no_data (ölü sınav). spec.min_points bunu önler.
+        n_points = max(n_points, spec.min_points)
         closes = self.oracle.synthetic_closes(n_points, seed)
         df = pd.DataFrame({"close": closes})
         ref = spec.reference(df, p).to_numpy(dtype=float)

@@ -35,20 +35,37 @@ def _builder_with_store(n: int, tmp_path: Path) -> DatasetBuilder:
     return b
 
 
-def test_empty_store_produces_empty_files(tmp_path: Path) -> None:
+def test_empty_store_returns_zero_without_writing(tmp_path: Path) -> None:
+    # Boş veri → 0/0 döner ve dosya yazmaz (clobber koruması).
     b = _builder_with_store(0, tmp_path)
     r = b.build(lora_eligible_only=False)
     assert r.n_train == 0
     assert r.n_valid == 0
-    assert r.train_path.exists()
 
 
-def test_few_examples_bootstrap_valid(tmp_path: Path) -> None:
-    # 5 örnek < 8 → bootstrap: train=5, valid=min(4,5)=4 (kopyalama)
+def test_empty_build_does_not_clobber_existing(tmp_path: Path) -> None:
+    # Önceden hazır train.jsonl varsa, boş build onu SIFIRLAMAMALI (veri kaybı yok).
+    train = tmp_path / "train.jsonl"
+    valid = tmp_path / "valid.jsonl"
+    train.write_text('{"prompt": "x", "completion": "y"}\n', encoding="utf-8")
+    valid.write_text('{"prompt": "a", "completion": "b"}\n', encoding="utf-8")
+    b = _builder_with_store(0, tmp_path)
+    b.build(lora_eligible_only=False)
+    assert train.read_text(encoding="utf-8").strip() != ""  # korundu
+    assert valid.read_text(encoding="utf-8").strip() != ""
+
+
+def test_few_examples_valid_disjoint_from_train(tmp_path: Path) -> None:
+    # 5 örnek < 8 → valid azınlıkta, train çoğunlukta, AYRIK (kopyalama yok).
     b = _builder_with_store(5, tmp_path)
     r = b.build(lora_eligible_only=False)
-    assert r.n_train == 5
-    assert r.n_valid == 4
+    assert r.n_train + r.n_valid == 5
+    assert r.n_train > r.n_valid
+    with open(r.train_path, encoding="utf-8") as f:
+        train_recs = {line.strip() for line in f if line.strip()}
+    with open(r.valid_path, encoding="utf-8") as f:
+        valid_recs = {line.strip() for line in f if line.strip()}
+    assert train_recs.isdisjoint(valid_recs)  # OOS: hiç örtüşme yok
 
 
 def test_enough_examples_proper_split(tmp_path: Path) -> None:

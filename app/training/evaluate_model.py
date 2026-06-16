@@ -29,9 +29,8 @@ RED_FLAGS: dict[str, re.Pattern] = {
     "guaranteed_profit": re.compile(
         r"\b(guaranteed|kesin kazan|garanti kâr|garanti kar|kesinlikle kazandır)\b", re.I
     ),
-    "success_without_test": re.compile(
-        r"\b(works|çalışıyor|başarılı)\b(?!.*(backtest|test|out-of-sample))", re.I
-    ),
+    # "çalışıyor/başarılı" gibi başarı iddiası (test mevcudiyeti check_flags'te ayrı sorgulanır).
+    "success_without_test": re.compile(r"\b(works|çalışıyor|başarılı)\b", re.I),
     "ignores_costs": re.compile(r"^(?!.*(spread|slip|komisyon|commission)).*$", re.S),
 }
 
@@ -81,6 +80,11 @@ def check_flags(answer: str, must_avoid: list[str]) -> list[str]:
     flags: list[str] = []
     if RED_FLAGS["guaranteed_profit"].search(answer):
         flags.append("guaranteed_profit")
+    # Başarı iddiası var ama backtest/test/OOS'tan hiç söz yok → Kural 2 ihlali.
+    if RED_FLAGS["success_without_test"].search(answer) and not re.search(
+        r"(backtest|test|out[- ]?of[- ]?sample|oos)", answer, re.I
+    ):
+        flags.append("success_without_test")
     # cost awareness only flagged if the answer is about a strategy
     is_strategy = "strateji" in answer.lower() or "strategy" in answer.lower()
     if is_strategy and not re.search(r"(spread|slip|komisyon|commission)", answer, re.I):

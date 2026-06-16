@@ -39,6 +39,14 @@ def test_financial_directive_rejected() -> None:
     assert any("finansal" in v for v in result.violations)
 
 
+def test_financial_directive_uppercase_rejected() -> None:
+    """BÜYÜK HARF Türkçe yönlendirme de yakalanmalı (İ→i+nokta bypass'ı kapalı)."""
+    # str.lower() 'ŞİMDİ AL'ı 'şi̇mdi̇ al'a çevirip kaçırıyordu — tr_fold engeller.
+    result = scan_for_secrets("ŞİMDİ AL pozisyona gir, GARANTİ KÂR var.")
+    assert result.passed is False
+    assert any("finansal" in v for v in result.violations)
+
+
 def test_national_id_rejected() -> None:
     """11 haneli TC kimlik deseni reddedilmeli."""
     result = scan_for_secrets("Kimlik: 12345678901")
