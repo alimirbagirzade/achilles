@@ -830,6 +830,20 @@ uv run achilles train --run             # LoRA — yerel (smoke; ağır 4B için
 uv run achilles evaluate <eval.jsonl>   # modeli failure-mode eval setiyle test et
 ```
 
+### Anlama Doğrulama (L3/L4/L5 — objektif sınav)
+
+"Anlama"yı kaba %'yle değil, **test edilebilir sınavla** ölçer (bkz. yukarıdaki
+"🧠 Achilles okuduğunu *anladı* mı?" bölümü). Referans daima güvenli `compute_indicator`;
+LLM yoksa sınav `skipped` döner (sahte pass yok). L5 kompozisyon yalnız matematik +
+yenilik + maliyet-dahil backtest/OOS geçerse "aday" verir.
+
+```bash
+uv run achilles understanding-score      # objektif ANLAMA SKORU (L3+L4 geçme oranı)
+uv run achilles exam-l3 --indicator SMA  # L3 UYGULAMA: formülü tutulan sayıya doğru uyguladı mı
+uv run achilles exam-l4 --indicator EMA  # L4 KARŞIOLGU: parametre değişiminin yönünü bildi mi
+uv run achilles exam-l5                  # L5 KOMPOZİSYON: math+novelty+backtest kapısı (aday/red)
+```
+
 ### Paper Mastery
 
 ```bash

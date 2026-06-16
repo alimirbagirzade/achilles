@@ -2021,3 +2021,131 @@ def lora_status() -> None:
     production = registry.get_production()
     table.add_row("Production adapter", production.adapter_name if production else "yok")
     console.print(table)
+
+
+# --------------------------------------------------------------------------
+# Anlama Doğrulama sınavları (L3 / L4 / L5 + objektif anlama-skoru)
+# --------------------------------------------------------------------------
+_STATUS_MARK = {
+    "passed": "[green]GEÇTİ[/]",
+    "failed": "[red]KALDI[/]",
+    "skipped": "[yellow]ATLANDI (LLM yok)[/]",
+    "no_data": "[dim]VERİ YOK[/]",
+}
+
+
+def _print_exam_results(results: list, as_json: bool) -> None:
+    if as_json:
+        console.print_json(json.dumps([r.to_dict() for r in results], ensure_ascii=False))
+        return
+    table = Table(title="Anlama Sınav Sonuçları")
+    table.add_column("Seviye")
+    table.add_column("Gösterge")
+    table.add_column("Durum")
+    table.add_column("Not")
+    for r in results:
+        mark = _STATUS_MARK.get(r.status, r.status)
+        if "max_abs_err" in r.detail:
+            note = f"max_hata={r.detail['max_abs_err']:.2g}"
+        else:
+            note = str(r.detail.get("reason") or r.detail.get("truth") or "")
+        table.add_row(r.level, r.name, mark, note[:48])
+    console.print(table)
+
+
+@app.command("exam-l3")
+def exam_l3(
+    indicator: str = typer.Option("all", help="Gösterge (SMA/EMA/RSI) veya 'all'"),
+    period: int = typer.Option(0, help="Periyot (0 = spec varsayılanı)"),
+    seed: int = typer.Option(0, help="Determinizm için seed"),
+    as_json: bool = typer.Option(False, "--json", help="JSON çıktı"),
+) -> None:
+    """L3 UYGULAMA sınavı — model formülü TUTULAN sayılara doğru uyguluyor mu (np.allclose)."""
+    from app.verification.exams import ApplicationExam, get_spec, list_specs
+
+    exam = ApplicationExam()
+    specs = list_specs() if indicator.lower() == "all" else [get_spec(indicator)]
+    results = [exam.run(s, period=period or None, seed=seed) for s in specs]
+    _print_exam_results(results, as_json)
+
+
+@app.command("exam-l4")
+def exam_l4(
+    indicator: str = typer.Option("all", help="Gösterge (SMA/EMA/RSI) veya 'all'"),
+    period: int = typer.Option(0, help="Periyot (0 = spec varsayılanı)"),
+    factor: int = typer.Option(2, help="Periyot kaç katına çıkarılsın"),
+    seed: int = typer.Option(0),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """L4 KARŞIOLGU sınavı — parametre değişiminin yönünü model doğru tahmin ediyor mu."""
+    from app.verification.exams import CounterfactualExam, get_spec, list_specs
+
+    exam = CounterfactualExam()
+    specs = list_specs() if indicator.lower() == "all" else [get_spec(indicator)]
+    results = [exam.run(s, period=period or None, factor=factor, seed=seed) for s in specs]
+    _print_exam_results(results, as_json)
+
+
+@app.command("exam-l5")
+def exam_l5(
+    data: Path | None = typer.Option(None, help="OHLCV CSV yolu (yoksa sentetik veri)"),
+    seed: int = typer.Option(42, help="Sentetik veri seed'i"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """L5 KOMPOZİSYON sınavı — örnek kompozisyon math+novelty+backtest kapılarından geçiyor mu."""
+    from app.trading.market_data_loader import generate_synthetic_ohlcv, load_ohlcv
+    from app.trading.strategy_ir import example_ir
+    from app.verification.exams import CompositionGate
+
+    df = load_ohlcv(data) if data else generate_synthetic_ohlcv(n=2000, seed=seed)
+    res = CompositionGate().evaluate_composition(example_ir(), df)
+    if as_json:
+        console.print_json(json.dumps(res.to_dict(), ensure_ascii=False))
+        return
+    verdict = "[green]ADAY[/]" if res.candidate else "[red]REDDEDİLDİ[/]"
+    table = Table(title=f"L5 Kompozisyon — {res.name}: {verdict}")
+    table.add_column("Kapı")
+    table.add_column("Sonuç")
+    table.add_column("Detay")
+    for g in res.gates:
+        mark = "[green]GEÇTİ[/]" if g.passed else "[red]KALDI[/]"
+        table.add_row(g.gate, mark, "; ".join(g.details)[:60])
+    console.print(table)
+
+
+@app.command("understanding-score")
+def understanding_score_cmd(
+    seed: int = typer.Option(0),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Objektif ANLAMA SKORU — L3+L4 sınavları → geçme oranı (kaba %'nin yerine)."""
+    from app.verification.exams import (
+        ApplicationExam,
+        CounterfactualExam,
+        ExamResult,
+        list_specs,
+    )
+    from app.verification.exams.understanding_score import aggregate
+
+    l3 = ApplicationExam()
+    l4 = CounterfactualExam()
+    results: list[ExamResult] = []
+    for spec in list_specs():
+        results.append(l3.run(spec, seed=seed))
+        results.append(l4.run(spec, seed=seed))
+    score = aggregate(results)
+    if as_json:
+        console.print_json(json.dumps(score.to_dict(), ensure_ascii=False))
+        return
+    rate = (
+        "yok (notlanan sınav yok)" if score.pass_rate is None else f"{score.pass_rate * 100:.1f}%"
+    )
+    console.print(
+        Panel(
+            f"Geçme oranı: [bold]{rate}[/]\n"
+            f"Notlanan: {score.graded}  (geçti {score.passed}, kaldı {score.failed})\n"
+            f"Atlanan (LLM yok): {score.skipped} · Veri/yön yok: {score.no_data}\n"
+            f"Durum: {score.status}",
+            title="Anlama Skoru (objektif sınav-geçme-oranı)",
+        )
+    )
