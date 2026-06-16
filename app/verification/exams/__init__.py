@@ -11,15 +11,23 @@ from __future__ import annotations
 
 from app.verification.exams.l3_application import ApplicationExam, ExamResult
 from app.verification.exams.l4_counterfactual import CounterfactualExam
+from app.verification.exams.l5_composition import (
+    CompositionGate,
+    CompositionResult,
+    GateResult,
+)
 from app.verification.exams.reference_oracle import ReferenceOracle
 from app.verification.exams.registry import ExamSpec, get_spec, list_specs
 from app.verification.exams.safe_eval import UnsafeExpressionError, safe_eval
 
 __all__ = [
     "ApplicationExam",
+    "CompositionGate",
+    "CompositionResult",
     "CounterfactualExam",
     "ExamResult",
     "ExamSpec",
+    "GateResult",
     "ReferenceOracle",
     "UnsafeExpressionError",
     "get_spec",
