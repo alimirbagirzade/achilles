@@ -1,6 +1,6 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-06-14 (sabah) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Son güncelleme: 2026-06-16 · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
@@ -16,26 +16,42 @@ LLM'i "trader gibi düşünen" bir araştırma motoru yapmak:
 3. Otomatik backtest et → sonuçtan öğren → LoRA eğitim verisi üret
 4. 3B modeli test eder; gerçek çıktı için 120B kullanılacak
 
-### Mevcut durum (2026-06-14 sabah)
-- **Tüm test suite yeşil** · ruff + mypy temiz · Python 3.12 (bu seansta ~40 yeni test)
-- **MİMARİ PİVOT:** Sürekli CPU-LoRA **DURDURULDU** (haftalar + overfit). Yeni yol:
-  RAG-first robust + lokal sentetik veri + **bulut-GPU** eğitim. Detay:
-  `docs/RAG_EGITIM_YENIDEN_TASARIM.md`, `docs/PROTOKOL_ASAMALI_EGITIM.md`.
-- **🎯 STAGE 1 BİTTİ:** `data/lora_sft/lora_sft.jsonl` = **1266 örnek** (sentetik + kart).
-  `lora-audit` Gate 0-7 PASS · güvenlik taraması temiz.
-- **🚀 STAGE 2 HAZIR (kullanıcı tetikler):** `notebooks/achilles_lora_stage2.ipynb`
-  (unsloth, Kaggle/Colab T4) + `notebooks/Modelfile`. Adımlar: `docs/PROTOKOL_BULUT_EGITIM.md`.
-- **RAG robustluk TAMAM:** A2 rerank · A3 hybrid BM25 (`bm25_corpus.py`) · A4 prompt
-  birleştirme · A7 near-dup dedup · A8 cross-encoder (opt-in) · P2 contextual (opt-in).
-- **Ollama:** qwen3:4b (tek beyin) + nomic-embed-text · **108 makale** indeksli
-- **Gece döngüsü** (`scripts/continuous-learning.sh` 48sa): enrich→kart→synth-qa,
-  RAG + veri büyütüyor (artık EĞİTMEZ, CPU-LoRA yok).
-- **Yeni CLI:** `synth-qa` · `synth-qa-bulk` · `lora-readiness` · `lora-cloud-prep` ·
-  `reindex-contextual` · `card`/`arxiv` (mevcut)
-- **Base model:** `Qwen/Qwen3-4B-Instruct-2507` (Ollama qwen3:4b ile birebir) — eski
-  1.5B hardcode 5 katmanda düzeltildi.
-- **Upload limiti:** 100 MB · **Paper dedup:** file_hash + başlık-normalize (RAG'a 2 kez girmez)
-- **Son commit:** `61df8dd`
+### Mevcut durum (2026-06-16) — LOKAL EĞİTİM BİTTİ, ADAPTER REJECT
+
+> Kullanıcı Kaggle/bulut REDDETTİ → eğitim **lokal CPU**'da yapıldı (kendi imkanlarıyla;
+> ileride uzaktan kiralık CPU). Bu seans gece+gündüz otonom yürüdü (eğitim nöbeti + post-training).
+
+- **🔴 achilles_lora_v5 EĞİTİLDİ ama REJECT:** lokal CPU PEFT, 1203 adım, **46.75 saat**,
+  loss 2.66→0.60. Adapter: `models/adapters/achilles_lora_v5/`. **AMA base-vs-adapter
+  karşılaştırması (gerçek PEFT yükleme) gösterdi: adapter base'den DAHA KÖTÜ** — tekrar
+  döngüsü (overfit), "pasaja göre" uydurma, maliyetsiz rakam uydurma. **TERFİ EDİLMEDİ**
+  (Kural 2). RAG hâlâ base modelle çalışıyor. Detay: `memory/v5-adapter-regression.md`,
+  `reports/evals/adapter_smoke_compare.json`.
+- **KÖK SEBEP:** sentetik-QA recipe ("pasaja göre cevapla" + adversarial disiplin örneği yok).
+- **🔧 EVAL HARNESS FIX (push'lu):** `app/training/adapter_eval.py` + `achilles lora-eval
+  <adapter> --eval-set <jsonl> --n <k>` — adapter'ı transformers/PEFT ile GERÇEKTEN yükler,
+  base ile kıyaslar (eski `ModelEvaluator` base Ollama'yı ölçüyordu, adapter'ı YÜKLEMİYORDU).
+  UYARI: red-flag sezgisi negasyon-kör → otomatik verdict güvenilmez; LLM-judge gerekli.
+- **▶️ ÖĞRENME DÖNGÜSÜ ÇALIŞIYOR** (2026-06-16 restart, 72h, `continuous-learning.sh`):
+  48 kartsız makaleyi işliyor (kart/anlama/synth-qa). **AYRI OS SÜRECİ — yeni seansta da sürer.**
+  `keep_alive=5m` (eğitim bitti). Yeni LoRA eğitimi başlatınca `.env: ACHILLES_OLLAMA_KEEP_ALIVE=0` yap.
+- **Veri:** `data/lora_sft/lora_sft.jsonl` ~1266 örnek · `lora-split` → `data/training/jsonl/train.jsonl`
+  (1203 train+63 valid). **DİKKAT:** `DatasetBuilder.build()` train.jsonl'i ezer (clobber) —
+  `detached_launch.launch()` her başlatmada lora_sft'den yeniden böler. Detay: `memory/training-data-pipeline.md`.
+- **RAG:** Ollama qwen3:4b + nomic-embed-text · **109 makale / 11341 parça** · kart kapsamı %56 (artıyor).
+- **Bu seansta push'lananlar:** detached tek-tık eğitim + "EĞİTİME HAZIR" rozeti · CVD-safe renkler ·
+  web bug avı fix'leri (XSS/auth/hata yönetimi) · çekirdek denetim fix'leri (backtester metrik:
+  Sortino+trade-bazlı win-rate/PF, RAG retrieval) · güvenlik sertleştirme (TrustedHost/HSTS/pip-audit/
+  gitleaks) · `update.sh` (Mac/Linux) + `update.ps1` sağlamlaştırma · Ollama `keep_alive` OOM fix.
+- **🔒 BEKLEYEN (kullanıcı yönü):** (1) eğitim-veri reçetesini düzelt — adversarial disiplin
+  örnekleri ekle, "pasaja göre" sızıntısını gider — SONRA yeniden eğit (körlemesine 47h retrain YOK).
+  (2) eval judge'ı iyileştir (negasyon-farkında / LLM-judge).
+- **Base model:** `Qwen/Qwen3-4B-Instruct-2507` (Ollama qwen3:4b ile birebir).
+- **754 cybersecurity skill** `~/.claude/skills/`'e (global) kuruldu (kullanıcı isteği, alimirbagirzade
+  fork) — savunma+ofansif spektrum; her oturuma yüklenir (context maliyeti); plugin'e çevrilebilir.
+- **Otonom nöbet (ScheduleWakeup loop):** yeni seansta KENDİLİĞİNDEN devam ETMEZ — istenirse
+  `/loop` ile yeniden kur. Öğrenme döngüsü (OS süreci) bağımsız sürer.
+- **Son commit:** `9115fd5`
 
 ---
 
