@@ -16,7 +16,53 @@ LLM'i "trader gibi düşünen" bir araştırma motoru yapmak:
 3. Otomatik backtest et → sonuçtan öğren → LoRA eğitim verisi üret
 4. 3B modeli test eder; gerçek çıktı için 120B kullanılacak
 
-### Mevcut durum (2026-06-16) — LOKAL EĞİTİM BİTTİ, ADAPTER REJECT
+### Mevcut durum (2026-06-16 SON) — 🧠 ANLAMA DOĞRULAMA SİSTEMİ İNŞA EDİLDİ ✅
+
+> Bu seans (06-16 akşam/gece): RAG vs LoRA netleşti + **"Anlama Doğrulama" merdiveni —
+> _anlama yüzdeyle değil SINAVLA kanıtlanır_ — hem belgelendi hem KOD olarak inşa edildi.**
+> Çekirdek fikir: "anladı" = bilgiyi DOĞRU KULLANIP ondan TEST EDİLEBİLİR yeni bir şey ÜRETEBİLDİ.
+
+**İNŞA EDİLEN (hepsi push'lu · ~60 sınav testi + tüm offline paket yeşil · ruff+mypy temiz):**
+- `app/verification/exams/` paketi:
+  - `safe_eval.py` (whitelist AST — eval/exec YOK, Kural 5), `reference_oracle.py`, `registry.py`
+  - `l3_application.py` — **L3:** formül + tutulan sayı → model hesapla → `np.allclose` referansla
+  - `l4_counterfactual.py` — **L4:** parametre yön değişimi KODDAN türetilir, model puanlanır
+  - `l5_composition.py` — **L5:** yeni-formül 3 kapı (math + novelty + maliyet-dahil backtest/OOS) → aday/red
+  - `understanding_score.py` — objektif geçme-oranı (skipped/no_data paydaya GİRMEZ) +
+    `rag_answers_to_results` (mevcut RAG sınavını Taban/L1/L2 olarak merdivene bağlar)
+- **CLI:** `achilles exam-l3 / exam-l4 / exam-l5 / understanding-score`
+- **ENTROPY göstergesi** (`indicators.py` + registry) — yönsel ikili Shannon entropisi [0,1],
+  look-ahead'siz; entropi vizyonunun ilk indikatörü, L5 Markov+entropi yapı taşı.
+- Belgeler: README "🧠 Achilles okuduğunu *anladı* mı?" + `docs/PROTOKOL_RAG_LORA_ZINCIR.md`
+  "ANA FİKİR" + `docs/examples/raft_discipline_seed.jsonl` (RAFT disiplin seed örneği).
+- Hafıza: `memory/anlama-dogrulama-ana-fikir.md`, `memory/arastirma-makale-kaynagi.md`.
+- **Makaleler indirildi** → `C:\Users\sevinc\Desktop\RAG Kaynak\Gerekli kaynaklar`:
+  RAFT(2403.10131), HMM Intraday(2006.08307), Transfer Entropy(2507.09554),
+  Entropy Analysis(1807.09423) + `00_NEDEN_ONEMLI_oku_once.md`. **Kullanıcı inceleyip web'den
+  RAG'a yükleyecek.** Bu indirme LOOP — yeni makaleler aynı klasöre eklenecek.
+
+**BEKLEYEN BACKLOG (yeni seans buradan devam — kullanıcı: "loop olarak çözene kadar"):**
+1. **L5 → synthesis_engine bağla** — model Markov+entropi önerince otomatik 3 kapı (orchestrator.py).
+2. **Registry'yi genişlet** — permütasyon entropi + daha çok Markov/entropi göstergesi + yeni makale indir.
+3. **Web** — kaba "anlama %"yi `understanding-score` (objektif) ile değiştir.
+4. **RAFT reçetesini düzelt** (seed'i yüzlerce örneğe ölçekle) → SONRA eğit (körlemesine 47h retrain YOK).
+5. Eğitim: reçete düzeltilince → eğit → eval → koşullu terfi → bug-fix loop.
+
+**Eğitim kararı:** detached tek-tık eğitim TEKNİK olarak hazır AMA başlatma — önce reçete düzelt
+(v5 aynı sebepten battı). Kullanıcı onayı: **"önce bitir, sonra eğit."**
+
+**Komut notu:** testleri `--basetemp=.pytest_tmp` ile çalıştır (stale `pytest-of-sevinc` izin
+sorunu = WinError 5). Push döngüsü: `git fetch + rebase origin/main` sonra push (eşzamanlı makine).
+
+**Son commit:** `d54ab68` (ENTROPY). Bu seans zinciri: `5820ab5 → 1c5f349 → da98e6e →
+135cc66`(L3)`→ 8c721c9`(L4)`→ 65feac1`(L5)`→ 0ec5854`(CLI)`→ d0e139f`(L1/L2)`→ d54ab68`(ENTROPY).
+
+**Otonom nöbet:** bu seansta ScheduleWakeup loop aktifti (sağlık + backlog ilerletme + makale indirme).
+Yeni seansta kendiliğinden devam ETMEZ — istenirse `/loop` ile yeniden kur.
+
+---
+
+### Önceki durum (2026-06-16 erken) — LOKAL EĞİTİM BİTTİ, ADAPTER REJECT
 
 > Kullanıcı Kaggle/bulut REDDETTİ → eğitim **lokal CPU**'da yapıldı (kendi imkanlarıyla;
 > ileride uzaktan kiralık CPU). Bu seans gece+gündüz otonom yürüdü (eğitim nöbeti + post-training).
@@ -51,7 +97,7 @@ LLM'i "trader gibi düşünen" bir araştırma motoru yapmak:
   fork) — savunma+ofansif spektrum; her oturuma yüklenir (context maliyeti); plugin'e çevrilebilir.
 - **Otonom nöbet (ScheduleWakeup loop):** yeni seansta KENDİLİĞİNDEN devam ETMEZ — istenirse
   `/loop` ile yeniden kur. Öğrenme döngüsü (OS süreci) bağımsız sürer.
-- **Son commit:** `9115fd5`
+- **(O günkü commit:** `9115fd5` — güncel durum yukarıdaki "SON" bloğunda, `d54ab68`.)
 
 ---
 
