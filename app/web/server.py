@@ -764,6 +764,7 @@ def api_research_run(req: ResearchRequest) -> ResearchRunResponse:
                 metrics=it.metrics,
                 reflection=it.reflection,
                 improvement_notes=it.improvement_notes,
+                composition=it.composition,
             )
             for it in result.iterations
         ],

@@ -24,9 +24,11 @@ from app.memory.sqlite_store import SqliteStore
 from app.research.reflection_agent import ReflectionAgent
 from app.research.synthesis_engine import SynthesisEngine, SynthesisResult
 from app.trading.backtester import run_backtest
+from app.trading.evaluator import Verdict
 from app.trading.evaluator import evaluate as eval_strategy
 from app.trading.market_data_loader import generate_synthetic_ohlcv, load_ohlcv
 from app.trading.strategy_ir import StrategyIR
+from app.verification.exams.l5_composition import CompositionGate, _signature
 
 # Gerçek veri varsa onu kullan — çok daha fazla bar = daha güvenilir istatistik
 _REAL_DATA_CANDIDATES = [
@@ -39,6 +41,19 @@ _REAL_DATA_CANDIDATES = [
 logger = logging.getLogger(__name__)
 
 
+def _reuse_evaluator(verdict: Verdict) -> Any:
+    """L5 BacktestGate'in zaten hesaplanmış verdict'i yeniden kullanmasını sağlar.
+
+    Orchestrator backtest'i bir kez koşar; CompositionGate'e bu evaluator enjekte
+    edilince ikinci kez backtest çalışmaz (determinizm + maliyet).
+    """
+
+    def _evaluate(_df: Any, _ir: Any, **_kw: Any) -> Verdict:
+        return verdict
+
+    return _evaluate
+
+
 @dataclass
 class IterationResult:
     session_id: str
@@ -49,6 +64,7 @@ class IterationResult:
     metrics: dict[str, Any]
     reflection: str | None = None
     improvement_notes: str | None = None
+    composition: dict[str, Any] | None = None  # L5 kompozisyon kapısı (math+novelty+backtest)
 
 
 @dataclass
@@ -65,9 +81,12 @@ class ResearchResult:
     def summary(self) -> str:
         lines = [f"Araştırma: {self.question}", f"İterasyon: {len(self.iterations)}"]
         for it in self.iterations:
+            l5 = ""
+            if it.composition:
+                l5 = f" · L5:{it.composition.get('verdict', '?')}"
             lines.append(
                 f"  [{it.iteration}] {it.indicator_name} → {it.verdict.upper()} "
-                f"({', '.join(it.reasons[:1])})"
+                f"({', '.join(it.reasons[:1])}){l5}"
             )
         lines.append(f"Sonuç: {self.final_verdict.upper()}")
         return "\n".join(lines)
@@ -79,6 +98,7 @@ class ResearchOrchestrator:
         store: SqliteStore | None = None,
         synthesis_engine: SynthesisEngine | None = None,
         reflection_agent: ReflectionAgent | None = None,
+        composition_gate: CompositionGate | None = None,
         max_iterations: int = 3,
         n_bars: int = 2000,
         seed: int = 42,
@@ -88,6 +108,8 @@ class ResearchOrchestrator:
         self.store = store or SqliteStore()
         self.synthesis = synthesis_engine or SynthesisEngine(store=self.store)
         self.reflection = reflection_agent or ReflectionAgent()
+        # None → her iterasyonda hesaplanan verdict'i yeniden kullanan kapı (çift backtest yok).
+        self.composition_gate = composition_gate
         self.max_iterations = max_iterations
         self.n_bars = n_bars
         self.seed = seed
@@ -120,6 +142,7 @@ class ResearchOrchestrator:
         current_indicator: SynthesisResult | None = None
         parent_session_id: str | None = None
         prev_failures: list[dict] = []
+        seen_signatures: set[tuple[tuple[str, int], ...]] = set()  # L5 novelty: kopya tespiti
 
         for iteration in range(1, self.max_iterations + 1):
             logger.info("İterasyon %d/%d", iteration, self.max_iterations)
@@ -167,6 +190,18 @@ class ResearchOrchestrator:
                 data_source,
             )
 
+            # ---- L5 KOMPOZİSYON SINAVI (math + novelty + maliyet-dahil backtest) ----
+            # "Anladı" = bilgiyi DOĞRU kullanıp test edilebilir YENİ bir şey üretebildi mi.
+            # Zaten hesaplanan `ev` yeniden kullanılır → ikinci backtest koşulmaz.
+            gate = self.composition_gate or CompositionGate(evaluator=_reuse_evaluator(ev))
+            composition = gate.evaluate_composition(ir, df, seen_signatures=seen_signatures)
+            seen_signatures.add(_signature(ir))
+            logger.info(
+                "L5 kompozisyon: %s → %s",
+                ir.name,
+                composition.verdict,
+            )
+
             # ---- Session kaydet ----
             self.store.save_research_session(
                 session_id=session_id,
@@ -182,6 +217,7 @@ class ResearchOrchestrator:
                         "metrics": metrics,
                         "verdict": ev.verdict,
                         "reasons": ev.reasons,
+                        "composition": composition.to_dict(),
                     },
                     ensure_ascii=False,
                 ),
@@ -196,6 +232,7 @@ class ResearchOrchestrator:
                 verdict=ev.verdict,
                 reasons=ev.reasons,
                 metrics=metrics,
+                composition=composition.to_dict(),
             )
 
             # Başarısızlık geçmişini güncelle (synthesis motoruna iletmek için)
@@ -247,7 +284,12 @@ class ResearchOrchestrator:
                         ),
                         strategy_ir_json=json.dumps(ir.model_dump(), ensure_ascii=False),
                         backtest_result_json=json.dumps(
-                            {"metrics": metrics, "verdict": ev.verdict, "reasons": ev.reasons},
+                            {
+                                "metrics": metrics,
+                                "verdict": ev.verdict,
+                                "reasons": ev.reasons,
+                                "composition": composition.to_dict(),
+                            },
                             ensure_ascii=False,
                         ),
                         verdict=ev.verdict,

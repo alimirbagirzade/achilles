@@ -116,6 +116,7 @@ class ResearchIterationOut(BaseModel):
     metrics: dict
     reflection: str | None = None
     improvement_notes: str | None = None
+    composition: dict | None = None  # L5 kompozisyon kapısı (candidate/rejected + gates)
 
 
 class ResearchRunResponse(BaseModel):

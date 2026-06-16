@@ -12,8 +12,11 @@ from app.memory.sqlite_store import SqliteStore
 from app.research.chain_data_builder import ChainDataBuilder
 from app.research.concept_graph import ConceptGraph
 from app.research.formula_extractor import FormulaExtractor
+from app.research.orchestrator import ResearchOrchestrator
 from app.research.reflection_agent import ReflectionAgent
-from app.research.synthesis_engine import SynthesisEngine
+from app.research.synthesis_engine import SynthesisEngine, SynthesisResult
+from app.trading.market_data_loader import generate_synthetic_ohlcv
+from app.trading.strategy_ir import example_ir
 
 
 @pytest.fixture
@@ -226,6 +229,66 @@ def test_reflection_agent_parses_valid_json() -> None:
         )
     assert result is not None
     assert result["strategy_ir"]["name"] == "rsi_v2"
+
+
+# ---------- ResearchOrchestrator + L5 kompozisyon kapısı ----------
+def _fake_synthesis(ir_dict: dict) -> mock.MagicMock:
+    """synthesize() çağrısında sabit bir SynthesisResult döndüren sahte motor."""
+    result = SynthesisResult(
+        indicator_name="TestComposite",
+        description="test",
+        source_papers=["p1"],
+        formula_components=[{"name": "RSI"}, {"name": "ATR"}],
+        combination_reasoning="RSI + ATR",
+        expected_edge="düşük vol",
+        failure_conditions=["trend"],
+        strategy_ir=ir_dict,
+    )
+    engine = mock.MagicMock(spec=SynthesisEngine)
+    engine.synthesize.return_value = result
+    return engine
+
+
+def test_orchestrator_records_l5_composition(store: SqliteStore) -> None:
+    """Her iterasyon L5 kompozisyon sonucunu (math+novelty+backtest) kaydeder."""
+    df = generate_synthetic_ohlcv(n=2000, seed=42)
+    orch = ResearchOrchestrator(
+        store=store,
+        synthesis_engine=_fake_synthesis(example_ir().model_dump()),
+        max_iterations=1,
+    )
+    with mock.patch.object(orch, "_load_data", return_value=(df, "synthetic-test")):
+        result = orch.run("Momentum nasıl filtrelenir backtest")
+
+    assert result.iterations
+    comp = result.iterations[0].composition
+    assert comp is not None
+    assert comp["verdict"] in {"candidate", "rejected"}
+    assert {g["gate"] for g in comp["gates"]} == {"math", "novelty", "backtest"}
+    # Session'a da yazıldığını doğrula (backtest_result zaten dict olarak döner)
+    rows = store.list_research_sessions(limit=5)
+    saved = rows[0]["backtest_result"]
+    assert saved is not None and "composition" in saved
+
+
+def test_orchestrator_l5_novelty_flags_repeat(store: SqliteStore) -> None:
+    """Aynı kompozisyon 2. kez önerilirse novelty kapısı kopya olarak işaretler."""
+    df = generate_synthetic_ohlcv(n=2000, seed=42)  # verdict=fail → döngü sürer
+    reflection = mock.MagicMock(spec=ReflectionAgent)
+    reflection.reflect.return_value = None  # yansıma yok → aynı IR yeniden sentezlenir
+    orch = ResearchOrchestrator(
+        store=store,
+        synthesis_engine=_fake_synthesis(example_ir().model_dump()),
+        reflection_agent=reflection,
+        max_iterations=2,
+    )
+    with mock.patch.object(orch, "_load_data", return_value=(df, "synthetic-test")):
+        result = orch.run("Momentum nasıl filtrelenir backtest")
+
+    assert len(result.iterations) == 2
+    novelty_2 = next(g for g in result.iterations[1].composition["gates"] if g["gate"] == "novelty")
+    assert novelty_2["passed"] is False
+    assert any("Kopya" in d for d in novelty_2["details"])
 
 
 # ---------- ChainDataBuilder ----------
