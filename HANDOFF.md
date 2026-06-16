@@ -64,9 +64,16 @@ LLM'i "trader gibi düşünen" bir araştırma motoru yapmak:
      v5 dersleri kodlandı: açılışlar çeşitli (sabitleme yok), 1/3 örnek system-prompt'suz (eval öyle
      çağırır), cevaplar naif `check_flags`'i geçer (yasak yüzey token'ı yok + maliyet token'ı var).
      12 yeni test + tüm offline paket yeşil · ruff+mypy temiz.
-   - ⏭️ **Fix C (sıradaki, opsiyonel ince ayar):** mix oranını/adım sayısını eval sonrasına göre ayarla
-     (overfit azalt); şimdilik %25 + epoch 2 makul başlangıç.
-5. Eğitim: reçete düzeltilince → eğit → eval → koşullu terfi → bug-fix loop.
+   - ✅ **Fix C yapıldı:** `dataset_quality.recommend_epochs(n)` (boyuta göre 1-3); mix oranı zaten flag.
+   - ✅ **#3 OFFLINE KAPI yapıldı:** `app/training/dataset_quality.py` + `achilles pretrain-gate` —
+     birleşik SFT setini LLM'siz tarar, **GO/NO-GO** verir (garanti-vaadi zehiri / açılış-ezberi → blok).
+     `app/training/sft_assembly.py` ortak birleştirme (lora-cloud-prep + gate DRY). 11 yeni test yeşil.
+   - 🔴 **KAPI İLK KOŞUDA NO-GO VERDİ (2026-06-17, beklenen):** mevcut `synthetic_qa.jsonl` (1289 satır)
+     Fix A'dan ÖNCE üretildi → cevapların **%68'i "pasaja gore" ile açılıyor** (v5'i batıran tam mekanizma).
+     Disiplin karışımı (432/432) ve garanti-zehiri (0) temiz; sorun ESKİ synth verisi. **ÇÖZÜM = synth-qa'yı
+     temiz üreticiyle YENİDEN ÜRET** (gece loop'u bunu yapıyor). Rapor: `reports/evals/pretrain_gate.json`.
+5. **Gece otonom loop (2026-06-17, AKTİF):** synth-qa'yı temiz yeniden-üret → `pretrain-gate` GO olana kadar
+   → `lora-cloud-prep` paketi tazele → raporla. Eğitim: kapı GO + kullanıcı sabah Kaggle "Run All" (manuel tık).
 
 **🎯 EĞİTİM LOOP KARARI (2026-06-16, kullanıcı):** Donanım = **Bulut GPU (Kaggle T4×2)**
 (önceki bulut-reddi geri alındı; ~30 dk/koşu → loop fizibıl). Otonomi = **tam otonom loop**

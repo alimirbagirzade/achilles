@@ -815,6 +815,7 @@ uv run achilles pine [strateji-adı]     # StrategyIR → TradingView Pine Scrip
 uv run achilles synth-qa                # chunk'lardan sentetik grounded QA üret (Ollama)
 uv run achilles synth-qa-bulk           # TÜM korpustan checkpoint'li bulk üretim (1000'e hızlı)
 uv run achilles discipline-dataset      # adversarial disiplin örnekleri üret/önizle (LLM-free)
+uv run achilles pretrain-gate           # eğitim-ÖNCESİ kalite kapısı: GO/NO-GO (LLM-free, #3)
 uv run achilles lora-readiness          # Stage 2 eşik durumu (≥1000 örnek mi?)
 bash scripts/continuous-learning.sh 72  # sürekli üretim döngüsü (eğitim DEĞİL)
 
