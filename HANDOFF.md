@@ -54,6 +54,13 @@ LLM'i "trader gibi düşünen" bir araştırma motoru yapmak:
 4. **RAFT reçetesini düzelt** (seed'i yüzlerce örneğe ölçekle) → SONRA eğit (körlemesine 47h retrain YOK).
 5. Eğitim: reçete düzeltilince → eğit → eval → koşullu terfi → bug-fix loop.
 
+**🎯 EĞİTİM LOOP KARARI (2026-06-16, kullanıcı):** Donanım = **Bulut GPU (Kaggle T4×2)**
+(önceki bulut-reddi geri alındı; ~30 dk/koşu → loop fizibıl). Otonomi = **tam otonom loop**
+(reçete→dataset→eğit→eval→koşullu terfi→düzelt→tekrar; sonuçlar raporlanır).
+**Sıralama:** önce dokümanlar → #4 reçete → #3 dataset'i OFFLINE sınavdan geçir (L3/L4/L5 +
+understanding-score, eğitMEDEN kalite kanıtı) → Kaggle eğit → eval → koşullu terfi.
+**Caveat:** Kaggle "Run All" manuel (headless değil) — çevresi otomatik, sadece o tık kullanıcıda.
+
 **Eğitim kararı:** detached tek-tık eğitim TEKNİK olarak hazır AMA başlatma — önce reçete düzelt
 (v5 aynı sebepten battı). Kullanıcı onayı: **"önce bitir, sonra eğit."**
 
