@@ -28,7 +28,7 @@ from app.trading.strategy_ir import StrategyIR, parse_rule
 
 __all__ = ["CompositionGate", "CompositionResult", "GateResult"]
 
-_REGISTRY = {"EMA", "SMA", "RSI", "ATR", "MACD"}
+_REGISTRY = {"EMA", "SMA", "RSI", "ATR", "MACD", "ENTROPY"}
 _OHLC = {"open", "high", "low", "close", "volume"}
 
 

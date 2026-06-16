@@ -72,6 +72,18 @@ _SPECS: dict[str, ExamSpec] = {
         atol=1e-2,
         monotonic={"period": "periyot artarsa daha az uç değer (daha pürüzsüz)"},
     ),
+    "ENTROPY": ExamSpec(
+        name="ENTROPY",
+        definition=(
+            "ENTROPY(p): yönsel ikili Shannon entropisi. Her bar için son p kapanış FARKINA bak; "
+            "yukarı-hareket (fark>0) oranı q ise H = -(q·log2(q) + (1-q)·log2(1-q)); q=0 veya 1 "
+            "iken H=0, q=0.5 iken H=1. Aralık [0,1]."
+        ),
+        default_period=4,
+        rtol=1e-3,
+        atol=1e-3,
+        monotonic={"period": "periyot artarsa daha pürüzsüz (daha az oynak)"},
+    ),
 }
 
 

@@ -57,6 +57,31 @@ def bollinger(
     return upper, mid, lower
 
 
+def _binary_entropy(p: pd.Series) -> pd.Series:
+    """İkili Shannon entropisi H(p) = -(p·log2 p + (1-p)·log2(1-p)); aralık [0,1]."""
+    p_clip = p.clip(0.0, 1.0)
+    q = 1.0 - p_clip
+    out = pd.Series(0.0, index=p.index, dtype=float)
+    mask = (p_clip > 0.0) & (p_clip < 1.0)
+    out[mask] = -(p_clip[mask] * np.log2(p_clip[mask]) + q[mask] * np.log2(q[mask]))
+    out[p.isna()] = np.nan  # warmup penceresi tanımsız
+    return out
+
+
+def entropy(close: pd.Series, period: int = 14) -> pd.Series:
+    """Yönsel ikili Shannon entropisi — bir penceredeki yön belirsizliği (rejim sinyali).
+
+    Pencere içindeki yukarı-hareket (close artışı) oranı p ise:
+    H = -(p·log2 p + (1-p)·log2(1-p)), aralık [0,1]. p=0.5 → 1 (maks. belirsizlik /
+    çalkantı / rejim geçişi), p=0 veya 1 → 0 (net trend). Yalnız geçmiş pencereyi
+    kullanır (look-ahead yok). Markov rejim + entropi sentezinin yapı taşı.
+    """
+    delta = close.diff()
+    up = (delta > 0).astype(float)
+    p_up = up.rolling(period).mean()
+    return _binary_entropy(p_up)
+
+
 # Registry used by the strategy engine to compute indicators by name.
 def compute_indicator(name: str, df: pd.DataFrame, period: int = 14) -> pd.Series:
     name = name.upper()
@@ -70,4 +95,6 @@ def compute_indicator(name: str, df: pd.DataFrame, period: int = 14) -> pd.Serie
         return atr(df["high"], df["low"], df["close"], period)
     if name == "MACD":
         return macd(df["close"])[0]
+    if name == "ENTROPY":
+        return entropy(df["close"], period)
     raise ValueError(f"Bilinmeyen gösterge: {name}")
