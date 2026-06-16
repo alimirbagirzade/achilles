@@ -845,7 +845,9 @@ def api_eval_run(req: EvalRunRequest) -> EvalRunResponse:
     from app.training.evaluate_model import ModelEvaluator
 
     evals_dir = get_settings().root / "evals"
-    eval_path = evals_dir / f"{req.eval_set}.jsonl"
+    # Yol-aşımı koruması: req.eval_set kullanıcı girdisidir. Hedefin evals/
+    # içinde kaldığını doğrula (geçersiz/aşımlı ad → 400). bkz. safe_destination.
+    eval_path = security.safe_destination(evals_dir, f"{req.eval_set}.jsonl")
     if not eval_path.exists():
         raise HTTPException(status_code=404, detail=f"Eval seti bulunamadı: {req.eval_set}")
 

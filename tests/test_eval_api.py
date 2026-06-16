@@ -34,6 +34,27 @@ def test_eval_run_missing_set_404(client: TestClient) -> None:
     assert r.status_code == 404
 
 
+@pytest.mark.parametrize(
+    "evil",
+    [
+        "../../etc/passwd",
+        "../secrets",
+        "..\\..\\windows\\system32\\config",
+        "/etc/passwd",
+        "foo/../../bar",
+    ],
+)
+def test_eval_run_rejects_path_traversal(client: TestClient, evil: str) -> None:
+    """Yol-aşımı adı evals/ dışına ASLA çıkamaz → 400 (aşım) veya 404 (yok).
+
+    Önemli olan 5xx/200 ile dosya okunmaması; aşım girişimi 400 ile reddedilir.
+    """
+    r = client.post("/api/eval/run", json={"eval_set": evil})
+    assert r.status_code in (400, 404)
+    # evals/ dışındaki bir dosya hiçbir koşulda değerlendirilmiş olmamalı
+    assert r.status_code != 200
+
+
 def test_ask_with_unknown_adapter_404(client: TestClient) -> None:
     r = client.post(
         "/api/ask",
