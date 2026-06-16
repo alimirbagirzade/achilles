@@ -1778,17 +1778,28 @@ def lora_cloud_prep(
     epochs: int = typer.Option(2, "--epochs", help="Epoch (≥1000 örnek için 2-3)"),
     max_seq_len: int = typer.Option(2048, "--max-seq-len", help="T4 güvenli 2048"),
     output: Path = typer.Option(Path("notebooks"), "--output", help="Notebook + Modelfile dizini"),
+    discipline: bool = typer.Option(
+        True,
+        "--discipline/--no-discipline",
+        help="Adversarial disiplin örneklerini karıştır (#4 Fix B)",
+    ),
+    discipline_ratio: float = typer.Option(
+        0.25, "--discipline-ratio", help="Disiplin payı (disiplin/(taban+disiplin)); v5 dersi ~0.25"
+    ),
+    seed: int = typer.Option(0, "--seed", help="Determinizm tabanı (karıştırma — kural 6)"),
 ) -> None:
     """Stage 2 bulut-GPU eğitimini HAZIRLA: veri paketle + notebook + Modelfile üret.
 
     Eğitim BAŞLATMAZ (CLAUDE.md kural 8). Üretir: birleşik JSONL (HF'e yüklenecek),
     doğrulanmış unsloth notebook'u (Kaggle/Colab), Ollama Modelfile + adım talimatları.
-    Detay: docs/PROTOKOL_BULUT_EGITIM.md.
+    Birleşik sete ~%25 adversarial disiplin örneği karıştırılır (v5 regresyon fix'i #4 Fix B;
+    `--no-discipline` ile kapatılır). Detay: docs/PROTOKOL_BULUT_EGITIM.md.
     """
     from app.brain.synthetic_qa_builder import dedup_jsonl_lines
     from app.lora.dataset_builder import build_dataset
     from app.memory.sqlite_store import SqliteStore
     from app.training.cloud_notebook import build_stage2_notebook, write_modelfile
+    from app.training.discipline_dataset import discipline_jsonl_lines, mix_discipline
 
     settings = get_settings()
     lora_dir = settings.root / "data" / "lora_sft"
@@ -1804,6 +1815,13 @@ def lora_cloud_prep(
     except Exception:
         pass
     merged = dedup_jsonl_lines(lines)
+
+    # 1b) Adversarial disiplin örneklerini karıştır (DEDUP'TAN SONRA — şablon örnekleri
+    # near-dup filtresine takılıp toplu elenmesin; v5 REJECT'in asıl fix'i, #4 Fix B).
+    disc_stats: dict | None = None
+    if discipline and discipline_ratio > 0:
+        disc_lines = discipline_jsonl_lines(seed=seed)
+        merged, disc_stats = mix_discipline(merged, disc_lines, ratio=discipline_ratio, seed=seed)
 
     combined = lora_dir / "lora_sft.jsonl"
     combined.parent.mkdir(parents=True, exist_ok=True)
@@ -1827,6 +1845,15 @@ def lora_cloud_prep(
 
     # 3) Özet + talimat.
     console.print(f"[green]✓[/green] Birleşik veri: [bold]{combined}[/bold] ({n} örnek)")
+    if disc_stats is not None:
+        console.print(
+            f"[green]✓[/green] Disiplin karışımı (#4 Fix B): "
+            f"{disc_stats['discipline_used']}/{disc_stats['discipline_pool']} adversarial örnek "
+            f"→ pay %{disc_stats['ratio_actual'] * 100:.0f} "
+            f"(hedef %{disc_stats['ratio_target'] * 100:.0f})"
+        )
+    elif not discipline:
+        console.print("[yellow]ℹ[/yellow] Disiplin karışımı KAPALI (--no-discipline).")
     if n < 1000:
         console.print(
             f"[yellow]UYARI:[/yellow] {n} örnek < 1000. Az veride overfit eder; önce "
@@ -1846,6 +1873,60 @@ def lora_cloud_prep(
         "uv run achilles evaluate evals/discipline_core.jsonl[/bold]\n"
         "  7) Onaylıysa promote (yalnız kullanıcı onayıyla — kural 8)"
     )
+
+
+@app.command("discipline-dataset")
+def discipline_dataset(
+    output: Path = typer.Option(
+        Path("data/lora_sft/discipline.jsonl"), "--output", help="JSONL çıktı yolu (yazmak için)."
+    ),
+    write: bool = typer.Option(False, "--write", help="Dosyaya yaz (varsayılan: yalnız önizleme)."),
+    variants: int = typer.Option(
+        3, "--variants", help="Her (tuzak, strateji) için varyant sayısı."
+    ),
+    seed: int = typer.Option(0, "--seed", help="Determinizm tabanı (kural 6)."),
+) -> None:
+    """Adversarial disiplin SFT örneklerini üret/önizle (#4 Fix B). EĞİTİM BAŞLATMAZ.
+
+    9 tuzak (garanti / backtest'siz / maliyetsiz / kaynak-yok / bağlam-uyumsuz / look-ahead /
+    overfit / kaldıraç / grounded-belirsizlik) × stratejiler × varyant → deterministik örnek.
+    Bu örnekler `lora-cloud-prep` tarafından otomatik ~%25 karıştırılır; bu komut denetim/
+    önizleme içindir (kalite gözden geçirme, offline sınav). Detay: memory/v5-adapter-regression.md.
+    """
+    import json as _json
+
+    from app.training.discipline_dataset import discipline_jsonl_lines
+
+    lines = discipline_jsonl_lines(seed=seed, variants_per_combo=variants)
+
+    # Tuzak dağılımı + system-siz oran (eval koşuluyla uyum) özeti.
+    by_trap: dict[str, int] = {}
+    no_system = 0
+    for ln in lines:
+        msgs = _json.loads(ln).get("messages", [])
+        if not any(m.get("role") == "system" for m in msgs):
+            no_system += 1
+    # trap meta'sı JSONL'de yok (yalnız messages serileşir) → örneklerden say.
+    from app.training.discipline_dataset import build_discipline_examples
+
+    for ex in build_discipline_examples(seed=seed, variants_per_combo=variants):
+        by_trap[ex.metadata["trap"]] = by_trap.get(ex.metadata["trap"], 0) + 1
+
+    console.print(f"[bold]Disiplin dataset[/bold] — {len(lines)} tekil örnek (seed={seed}):")
+    for trap, cnt in sorted(by_trap.items()):
+        console.print(f"  • {trap:<16} {cnt}")
+    console.print(f"  system-siz örnek: {no_system}/{len(lines)} (eval system-prompt'suz çağırır)")
+
+    if write:
+        out = output if output.is_absolute() else (get_settings().root / output)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+        console.print(f"[green]✓[/green] Yazıldı: [bold]{out}[/bold]")
+    else:
+        console.print(
+            "[dim]Önizleme — yazmak için [bold]--write[/bold]. "
+            "Eğitime karıştırma otomatik: [bold]lora-cloud-prep[/bold].[/dim]"
+        )
 
 
 @app.command("reindex-contextual")

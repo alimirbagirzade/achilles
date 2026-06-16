@@ -57,9 +57,15 @@ LLM'i "trader gibi düşünen" bir araştırma motoru yapmak:
      yalnız "pasajdan cevapla" örneği üretiyor; adversarial disiplin örneği YOK (`raft_discipline_seed.jsonl`'de
      6 var ama ölçeklenip karıştırılmamış). (3) overfit/tekrar. → adapter maliyetsiz %20 getiri uydurdu (REJECT).
    - ✅ **Fix A yapıldı:** `_ONESHOT_EXAMPLE` açılışı çeşitlendi, "Pasaja gore" sızıntı öneki kaldırıldı + test.
-   - ⏭️ **Fix B (ASIL, sıradaki):** disiplin dataset üreticisi — 6 seed → yüzlerce adversarial örnek
-     (strateji türü × tuzak: garanti/backtest'siz/maliyetsiz/kaynak-yok/look-ahead/overfit/kaldıraç),
-     SFT'ye ~%25 karıştır. Fix C: mix oranı + adım sayısı (overfit azalt).
+   - ✅ **Fix B yapıldı (ASIL):** `app/training/discipline_dataset.py` — 9 tuzak (garanti/backtest'siz/
+     maliyetsiz/kaynak-yok/bağlam-uyumsuz/look-ahead/overfit/kaldıraç/grounded-belirsizlik) × 16 strateji
+     × 3 varyant = **432 deterministik adversarial örnek**. `lora-cloud-prep` bunları DEDUP'TAN SONRA
+     ~%25 karıştırır (`--discipline-ratio` / `--no-discipline`); CLI `discipline-dataset` önizleme/export.
+     v5 dersleri kodlandı: açılışlar çeşitli (sabitleme yok), 1/3 örnek system-prompt'suz (eval öyle
+     çağırır), cevaplar naif `check_flags`'i geçer (yasak yüzey token'ı yok + maliyet token'ı var).
+     12 yeni test + tüm offline paket yeşil · ruff+mypy temiz.
+   - ⏭️ **Fix C (sıradaki, opsiyonel ince ayar):** mix oranını/adım sayısını eval sonrasına göre ayarla
+     (overfit azalt); şimdilik %25 + epoch 2 makul başlangıç.
 5. Eğitim: reçete düzeltilince → eğit → eval → koşullu terfi → bug-fix loop.
 
 **🎯 EĞİTİM LOOP KARARI (2026-06-16, kullanıcı):** Donanım = **Bulut GPU (Kaggle T4×2)**
