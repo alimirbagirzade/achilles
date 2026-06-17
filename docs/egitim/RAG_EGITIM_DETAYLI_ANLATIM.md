@@ -1,6 +1,6 @@
 # Achilles RAG Eğitimi — Detaylı Anlatım
 
-Sürüm: v1.2 · 2026-06-17
+Sürüm: v1.3 · 2026-06-17
 
 ## Sürüm Geçmişi
 
@@ -8,6 +8,7 @@ Sürüm: v1.2 · 2026-06-17
 |-------|-------|-----------|
 | v1.0 | 2026-06-16 | İlk kapsamlı sürüm. |
 | v1.1 | 2026-06-16 | Denetim düzeltmeleri: embedding boyutu (256-d yalnız fake yedek; nomic-embed-text boyutu Ollama modeli tarafından belirlenir), `chunk_size`/`overlap` doğru satır referansı (settings.py:77-78), hayali "~8000 chunk_size çelişkisi" kaldırıldı, test kapsamı doğru yansıtıldı (BM25/cross-encoder ve L3/L4/L5 testleri mevcut), auto-chain eğitim çağrısı doğru tarif edildi (doğrudan CLI, web subprocess değil). |
+| v1.3 | 2026-06-17 | **Güncel araştırma entegrasyonu (2. tur).** Offline RAGAS-tarzı RAG metrikleri eklendi: yeni `app/evals/rag_ragas_offline.py` — `faithfulness` (cevap cümlelerinin bağlamca desteklenme oranı), `context_precision` (çekilen bağlamın gürültü azlığı), `context_recall` (referans cevabın bağlamca kapsanması). Hepsi LLM'siz, deterministik, golden-id gerektirmez; canlı RAG cevabında ucuz kalite/uydurma sinyali. 9 yeni test. `rag-scan` ajanı backlog'u ~40 adaya büyüttü (CPU-only GraphRAG, Adaptive Chunking, Self-RAG, Blended RAG dahil). |
 | v1.2 | 2026-06-17 | **Güncel araştırma entegrasyonu (1. tur).** Reciprocal Rank Fusion (RRF / RAG-Fusion) eklendi: yeni `app/memory/rank_fusion.py` (saf, deterministik) + `MultiQueryRetriever` artık naif dedup yerine RRF füzyonu kullanıyor + `RerankingRetriever`'a opt-in `rag_rrf` modu (dense+BM25 sıra-füzyonu). Cross-encoder reranker modeli yapılandırılabilir hale getirildi ve yanıltıcı "çok dilli" yorumu düzeltildi (gerçek çok-dilli için `bge-reranker-v2-m3` önerisi). Yeni "Güncel Araştırma Entegrasyonu (Sürüm Günlüğü)" bölümü: taranan 14 teknik (late chunking, CRAG, Self-RAG, HyDE, GraphRAG/LightRAG/HippoRAG, RAGAS, RbFT/ALoFTRAG, Matryoshka embeddings…) Achilles koduna eşlendi; her biri için adopt/belgele/ertele gerekçesi + kaynak atıfları. |
 
 > Not: Yeni eğitim geliştirmesinde sürüm numarası artırılır ve değişiklik buraya eklenir.
@@ -337,6 +338,39 @@ belgele / ertele** kararı + gerekçe + kaynak atıfları tutulur. En yeni tur e
 CLAUDE.md Kural 2 gereği hiçbir teknik için "çalışıyor/başarılı" denmez; yalnızca
 "kodda eklendi" veya "önerildi/belgelendi" denir — etki ölçümü ayrı backtest/eval işidir.
 
+### Tur 2 — 2026-06-17 (v1.3)
+
+Tarama ajanı (`achilles rag-scan`) backlog'u **~40 adaya** büyüttü (`docs/egitim/rag-watchlist.md`).
+Öne çıkan, sonraki turlarda değerlendirilecek güçlü adaylar: **CPU-only/Linear GraphRAG**
+(2602.23372 — modest donanıma uygun, GraphRAG ertelemesini yeniden açar), **Adaptive/Query-Adaptive
+Chunking** (2603.25333, 2605.22834), **Self-RAG** (2310.11511), **Blended RAG** (2404.07220),
+**Rethinking Chunk Size** (2505.21700 — `chunk_size` varsayılanını ampirik gözden geçirme yolu).
+
+**Bu turda entegre edilen (adopt):**
+
+1. **Offline RAGAS-tarzı RAG metrikleri** (`app/evals/rag_ragas_offline.py`). Geçen tur "aday"
+   işaretlenen RAGAS, **LLM'siz, deterministik, golden-id gerektirmeyen** bir alt-küme olarak
+   eklendi:
+   - `faithfulness(answer, contexts)` — cevap cümlelerinin bağlam birleşimince desteklenme oranı
+     (düşük → dayanaksız/uydurma cümle sinyali).
+   - `context_precision(answer, contexts)` — çekilen bağlam parçalarının cevaba katkı oranı
+     (düşük → retrieval gürültüsü).
+   - `context_recall(reference, contexts)` — referans cevabın bağlamca token-kapsanması (opsiyonel).
+   - `evaluate_rag_answer(...)` → `RagasOfflineScores`.
+   Gerekçe: "anlama sınavla kanıtlanır" çizgisinde, canlı RAG çıktısına ucuz/tekrarlanabilir bir
+   kalite sinyali; `grounding_verifier` (cümle sınıflaması) ve `evals/metrics.py` (golden-id
+   precision/recall) ile çelişmez, tamamlar. **Sınır:** token-örtüşmesi anlamsal değildir → bir
+   *proxy*'dir, LLM-judge yerine geçmez; mutlak değil sürümler-arası KIYAS için (Kural 2). Test:
+   `tests/test_rag_ragas_offline.py` (9 test).
+
+**Belgelendi / ertelendi:** CPU-only GraphRAG ve adaptif chunking aileleri güçlü ama daha büyük
+entegrasyon (graf inşası / korpus yeniden-embed) gerektirdiğinden watchlist'te bekletildi; sonraki
+derin turda değerlendirilecek.
+
+**Kaynaklar (Tur 2):** RAGAS (docs.ragas.io); ek backlog adayları için bkz. `docs/egitim/rag-watchlist.md`.
+
+---
+
 ### Tur 1 — 2026-06-17 (v1.2)
 
 **Taranan ve eşlenen 14 teknik:**
@@ -451,6 +485,8 @@ RbFT/ALoFTRAG (LoRA reçetesi notu — `discipline_dataset` zaten RbFT ruhunda).
 | `app/verification/abstention_policy.py` | Çekimserlik kararı |
 | `app/verification/comprehension_scorer.py` | A/B/C kaba anlama skoru |
 | `app/verification/rag_mastery.py` | coverage+comprehension+train_readiness bileşik |
+| `app/evals/rag_ragas_offline.py` | Offline RAGAS-tarzı metrikler (faithfulness/context-precision/recall; LLM'siz, v1.3) |
+| `app/research/rag_trend_scanner.py` | Güncel-RAG tarama ajanı (`achilles rag-scan` → watchlist) |
 | `app/verification/exams/l3_application.py` | L3 sayısal uygulama (np.allclose) |
 | `app/verification/exams/l4_counterfactual.py` | L4 karşıolgu yön |
 | `app/verification/exams/l5_composition.py` | L5 math+novelty+backtest kapıları |
@@ -482,6 +518,7 @@ Proje testleri `tests/` kökünde toplanmıştır (yaklaşık 70 test dosyası).
 - **Doğrulama / sınav (L3/L4/L5/UnderstandingScore):** `test_l3_application.py`, `test_l4_counterfactual.py`, `test_l5_composition.py`, `test_understanding_score.py`, `test_citation_verifier.py`, `test_context_sufficiency.py`, `test_abstention_policy.py`, `test_reference_oracle.py`, `test_safe_eval.py`, `test_cli_exams.py`.
 - **Retrieval (BM25 + hibrit + RRF + cross-encoder + rerank):** `test_bm25_index.py`, `test_hybrid_retrieval.py` (RRF füzyon modu senaryoları dahil), `test_rank_fusion.py` (RRF birim testleri: determinizm/ağırlık/k/kenar durumlar), `test_cross_encoder_reranker.py`, `test_reranker.py`, `test_reranking_retriever.py`, `test_multi_query_retriever.py` (RRF uzlaşma testi dahil), `test_query_expander.py`.
 - **Embedding / depo:** `test_embedding_and_chroma.py`, `test_contextual_embed.py`.
+- **Offline RAGAS metrikleri + tarama ajanı (v1.2/v1.3):** `test_rag_ragas_offline.py` (faithfulness/context-precision/recall, deterministik), `test_rag_trend_scanner.py` (tarama ajanı, çevrimdışı).
 - **Göstergeler:** `test_entropy_indicator.py`, `test_permutation_entropy.py`, `test_indicators.py`.
 
 Not: `app/verification/tests/` adlı bir **alt-dizin yoktur**; doğrulama ve merdiven testleri ayrı bir alt-dizin yerine ortak `tests/` kökünde tutulur. Bu doküman, bu testlerin **var olduğunu** belgeler; testlerin güncel çalışma durumu (geçti/kaldı) bu dokümanda iddia edilmez — kanıt için `make test` çalıştırılmalıdır (CLAUDE.md Kural 2).
