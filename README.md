@@ -786,7 +786,13 @@ uv run achilles ingest                  # data/papers/raw_pdf/ klasöründeki PD
 uv run achilles arxiv "sorgu terimi"    # arXiv'de ara → indir → indeksle
 uv run achilles arxiv "sorgu" --search-only   # sadece ara, indirme
 uv run achilles papers                  # indekslenmiş makaleleri listele
+uv run achilles rag-scan                # güncel RAG yöntemlerini arXiv'de tara → izleme listesine aday ekle
+uv run achilles rag-scan --dry-run      # sadece listele, izleme listesine yazma
 ```
+
+> `rag-scan`, güncel-RAG araştırma döngüsünün **ucuz tarama** katmanıdır (projeye yerleşik
+> ajan; Claude/kota gerektirmez). Adaylar `docs/egitim/rag-watchlist.md`'ye yazılır; haftalık
+> entegrasyon turu bunları değerlendirir. Ayrıntı: `docs/PROTOKOL_RAG_GUNCEL_ARASTIRMA.md`.
 
 ### Araştırma & Soru-Cevap
 
