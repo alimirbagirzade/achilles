@@ -1848,6 +1848,12 @@ def lora_cloud_prep(
     discipline_ratio: float = typer.Option(
         0.25, "--discipline-ratio", help="Disiplin payı (disiplin/(taban+disiplin)); v5 dersi ~0.25"
     ),
+    profile: str = typer.Option(
+        None,
+        "--profile",
+        help="LoRA reçete profili (configs/lora/lora_profiles.yaml); örn. discipline_safe. "
+        "Notebook'a lr/alpha/dropout/rsLoRA/NEFTune/weight_decay/warmup taşır.",
+    ),
     seed: int = typer.Option(0, "--seed", help="Determinizm tabanı (karıştırma — kural 6)"),
 ) -> None:
     """Stage 2 bulut-GPU eğitimini HAZIRLA: veri paketle + notebook + Modelfile üret.
@@ -1890,18 +1896,64 @@ def lora_cloud_prep(
     combined.write_text("\n".join(merged) + ("\n" if merged else ""), encoding="utf-8")
     n = len(merged)
 
-    # 2) Notebook + Modelfile üret (doğrulanmış unsloth şablonu).
+    # 2) Reçete: profil verilirse hiperparametreleri ondan al (discipline_safe = v5 reçetesi:
+    #    lr 1e-4 + epoch 1 + dropout 0.1 + NEFTune 5 → catastrophic-forgetting'e karşı).
+    recipe: dict = {
+        "learning_rate": 2e-4,
+        "lora_alpha": None,  # None → build_stage2_notebook 2*r kullanır
+        "lora_dropout": 0.0,
+        "use_rslora": False,
+        "neftune_noise_alpha": 0.0,
+        "weight_decay": 0.01,
+        "warmup_ratio": 0.03,
+    }
+    eff_lora_r, eff_max_seq, eff_epochs = lora_r, max_seq_len, epochs
+    if profile:
+        from app.training.peft_lora_train import load_lora_profile
+
+        try:
+            prof = load_lora_profile(profile)
+        except (KeyError, FileNotFoundError) as exc:
+            console.print(f"[red]Profil hatası: {exc}[/red]")
+            raise typer.Exit(1) from exc
+        eff_lora_r = prof.get("lora_r", eff_lora_r)
+        eff_max_seq = prof.get("max_seq_length", eff_max_seq)
+        eff_epochs = prof.get("epochs", eff_epochs)
+        for k in (
+            "learning_rate",
+            "lora_alpha",
+            "lora_dropout",
+            "use_rslora",
+            "neftune_noise_alpha",
+            "weight_decay",
+            "warmup_ratio",
+        ):
+            if k in prof and prof[k] is not None:
+                recipe[k] = prof[k]
+        console.print(
+            f"[cyan]Reçete profili:[/cyan] {profile} (r={eff_lora_r}, epoch={eff_epochs}, "
+            f"lr={recipe['learning_rate']}, dropout={recipe['lora_dropout']}, "
+            f"NEFTune={recipe['neftune_noise_alpha']}, rsLoRA={recipe['use_rslora']})"
+        )
+
+    # 3) Notebook + Modelfile üret (doğrulanmış unsloth şablonu).
     out_dir = output if output.is_absolute() else (settings.root / output)
     nb_path = out_dir / "achilles_lora_stage2.ipynb"
     build_stage2_notebook(
         base_model=settings.peft_base_model,
         adapter_name=adapter_name,
         hf_dataset_repo=hf_repo,
-        max_seq_length=max_seq_len,
-        lora_r=lora_r,
-        learning_rate=2e-4,
-        num_epochs=epochs,
+        max_seq_length=eff_max_seq,
+        lora_r=eff_lora_r,
+        learning_rate=recipe["learning_rate"],
+        num_epochs=eff_epochs,
         out_path=nb_path,
+        lora_alpha=recipe["lora_alpha"],
+        lora_dropout=recipe["lora_dropout"],
+        use_rslora=recipe["use_rslora"],
+        neftune_noise_alpha=recipe["neftune_noise_alpha"],
+        weight_decay=recipe["weight_decay"],
+        warmup_ratio=recipe["warmup_ratio"],
     )
     mf_path = write_modelfile(out_dir)
 
@@ -1928,6 +1980,8 @@ def lora_cloud_prep(
         f"  1) HF private dataset: [bold]huggingface-cli upload {hf_repo} "
         f"{combined} lora_sft.jsonl --repo-type dataset[/bold]\n"
         "  2) HF READ token → Kaggle Secrets / Colab userdata: ad=HF_TOKEN\n"
+        "  2b) (önerilen) discipline_safe reçetesiyle hazırla: "
+        "[bold]uv run achilles lora-cloud-prep --profile discipline_safe[/bold]\n"
         "  3) Kaggle (T4×2, Internet ON) veya Colab (T4) → notebook'u Run All\n"
         "  4) İndir: achilles-Q4_K_M.gguf + Modelfile → aynı klasör\n"
         "  5) [bold]ollama create achilles -f Modelfile[/bold]\n"

@@ -187,3 +187,47 @@ def test_high_capacity_uses_rslora() -> None:
     prof = load_lora_profile("high_capacity_reasoning")
     assert prof["use_rslora"] is True
     assert prof["lora_r"] == 32
+
+
+def test_discipline_safe_drives_cloud_notebook(tmp_path) -> None:
+    """lora-cloud-prep --profile discipline_safe yolunun ürettiği bulut notebook'u,
+    v5 reçetesini (lr=1e-4, dropout=0.1, NEFTune=5, r=16, epoch=1) gerçekten yansıtır.
+
+    main.py CLI mantığını birebir taklit eder (profil → recipe → build_stage2_notebook),
+    veri setine dokunmadan reçete köprüsünü regresyona karşı korur.
+    """
+    import json
+
+    from app.training.cloud_notebook import build_stage2_notebook
+
+    prof = load_lora_profile("discipline_safe")
+    out = tmp_path / "nb.ipynb"
+    build_stage2_notebook(
+        base_model="Qwen/Qwen3-4B-Instruct-2507",
+        adapter_name="achilles_lora_cloud",
+        hf_dataset_repo="user/achilles-lora-sft",
+        max_seq_length=prof["max_seq_length"],
+        lora_r=prof["lora_r"],
+        learning_rate=prof["learning_rate"],
+        num_epochs=prof["epochs"],
+        out_path=out,
+        lora_alpha=prof["lora_alpha"],
+        lora_dropout=prof["lora_dropout"],
+        use_rslora=prof["use_rslora"],
+        neftune_noise_alpha=prof["neftune_noise_alpha"],
+        weight_decay=prof["weight_decay"],
+        warmup_ratio=prof["warmup_ratio"],
+    )
+    nb = json.loads(out.read_text(encoding="utf-8"))
+    src = "".join(
+        ("".join(c["source"]) if isinstance(c["source"], list) else c["source"])
+        for c in nb["cells"]
+    )
+    assert "{" not in src.split("```")[0] or "{BASE_MODEL}" not in src  # placeholder kalmadı
+    assert "LEARNING_RATE   = 0.0001" in src
+    assert "LORA_DROPOUT    = 0.1" in src
+    assert "NEFTUNE_ALPHA   = 5" in src
+    assert "LORA_ALPHA      = 32" in src
+    assert "LORA_R          = 16" in src
+    assert "USE_RSLORA      = False" in src
+    assert "neftune_noise_alpha = (NEFTUNE_ALPHA or None)" in src
