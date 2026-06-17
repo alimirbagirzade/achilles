@@ -1,4 +1,4 @@
-# Achilles — Sürekli (periyodik) LoRA eğitim döngüsü (Windows)
+# Achilles - Sürekli (periyodik) LoRA eğitim döngüsü (Windows)
 #
 # Kullanım:
 #   .\scripts\train-loop.ps1                       # varsayılan: 30 iter, 180sn cooldown
@@ -19,6 +19,10 @@ param(
 )
 
 $ErrorActionPreference = "Continue"
+# uv her `uv run`'da paketi yeniden senkronlar; calisan web sunucusunun kilitledigi
+# achilles-web.exe'yi silmeye ugrasip "os error 32" ile patlar -> egitim baslamaz.
+# Senkronu kapat; bagimliliklar zaten kurulu. (bkz. continuous-learning.sh)
+$env:UV_NO_SYNC = "1"
 $ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 $ProjectDir = Split-Path -Parent $ScriptDir
 Set-Location $ProjectDir
@@ -49,9 +53,9 @@ Write-Log "Durdurmak icin: New-Item '$StopFile'"
 $cycle = 0
 while (-not (Test-Path $StopFile) -and (Get-Date) -lt $EndTime) {
     $cycle++
-    Write-Log "=== Dongu $cycle: dataset tazeleniyor ==="
+    Write-Log "=== Dongu ${cycle}: dataset tazeleniyor ==="
     & $Uv run achilles lora-dataset *>> $Log
-    Write-Log "=== Dongu $cycle: egitim ($Iterations iter) ==="
+    Write-Log "=== Dongu ${cycle}: egitim ($Iterations iter) ==="
     & $Uv run achilles train --run --backend peft --adapter-name $Adapter --iterations $Iterations *>> $Log
     Write-Log "=== Dongu $cycle bitti -> ${CooldownSec}sn cooldown ==="
     # Cooldown sirasinda da durdurma kontrolu
@@ -63,4 +67,4 @@ while (-not (Test-Path $StopFile) -and (Get-Date) -lt $EndTime) {
 }
 
 Remove-Item $StopFile -Force -ErrorAction SilentlyContinue
-Write-Log "STOP_TRAINING algilandi — surekli egitim durdu ($cycle dongu calisti)."
+Write-Log "STOP_TRAINING algilandi - surekli egitim durdu ($cycle dongu calisti)."

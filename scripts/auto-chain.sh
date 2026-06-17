@@ -11,6 +11,10 @@ set -u
 cd "$(dirname "$0")/.." || exit 1
 LOG=logs/auto-chain.log
 mkdir -p logs
+# uv her `uv run`'da paketi yeniden senkronlayip calisan web sunucusunun kilitledigi
+# achilles-web.exe'yi silmeye ugrasir -> "os error 32" -> adimlar sessizce coker.
+# Senkronu kapat; bagimliliklar zaten kurulu. (bkz. continuous-learning.sh)
+export UV_NO_SYNC=1
 log(){ echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG"; }
 
 log "=== OTOMATİK ZİNCİR BAŞLADI ==="

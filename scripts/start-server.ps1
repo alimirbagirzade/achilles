@@ -93,14 +93,39 @@ function Start-AchillesServer {
         return
     }
     $null = New-Item -ItemType Directory -Path $LogDir -Force
-    $proc = Start-Process `
-        -FilePath $UvPath `
-        -ArgumentList "run", "--project", "`"$ProjectDir`"", "achilles-web" `
-        -WorkingDirectory $ProjectDir `
-        -RedirectStandardOutput $LogOut `
-        -RedirectStandardError  $LogErr `
-        -WindowStyle Hidden `
-        -PassThru
+
+    # KRITIK: uv her `uv run` cagrisinda paketi yeniden senkronlamaya calisir; bu da
+    # calisan (veya yari-olu) bir sunucunun kilitledigi achilles-web.exe'yi silmeye
+    # ugrasip "os error 32" ile patlar -> SUNUCU HIC BASLAMAZ. Senkronu kapat;
+    # bagimliliklar zaten kurulu, sunucu yalniz mevcut ortami kullanir.
+    # (Ayni cozum scripts/continuous-learning.sh icinde de uygulanmis durumda.)
+    $env:UV_NO_SYNC = "1"
+    # Yalniz taze kurulum (.venv yok) ise bir defaliga senkronla — aksi halde
+    # --no-sync ile achilles-web giris noktasi bulunamaz.
+    $venvDir = Join-Path $ProjectDir ".venv"
+    if (-not (Test-Path $venvDir)) {
+        Write-Host "  [..] Ilk kurulum: uv sync" -ForegroundColor Gray
+        & $UvPath sync --project "$ProjectDir" | Out-Null
+    }
+
+    $proc = $null
+    try {
+        $proc = Start-Process `
+            -FilePath $UvPath `
+            -ArgumentList "run", "--no-sync", "--project", "`"$ProjectDir`"", "achilles-web" `
+            -WorkingDirectory $ProjectDir `
+            -RedirectStandardOutput $LogOut `
+            -RedirectStandardError  $LogErr `
+            -WindowStyle Hidden `
+            -PassThru
+    } catch {
+        Write-Host "  [HATA] Sunucu baslatilamadi: $_" -ForegroundColor Red
+        return
+    }
+    if (-not $proc) {
+        Write-Host "  [HATA] Sunucu baslatilamadi (proses olusmadi)." -ForegroundColor Red
+        return
+    }
     $proc.Id | Out-File $PidFile -Force -Encoding ascii
     Start-Sleep -Seconds 5
     try {
@@ -115,9 +140,13 @@ function Start-AchillesServer {
 function Stop-AchillesServer {
     $webPid = Get-WebPid
     if ($webPid) {
-        Stop-Process -Id $webPid -Force -ErrorAction SilentlyContinue
+        # PID, `uv run` sarmalayicisina aittir; gercek sunucu onun ALT prosesi
+        # olan python+uvicorn'dur. Yalniz uv'yi oldurmek (Stop-Process) gercek
+        # sunucuyu birakir -> port 8765 tutulmaya devam eder, yeniden baslatma
+        # bozulur. Bu yuzden tum prosess agacini oldur (/T).
+        & taskkill /PID $webPid /T /F 2>$null | Out-Null
         Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
-        Write-Host "  [OK] Durduruldu (PID $webPid)" -ForegroundColor Yellow
+        Write-Host "  [OK] Durduruldu (PID $webPid + alt prosesler)" -ForegroundColor Yellow
         return
     }
     $procs = Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |

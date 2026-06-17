@@ -20,6 +20,10 @@ param(
 )
 
 $ErrorActionPreference = "Continue"
+# uv her `uv run`'da paketi yeniden senkronlar; calisan web sunucusunun kilitledigi
+# achilles-web.exe'yi silmeye ugrasip "os error 32" ile patlar -> egitim baslamaz.
+# Senkronu kapat; bagimliliklar zaten kurulu. (bkz. continuous-learning.sh)
+$env:UV_NO_SYNC = "1"
 $ScriptDir  = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 $ProjectDir = Split-Path -Parent $ScriptDir
 $LogOut     = Join-Path $ProjectDir "logs\train-full.log"
