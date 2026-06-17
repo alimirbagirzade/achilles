@@ -173,10 +173,14 @@ def classify_domains(text: str) -> list[Domain]:
     """
     if not text:
         return []
-    lowered = text.lower()
+    from app.lora.safety_scanner import tr_fold
+
+    # tr_fold: 'hız'/'olasılık' gibi 'ı'lı anahtarlar büyük harf metinde ('HIZ'.lower()=='hiz')
+    # str.lower() ile kaçıyordu; bu fonksiyon gate_0/gate_3'te BLOKLAYICI olduğundan önemli.
+    folded = tr_fold(text)
     matched: list[Domain] = []
     for domain in Domain:
         keywords = DOMAIN_KEYWORDS[domain]
-        if any(keyword in lowered for keyword in keywords):
+        if any(tr_fold(keyword) in folded for keyword in keywords):
             matched.append(domain)
     return matched

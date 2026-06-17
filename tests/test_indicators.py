@@ -57,6 +57,14 @@ def test_rsi_flat_series_midpoint() -> None:
     assert abs(result.iloc[-1] - 50.0) < 1.0
 
 
+def test_rsi_lossless_uptrend_is_100() -> None:
+    # Kesintisiz yükselen seri (hiç kayıp yok) → RSI üst sınıra (100) gitmeli, 50 DEĞİL.
+    up = pd.Series([float(i) for i in range(1, 40)], name="close")
+    result = rsi(up, 14)
+    assert result.iloc[-1] == pytest.approx(100.0)
+    assert result.iloc[20] == pytest.approx(100.0)
+
+
 def test_atr_positive(ohlc_df: pd.DataFrame) -> None:
     result = atr(ohlc_df["high"], ohlc_df["low"], ohlc_df["close"], 14)
     assert (result.dropna() > 0).all()

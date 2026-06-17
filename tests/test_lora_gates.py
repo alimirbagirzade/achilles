@@ -58,6 +58,15 @@ def test_gate_0_rejects_unapproved() -> None:
     assert result.rejected_count == 1
 
 
+def test_gate_6_uppercase_turkish_markers_flagged() -> None:
+    """BÜYÜK harf 'ÇELİŞKİ'/'TUTARSIZ' işaretleri tr_fold ile insan incelemesine düşmeli."""
+    from app.lora.gates import gate_6_philosophy
+
+    card = _approved_card("c6", "Bu kartta açık bir ÇELİŞKİ ve TUTARSIZ ifade var.")
+    result = gate_6_philosophy([card])
+    assert result.review_count >= 1
+
+
 def test_gate_1_schema_validates_message_order() -> None:
     """Doğru rol sıralı örnek Gate 1'i geçmeli."""
     result = gate_1_schema([_example("s1")])

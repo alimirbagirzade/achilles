@@ -96,7 +96,8 @@ def compute_reward(
         c.trade_count_ok = round(n_trades / MIN_TRADES, 2)
         c.notes.append(f"Az işlem: {n_trades} < {MIN_TRADES}")
 
-    sharpe = float(metrics.get("sharpe_ratio", 0.0))
+    # Backtester to_dict() "sharpe" anahtarı üretir; eski "sharpe_ratio" geriye-uyum için.
+    sharpe = float(metrics.get("sharpe", metrics.get("sharpe_ratio", 0.0)))
     if sharpe >= MIN_SHARPE:
         c.sharpe_ok = min(1.0, round(sharpe / (MIN_SHARPE * 2), 2))
     elif sharpe > 0:
@@ -116,7 +117,10 @@ def compute_reward(
     if ret <= 0:
         c.notes.append(f"Negatif/sıfır getiri: {ret:.1f}%")
 
-    wr = float(metrics.get("win_rate", 0.0))
+    # Backtester "win_rate_pct" (0-100) üretir; eşik/normalizasyon kesir (0-1) bekler.
+    wr = float(metrics.get("win_rate_pct", metrics.get("win_rate", 0.0)))
+    if wr > 1.0:
+        wr /= 100.0
     if wr >= MIN_WIN_RATE:
         c.win_rate_ok = min(1.0, round(wr / 0.6, 2))
     else:

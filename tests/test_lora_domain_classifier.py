@@ -10,6 +10,12 @@ def test_mathematics_detected_english() -> None:
     assert Domain.MATHEMATICS in classify_domains("The derivative of the formula")
 
 
+def test_uppercase_dotless_i_keyword_matched() -> None:
+    """BÜYÜK harf 'ı'lı anahtar ('HIZ') de eşleşmeli ('HIZ'.lower()=='hiz' bypass'ı kapalı)."""
+    assert classify_domains("hız") == classify_domains("HIZ")
+    assert classify_domains("HIZ")  # boş değil — 'hız' anahtarı yakalandı
+
+
 def test_mathematics_detected_turkish() -> None:
     """Türkçe matematik anahtar kelimesi MATHEMATICS döndürmeli."""
     assert Domain.MATHEMATICS in classify_domains("Türev ve integral hesabı")

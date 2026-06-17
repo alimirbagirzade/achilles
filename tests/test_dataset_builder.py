@@ -111,6 +111,26 @@ def test_deduplication(tmp_path: Path) -> None:
     assert len(records) == 1  # 3 kopya → 1 unique
 
 
+def test_collect_includes_synthesis_examples(tmp_path: Path) -> None:
+    # cross_paper_synthesis (source_paper_id=None) lora_eligible_only=True'da bile dahil edilmeli.
+    store = _make_store_with_examples(0)
+    with store.session() as s:
+        s.add(
+            TrainingExample(
+                example_id="synth_0",
+                source_paper_id=None,
+                example_type="cross_paper_synthesis",
+                instruction="İki makaleyi birleştir",
+                input_text="",
+                output_text="Sentez sonucu (benzersiz)",
+            )
+        )
+    b = DatasetBuilder(store=store)
+    b.settings = type("S", (), {"jsonl_dir": tmp_path})()  # type: ignore[assignment]
+    records = b.collect(lora_eligible_only=True)
+    assert len(records) == 1  # sentez örneği filtreyle elenmedi
+
+
 def test_deterministic_with_seed(tmp_path: Path) -> None:
     b = _builder_with_store(20, tmp_path)
     r1 = b.build(seed=42, lora_eligible_only=False)

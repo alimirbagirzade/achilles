@@ -29,6 +29,10 @@ def rsi(close: pd.Series, period: int = 14) -> pd.Series:
     avg_loss = loss.ewm(alpha=1 / period, adjust=False).mean()
     rs = avg_gain / avg_loss.replace(0.0, np.nan)
     out = 100 - (100 / (1 + rs))
+    # Kayıpsız pencere (avg_loss==0 & avg_gain>0) = güçlü yükseliş → RSI=100 (aşırı-alım).
+    # replace(0→NaN) yüzünden NaN kalıp fillna(50) ile yanlışlıkla 50 oluyordu. Düz seri
+    # (gain=loss=0) ve gerçek warmup (bar 0, diff=NaN) → 50 (nötr konvansiyon).
+    out = out.mask((avg_loss == 0) & (avg_gain > 0), 100.0)
     return out.fillna(50.0)
 
 

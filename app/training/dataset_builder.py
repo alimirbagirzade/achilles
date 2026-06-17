@@ -88,18 +88,10 @@ class DatasetBuilder:
         seen: set[str] = set()
         records: list[dict] = []
         for r in rows:
-            # Faz filtresi (lora_eligible_only=False durumunda da çalışır)
-            if phase is not None and approved_paper_ids is not None:
-                if r.source_paper_id not in approved_paper_ids:
-                    continue
-            elif lora_eligible_only and approved_paper_ids is not None:
-                # source_paper_id None ise lora_eligible_only=False değilse dahil etme
-                if r.source_paper_id is None:
-                    continue
-                if r.source_paper_id not in approved_paper_ids:
-                    continue
-
-            # cross_paper_synthesis örnekleri her zaman dahil edilir (source_paper_id yok)
+            # cross_paper_synthesis örnekleri source_paper_id TAŞIMAZ → faz/uygunluk
+            # filtresinden MUAF ("her zaman dahil" sözleşmesi). Eskiden buradaki
+            # KOŞULSUZ filtre bloğu sentez satırlarını is_synthesis'e ulaşmadan eliyordu
+            # (alttaki istisna ölü koddu); blok kaldırıldı, filtre yalnız makale-kaynaklı örneklere.
             is_synthesis = r.example_type == "cross_paper_synthesis"
 
             if not is_synthesis:

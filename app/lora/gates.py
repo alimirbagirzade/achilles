@@ -224,11 +224,15 @@ def gate_5_math(cards: list[dict]) -> GateResult:
 
 def gate_6_philosophy(cards: list[dict]) -> GateResult:
     """Mantık/felsefe: çelişki ve korelasyon-nedensellik karışımı işaretle."""
+    from app.lora.safety_scanner import tr_fold
+
     review = 0
     details: list[str] = []
     for card in cards:
-        lowered = _card_text(card).lower()
-        flags = [m for m in CONTRADICTION_MARKERS + CAUSALITY_MARKERS if m in lowered]
+        # tr_fold: büyük harf/aksanlı Türkçe işaretler (ÇELİŞKİ, TUTARSIZ) str.lower()
+        # ile (İ→i+nokta) kaçıyordu — safety_scanner/math_verifier ile aynı desen.
+        folded = tr_fold(_card_text(card))
+        flags = [m for m in CONTRADICTION_MARKERS + CAUSALITY_MARKERS if tr_fold(m) in folded]
         if flags:
             review += 1
             details.append(f"{card.get('card_id', '?')}: {', '.join(flags)}")

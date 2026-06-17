@@ -49,6 +49,22 @@ def test_perfect_metrics_chosen() -> None:
     assert rc.label == "chosen"
 
 
+def test_real_backtester_keys_score_correctly() -> None:
+    # Backtester GERÇEK anahtarlari: "sharpe" + "win_rate_pct" (0-100). Eskiden
+    # compute_reward "sharpe_ratio"/"win_rate" okuyup ikisini de 0 hesapliyordu.
+    metrics = {
+        "n_trades": 50,
+        "sharpe": 2.5,
+        "max_drawdown_pct": 10.0,
+        "total_return_pct": 120.0,
+        "win_rate_pct": 60.0,
+    }
+    rc = compute_reward(metrics, verdict="pass")
+    assert rc.sharpe_ok > 0.0  # "sharpe" anahtari okundu
+    assert rc.win_rate_ok > 0.0  # win_rate_pct 0-100 → kesire normalize edildi
+    assert not any("Düşük win_rate: 0.0%" in n for n in rc.notes)
+
+
 def test_few_trades_partial_score() -> None:
     rc = compute_reward({"n_trades": 5}, verdict="pass")
     assert rc.trade_count_ok == 0.5

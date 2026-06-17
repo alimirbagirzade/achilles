@@ -371,10 +371,20 @@ class AutoLoRAPipeline:
 
             settings = get_settings()
             registry = AdapterRegistry()
+            # evaluate_adapter to_dict() 'adapter_score' üretir (eski 'pass_rate' DEĞİL) ve
+            # anahtar eval-set adına bağlı (sabit 'discipline_core' değil) → ilk geçerli skoru al.
+            adapter_score = next(
+                (
+                    s["adapter_score"]
+                    for s in self._state.eval_scores.values()
+                    if isinstance(s, dict) and s.get("adapter_score") is not None
+                ),
+                None,
+            )
             record = AdapterRecord(
                 base_model=settings.mlx_base_model,
                 adapter_name=adapter_name,
-                eval_score=self._state.eval_scores.get("discipline_core", {}).get("pass_rate"),
+                eval_score=adapter_score,
             )
             # Eval gerçekten geçtiyse EVAL_PASSED; eval atlandıysa yalnız SMOKE_PASSED
             # (registry de yanlış "eval geçti" damgası vurmasın — Anayasa II/VI).

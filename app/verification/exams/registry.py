@@ -39,7 +39,9 @@ def _rsi_exam_reference(df: pd.DataFrame, period: int) -> pd.Series:
     avg_gain = gain.ewm(alpha=1 / period, adjust=False).mean()
     avg_loss = loss.ewm(alpha=1 / period, adjust=False).mean()
     rs = avg_gain / avg_loss.replace(0.0, np.nan)
-    return 100 - (100 / (1 + rs))
+    out = 100 - (100 / (1 + rs))
+    # Kayıpsız pencere RSI=100 (tanımdan türetilebilir limit, RS→∞); kalan NaN = gerçek warmup.
+    return out.mask((avg_loss == 0) & (avg_gain > 0), 100.0)
 
 
 @dataclass(frozen=True)

@@ -95,16 +95,18 @@ class HybridRetriever:
             b_score = bm25_norm.get(cid, 0.0)
             combined[cid] = alpha * s_score + (1 - alpha) * b_score
 
-        # Sırala
-        sorted_ids = sorted(combined.items(), key=lambda x: x[1], reverse=True)[:top_k]
+        # Sırala — SONRA top_k'yi yalnız metni elimizde olan (semantik) chunk'larla doldur.
+        # BM25-only id'ler için METİN yok; boş-text stub döndürmek RAG alıntısını bozar
+        # (Kural 7'ye aykırı "kaynak var" izlenimi) → ATLANIR. ANCAK top_k kesimi bu
+        # filtreden ÖNCE yapılırsa BM25-only id'ler slot çalıp gerçek-metinli chunk'ları
+        # düşürür; bu yüzden önce sırala, sonra metinli olanlarla top_k'ye kadar doldur.
+        ranked = sorted(combined.items(), key=lambda x: x[1], reverse=True)
 
         result: list[RetrievedChunk] = []
-        for cid, _ in sorted_ids:
+        for cid, _ in ranked:
             if cid in chunk_by_id:
                 result.append(chunk_by_id[cid])
-            # BM25-only id'ler için elimizde METİN yok. Boş-text stub döndürmek RAG
-            # alıntısını bozar (boş kaynak → LLM'e içeriksiz blok, Kural 7'ye aykırı
-            # "kaynak var" izlenimi). Metni getiremediğimiz için bunları ATLIYORUZ;
-            # semantik tarafta gerçek-metinli chunk'lar zaten dönüyor.
+                if len(result) >= top_k:
+                    break
 
         return result

@@ -67,6 +67,23 @@ def test_get_corpus_bm25_builds_and_searches() -> None:
     reset_cache()
 
 
+def test_hybrid_retriever_topk_filled_with_text_chunks() -> None:
+    # HybridRetriever: BM25-only id'ler (metinsiz) top_k slotunu ÇALMAMALI; top_k
+    # gerçek-metinli (semantik) chunk'larla dolmalı (eski kod kesimi filtreden önce yapardı).
+    from app.memory.hybrid_retriever import HybridRetriever
+
+    sem_chunks = [_chunk(f"s{i}", f"semantic body {i}", 0.1 * i) for i in range(3)]
+    bm25 = BM25Index()
+    bm25.add_document("bm_only_0", "keyword document one")
+    bm25.add_document("bm_only_1", "keyword document two")
+    hr = HybridRetriever(semantic=_StubBase(sem_chunks), bm25=bm25)
+    # alpha düşük → BM25 ağır; BM25-only id'ler en üste çıkar ama metinleri yok.
+    out = hr.retrieve("keyword document", top_k=3, alpha=0.1)
+    ids = {c.chunk_id for c in out}
+    assert ids.issubset({"s0", "s1", "s2"})  # yalnız metinli chunk'lar döner
+    assert len(out) == 3  # top_k gerçek chunk'larla dolduruldu
+
+
 def test_get_corpus_bm25_empty_returns_none() -> None:
     reset_cache()
     bm25, chunks = get_corpus_bm25(chroma=_FakeChroma([]))
