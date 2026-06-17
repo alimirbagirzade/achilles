@@ -98,9 +98,13 @@ async def _lifespan(app: FastAPI):
     get_settings().ensure_dirs()
     logger.info("Achilles web başladı — host=%s port=%s", _settings.web_host, _settings.web_port)
     from app.lora.auto_pipeline import get_auto_pipeline
+    from app.research.rag_learning_loop import get_rag_loop
 
     _bg_task = _asyncio.create_task(get_auto_pipeline().background_loop())
     _bg_task.add_done_callback(lambda _t: None)
+    # RAG öğrenme döngüsü (sunucu-taraflı; varsayılan KAPALI — yalnız web'den açılınca çalışır).
+    _rag_task = _asyncio.create_task(get_rag_loop().background_loop())
+    _rag_task.add_done_callback(lambda _t: None)
     yield
 
 
@@ -1605,6 +1609,58 @@ async def api_auto_lora_reset() -> dict:
 
     await get_auto_pipeline().reset()
     return {"ok": True}
+
+
+# ---------- RAG öğrenme döngüsü (otonom korpus büyütme + öğrenme) ----------
+@app.get("/api/rag-loop/status", dependencies=[api_auth])
+async def api_rag_loop_status() -> dict:
+    """RAG öğrenme döngüsü durumu (ayarlar + anlık çalışma + son tur özeti)."""
+    from app.research.rag_learning_loop import get_rag_loop
+
+    return get_rag_loop().get_status()
+
+
+@app.post("/api/rag-loop/enable", dependencies=[api_auth])
+async def api_rag_loop_enable(enabled: bool = True) -> dict:
+    """Döngüyü aç/kapat. Açınca ilk turu ARALIĞI BEKLEMEDEN hemen başlatır."""
+    from app.research.rag_learning_loop import get_rag_loop
+
+    loop = get_rag_loop()
+    loop.set_enabled(enabled)
+    started = bool(loop.trigger_once_bg().get("ok")) if enabled else False
+    return {"ok": True, "enabled": enabled, "started_cycle": started}
+
+
+@app.post("/api/rag-loop/run-once", dependencies=[api_auth])
+async def api_rag_loop_run_once() -> dict:
+    """Tek bir öğrenme turunu hemen başlat (arka planda; anında döner)."""
+    from app.research.rag_learning_loop import get_rag_loop
+
+    return get_rag_loop().trigger_once_bg()
+
+
+@app.post("/api/rag-loop/config", dependencies=[api_auth])
+async def api_rag_loop_config(
+    interval_min: int | None = None,
+    fetch_enabled: bool | None = None,
+    fetch_interval_hours: int | None = None,
+    max_fetch_per_cycle: int | None = None,
+    cards_per_cycle: int | None = None,
+    scores_per_cycle: int | None = None,
+    score_use_llm: bool | None = None,
+) -> dict:
+    """Döngü ayarlarını güncelle (değerler güvenli aralığa kelepçelenir)."""
+    from app.research.rag_learning_loop import get_rag_loop
+
+    return get_rag_loop().set_config(
+        interval_min=interval_min,
+        fetch_enabled=fetch_enabled,
+        fetch_interval_hours=fetch_interval_hours,
+        max_fetch_per_cycle=max_fetch_per_cycle,
+        cards_per_cycle=cards_per_cycle,
+        scores_per_cycle=scores_per_cycle,
+        score_use_llm=score_use_llm,
+    )
 
 
 @app.get("/api/arxiv/search", response_model=ArxivSearchResponse, dependencies=[api_auth])

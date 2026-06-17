@@ -2431,7 +2431,137 @@
   // Auto-load when tab is clicked
   document.querySelectorAll('.tab[data-tab="learning"]').forEach(btn => {
     btn.addEventListener('click', loadLearningDashboard);
+    btn.addEventListener('click', loadRagLoopStatus);
   });
+
+  // ---------- RAG öğrenme döngüsü (otonom, sunucu-taraflı) ----------
+  var _RAG_STAGE_LABELS = {
+    idle: 'Boşta', fetching: 'Makale çekiliyor…', carding: 'Kart üretiliyor…',
+    scoring: 'Skorlanıyor…', paused_training: 'LoRA eğitimi sürüyor — duraklatıldı',
+    error: 'Hata'
+  };
+  var _RAG_STAGE_COLORS = {
+    idle: '#94a3b8', fetching: '#facc15', carding: '#a78bfa',
+    scoring: '#60a5fa', paused_training: '#fb923c', error: '#f87171'
+  };
+
+  function renderRagLoopStatus(d) {
+    var label = _RAG_STAGE_LABELS[d.stage] || d.stage;
+    var color = _RAG_STAGE_COLORS[d.stage] || '#94a3b8';
+    var running = d.running ? ' <span class="badge badge-warn">çalışıyor</span>' : '';
+    var mastery = (d.mastery_percent === null || d.mastery_percent === undefined)
+      ? '—' : (d.mastery_percent + '%');
+    var rows = [
+      ['Durum', '<strong style="color:' + color + '">' + esc(label) + '</strong>' + running],
+      ['RAG ustalığı', esc(mastery)],
+      ['Tamamlanan tur', esc(d.cycles_completed)],
+      ['Son tur', d.last_cycle_at ? esc(d.last_cycle_at.slice(0, 16).replace('T', ' ')) : '—'],
+      ['Son tur özeti', '+' + esc(d.last_ingested) + ' makale · +' + esc(d.last_cards) +
+        ' kart · +' + esc(d.last_scored) + ' skor'],
+      ['Toplam', esc(d.total_fetched) + ' makale · ' + esc(d.total_cards) + ' kart · ' +
+        esc(d.total_scored) + ' skor'],
+      ['Son çekim', d.last_fetch_at ? esc(d.last_fetch_at.slice(0, 16).replace('T', ' ')) : '—'],
+      ['Hata', esc(d.last_error || '—')]
+    ];
+    var html = '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+    rows.forEach(function (r) {
+      html += '<tr><td style="padding:2px 10px 2px 0;color:#94a3b8;white-space:nowrap">' +
+        r[0] + '</td><td>' + r[1] + '</td></tr>';
+    });
+    html += '</table>';
+    var enLabel = document.getElementById('ragLoopEnabledLabel');
+    if (enLabel) {
+      enLabel.textContent = d.enabled ? 'açık' : 'kapalı';
+      enLabel.className = 'badge ' + (d.enabled ? 'badge-success' : 'badge-info');
+    }
+    return html;
+  }
+
+  function fillRagLoopConfig(d) {
+    var map = {
+      ragLoopInterval: d.interval_min, ragLoopFetchHours: d.fetch_interval_hours,
+      ragLoopMaxFetch: d.max_fetch_per_cycle, ragLoopCards: d.cards_per_cycle,
+      ragLoopScores: d.scores_per_cycle
+    };
+    Object.keys(map).forEach(function (id) {
+      var el = document.getElementById(id);
+      // Kullanıcı o an düzenliyorsa değerini ezme.
+      if (el && map[id] != null && document.activeElement !== el) el.value = map[id];
+    });
+    var fe = document.getElementById('ragLoopFetchEnabled');
+    if (fe && document.activeElement !== fe) fe.checked = !!d.fetch_enabled;
+    var ul = document.getElementById('ragLoopUseLlm');
+    if (ul && document.activeElement !== ul) ul.checked = !!d.score_use_llm;
+  }
+
+  function loadRagLoopStatus() {
+    var body = document.getElementById('ragLoopStatusBody');
+    if (!body) return;
+    api('/rag-loop/status', { method: 'GET' })  // api() = auth header + hata yönetimi
+      .then(function (d) { body.innerHTML = renderRagLoopStatus(d); fillRagLoopConfig(d); })
+      .catch(function () { body.innerHTML = '<span class="muted small">Durum alınamadı</span>'; });
+  }
+
+  function ragLoopMsg(text, ok) {
+    var el = document.getElementById('ragLoopMsg');
+    if (!el) return;
+    el.textContent = text;
+    el.className = 'result ' + (ok ? '' : 'error');
+  }
+
+  var ragLoopRefreshBtn = document.getElementById('ragLoopRefreshBtn');
+  if (ragLoopRefreshBtn) ragLoopRefreshBtn.addEventListener('click', loadRagLoopStatus);
+
+  var ragLoopEnableBtn = document.getElementById('ragLoopEnableBtn');
+  if (ragLoopEnableBtn) ragLoopEnableBtn.addEventListener('click', function () {
+    api('/rag-loop/enable?enabled=true', { method: 'POST' })
+      .then(function () { ragLoopMsg('Döngü açıldı — ilk tur birazdan başlar.', true); loadRagLoopStatus(); })
+      .catch(function (e) { ragLoopMsg('Hata: ' + e.message, false); });
+  });
+
+  var ragLoopDisableBtn = document.getElementById('ragLoopDisableBtn');
+  if (ragLoopDisableBtn) ragLoopDisableBtn.addEventListener('click', function () {
+    api('/rag-loop/enable?enabled=false', { method: 'POST' })
+      .then(function () { ragLoopMsg('Döngü kapatıldı (yürüyen tur biter, yenisi başlamaz).', true); loadRagLoopStatus(); })
+      .catch(function (e) { ragLoopMsg('Hata: ' + e.message, false); });
+  });
+
+  var ragLoopRunOnceBtn = document.getElementById('ragLoopRunOnceBtn');
+  if (ragLoopRunOnceBtn) ragLoopRunOnceBtn.addEventListener('click', function () {
+    ragLoopMsg('Bir tur başlatılıyor…', true);
+    api('/rag-loop/run-once', { method: 'POST' })
+      .then(function (d) {
+        ragLoopMsg(d.ok ? 'Tur başlatıldı — ilerlemeyi yukarıdaki durumdan izle.'
+          : ('Çalıştırılamadı: ' + (d.reason || 'bilinmiyor')), d.ok);
+        loadRagLoopStatus();
+      })
+      .catch(function (e) { ragLoopMsg('Hata: ' + e.message, false); });
+  });
+
+  var ragLoopSaveCfgBtn = document.getElementById('ragLoopSaveCfgBtn');
+  if (ragLoopSaveCfgBtn) ragLoopSaveCfgBtn.addEventListener('click', function () {
+    function val(id) { var el = document.getElementById(id); return el ? el.value : ''; }
+    function chk(id) { var el = document.getElementById(id); return el && el.checked ? 'true' : 'false'; }
+    var qs = [
+      'interval_min=' + encodeURIComponent(val('ragLoopInterval')),
+      'fetch_interval_hours=' + encodeURIComponent(val('ragLoopFetchHours')),
+      'max_fetch_per_cycle=' + encodeURIComponent(val('ragLoopMaxFetch')),
+      'cards_per_cycle=' + encodeURIComponent(val('ragLoopCards')),
+      'scores_per_cycle=' + encodeURIComponent(val('ragLoopScores')),
+      'fetch_enabled=' + chk('ragLoopFetchEnabled'),
+      'score_use_llm=' + chk('ragLoopUseLlm')
+    ].join('&');
+    api('/rag-loop/config?' + qs, { method: 'POST' })
+      .then(function () { ragLoopMsg('Ayarlar kaydedildi.', true); loadRagLoopStatus(); })
+      .catch(function (e) { ragLoopMsg('Hata: ' + e.message, false); });
+  });
+
+  loadRagLoopStatus();
+  // ÖĞRENME sekmesi açıkken döngü durumunu canlı tut.
+  setInterval(function () {
+    var panel = document.getElementById('panel-learning');
+    if (panel && panel.classList.contains('active')) loadRagLoopStatus();
+  }, 15000);
 
   // ---------- egitim rozeti (ust bar) ----------
   // Uc durum: CANLI (nabizli) · HAZIR (tek tikla baslat) · YOK.

@@ -1,0 +1,407 @@
+"""RAG Öğrenme Döngüsü — otonom korpus büyütme + öğrenme arka plan döngüsü.
+
+"RAG eğitimi" bu projede model ağırlığı eğitmek DEĞİL; RAG'ın korpusu öğrenme
+çevrimidir. Döngü her turda (kullanıcı etkin kıldıysa):
+
+  1. [opsiyonel] Kayıtlı arXiv sorgularından yeni makale çek → indeksle.
+  2. Kartı olmayan makalelere bilgi kartı üret (LLM).
+  3. Kartı olup skoru olmayan makaleleri comprehension ile skorla.
+  4. RAG ustalık panosunu (türetilmiş %) güncelle.
+
+KULLANICI ONAYI (CLAUDE.md kural 8 ruhu): döngü VARSAYILAN KAPALI; yalnız web'den
+etkinleştirilince çalışır. Ağır LLM/ağ kullanımı otomatik başlamaz. LoRA eğitimi
+sürerken döngü kendini DURAKLATIR (RAM/LLM çakışmasını önlemek için — bkz.
+rag_mastery notu: ustalık paneli ağır LLM çağırmaz, ama kart/skor üretimi çağırır).
+
+State dosyası: storage/rag_learning_state.json (config + çalışma durumu birlikte).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import dataclasses
+import datetime as dt
+import json
+import logging
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+log = logging.getLogger(__name__)
+
+_STATE_PATH = Path("storage") / "rag_learning_state.json"
+
+
+def _utcnow() -> str:
+    return dt.datetime.now(dt.UTC).isoformat()
+
+
+@dataclass
+class RagLoopState:
+    """Döngü ayarları (kalıcı) + anlık çalışma durumu."""
+
+    # --- ayarlar (kullanıcı kontrolü; kalıcı) ---
+    enabled: bool = False
+    interval_min: int = 30  # turlar arası bekleme
+    fetch_enabled: bool = True  # her turda yeni makale çekmeyi dene
+    fetch_interval_hours: int = 24  # arXiv'e nazik ol: çekim turu seyrek
+    max_fetch_per_cycle: int = 5  # çekim turunda en çok kaç makale
+    cards_per_cycle: int = 3  # turda en çok kaç kart (CPU sınırı)
+    scores_per_cycle: int = 5  # turda en çok kaç skor
+    score_use_llm: bool = True  # comprehension skorunda LLM kullan (yavaş ama kaliteli)
+
+    # --- çalışma durumu (anlık) ---
+    stage: str = "idle"  # idle|fetching|carding|scoring|paused_training|error
+    running: bool = False  # şu an bir tur yürütülüyor mu
+    last_cycle_at: str = ""
+    last_fetch_at: str = ""
+    cycles_completed: int = 0
+    last_error: str = ""
+
+    # son tur özeti
+    last_fetched: int = 0
+    last_ingested: int = 0
+    last_cards: int = 0
+    last_scored: int = 0
+
+    # kümülatif sayaçlar
+    total_fetched: int = 0
+    total_cards: int = 0
+    total_scored: int = 0
+
+    mastery_percent: int | None = None
+    history: list[dict[str, Any]] = field(default_factory=list)  # son ~20 tur özeti
+
+    def to_dict(self) -> dict[str, Any]:
+        return dataclasses.asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> RagLoopState:
+        s = cls()
+        for f in dataclasses.fields(cls):
+            if f.name in d and d[f.name] is not None:
+                setattr(s, f.name, d[f.name])
+        return s
+
+
+class RagLearningLoop:
+    """Sunucu-taraflı RAG öğrenme döngüsü yöneticisi (singleton ile kullanılır)."""
+
+    def __init__(self) -> None:
+        self._state = self._load_state()
+        self._lock = asyncio.Lock()
+
+    # ------------------------------------------------------------------ state
+
+    def _load_state(self) -> RagLoopState:
+        if _STATE_PATH.exists():
+            try:
+                return RagLoopState.from_dict(json.loads(_STATE_PATH.read_text(encoding="utf-8")))
+            except Exception:
+                log.warning("RAG loop: state okunamadı, varsayılana dönülüyor")
+        return RagLoopState()
+
+    def _save_state(self) -> None:
+        _STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _STATE_PATH.write_text(json.dumps(self._state.to_dict(), indent=2), encoding="utf-8")
+
+    def get_status(self) -> dict[str, Any]:
+        return self._state.to_dict()
+
+    def set_enabled(self, enabled: bool) -> None:
+        self._state.enabled = bool(enabled)
+        self._save_state()
+        log.info("RAG loop: enabled=%s", self._state.enabled)
+
+    def set_config(self, **kw: Any) -> dict[str, Any]:
+        """Ayarları doğrula + kelepçele + kalıcı yap. Bilinmeyen/None alanlar yok sayılır."""
+        bounds = {
+            "interval_min": (5, 1440),
+            "fetch_interval_hours": (1, 720),
+            "max_fetch_per_cycle": (0, 50),
+            "cards_per_cycle": (0, 50),
+            "scores_per_cycle": (0, 50),
+        }
+        for key, (lo, hi) in bounds.items():
+            if kw.get(key) is not None:
+                try:
+                    val = int(kw[key])
+                except (TypeError, ValueError):
+                    continue
+                setattr(self._state, key, max(lo, min(hi, val)))
+        for flag in ("fetch_enabled", "score_use_llm", "enabled"):
+            if kw.get(flag) is not None:
+                setattr(self._state, flag, bool(kw[flag]))
+        self._save_state()
+        return self.get_status()
+
+    # ------------------------------------------------------------------ zaman yardımcıları
+
+    @staticmethod
+    def _minutes_since(iso: str) -> float:
+        if not iso:
+            return float("inf")
+        try:
+            then = dt.datetime.fromisoformat(iso)
+        except ValueError:
+            return float("inf")
+        if then.tzinfo is None:
+            then = then.replace(tzinfo=dt.UTC)
+        return (dt.datetime.now(dt.UTC) - then).total_seconds() / 60.0
+
+    def _fetch_due(self) -> bool:
+        return (
+            self._minutes_since(self._state.last_fetch_at) >= self._state.fetch_interval_hours * 60
+        )
+
+    async def _update_stage(self, stage: str) -> None:
+        async with self._lock:
+            self._state.stage = stage
+            self._save_state()
+
+    # ------------------------------------------------------- tur adımları (senkron; to_thread ile)
+
+    @staticmethod
+    def _training_running() -> bool:
+        """LoRA eğitimi (web veya detached) sürüyor mu — ağır işi atlamak için."""
+        try:
+            from app.training.detached_launch import training_status
+
+            return bool(training_status().get("running"))
+        except Exception:
+            return False
+
+    def _fetch_new_papers(self) -> tuple[int, int]:
+        """Kayıtlı (auto_ingest) arXiv sorgularından yeni makale çek + indeksle.
+
+        Dönüş: (indirilen, indekslenen). Sorgu yoksa (0, 0).
+        """
+        from app.ingestion.arxiv_fetcher import fetch_arxiv_papers
+        from app.ingestion.paper_loader import DiscoveredPaper, compute_file_hash
+        from app.memory.paper_indexer import PaperIndexer
+        from app.memory.sqlite_store import SqliteStore
+
+        store = SqliteStore()
+        queries = [q for q in store.list_arxiv_saved_queries() if q.get("auto_ingest")]
+        if not queries:
+            return 0, 0
+
+        budget = self._state.max_fetch_per_cycle
+        if budget <= 0:
+            return 0, 0
+
+        indexer = PaperIndexer()
+        fetched = 0
+        ingested = 0
+        for q in queries:
+            if fetched >= budget:
+                break
+            remaining = budget - fetched
+            try:
+                results = fetch_arxiv_papers(
+                    q["query"], max_results=min(int(q["max_results"]), remaining)
+                )
+            except Exception as exc:
+                log.warning("RAG loop: arXiv çekimi başarısız (%s): %s", q.get("query"), exc)
+                continue
+            downloaded = [r for r in results if not r.skipped]
+            fetched += len(downloaded)
+            for r in downloaded:
+                try:
+                    disc = DiscoveredPaper(path=r.pdf_path, file_hash=compute_file_hash(r.pdf_path))
+                    indexer.ingest_one(disc)
+                    ingested += 1
+                except Exception:
+                    log.warning("RAG loop: indeksleme başarısız: %s", r.arxiv_id)
+            with contextlib.suppress(Exception):
+                store.mark_arxiv_query_ran(q["query_id"])
+        return fetched, ingested
+
+    def _build_missing_cards(self, limit: int) -> int:
+        """Kartı olmayan makalelere bilgi kartı üret (en çok `limit` adet)."""
+        if limit <= 0:
+            return 0
+        from app.brain.knowledge_card_builder import KnowledgeCardBuilder
+        from app.memory.sqlite_store import SqliteStore
+
+        store = SqliteStore()
+        builder = KnowledgeCardBuilder()
+        built = 0
+        for p in store.list_papers():
+            if built >= limit:
+                break
+            if store.has_knowledge_card(p.paper_id):
+                continue
+            try:
+                builder.build(p.paper_id)
+                built += 1
+            except Exception as exc:
+                log.warning("RAG loop: kart üretilemedi (%s): %s", p.paper_id, exc)
+        return built
+
+    def _score_missing(self, limit: int) -> int:
+        """Kartı olup comprehension skoru olmayan makaleleri skorla (en çok `limit`)."""
+        if limit <= 0:
+            return 0
+        from app.memory.sqlite_store import SqliteStore
+        from app.verification.comprehension_scorer import ComprehensionScorer
+
+        store = SqliteStore()
+        scorer = ComprehensionScorer()
+        scored = 0
+        for p in store.list_papers():
+            if scored >= limit:
+                break
+            if not store.has_knowledge_card(p.paper_id):
+                continue
+            if store.get_comprehension_score(p.paper_id) is not None:
+                continue
+            try:
+                result = scorer.score(p.paper_id, use_llm=self._state.score_use_llm)
+                store.save_comprehension_score(result)
+                scored += 1
+            except Exception as exc:
+                log.warning("RAG loop: skor hesaplanamadı (%s): %s", p.paper_id, exc)
+        return scored
+
+    @staticmethod
+    def _refresh_mastery() -> int | None:
+        try:
+            from app.verification.rag_mastery import compute_rag_mastery
+
+            return compute_rag_mastery().get("mastery_percent")
+        except Exception:
+            return None
+
+    # ------------------------------------------------------------------ tur
+
+    async def run_one_cycle(self) -> dict[str, Any]:
+        """Tek bir öğrenme turunu yürüt. Eşzamanlı ikinci tur reddedilir."""
+        async with self._lock:
+            if self._state.running:
+                return {"ok": False, "reason": "Zaten bir tur yürütülüyor"}
+            self._state.running = True
+            self._state.last_error = ""
+            self._save_state()
+
+        try:
+            # LoRA eğitimi sürüyorsa LLM/RAM çakışmasını önle — ağır işi atla.
+            if await asyncio.to_thread(self._training_running):
+                mastery = await asyncio.to_thread(self._refresh_mastery)
+                async with self._lock:
+                    self._state.stage = "paused_training"
+                    self._state.mastery_percent = mastery
+                    self._state.last_cycle_at = _utcnow()
+                    self._save_state()
+                log.info("RAG loop: LoRA eğitimi sürüyor → tur atlandı (duraklatıldı)")
+                return {"ok": True, "skipped": "training_running", "mastery": mastery}
+
+            fetched = ingested = cards = scored = 0
+
+            # 1) yeni makale çek (nazik kadans; yalnız çekim aralığı dolduysa)
+            if self._state.fetch_enabled and self._fetch_due():
+                await self._update_stage("fetching")
+                fetched, ingested = await asyncio.to_thread(self._fetch_new_papers)
+                async with self._lock:
+                    self._state.last_fetch_at = _utcnow()
+                    self._save_state()
+
+            # 2) eksik kartları üret
+            await self._update_stage("carding")
+            cards = await asyncio.to_thread(self._build_missing_cards, self._state.cards_per_cycle)
+
+            # 3) eksik skorları hesapla
+            await self._update_stage("scoring")
+            scored = await asyncio.to_thread(self._score_missing, self._state.scores_per_cycle)
+
+            # 4) RAG ustalığını güncelle (türetilmiş; ağır LLM yok)
+            mastery = await asyncio.to_thread(self._refresh_mastery)
+
+            now = _utcnow()
+            async with self._lock:
+                self._state.last_fetched = fetched
+                self._state.last_ingested = ingested
+                self._state.last_cards = cards
+                self._state.last_scored = scored
+                self._state.total_fetched += fetched
+                self._state.total_cards += cards
+                self._state.total_scored += scored
+                self._state.mastery_percent = mastery
+                self._state.cycles_completed += 1
+                self._state.last_cycle_at = now
+                self._state.stage = "idle"
+                self._state.history.append(
+                    {
+                        "at": now,
+                        "ingested": ingested,
+                        "cards": cards,
+                        "scored": scored,
+                        "mastery": mastery,
+                    }
+                )
+                self._state.history = self._state.history[-20:]
+                self._save_state()
+
+            log.info(
+                "RAG loop turu bitti: +%d makale, +%d kart, +%d skor (ustalık %s%%)",
+                ingested,
+                cards,
+                scored,
+                mastery,
+            )
+            return {
+                "ok": True,
+                "fetched": fetched,
+                "ingested": ingested,
+                "cards": cards,
+                "scored": scored,
+                "mastery": mastery,
+            }
+        except Exception as exc:
+            async with self._lock:
+                self._state.stage = "error"
+                self._state.last_error = str(exc)
+                self._save_state()
+            log.exception("RAG loop: tur hatası")
+            return {"ok": False, "reason": str(exc)}
+        finally:
+            async with self._lock:
+                self._state.running = False
+                self._save_state()
+
+    def trigger_once_bg(self) -> dict[str, Any]:
+        """Bir turu arka plan görevi olarak başlat (anında döner — UI durumdan izler)."""
+        if self._state.running:
+            return {"ok": False, "reason": "Zaten bir tur yürütülüyor"}
+        task = asyncio.create_task(self.run_one_cycle())
+        task.add_done_callback(lambda _t: None)
+        return {"ok": True, "started": True}
+
+    # ------------------------------------------------------------------ arka plan döngüsü
+
+    async def background_loop(self) -> None:
+        """15 sn nabızla çalışır; etkinse ve aralık dolduysa bir tur yürütür."""
+        log.info("RAG öğrenme döngüsü arka planı başladı (enabled=%s)", self._state.enabled)
+        while True:
+            await asyncio.sleep(15)
+            if not self._state.enabled or self._state.running:
+                continue
+            if self._minutes_since(self._state.last_cycle_at) < self._state.interval_min:
+                continue
+            try:
+                await self.run_one_cycle()
+            except Exception:
+                log.exception("RAG loop: arka plan turu hatası")
+
+
+# ---------- singleton ----------
+
+_loop: RagLearningLoop | None = None
+
+
+def get_rag_loop() -> RagLearningLoop:
+    global _loop
+    if _loop is None:
+        _loop = RagLearningLoop()
+    return _loop

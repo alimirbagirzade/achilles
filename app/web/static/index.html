@@ -594,6 +594,55 @@
       <section class="panel" id="panel-learning">
         <div class="panel-head"><h2>Öğrenme Dinamikleri</h2></div>
 
+        <!-- RAG Öğrenme Döngüsü (otonom, sunucu-taraflı) -->
+        <div class="card" style="margin-bottom:1rem;border:1px solid #334155">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+            <h3 style="margin:0">RAG Öğrenme Döngüsü <span class="muted small">(otonom)</span></h3>
+            <button class="btn btn-sm" id="ragLoopRefreshBtn">↻</button>
+          </div>
+          <p class="muted small" style="margin:.4rem 0 .8rem">
+            Sunucu-taraflı arka plan döngüsü: arXiv'den yeni makale çek → indeksle →
+            bilgi kartı üret → anlama skorla → RAG ustalığını güncelle. Tarayıcı/web
+            kapansa da sürer. <strong>Açmadıkça çalışmaz.</strong> LoRA eğitimi
+            sürerken kendini duraklatır.
+          </p>
+
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <span class="muted small">Döngü:</span>
+            <button class="btn btn-sm" id="ragLoopEnableBtn">Aç</button>
+            <button class="btn btn-sm" id="ragLoopDisableBtn">Kapat</button>
+            <button class="btn btn-sm btn-primary" id="ragLoopRunOnceBtn">⏵ Şimdi bir tur çalıştır</button>
+            <span id="ragLoopEnabledLabel" class="badge badge-info" style="margin-left:4px">kapalı</span>
+          </div>
+
+          <div class="card" style="padding:12px;margin-bottom:12px">
+            <div id="ragLoopStatusBody" style="font-size:13px"><span class="muted">Yükleniyor…</span></div>
+          </div>
+
+          <details>
+            <summary class="muted small" style="cursor:pointer">⚙ Döngü ayarları</summary>
+            <div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
+              <label style="display:flex;flex-direction:column;gap:4px;font-size:.85rem">Tur aralığı (dk)
+                <input type="number" id="ragLoopInterval" min="5" max="1440" value="30" /></label>
+              <label style="display:flex;flex-direction:column;gap:4px;font-size:.85rem">Çekim aralığı (saat)
+                <input type="number" id="ragLoopFetchHours" min="1" max="720" value="24" /></label>
+              <label style="display:flex;flex-direction:column;gap:4px;font-size:.85rem">Tur başına makale
+                <input type="number" id="ragLoopMaxFetch" min="0" max="50" value="5" /></label>
+              <label style="display:flex;flex-direction:column;gap:4px;font-size:.85rem">Tur başına kart
+                <input type="number" id="ragLoopCards" min="0" max="50" value="3" /></label>
+              <label style="display:flex;flex-direction:column;gap:4px;font-size:.85rem">Tur başına skor
+                <input type="number" id="ragLoopScores" min="0" max="50" value="5" /></label>
+              <label style="display:flex;align-items:flex-end;gap:6px;font-size:.85rem">
+                <input type="checkbox" id="ragLoopFetchEnabled" checked /> Yeni makale çek</label>
+              <label style="display:flex;align-items:flex-end;gap:6px;font-size:.85rem">
+                <input type="checkbox" id="ragLoopUseLlm" checked /> Skorda LLM kullan</label>
+            </div>
+            <button class="btn btn-sm" id="ragLoopSaveCfgBtn" style="margin-top:10px">Ayarları Kaydet</button>
+            <p class="setting-desc">Yeni makale çekimi arXiv'e nazik olmak için ayrı, daha seyrek bir kadansta yapılır (varsayılan 24 saatte bir); kart/skor üretimi her turda yapılır. "Tur başına" sınırları CPU'yu boğmamak içindir. Yeni makale çekmek için <strong>Makaleler</strong> sekmesinde en az bir <em>kayıtlı sorgu</em> olmalı (auto-ingest açık).</p>
+          </details>
+          <div id="ragLoopMsg" class="result hidden" style="margin-top:10px"></div>
+        </div>
+
         <!-- Özet kartları -->
         <div class="card" style="margin-bottom:1rem">
           <div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:center">
