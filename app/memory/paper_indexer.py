@@ -132,6 +132,12 @@ class PaperIndexer:
             n_chars=parsed.n_chars,
         )
 
+        # Yeniden indeksleme (force) öncesi eski chunk'ları TEMİZLE: yeni chunk'lama
+        # daha az parça üretirse öksüz/bayat chunk kalmasın (idempotent re-index).
+        # İlk ingest'te no-op. SQLite + Chroma birlikte temizlenir.
+        self.store.delete_chunks_for_paper(disc.paper_id)
+        self.chroma.delete_by_paper(disc.paper_id)
+
         chunks = chunk_parsed_pdf(disc.paper_id, parsed)
         self.store.add_chunks(
             [
@@ -170,6 +176,15 @@ class PaperIndexer:
                 for c in chunks
             ],
         )
+
+        # BM25 korpus cache'i (chunk-sayısı anahtarlı) içerik değişince bayatlar —
+        # ingestion sonrası sıfırla ki hibrit retrieval taze metni görsün.
+        try:
+            from app.memory import bm25_corpus
+
+            bm25_corpus.reset_cache()
+        except Exception:  # pragma: no cover — cache reset hatası ingestion'ı bloklamamalı
+            logger.debug("BM25 cache sıfırlanamadı")
 
         notes: list[str] = [f"embedding_mode={self.embedder.mode}"]
 

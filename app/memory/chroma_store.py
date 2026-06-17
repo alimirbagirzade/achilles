@@ -88,6 +88,11 @@ class ChromaStore:
             )
         return out
 
+    def delete_by_paper(self, paper_id: str) -> None:
+        """Bir makaleye ait tüm chunk'ları koleksiyondan sil (force re-index temizliği)."""
+        col = self._ensure()
+        col.delete(where={"paper_id": paper_id})
+
     def count(self) -> int:
         col = self._ensure()
         return int(col.count())

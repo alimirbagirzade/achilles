@@ -29,6 +29,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     create_engine,
+    delete,
     select,
     text,
 )
@@ -585,6 +586,16 @@ class SqliteStore:
             for c in chunks:
                 s.merge(Chunk(**c))
             return len(chunks)
+
+    def delete_chunks_for_paper(self, paper_id: str) -> int:
+        """Bir makaleye ait tüm chunk'ları sil (force re-index'te bayat chunk bırakmamak için).
+
+        Yeniden chunk'lama daha AZ parça üretirse eski yüksek-indeksli chunk'lar
+        öksüz kalır ve retrieval'da bayat içerik döner; bu metot onu önler.
+        """
+        with self.session() as s:
+            res = s.execute(delete(Chunk).where(Chunk.paper_id == paper_id))
+            return int(getattr(res, "rowcount", 0) or 0)
 
     def list_papers(self) -> list[Paper]:
         with self.session() as s:

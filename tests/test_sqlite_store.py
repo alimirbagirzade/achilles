@@ -47,6 +47,23 @@ def test_add_chunks(store):
     assert len(store.list_chunks("paper_c")) == 1
 
 
+def test_delete_chunks_for_paper(store) -> None:
+    # force re-index temizliği: bir makalenin tüm chunk'ları silinmeli, diğeri kalmalı.
+    store.upsert_paper(paper_id="paper_d", file_hash="h_d", source_path="x")
+    store.upsert_paper(paper_id="paper_e", file_hash="h_e", source_path="y")
+    store.add_chunks(
+        [
+            {"chunk_id": f"paper_d_c{i:04d}", "paper_id": "paper_d", "chunk_index": i, "text": "d"}
+            for i in range(3)
+        ]
+        + [{"chunk_id": "paper_e_c0000", "paper_id": "paper_e", "chunk_index": 0, "text": "e"}]
+    )
+    removed = store.delete_chunks_for_paper("paper_d")
+    assert removed == 3
+    assert store.list_chunks("paper_d") == []
+    assert len(store.list_chunks("paper_e")) == 1  # diğer makale etkilenmedi
+
+
 def test_risk_reports_table_exists(store) -> None:
     assert "risk_reports" in Base.metadata.tables
 
