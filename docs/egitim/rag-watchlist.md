@@ -18,3 +18,27 @@
 | 2026-06-17 | RAGAS offline metrikleri | docs.ragas.io | aday | deterministik alt-küme (context precision via overlap) "sınavla kanıt" çizgisine uygun — sonraki entegrasyon turunda aday |
 | 2026-06-17 | RbFT / ALoFTRAG (RAFT varyantları) | arxiv.org/abs/2403.10131 | ertelendi | LoRA reçetesi notu; `discipline_dataset` RbFT ruhunda |
 | 2026-06-17 | Matryoshka / nomic-embed v2 (MoE) | nomic.ai | ertelendi | Ollama embedding modeli değişince yükseltme yolu |
+
+## Otomatik tarama adayları (rag-scan)
+
+> `rag-scan` ajanının otomatik eklediği arXiv adayları (heuristik skorlu).
+> Entegrasyon turu bunları değerlendirip yukarıdaki ana tabloya taşır.
+
+| Eklendi | arXiv | Skor | Başlık | Sorgu |
+|---|---|---|---|---|
+| 2026-06-17 | 2602.16974 | 6 | Beyond Chunk-Then-Embed: A Comprehensive Taxonomy and Evaluation of Document Chunking Stra | RAG chunking late chunking contextual retrieval |
+| 2026-06-17 | 2601.15518 | 6 | DS@GT at TREC TOT 2025: Bridging Vague Recollection with Fusion Retrieval and Learned Rera | dense retrieval embedding cross-encoder reranker |
+| 2026-06-17 | 2504.19754 | 5 | Reconstructing Context: Evaluating Advanced Chunking Strategies for Retrieval-Augmented Ge | RAG chunking late chunking contextual retrieval |
+| 2026-06-17 | 2606.01070 | 4 | Test-Time Training for Zero-Resource Dense Retrieval Reranking | dense retrieval embedding cross-encoder reranker |
+| 2026-06-17 | 2603.25333 | 4 | Adaptive Chunking: Optimizing Chunking-Method Selection for RAG | RAG chunking late chunking contextual retrieval |
+| 2026-06-17 | 2603.14828 | 4 | Toward Robust GraphRAG: Mitigating Retrieval Drift and Hallucination from Imperfect Knowle | GraphRAG knowledge graph retrieval |
+| 2026-06-17 | 2511.22858 | 4 | RAG System for Supporting Japanese Litigation Procedures: Faithful Response Generation Com | RAG evaluation faithfulness groundedness hallucination |
+| 2026-06-17 | 2511.11017 | 4 | AI Agent-Driven Framework for Automated Product Knowledge Graph Construction in E-Commerce | GraphRAG knowledge graph retrieval |
+| 2026-06-17 | 2510.22344 | 4 | FAIR-RAG: Faithful Adaptive Iterative Refinement for Retrieval-Augmented Generation | corrective RAG self-RAG adaptive retrieval |
+| 2026-06-17 | 2505.21439 | 4 | Towards Better Instruction Following Retrieval Models | dense retrieval embedding cross-encoder reranker |
+| 2026-06-17 | 2501.00309 | 4 | Retrieval-Augmented Generation with Graphs (GraphRAG) | GraphRAG knowledge graph retrieval |
+| 2026-06-17 | 1811.08772 | 4 | Overcoming low-utility facets for complex answer retrieval | dense retrieval embedding cross-encoder reranker |
+| 2026-06-17 | 2601.05264 | 3 | Engineering the RAG Stack: A Comprehensive Review of the Architecture and Trust Frameworks | corrective RAG self-RAG adaptive retrieval |
+| 2026-06-17 | 2510.25621 | 3 | FARSIQA: Faithful and Advanced RAG System for Islamic Question Answering | corrective RAG self-RAG adaptive retrieval |
+| 2026-06-17 | 2506.09886 | 3 | Probabilistic distances-based hallucination detection in LLMs with RAG | RAG evaluation faithfulness groundedness hallucination |
+| 2026-06-17 | 2506.06962 | 3 | AR-RAG: Autoregressive Retrieval Augmentation for Image Generation | retrieval augmented generation reranking |
