@@ -1,51 +1,59 @@
 <#
 .SYNOPSIS
     Achilles RAG guncel-arastirma turunu headless Claude Code ile calistirir;
-    istege bagli olarak ~6 saatlik bir Windows Scheduled Task kurar/kaldirir.
+    istege bagli olarak periyodik bir Windows Scheduled Task kurar/kaldirir.
+
+    Iki mod (iki-katmanli, esik-tetikli tasarim):
+      -Mode Scan       : UCUZ tarama. Yeni adaylari docs/egitim/rag-watchlist.md'ye isler.
+                         Kod/surum/PDF/test yok; yalniz watchlist push. Varsayilan ritim: 24 saat.
+      -Mode Integrate  : AGIR entegrasyon (varsayilan). Watchlist'te >=1 guclu aday varsa
+                         tam tur kosar (entegre -> surumle -> ruff/mypy/pytest -> commit+push);
+                         yoksa no-op. Varsayilan ritim: 168 saat (haftalik).
 
 .DESCRIPTION
-    Bir "tur" = scripts/rag-research-cycle.md talimatini headless `claude -p` ile
-    kosturmak: guncel RAG literaturunu tara -> ise yarayani entegre et -> dokumani
-    surumle/guncelle -> dogrula (ruff/mypy/pytest) -> commit + push. Cikti logs/'a yazilir.
-
-    Anahtarsiz calistirma: TEK tur kosar (hemen).
-    -Register   : her -IntervalHours saatte bir bu betigi (tek tur) calistiran gorev kurar.
-    -Unregister : gorevi kaldirir.
+    Anahtarsiz: secili -Mode icin TEK tur kosar (hemen).
+    -Register   : secili -Mode icin (mod-basina varsayilan veya -IntervalHours) periyodik gorev kurar.
+    -Unregister : secili -Mode gorevini kaldirir.
     -RunNow     : -Register ile birlikte; kurduktan sonra bir tur hemen kosar.
 
+    Onerilen kurulum (gunluk tarama + haftalik entegrasyon):
+      .\scripts\rag-research-loop.ps1 -Mode Scan -Register
+      .\scripts\rag-research-loop.ps1 -Mode Integrate -Register
+
 .PARAMETER PermissionMode
-    Headless izin modu. Varsayilan 'acceptEdits' (dosya duzenlemeleri otomatik kabul;
-    bash/push ise proje settings.local.json allow kurallarina tabi). TAM gozetimsiz
-    otomasyon (pytest + git push dahil her sey sorulmadan) icin 'bypassPermissions'
-    gerekebilir -- guvenlik etkisini bilerek sec.
+    Headless izin modu. Varsayilan 'acceptEdits'. TAM gozetimsiz otomasyon (pytest + git push
+    sorulmadan) icin 'bypassPermissions' gerekebilir -- guvenlik etkisini bilerek sec.
 
 .EXAMPLE
-    # Tek tur (elle):
-    .\scripts\rag-research-loop.ps1
-
+    .\scripts\rag-research-loop.ps1 -Mode Scan            # tek tarama turu (elle)
 .EXAMPLE
-    # 6 saatlik dongunu kur (ve hemen bir tur kos):
-    .\scripts\rag-research-loop.ps1 -Register -RunNow
-
+    .\scripts\rag-research-loop.ps1 -Mode Integrate -Register -RunNow
 .EXAMPLE
-    # Dongunu kaldir:
-    .\scripts\rag-research-loop.ps1 -Unregister
+    .\scripts\rag-research-loop.ps1 -Mode Scan -Unregister
 #>
 [CmdletBinding()]
 param(
+    [ValidateSet('Scan', 'Integrate')]
+    [string]$Mode = 'Integrate',
     [switch]$Register,
     [switch]$Unregister,
     [switch]$RunNow,
-    [int]$IntervalHours = 6,
+    [int]$IntervalHours = 0,
     [ValidateSet('acceptEdits', 'bypassPermissions', 'default', 'plan')]
     [string]$PermissionMode = 'acceptEdits'
 )
 
 $ErrorActionPreference = 'Stop'
-$TaskName = 'Achilles-RAG-Research-Loop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$PromptPath = Join-Path $PSScriptRoot 'rag-research-cycle.md'
 $ScriptPath = Join-Path $PSScriptRoot 'rag-research-loop.ps1'
+$TaskName = "Achilles-RAG-$Mode"
+$PromptFile = if ($Mode -eq 'Scan') { 'rag-research-scan.md' } else { 'rag-research-cycle.md' }
+$PromptPath = Join-Path $PSScriptRoot $PromptFile
+
+# Mod-basina varsayilan ritim (kullanici -IntervalHours vermediyse).
+if ($IntervalHours -le 0) {
+    $IntervalHours = if ($Mode -eq 'Scan') { 24 } else { 168 }
+}
 
 function Invoke-Cycle {
     if (-not (Test-Path $PromptPath)) {
@@ -59,29 +67,27 @@ function Invoke-Cycle {
     $logDir = Join-Path $RepoRoot 'logs'
     if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir | Out-Null }
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $log = Join-Path $logDir "rag-research-$stamp.log"
+    $log = Join-Path $logDir "rag-$($Mode.ToLower())-$stamp.log"
     $prompt = Get-Content -Raw -Encoding utf8 $PromptPath
 
-    Write-Host "[$(Get-Date -Format o)] RAG arastirma turu basliyor -> $log"
-    # Headless print modu. stderr dahil log'a yaz.
+    Write-Host "[$(Get-Date -Format o)] RAG $Mode turu basliyor -> $log"
     & $claude.Source -p $prompt --permission-mode $PermissionMode *>> $log
     $code = $LASTEXITCODE
-    Write-Host "[$(Get-Date -Format o)] Tur bitti (exit=$code). Log: $log"
+    Write-Host "[$(Get-Date -Format o)] $Mode turu bitti (exit=$code). Log: $log"
     return $code
 }
 
 function Register-Loop {
-    $arg = "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`" -PermissionMode $PermissionMode"
+    $arg = "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`" -Mode $Mode -PermissionMode $PermissionMode"
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arg
-    # Simdi (2 dk sonra) basla, her $IntervalHours saatte bir tekrarla (suresiz).
     $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) `
         -RepetitionInterval (New-TimeSpan -Hours $IntervalHours)
     $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 2)
     Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
-        -Settings $settings -Description 'Achilles RAG guncel-arastirma 6 saatlik otonom tur' `
+        -Settings $settings -Description "Achilles RAG $Mode turu (her $IntervalHours saat)" `
         -Force | Out-Null
     Write-Host "Gorev kuruldu: '$TaskName' -- her $IntervalHours saatte bir."
-    Write-Host "Kaldirmak icin: .\scripts\rag-research-loop.ps1 -Unregister"
+    Write-Host "Kaldirmak icin: .\scripts\rag-research-loop.ps1 -Mode $Mode -Unregister"
 }
 
 function Unregister-Loop {

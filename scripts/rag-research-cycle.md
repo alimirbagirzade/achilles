@@ -12,9 +12,17 @@
 - Ağır bağımlılık eklemekten kaçın; mevcut opt-in desenine uy (varsayılan davranışı bozma).
 - Kullanıcıya dönük metin/log/docstring Türkçe.
 
+## Eşik (önce bunu kontrol et)
+Bu pahalı turdur (kod+sürüm+test+push). `docs/egitim/rag-watchlist.md`'yi oku: **≥1 "güçlü
+aday"** (ucuz tarama turlarının işaretlediği) yoksa, hızlı bir web doğrulaması yap; yine de
+nitelikli aday çıkmazsa **tam turu KOŞMA** — watchlist'e "entegrasyona değer aday yok" notu
+düş ve çık (no-op; uydurma yapma, Kural 7). Güçlü aday varsa aşağıdaki adımlarla devam et.
+
 ## Tur adımları (sırayla)
-1. **Durumu oku:** `docs/egitim/RAG_EGITIM_DETAYLI_ANLATIM.md` (özellikle "Güncel Araştırma
-   Entegrasyonu (Sürüm Günlüğü)" — son tur ne yaptı, neler ertelendi) + `HANDOFF.md` ilgili kısım.
+1. **Durumu oku:** `docs/egitim/rag-watchlist.md` (entegre edilecek adaylar) +
+   `docs/egitim/RAG_EGITIM_DETAYLI_ANLATIM.md` ("Güncel Araştırma Entegrasyonu (Sürüm Günlüğü)" —
+   son tur ne yaptı, neler ertelendi) + `HANDOFF.md` ilgili kısım. Entegrasyona watchlist'teki
+   güçlü adaylardan başla; gerekirse aşağıdaki taze tarama ile tamamla.
 2. **Tara (web):** Son ~6 ay RAG/retrieval/eğitim gelişmeleri. Konu örnekleri: reranking &
    late-interaction, chunking (late/contextual/semantic), corrective/self/adaptive RAG, query
    dönüşümü (HyDE/step-back/RRF), GraphRAG ailesi, RAG değerlendirme (RAGAS/groundedness),
@@ -29,7 +37,8 @@
 5. **Dokümanı güncelle:** sürüm numarasını ARTIR (Sürüm Geçmişi satırı) + "Güncel Araştırma
    Entegrasyonu" bölümüne **yeni tarihli tur** ekle (en yeni üstte): taranan teknikler tablosu +
    adopt/belgele/ertele gerekçesi + kaynak URL'leri. İlgili Aşama/Sözlük/Dosya-Haritası/Test-Kapsamı
-   bölümlerini de güncelle.
+   bölümlerini de güncelle. Ayrıca `docs/egitim/rag-watchlist.md`'de entegre edilen adayları
+   `entegre` olarak işaretle (durumları güncel tut).
 6. **PDF üret:** `uv run python scripts/gen_egitim_pdf.py` (repo + Desktop'a kopyalar). LORA PDF
    içeriği değişmediyse `git checkout -- docs/egitim/LORA_EGITIM_DETAYLI_ANLATIM.pdf` ile geri al.
 7. **Doğrula (zorunlu):** `uv run ruff format .` + `uv run ruff check .` + `uv run mypy app` +
