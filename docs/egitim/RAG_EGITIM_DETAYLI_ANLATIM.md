@@ -1,6 +1,6 @@
 # Achilles RAG Eğitimi — Detaylı Anlatım
 
-Sürüm: v1.1 · 2026-06-16
+Sürüm: v1.2 · 2026-06-17
 
 ## Sürüm Geçmişi
 
@@ -8,6 +8,7 @@ Sürüm: v1.1 · 2026-06-16
 |-------|-------|-----------|
 | v1.0 | 2026-06-16 | İlk kapsamlı sürüm. |
 | v1.1 | 2026-06-16 | Denetim düzeltmeleri: embedding boyutu (256-d yalnız fake yedek; nomic-embed-text boyutu Ollama modeli tarafından belirlenir), `chunk_size`/`overlap` doğru satır referansı (settings.py:77-78), hayali "~8000 chunk_size çelişkisi" kaldırıldı, test kapsamı doğru yansıtıldı (BM25/cross-encoder ve L3/L4/L5 testleri mevcut), auto-chain eğitim çağrısı doğru tarif edildi (doğrudan CLI, web subprocess değil). |
+| v1.2 | 2026-06-17 | **Güncel araştırma entegrasyonu (1. tur).** Reciprocal Rank Fusion (RRF / RAG-Fusion) eklendi: yeni `app/memory/rank_fusion.py` (saf, deterministik) + `MultiQueryRetriever` artık naif dedup yerine RRF füzyonu kullanıyor + `RerankingRetriever`'a opt-in `rag_rrf` modu (dense+BM25 sıra-füzyonu). Cross-encoder reranker modeli yapılandırılabilir hale getirildi ve yanıltıcı "çok dilli" yorumu düzeltildi (gerçek çok-dilli için `bge-reranker-v2-m3` önerisi). Yeni "Güncel Araştırma Entegrasyonu (Sürüm Günlüğü)" bölümü: taranan 14 teknik (late chunking, CRAG, Self-RAG, HyDE, GraphRAG/LightRAG/HippoRAG, RAGAS, RbFT/ALoFTRAG, Matryoshka embeddings…) Achilles koduna eşlendi; her biri için adopt/belgele/ertele gerekçesi + kaynak atıfları. |
 
 > Not: Yeni eğitim geliştirmesinde sürüm numarası artırılır ve değişiklik buraya eklenir.
 
@@ -77,10 +78,11 @@ Kapsam, aşağıdaki bileşenlerin tamamını içerir:
        │                          ┌─────────────────────┴──────────────────┐
        │                          ▼ RETRIEVAL                                │
        │            ┌──────────────────────────────────────────┐            │
-       │            │ QueryExpander → MultiQuery (opt)          │            │
+       │            │ QueryExpander → MultiQuery+RRF (opt)      │            │
        │            │ RerankingRetriever:                       │            │
        │            │   dense(overfetch×4) + BM25(opt)          │            │
        │            │   → rerank(heuristik | cross-encoder)     │            │
+       │            │   | RRF füzyon (rag_rrf, opt-in)          │            │
        │            └──────────────────────────────────────────┘            │
        │                          │ list[RetrievedChunk]                     │
        │                          ▼                                          │
@@ -228,11 +230,13 @@ soru → RerankingRetriever.retrieve(query, top_k)
 
 **BM25 (`bm25_index.py:18-108`):** Saf Python (dependency yok), `k1=1.5, b=0.75`. IDF `log((N-df+0.5)/(df+0.5)+1)`. Corpus lazy olarak Chroma'dan kurulur, modül-düzey cache; chunk sayısı değişince yeniden kurulur (`bm25_corpus.py:21-62`). Chroma boş/erişilemezse dense-only'a düşer.
 
-**Query expansion (`query_expander.py:128-215`):** Kural tabanlı (LLM gerektirmez). Tam/alt-dize/token eşleşmesiyle eş anlamlı sözlüğü uygular; finans sorgularına `systematic trading / quantitative approach / risk-adjusted` son ekleri ekler; min 3 / max 5 varyant. `MultiQueryRetriever` (`multi_query_retriever.py:29-59`) her varyant için ayrı retrieval yapıp `chunk_id`'ye göre tekilleştirir.
+**Query expansion (`query_expander.py:128-215`):** Kural tabanlı (LLM gerektirmez). Tam/alt-dize/token eşleşmesiyle eş anlamlı sözlüğü uygular; finans sorgularına `systematic trading / quantitative approach / risk-adjusted` son ekleri ekler; min 3 / max 5 varyant. `MultiQueryRetriever` (`multi_query_retriever.py`) her varyant için ayrı retrieval yapar; sonuçları artık **Reciprocal Rank Fusion (RRF)** ile birleştirir (v1.2; eski naif "en iyi skoru tut" dedup'ı yerine). Aynı chunk birden çok varyanttan gelirse görüntü için en iyi (en düşük distance) varyant saklanır, sıralama RRF skoruna göredir.
+
+**Reciprocal Rank Fusion — RRF (`rank_fusion.py`, v1.2):** Birden çok sıralı listeyi (dense, BM25, sorgu varyantları) skorları normalize etmeden birleştirir; bir öğenin katkısı her liste için `w / (k + rank)` (k varsayılan 60). Skor kalibrasyonu gerektirmediğinden karşılaştırılamaz skorlu kaynaklarda (kosinüs mesafesi vs. BM25 frekansı) alpha-harmanından daha sağlamdır (Cormack ve ark. 2009; RAG-Fusion 2024). Saf Python, deterministik (eşitlikte id ile kararlı sıralama). İki yol kullanır: (1) `MultiQueryRetriever` füzyonu (her zaman), (2) `RerankingRetriever`'da **opt-in** `rag_rrf` modu — dense + BM25 sıralı listelerini RRF ile birleştirip heuristik/cross-encoder rerank'ı atlar (`reranking_retriever.py:_rrf_retrieve`). Varsayılan kapalı → mevcut over-fetch+rerank davranışı değişmez.
 
 **Self-refining RAG (`self_refining_rag.py:44-114`):** Çok turlu — bağlam kalitesinde sorun varsa (`has_incomplete_formula`/`has_incomplete_argument`) `top_k += 3` ile genişletip yeniden çeker.
 
-**Kontrol bayrakları (`settings.py:76-95`):** `rag_top_k=6` (satır 76), `chunk_size=1200`/`chunk_overlap=200` (satır 77-78), `rag_rerank=True` (satır 81), `rag_overfetch=4` (satır 82), `rag_hybrid=True` (satır 85), `rag_cross_encoder=False` (satır 89), `rag_contextual_embed=False` (satır 95).
+**Kontrol bayrakları (`settings.py:76-110`):** `rag_top_k=6` (satır 76), `chunk_size=1200`/`chunk_overlap=200` (satır 77-78), `rag_rerank=True` (satır 81), `rag_overfetch=4` (satır 82), `rag_hybrid=True` (satır 85), `rag_cross_encoder=False` (satır 89), `rag_cross_encoder_model="BAAI/bge-reranker-base"` (satır 93; çok-dilli için `bge-reranker-v2-m3` önerilir, `ACHILLES_RAG_CROSS_ENCODER_MODEL` ile değiştir), `rag_rrf=False` (satır 99, opt-in), `rag_rrf_k=60` (satır 100), `rag_contextual_embed=False` (satır ~107).
 
 ---
 
@@ -325,6 +329,74 @@ Bu katman **objektif sayısal kıyas + regex** kullanır; `eval`/`exec` hiçbir 
 
 ---
 
+## Güncel Araştırma Entegrasyonu (Sürüm Günlüğü)
+
+Bu bölüm, periyodik (≈6 saatlik) güncel-literatür taramasının çıktısıdır: web'den
+taranan RAG teknikleri Achilles koduna eşlenir; her biri için **adopt (entegre et) /
+belgele / ertele** kararı + gerekçe + kaynak atıfları tutulur. En yeni tur en üstte.
+CLAUDE.md Kural 2 gereği hiçbir teknik için "çalışıyor/başarılı" denmez; yalnızca
+"kodda eklendi" veya "önerildi/belgelendi" denir — etki ölçümü ayrı backtest/eval işidir.
+
+### Tur 1 — 2026-06-17 (v1.2)
+
+**Taranan ve eşlenen 14 teknik:**
+
+| Teknik | Yıl | Achilles'te durum | Değer | Offline | Tavsiye | Not |
+|---|---|---|---|---|---|---|
+| Reciprocal Rank Fusion (RRF / RAG-Fusion) | 2009/2024 | yoktu (alpha-harman + naif dedup) | yüksek | evet | **adopt** | `rank_fusion.py` + multi-query füzyonu + opt-in `rag_rrf` |
+| Cross-encoder reranker modelleri (bge-reranker-v2-m3, Qwen3-Reranker, mxbai-rerank-v2) | 2024-2026 | base model sabit-yorumlu | orta | kısmi (indirme) | **adopt (kısmi)** | model yapılandırılabilir + yanıltıcı yorum düzeltildi; varsayılan modest CPU için `base` kaldı |
+| Contextual Retrieval (Anthropic) | 2024 | var (opt-in P2) | yüksek | kısmi | belgele | zaten kodda (`paper_indexer` prefix + `reindex-contextual`) |
+| Late chunking (Jina) | 2024 | iskelet (`late_chunker.py` TODO) | orta-yüksek | kısmi | ertele | uzun-bağlam embedding + tutarlı yeniden-embed gerektirir |
+| Sabit vs. semantik chunking (NAACL 2025 bulgusu) | 2025 | sabit-boyut + math-farkında | — | evet | belgele | sabit chunk'ların semantik chunking'i eşlediği/geçtiği bulgusu mevcut yaklaşımı **doğrular** |
+| Corrective RAG (CRAG) — retrieval evaluator + 3 kademe | 2024 | kısmi (`confidence_scorer` + `self_refining_rag`) | orta | kısmi (web-arama kademesi offline değil) | ertele | hafif offline retrieval-evaluator ileride eklenebilir |
+| Self-RAG (yansıtıcı üretim) | 2023-2024 | kısmi (verification katmanı) | orta | kısmi | belgele | grounding/abstention zaten benzer rol oynuyor |
+| Adaptive-RAG (retrieval gerekli mi kararı) | 2024 | kısmi (abstention) | orta | evet | ertele | sorgu-karmaşıklığına göre retrieval atlama |
+| HyDE (hipotetik doküman embedding) | 2022-2025 | yok (query_expander kural-tabanlı) | orta | hayır (LLM) | ertele | +%25-60 latency + halüsinasyon riski; opsiyonel graceful HyDE ileride |
+| Step-back prompting / query decomposition | 2023-2024 | yok | düşük-orta | hayır (LLM) | belgele | LLM gerektirir |
+| GraphRAG / LightRAG / HippoRAG / KAG | 2024-2025 | kısmi (`concept_graph`) | orta | hayır (ağır) | ertele | token-pahalı; yerel-öncelikli hafiflikle çelişir; LightRAG/HippoRAG hafif varyant olarak ileride |
+| RAGAS metrikleri (faithfulness, context precision/recall) | 2023-2025 | kısmi (grounding/citation/`rag_mastery`) | orta-yüksek | evet (deterministik alt-küme) | ertele | offline RAGAS-benzeri metrik "sınavla kanıt" felsefesine uygun; ileride |
+| RAFT varyantları (RbFT robust FT, ALoFTRAG) | 2024-2025 | RAFT disiplin dataset var | orta | evet (veri üretimi) | belgele | RbFT karşıolgu/yanıltıcı retrieval dayanıklılığı `discipline_dataset` ile aynı ruhta; ALoFTRAG yerel-LoRA + etiketsiz |
+| Matryoshka embeddings (nomic-embed-text v1.5/v2) | 2024-2025 | Ollama nomic-embed-text | orta | kısmi | belgele | v1.5 boyut-kırpma (64-768), v2 MoE + 8192 bağlam — embedding yükseltme yolu |
+
+**Bu turda entegre edilenler (adopt):**
+
+1. **Reciprocal Rank Fusion (RRF).** Yeni `app/memory/rank_fusion.py` modülü:
+   `reciprocal_rank_fusion()` ve `fuse_ranked()` — saf Python, deterministik
+   (eşitlikte id ile kararlı), LLM-free. Wiring: (a) `MultiQueryRetriever` artık
+   varyant-başı sıralı listeleri RRF ile birleştirir (eski naif dedup yerine);
+   (b) `RerankingRetriever`'a opt-in `rag_rrf` modu eklendi — dense + BM25 sıra-füzyonu.
+   Gerekçe: RRF, skor normalize gerektirmeden birden çok kaynakta uzlaşan chunk'ları
+   ödüllendirir; literatürde BM25+vektör birleşiminde ad-hoc skor toplamaya kıyasla
+   tutarlı NDCG/MRR kazancı raporlanır (etki Achilles korpusunda ayrıca backtest/eval
+   ile ölçülmelidir — Kural 2). Test: `tests/test_rank_fusion.py` (+ multi-query ve
+   reranking testlerine RRF senaryoları).
+2. **Cross-encoder reranker modeli yapılandırılabilirliği.** `rag_cross_encoder_model`
+   zaten ayardı; yanıltıcı "çok dilli (TR+EN+ES)" yorumu düzeltildi (baz model ağırlıklı
+   zh/en'dir). Gerçek çok-dillilik (TR dahil 100+ dil) için `BAAI/bge-reranker-v2-m3`
+   önerisi eklendi; modest CPU'da ağırlık nedeniyle varsayılan `bge-reranker-base`
+   bırakıldı, `ACHILLES_RAG_CROSS_ENCODER_MODEL` ile değiştirilebilir.
+
+**Belgelendi / ertelendi (gerekçeyle):** Late chunking (uzun-bağlam embedding gerektirir),
+CRAG/Adaptive-RAG (web-arama veya LLM-yoğun kademeler offline-öncelikli mimariye tam
+oturmaz; hafif offline evaluator ileride), HyDE/step-back (LLM + latency/halüsinasyon),
+GraphRAG ailesi (token-pahalı; LightRAG/HippoRAG hafif varyant olarak ileride),
+RAGAS offline metrikleri (deterministik alt-küme "sınavla kanıt" çizgisine uygun — sonraki
+turda aday), Matryoshka/nomic-v2 (Ollama embedding modeli değişince yükseltme yolu),
+RbFT/ALoFTRAG (LoRA reçetesi notu — `discipline_dataset` zaten RbFT ruhunda).
+
+**Kaynaklar (Tur 1):**
+- RRF / RAG-Fusion: Cormack, Clarke & Büttcher (2009); Raudaschl, "RAG-Fusion" (2024) — <https://github.com/Raudaschl/rag-fusion>; MongoDB "Better RAG Results With Reciprocal Rank Fusion"; AI21 "What is Reciprocal Rank Fusion (RRF)?".
+- Reranker modelleri: BAAI bge-reranker-v2-m3 (HF); Qwen3-Reranker (Apache 2.0, 100+ dil); mixedbread mxbai-rerank-v2.
+- Chunking: Jina "Late Chunking" (2024); Anthropic "Contextual Retrieval" (2024); NAACL 2025 Findings (sabit vs. semantik chunking).
+- Corrective/Self/Adaptive RAG: Yan ve ark. "Corrective Retrieval Augmented Generation" (arXiv:2401.15884, 2024); Self-RAG (2023); Agentic RAG survey (arXiv:2501.09136, 2025).
+- Query dönüşümü: HyDE (Gao ve ark.); step-back prompting; "A Survey of Query Optimization in LLMs" (arXiv:2412.17558).
+- GraphRAG ailesi: Microsoft GraphRAG; LightRAG; HippoRAG (Personalized PageRank); "Towards Practical GraphRAG" (arXiv:2507.03226).
+- Değerlendirme: RAGAS (docs.ragas.io); ARES; "RAG Evaluation Metrics 2026".
+- RAFT: RAFT (arXiv:2403.10131); RbFT (Tu ve ark., 2025); ALoFTRAG (Devine, 2025); GraphRAFT (arXiv:2504.05478).
+- Embeddings: Nomic Embed v1.5 (Matryoshka, HF); Nomic Embed Text V2 (MoE, 2025).
+
+---
+
 ## Kararlar ve Dersler
 
 1. **Anlama yüzdeyle değil sınavla kanıtlanır.** Kaba `ComprehensionScorer` (%-tabanlı self-değerlendirme) objektif değildi; yerine L3/L4/L5 + UnderstandingScore eklendi — sayısal kıyas (`np.allclose`), yön referansı koddan, sahte-pass üretmez (`l3_application.py:89-100`). Bu, CLAUDE.md Kural 2'nin ("test edilmeden çalışıyor deme") doğrudan uygulamasıdır.
@@ -362,7 +434,8 @@ Bu katman **objektif sayısal kıyas + regex** kullanır; `eval`/`exec` hiçbir 
 | `app/memory/reranking_retriever.py` | Over-fetch + rerank sarmalayıcı |
 | `app/memory/reranker.py` | 4 faktörlü heuristik rerank |
 | `app/memory/cross_encoder_reranker.py` | Model tabanlı rerank (opt-in, graceful) |
-| `app/memory/hybrid_retriever.py` | Alpha-harman semantic+BM25 |
+| `app/memory/hybrid_retriever.py` | Alpha-harman semantic+BM25 (standalone) |
+| `app/memory/rank_fusion.py` | Reciprocal Rank Fusion (RRF) — sıra-tabanlı liste füzyonu (v1.2) |
 | `app/memory/bm25_index.py` / `bm25_corpus.py` | Saf Python BM25 + lazy corpus |
 | `app/memory/contextual_chunker.py` | Chunk kalite bayrakları (ingestion'da henüz tetiklenmiyor) |
 | `app/brain/knowledge_card_builder.py` | Bilgi kartı üretimi (Pydantic + LLM JSON) |
@@ -407,7 +480,7 @@ Bu katman **objektif sayısal kıyas + regex** kullanır; `eval`/`exec` hiçbir 
 Proje testleri `tests/` kökünde toplanmıştır (yaklaşık 70 test dosyası). Aşağıdaki katmanlar burada test edilir:
 
 - **Doğrulama / sınav (L3/L4/L5/UnderstandingScore):** `test_l3_application.py`, `test_l4_counterfactual.py`, `test_l5_composition.py`, `test_understanding_score.py`, `test_citation_verifier.py`, `test_context_sufficiency.py`, `test_abstention_policy.py`, `test_reference_oracle.py`, `test_safe_eval.py`, `test_cli_exams.py`.
-- **Retrieval (BM25 + hibrit + cross-encoder + rerank):** `test_bm25_index.py`, `test_hybrid_retrieval.py`, `test_cross_encoder_reranker.py`, `test_reranker.py`, `test_reranking_retriever.py`, `test_multi_query_retriever.py`, `test_query_expander.py`.
+- **Retrieval (BM25 + hibrit + RRF + cross-encoder + rerank):** `test_bm25_index.py`, `test_hybrid_retrieval.py` (RRF füzyon modu senaryoları dahil), `test_rank_fusion.py` (RRF birim testleri: determinizm/ağırlık/k/kenar durumlar), `test_cross_encoder_reranker.py`, `test_reranker.py`, `test_reranking_retriever.py`, `test_multi_query_retriever.py` (RRF uzlaşma testi dahil), `test_query_expander.py`.
 - **Embedding / depo:** `test_embedding_and_chroma.py`, `test_contextual_embed.py`.
 - **Göstergeler:** `test_entropy_indicator.py`, `test_permutation_entropy.py`, `test_indicators.py`.
 
@@ -418,7 +491,7 @@ Not: `app/verification/tests/` adlı bir **alt-dizin yoktur**; doğrulama ve mer
 ## Bilinen Sınırlamalar
 
 1. **Contextual chunker entegre değil.** `contextual_chunker.py` kalite bayrakları yazılmış ama ingestion'da tetiklenmiyor; `chunk_quality_flags` tablosu dolmuyor.
-2. **MultiQueryRetriever bağlı değil.** Yazılı ama `RagAnswerer` doğrudan retrieve kullanıyor.
+2. **MultiQueryRetriever bağlı değil.** Yazılı (artık RRF füzyonlu, v1.2) ama `RagAnswerer` doğrudan retrieve kullanıyor; çoklu-sorgu yalnız `SelfRefiningRAG` üzerinden (opt-in). RRF'in canlı `RerankingRetriever` yoluna varsayılan olarak bağlanması bilinçli olarak ertelendi (`rag_rrf` opt-in kalır → default davranış değişmez).
 3. **reindex-contextual otomasyonu yok.** Elle çalıştırılır; scheduler/cron kodda bulunamadı.
 4. **BM25/cross-encoder testleri mevcut (kapsam derinliği ayrıca ölçülmedi).** Birim/entegrasyon düzeyinde testler vardır: `test_bm25_index.py`, `test_hybrid_retrieval.py`, `test_cross_encoder_reranker.py`, `test_reranking_retriever.py`. Uçtan uca (canlı Ollama + canlı model indirme dahil) tam senaryo kapsamının derinliği bu dokümanda ayrıca ölçülmemiştir; ancak "test edilip edilmediği belirsiz" değildir — testler mevcuttur.
 5. **`rag_answers_to_results` canlı RAG'a bağlı değil** (bekleme aşamasında).
@@ -438,6 +511,13 @@ Not: `app/verification/tests/` adlı bir **alt-dizin yoktur**; doğrulama ve mer
 - **Contextual retrieval (P2)** — embed metnine "başlık / bölüm:" ön-eki ekleme; ChromaDB document'ı orijinal kalır.
 - **Over-fetch** — `top_k × overfetch` aday çekip rerank sonrası `top_k`'ya indirme.
 - **BM25** — kelime sıklığı tabanlı klasik sıralama; teknik terimleri dense'in kaçırdığı yerde yakalar.
+- **RRF (Reciprocal Rank Fusion)** — birden çok sıralı listeyi skor normalize etmeden, sadece sıraya göre `w/(k+rank)` ile birleştiren parametre-az füzyon; karşılaştırılamaz skorlu kaynaklarda (dense vs. BM25) sağlamdır. Achilles'te `rank_fusion.py` (v1.2).
+- **RAG-Fusion** — çoklu sorgu varyantı + RRF birleşimi; Achilles'te `MultiQueryRetriever` bu deseni kural-tabanlı genişletme ile uygular.
+- **HyDE** — sorgu yerine LLM'in ürettiği hipotetik cevabı embed edip ona yakın dokümanları çekme (Achilles'te yok; LLM gerektirir, ertelendi).
+- **CRAG (Corrective RAG)** — hafif retrieval-evaluator ile çekilen bağlamı correct/ambiguous/incorrect olarak puanlayıp düzeltici aksiyon (Achilles'te kısmi: confidence + self-refine).
+- **Late chunking** — önce tüm dokümanı uzun-bağlam embed edip sonra chunk vektörlerini türetme (Achilles'te iskelet, ertelendi).
+- **RAFT / RbFT** — alana-özgü RAG için fine-tuning; RbFT yanıltıcı/karşıolgu retrieval'a dayanıklılık ekler (Achilles `discipline_dataset` aynı ruhta).
+- **Matryoshka embedding** — tek modelde iç-içe boyutlar; embedding'i 64-768 arası kırpılabilir kılar (nomic-embed v1.5/v2).
 - **Cross-encoder** — (soru, chunk) çiftini birlikte puanlayan ağır ama doğru reranker.
 - **Citation/Grounding** — atıfların gerçekten var olup olmadığı / cümlelerin chunk'larca desteklenip desteklenmediği.
 - **Abstention (çekimserlik)** — güven düşük veya bağlam yetersizse cevap vermeme; doğru davranış sınanır (Taban).

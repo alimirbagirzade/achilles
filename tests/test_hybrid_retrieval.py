@@ -116,3 +116,37 @@ def test_hybrid_off_skips_bm25(monkeypatch) -> None:
     )
     rr.retrieve("ATR", top_k=5)
     assert called["n"] == 0  # hybrid kapalı → BM25'e hiç gidilmez
+
+
+# ----------------------------------------------------- RRF füzyon modu (opt-in)
+def test_rrf_mode_fuses_dense_and_bm25(monkeypatch) -> None:
+    # Dense sırası: c0, c1. BM25 sırası: c1, c9. c1 her iki listede de var → RRF onu
+    # en üste taşımalı (uzlaşma); c9 BM25-only ama chunk_map'te metni var → eklenir.
+    dense = [_chunk("p_c0", "momentum returns", 0.1), _chunk("p_c1", "volatility regime", 0.2)]
+    bm25 = BM25Index()
+    bm25.add_document("p_c1", "volatility regime atr")
+    bm25.add_document("p_c9", "atr average true range")
+    chunk_map = {
+        "p_c1": _chunk("p_c1", "volatility regime atr", None),
+        "p_c9": _chunk("p_c9", "atr average true range", None),
+    }
+    monkeypatch.setattr(
+        "app.memory.bm25_corpus.get_corpus_bm25", lambda chroma=None: (bm25, chunk_map)
+    )
+    rr = RerankingRetriever(
+        base=_StubBase(dense), reranker=Reranker(), enabled=True, hybrid=True, rrf=True
+    )
+    out = rr.retrieve("atr volatility", top_k=5)
+    ids = [c.chunk_id for c in out]
+    assert ids[0] == "p_c1"  # iki listede de üst → RRF tepeye taşır
+    assert "p_c9" in ids  # BM25-only aday (metni var) dahil edildi
+
+
+def test_rrf_mode_dense_only_when_bm25_empty(monkeypatch) -> None:
+    dense = [_chunk("p_c0", "momentum", 0.2), _chunk("p_c1", "trend", 0.3)]
+    monkeypatch.setattr("app.memory.bm25_corpus.get_corpus_bm25", lambda chroma=None: (None, {}))
+    rr = RerankingRetriever(
+        base=_StubBase(dense), reranker=Reranker(), enabled=True, hybrid=True, rrf=True
+    )
+    out = rr.retrieve("x", top_k=5)
+    assert [c.chunk_id for c in out] == ["p_c0", "p_c1"]  # dense sırası korunur

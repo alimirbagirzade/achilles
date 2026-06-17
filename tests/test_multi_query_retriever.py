@@ -89,3 +89,28 @@ def test_retrieval_returns_top_k() -> None:
 
     results = retriever.retrieve("test query", top_k=3)
     assert len(results) <= 3
+
+
+def test_rrf_consensus_across_variants() -> None:
+    """İki sorgu varyantında da görülen chunk, RRF ile en üste çıkmalı."""
+    # 'shared' her iki varyantta da var (uzlaşma); 'a' yalnız 1., 'b' yalnız 2. varyantta.
+    shared = _make_chunk("paper1_c0001", distance=0.3)
+    only_a = _make_chunk("paper1_c0002", distance=0.1)  # tek varyantta tepede ama tek listede
+    only_b = _make_chunk("paper1_c0003", distance=0.1)
+
+    fake = FakeRetrievalService(
+        chunks_per_query={
+            "q1": [only_a, shared],
+            "q2": [only_b, shared],
+        }
+    )
+
+    class FixedExpander:
+        def expand(self, query: str) -> list[str]:
+            return ["q1", "q2"]
+
+    retriever = MultiQueryRetriever(retriever=fake, expander=FixedExpander())
+    results = retriever.retrieve("anything", top_k=3)
+    # shared: L1 rank1 + L2 rank1; only_a: L1 rank0; only_b: L2 rank0.
+    # 1/62 + 1/62 = 0.03226 > 1/61 = 0.01639 → shared birinci.
+    assert results[0].chunk_id == "paper1_c0001"

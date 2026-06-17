@@ -87,7 +87,17 @@ class Settings(BaseSettings):
     # indirme + CPU latency). OPT-IN. Açmak için: ACHILLES_RAG_CROSS_ENCODER=true +
     # `uv pip install sentence-transformers`. Model yoksa heuristik reranker'a düşer.
     rag_cross_encoder: bool = False
-    rag_cross_encoder_model: str = "BAAI/bge-reranker-base"  # çok dilli (TR+EN+ES), ~280MB
+    # Varsayılan hafif baz model (~280MB, ağırlıklı zh/en). Gerçek çok-dillilik (TR dahil
+    # 100+ dil) için `BAAI/bge-reranker-v2-m3` önerilir (daha ağır ~2GB; modest CPU'da
+    # latency artar). Modeli ACHILLES_RAG_CROSS_ENCODER_MODEL ile değiştir.
+    rag_cross_encoder_model: str = "BAAI/bge-reranker-base"
+    # Reciprocal Rank Fusion (RRF) füzyon modu (opt-in): dense + BM25 sıralı listelerini
+    # skor normalize etmeden sıra-tabanlı birleştirir (heuristik rerank yerine). Skor
+    # kalibrasyonu gerektirmez → karşılaştırılamaz skorlu kaynaklarda sağlam. LLM-free,
+    # deterministik. Varsayılan kapalı (alpha/rerank davranışı değişmez); açmak için
+    # ACHILLES_RAG_RRF=true. RRF sabiti `rag_rrf_k` (yaygın varsayılan 60).
+    rag_rrf: bool = False
+    rag_rrf_k: int = 60
     # Contextual Retrieval (Faz P2): chunk'ı embed etmeden önce "başlık / bölüm:" ön-eki
     # ekler (orijinal metin Chroma document'ında korunur). Tutarlılık için TÜM korpus
     # aynı ayarla embed edilmeli → açmadan önce `achilles reindex-contextual` çalıştır.
