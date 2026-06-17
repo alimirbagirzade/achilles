@@ -20,6 +20,11 @@ LOG=logs/continuous-learning.log
 STATE=storage/learning_topic_index
 STOP=storage/STOP_LEARNING
 mkdir -p logs storage
+# uv, her `uv run` cagrisinda paketi yeniden senkronlamaya calisir; bu da calisan
+# web sunucusunun kilitledigi achilles-web.exe'yi silmeye ugrasip "os error 32" ile
+# patlar -> dongunun TUM adimlari sessizce coker (research/synth-qa HATA). Cozum:
+# senkronu kapat; bagimliliklar zaten kurulu, dongu yalniz mevcut ortami kullanir.
+export UV_NO_SYNC=1
 log(){ echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG"; }
 
 log "=== SÜREKLİ ÖĞRENME BAŞLADI (max ${MAX_HOURS}sa) ==="
