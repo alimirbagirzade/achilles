@@ -165,9 +165,12 @@ class MasteryStore:
 
     def get_next_queued(self) -> dict[str, Any] | None:
         with self.session() as s:
+            # 'failed' de dahil: başarısız ama attempts<max_attempts olan kayıtlar
+            # yeniden denenmeli (eskiden yalnız 'pending' seçildiğinden retry ölü koddu —
+            # geçici hata = kalıcı atlama). max_attempts kapağı sonsuz döngüyü önler.
             row = s.scalar(
                 select(PaperLearningQueue)
-                .where(PaperLearningQueue.status == "pending")
+                .where(PaperLearningQueue.status.in_(["pending", "failed"]))
                 .where(PaperLearningQueue.attempts < PaperLearningQueue.max_attempts)
                 .order_by(PaperLearningQueue.priority.desc(), PaperLearningQueue.created_at)
                 .limit(1)

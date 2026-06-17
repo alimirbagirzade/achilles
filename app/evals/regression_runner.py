@@ -9,6 +9,9 @@ from app.evals.answer_eval import AnswerEvaluator
 from app.evals.golden_dataset import GoldenDataset
 from app.evals.retrieval_eval import RetrievalEvaluator
 
+# Bir sorunun "geçti" sayılması için minimum recall@5 (gerilemeyi yakalamak için).
+_RECALL_PASS_THRESHOLD = 0.5
+
 
 class RegressionRunner:
     """Altın veri setiyle retrieval ve cevap kalitesini test eden koşucu.
@@ -40,8 +43,9 @@ class RegressionRunner:
         failed = 0
 
         for q, r_result in zip(questions, retrieval_results, strict=False):
-            # Retrieval değerlendirme
-            retrieval_ok = r_result.recall_5 >= 0.0  # Temel geçme kriteri
+            # Retrieval değerlendirme: anlamlı eşik (recall_5 ∈ [0,1] olduğundan
+            # ">= 0.0" totoloji idi → hiçbir gerilemeyi yakalamazdı, Kural 2 ihlali).
+            retrieval_ok = r_result.recall_5 >= _RECALL_PASS_THRESHOLD
 
             # Cevap değerlendirme (boş cevapla mock)
             answer_result = self._answer_eval.evaluate(

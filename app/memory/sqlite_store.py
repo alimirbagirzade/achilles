@@ -737,6 +737,14 @@ class SqliteStore:
             )
             return [self._card_to_dict(r) for r in rows]
 
+    def list_cards(self, limit: int | None = None) -> list[dict]:
+        """TÜM knowledge kartlarını döndür (review_status filtresiz; card_json dahil)."""
+        with self.session() as s:
+            q = select(KnowledgeCard).order_by(KnowledgeCard.difficulty)
+            if limit:
+                q = q.limit(limit)
+            return [self._card_to_dict(r) for r in s.scalars(q)]
+
     def get_card_by_id(self, card_id: str) -> dict | None:
         """Tek kartı card_id ile döndür (review metadata dahil)."""
         with self.session() as s:

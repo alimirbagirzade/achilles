@@ -62,10 +62,15 @@
 
   function esc(s) {
     if (s === null || s === undefined) return "";
+    // Tırnaklar da kaçırılır: data-* / title= gibi attribute-context'lerde kullanıcı/LLM
+    // kaynaklı metin (arXiv sorgusu, formül açıklaması, strateji adı) attribute'tan
+    // taşıp yeni attribute enjekte edemesin (stored attribute-injection savunması).
     return String(s)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   // ---------- tabs ----------

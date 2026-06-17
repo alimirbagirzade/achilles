@@ -61,6 +61,16 @@ def test_run_next_returns_none_if_empty(tmp_path: Path) -> None:
     assert result is None
 
 
+def test_failed_record_retried_within_max_attempts(tmp_path: Path) -> None:
+    # Başarısız (failed) ama attempts<max_attempts kayıt yeniden seçilebilmeli (retry ölü değil).
+    _, ms = _stores(tmp_path)
+    qid = ms.enqueue("p1", priority=5)
+    ms.update_queue_status(qid, "running")  # attempts → 1
+    ms.update_queue_status(qid, "failed", error="geçici hata")
+    nxt = ms.get_next_queued()
+    assert nxt is not None and nxt["paper_id"] == "p1"
+
+
 def _make_mock_result(paper_id: str) -> MasteryRunResult:
     score = MasteryScore(
         paper_id=paper_id,

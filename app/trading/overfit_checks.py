@@ -49,7 +49,9 @@ def static_checks(metrics: BacktestMetrics, min_trades: int = 30) -> list[str]:
     return warnings
 
 
-def in_out_of_sample(df: pd.DataFrame, ir: StrategyIR, split: float = 0.7) -> OverfitReport:
+def in_out_of_sample(
+    df: pd.DataFrame, ir: StrategyIR, split: float = 0.7, min_trades: int = 30
+) -> OverfitReport:
     n = len(df)
     cut = int(n * split)
     in_df, out_df = df.iloc[:cut], df.iloc[cut:]
@@ -57,7 +59,7 @@ def in_out_of_sample(df: pd.DataFrame, ir: StrategyIR, split: float = 0.7) -> Ov
     in_res = run_backtest(in_df, ir)
     out_res = run_backtest(out_df, ir)
 
-    warnings = static_checks(out_res.metrics)
+    warnings = static_checks(out_res.metrics, min_trades=min_trades)
     deg_in = in_res.metrics.total_return_pct
     deg_out = out_res.metrics.total_return_pct
     if deg_in > 0 and deg_out < 0:

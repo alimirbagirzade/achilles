@@ -46,10 +46,9 @@ def _extract_questions(
     max_questions: int,
     only_approved: bool,
 ) -> list[str]:
-    if only_approved:
-        card_records = store.list_approved_cards()
-    else:
-        card_records = store.list_training_examples(limit=200)
+    # only_approved=False → TÜM kartlar (onaysız dahil). Eski list_training_examples
+    # card_json İÇERMEZ → hipotez çıkmıyordu (sessizce 0 soru); list_cards card_json döndürür.
+    card_records = store.list_approved_cards() if only_approved else store.list_cards(limit=200)
 
     questions: list[str] = []
     seen: set[str] = set()

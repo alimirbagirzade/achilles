@@ -61,6 +61,7 @@ class AnswerEvaluator:
             cit_acc = 1.0  # Atıf yoksa nötr
 
         # Dayanak doğrulaması
+        no_answer = not (answer_text or "").strip()
         grounding_results = self._grounding.verify(answer_text, chunks)
         if grounding_results:
             supported = sum(
@@ -71,7 +72,8 @@ class AnswerEvaluator:
             gnd_score = supported / len(grounding_results)
             hallucination = any(g.level == GroundingLevel.UNSUPPORTED for g in grounding_results)
         else:
-            gnd_score = 1.0
+            # Boş cevap dayanak üretmez → mükemmel skor verme (rag_exam_runner ile aynı).
+            gnd_score = 0.0 if no_answer else 1.0
             hallucination = False
 
         # Bağlam yeterliliği

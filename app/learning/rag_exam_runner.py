@@ -73,7 +73,13 @@ class RagExamRunner:
         chunks = rag.sources
 
         cited_ids = list({c.paper_id for c in chunks})
-        no_answer = not answer_text.strip() or "No sources found" in answer_text
+        # LLM çevrimdışıyken answerer placeholder döndürür (llm_used=False); bu GERÇEK
+        # akıl yürütme değil → no_answer say ki regular soru sahte "geçti" almasın (Kural 2).
+        no_answer = (
+            not answer_text.strip()
+            or "No sources found" in answer_text
+            or not getattr(rag, "llm_used", True)
+        )
 
         # Abstention soruları: cevap VERMEMEK doğru davranıştır
         if q.requires_abstention:

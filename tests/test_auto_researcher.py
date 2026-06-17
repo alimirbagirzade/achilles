@@ -65,6 +65,21 @@ def test_extract_questions_empty_when_no_cards(tmp_path: Path) -> None:
     assert _extract_questions(store, max_questions=5, only_approved=True) == []
 
 
+def test_extract_questions_from_unapproved_cards(tmp_path: Path) -> None:
+    # only_approved=False artık list_cards (card_json'lu) kullanır → onaysız karttan da
+    # soru çıkar (eski list_training_examples card_json içermeyip sessizce 0 soru veriyordu).
+    store = _store(tmp_path)
+    store.upsert_paper(paper_id="pu", file_hash="h_pu", source_path="/tmp/pu.pdf", title="T")
+    store.save_knowledge_card(
+        card_id="card_pu",
+        paper_id="pu",
+        model="test",
+        card={"paper_id": "pu", "title": "T", "possible_strategy_hypotheses": ["onaysız hipotez"]},
+    )  # approve_card YOK → pending
+    assert len(_extract_questions(store, max_questions=5, only_approved=False)) == 1
+    assert _extract_questions(store, max_questions=5, only_approved=True) == []
+
+
 # ---- PipelineRun.summary ----
 
 

@@ -112,7 +112,9 @@ class ModelEvaluator:
             rows.append(EvalRowResult(item.question, ans, check_flags(ans, item.must_avoid)))
 
         total_flags = sum(len(r.flags) for r in rows)
-        score = 1.0 - (total_flags / max(1, len(rows)))
+        # Bir cevap birden çok bayrak alabildiğinden total_flags > satır sayısı olabilir;
+        # pass_rate ∈ [0,1] kalmalı → alttan kelepçele (negatif skor DB'yi/grafiği bozar).
+        score = max(0.0, 1.0 - (total_flags / max(1, len(rows))))
         eval_name = Path(eval_set_path).stem
         passed = sum(1 for r in rows if not r.flags)
         results = {

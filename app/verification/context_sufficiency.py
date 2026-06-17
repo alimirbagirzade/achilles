@@ -40,7 +40,8 @@ class ContextSufficiencyClassifier:
     - Chunk yoksa: INSUFFICIENT, can_answer=False.
     - Tüm chunk'larda eksik formül varsa ve komşu yok ise:
       MISSING_FORMULA_CONTINUATION, can_answer=False.
-    - Eksik argüman tespiti: MISSING_ARGUMENT_CONCLUSION, can_answer=False.
+    - Eksik argüman tespiti: MISSING_ARGUMENT_CONCLUSION, can_answer=True (kısmi —
+      güven düşürülür ama tümden reddedilmez; abstention düşük güvende tetiklenir).
     - Normal durumda: SUFFICIENT/PARTIALLY_SUFFICIENT, can_answer=True.
     """
 

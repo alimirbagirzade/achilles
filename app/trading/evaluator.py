@@ -26,7 +26,8 @@ class Verdict:
 
 
 def evaluate(df: pd.DataFrame, ir: StrategyIR, *, min_trades: int = 30) -> Verdict:
-    report = in_out_of_sample(df, ir)
+    # min_trades hem hard-fail hem 'çok az işlem' uyarısı için tutarlı kullanılmalı.
+    report = in_out_of_sample(df, ir, min_trades=min_trades)
     reasons: list[str] = list(report.warnings)
 
     oos = report.out_sample

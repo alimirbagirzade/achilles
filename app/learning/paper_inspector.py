@@ -120,7 +120,7 @@ class PaperInspector:
             idx += 2.0
         if result.chunk_count > 0:
             idx += 3.0  # ChromaDB'ye paper_id metadata ile yazılmış
-        idx += 3.0  # Retrieval testi mastery ajanı tarafından yapılır
+            idx += 3.0  # Retrieval testi (chunk yoksa anlamsız → koşulsuz 3 puan skor şişiriyordu)
         result.index_score = min(idx, 10.0)
 
         # Knowledge card
