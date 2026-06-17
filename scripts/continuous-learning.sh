@@ -68,6 +68,8 @@ for p in s.list_papers():
 " 2>/dev/null)
   log "2) Kartsız makale: $(printf '%s' "$PIDS" | grep -c . || true)"
   for pid in $PIDS; do
+    pid="${pid//$'\r'/}"   # Windows: python stdout CRLF -> pid'e takilan \r dosya adina sizip Errno 22 yapar
+    [ -z "$pid" ] && continue
     timeout 900 uv run achilles card "$pid" >> "$LOG" 2>&1 || log "   kart HATA: $pid"
   done
   uv run python -c "
@@ -96,6 +98,8 @@ for pid in sorted(p for p in pids if p):
   N2=$(printf '%s' "$PIDS2" | grep -c . || true)
   log "   anlama skorlanacak: $N2"
   for pid in $PIDS2; do
+    pid="${pid//$'\r'/}"   # CRLF -> \r temizligi (yukaridaki ile ayni Windows sebebi)
+    [ -z "$pid" ] && continue
     RESP=$(curl -s -m 600 -X POST "http://127.0.0.1:8765/api/papers/$pid/comprehension" 2>&1)
     log "   anlama[$pid]: $(printf '%s' "$RESP" | head -c 160)"
   done
