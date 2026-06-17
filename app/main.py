@@ -249,6 +249,11 @@ def train(
     num_layers: int = typer.Option(8, help="LoRA adapter katman sayısı (sadece MLX)"),
     run: bool = typer.Option(False, help="Eğitimi gerçekten başlat"),
     backend: str = typer.Option("auto", help="Backend: auto|mlx|peft"),
+    profile: str = typer.Option(
+        None,
+        help="LoRA profili (configs/lora/lora_profiles.yaml; yalnız PEFT): "
+        "standard_reasoning|high_capacity_reasoning|discipline_safe|small_smoke_test",
+    ),
 ) -> None:
     """LoRA eğitim komutunu hazırla — platform otomatik tespit edilir."""
     from app.training.backend import detect_lora_backend
@@ -289,8 +294,20 @@ def train(
                 ]
             )
     else:
-        from app.training.peft_lora_train import PeftTrainConfig, dry_run
+        from app.training.peft_lora_train import PeftTrainConfig, dry_run, load_lora_profile
         from app.training.peft_lora_train import train as peft_train
+
+        prof: dict = {}
+        if profile:
+            try:
+                prof = load_lora_profile(profile)
+            except (KeyError, FileNotFoundError) as exc:
+                console.print(f"[red]Profil hatası: {exc}[/red]")
+                raise typer.Exit(1) from exc
+            # epochs/max_examples PeftTrainConfig alanı değil — ayıkla (epoch ≠ iterasyon).
+            prof.pop("epochs", None)
+            prof.pop("max_examples", None)
+            console.print(f"[cyan]LoRA profili uygulandı:[/cyan] {profile}")
 
         cfg = PeftTrainConfig(  # type: ignore[assignment]
             base_model=base_model or settings.peft_base_model,
@@ -298,6 +315,7 @@ def train(
             valid_jsonl=settings.jsonl_dir / "valid.jsonl",
             adapter_output_path=settings.adapters_dir / adapter_name,
             iterations=iterations,
+            **prof,
         )
         if run:
             result = peft_train(cfg)  # type: ignore[arg-type]

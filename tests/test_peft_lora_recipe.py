@@ -1,0 +1,189 @@
+"""İleri LoRA reçetesi (rsLoRA/DoRA/init/NEFTune/LoRA+/regularizasyon) plumbing testleri.
+
+Bu testler ÇEVRİMDIŞI çalışır: yalnız saf config builder'ları sınar (torch/peft yüklemez).
+Amaç: araştırma entegrasyonunun (doküman v1.2) config→PEFT kwargs köprüsünü korumak.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from app.training.peft_lora_train import (
+    PeftTrainConfig,
+    build_lora_kwargs,
+    build_training_kwargs,
+    init_is_gguf_unsafe,
+    load_lora_profile,
+    normalize_init_lora_weights,
+    recipe_summary,
+)
+
+
+def _cfg(**kw) -> PeftTrainConfig:
+    base = {
+        "base_model": "dummy",
+        "train_jsonl": Path("t.jsonl"),
+        "valid_jsonl": Path("v.jsonl"),
+        "adapter_output_path": Path("out"),
+    }
+    base.update(kw)
+    return PeftTrainConfig(**base)  # type: ignore[arg-type]
+
+
+# --- normalize_init_lora_weights ---
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("true", True),
+        ("TRUE", True),
+        ("", True),
+        (True, True),
+        ("false", False),
+        (False, False),
+        ("pissa", "pissa"),
+        ("OLoRA", "olora"),
+        ("gaussian", "gaussian"),
+        ("pissa_niter_8", "pissa_niter_8"),
+    ],
+)
+def test_normalize_init_valid(value, expected) -> None:
+    assert normalize_init_lora_weights(value) == expected
+
+
+def test_normalize_init_unknown_raises() -> None:
+    with pytest.raises(ValueError, match="Bilinmeyen init_lora_weights"):
+        normalize_init_lora_weights("magic")
+
+
+def test_init_is_gguf_unsafe() -> None:
+    assert init_is_gguf_unsafe("pissa") is True
+    assert init_is_gguf_unsafe("olora") is True
+    assert init_is_gguf_unsafe("corda") is True
+    assert init_is_gguf_unsafe("pissa_niter_4") is True
+    assert init_is_gguf_unsafe("gaussian") is False
+    assert init_is_gguf_unsafe("true") is False
+    assert init_is_gguf_unsafe("loftq") is False
+
+
+# --- build_lora_kwargs ---
+
+
+def test_build_lora_kwargs_defaults() -> None:
+    kw = build_lora_kwargs(_cfg())
+    assert kw["r"] == 8
+    assert kw["lora_alpha"] == 16
+    assert kw["bias"] == "none"
+    assert kw["task_type"] == "CAUSAL_LM"
+    # lm_head/embed YOK — tied-embedding/GGUF güvenliği
+    assert kw["target_modules"] == [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+    ]
+    assert "lm_head" not in kw["target_modules"]
+    assert kw["use_rslora"] is False
+    assert kw["use_dora"] is False
+    assert kw["init_lora_weights"] is True
+
+
+def test_build_lora_kwargs_advanced() -> None:
+    kw = build_lora_kwargs(_cfg(use_rslora=True, use_dora=True, init_lora_weights="pissa"))
+    assert kw["use_rslora"] is True
+    assert kw["use_dora"] is True
+    assert kw["init_lora_weights"] == "pissa"
+
+
+# --- build_training_kwargs ---
+
+
+def test_build_training_kwargs_defaults() -> None:
+    kw = build_training_kwargs(_cfg(), num_epochs=2, output_dir="out", on_cuda=False)
+    assert kw["num_train_epochs"] == 2
+    assert kw["weight_decay"] == 0.01
+    assert kw["warmup_ratio"] == 0.03
+    assert kw["lr_scheduler_type"] == "cosine"
+    assert kw["max_grad_norm"] == 1.0
+    assert kw["seed"] == 42
+    assert kw["fp16"] is False
+    # NEFTune varsayılan kapalı → anahtar HİÇ olmamalı (0.0 None'a düşmez, hook açılmaz)
+    assert "neftune_noise_alpha" not in kw
+
+
+def test_build_training_kwargs_neftune_and_cuda() -> None:
+    kw = build_training_kwargs(
+        _cfg(neftune_noise_alpha=5), num_epochs=1, output_dir="out", on_cuda=True
+    )
+    assert kw["neftune_noise_alpha"] == 5
+    assert kw["fp16"] is True
+
+
+# --- recipe_summary ---
+
+
+def test_recipe_summary_vanilla() -> None:
+    rs = recipe_summary(_cfg())
+    assert rs["advanced_techniques"] == ["(yok — vanilya LoRA)"]
+    assert rs["gguf_unsafe_init"] is False
+
+
+def test_recipe_summary_lists_techniques() -> None:
+    rs = recipe_summary(
+        _cfg(
+            use_rslora=True, neftune_noise_alpha=5, loraplus_lr_ratio=16, init_lora_weights="pissa"
+        )
+    )
+    joined = " ".join(rs["advanced_techniques"])
+    assert "rsLoRA" in joined
+    assert "NEFTune" in joined
+    assert "LoRA+" in joined
+    assert "init=pissa" in joined
+    assert rs["gguf_unsafe_init"] is True
+
+
+# --- load_lora_profile (gerçek YAML) ---
+
+
+def test_load_profile_discipline_safe() -> None:
+    prof = load_lora_profile("discipline_safe")
+    assert prof["lora_r"] == 16
+    assert prof["lora_alpha"] == 32
+    assert prof["learning_rate"] == 0.0001
+    assert prof["neftune_noise_alpha"] == 5
+    assert prof["lr_scheduler_type"] == "cosine"
+    assert prof["epochs"] == 1  # config alanı değil ama bilgi olarak taşınır
+
+
+def test_load_profile_applies_to_config() -> None:
+    prof = load_lora_profile("discipline_safe")
+    prof.pop("epochs", None)
+    prof.pop("max_examples", None)
+    cfg = _cfg(**prof)
+    assert cfg.lora_r == 16
+    assert cfg.learning_rate == 0.0001
+    assert cfg.neftune_noise_alpha == 5
+    # Builder'a da doğru akmalı
+    assert (
+        build_training_kwargs(cfg, num_epochs=1, output_dir="o", on_cuda=False)[
+            "neftune_noise_alpha"
+        ]
+        == 5
+    )
+
+
+def test_load_profile_unknown_raises() -> None:
+    with pytest.raises(KeyError):
+        load_lora_profile("yok_boyle_profil")
+
+
+def test_high_capacity_uses_rslora() -> None:
+    prof = load_lora_profile("high_capacity_reasoning")
+    assert prof["use_rslora"] is True
+    assert prof["lora_r"] == 32

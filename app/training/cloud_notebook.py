@@ -30,12 +30,24 @@ def build_stage2_notebook(
     learning_rate: float,
     num_epochs: int,
     out_path: Path,
+    lora_alpha: int | None = None,
+    lora_dropout: float = 0.0,
+    use_rslora: bool = False,
+    neftune_noise_alpha: float = 0.0,
+    weight_decay: float = 0.01,
+    warmup_ratio: float = 0.03,
 ) -> Path:
     """Doğrulanmış Stage 2 notebook şablonunu doldurup `out_path`'e yaz.
 
-    Placeholder değerleri JSON-güvenli düz metindir (model adı/sayı), JSON yapısını
+    Placeholder değerleri JSON-güvenli düz metindir (model adı/sayı/bool), JSON yapısını
     bozmaz. HF_DATASET_REPO'yu kullanıcı kendi HF kullanıcı adıyla doldurmalı.
+
+    İleri teknikler (araştırma entegrasyonu, doküman v1.2): alpha/dropout artık
+    parametrik; rsLoRA + NEFTune + weight_decay + warmup placeholder olarak enjekte
+    edilir. Hepsi GGUF-güvenli (eğitim-zamanı / ölçek; mimari değişmez).
     """
+    # alpha verilmezse 2*r konvansiyonu (LoRA SFT için yaygın, kararlı varsayılan).
+    alpha = lora_alpha if lora_alpha is not None else 2 * lora_r
     template = _NOTEBOOK_TEMPLATE.read_text(encoding="utf-8")
     replacements = {
         "{BASE_MODEL}": base_model,
@@ -43,6 +55,12 @@ def build_stage2_notebook(
         "{HF_DATASET_REPO}": hf_dataset_repo,
         "{MAX_SEQ_LEN}": str(max_seq_length),
         "{LORA_R}": str(lora_r),
+        "{LORA_ALPHA}": str(alpha),
+        "{LORA_DROPOUT}": str(lora_dropout),
+        "{USE_RSLORA}": "True" if use_rslora else "False",
+        "{NEFTUNE_ALPHA}": str(neftune_noise_alpha),
+        "{WEIGHT_DECAY}": str(weight_decay),
+        "{WARMUP_RATIO}": str(warmup_ratio),
         "{LEARNING_RATE}": str(learning_rate),
         "{NUM_EPOCHS}": str(num_epochs),
     }

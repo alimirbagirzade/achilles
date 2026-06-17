@@ -19,10 +19,30 @@ from app.config import get_settings
 from app.training.evaluate_model import check_flags, load_eval_set
 
 
+def _max_ngram_repeat(answer: str, n: int = 3) -> int:
+    """En çok tekrar eden kelime n-gram'ının görülme sayısı (token-düzeyi döngü sezgisi)."""
+    from collections import Counter
+
+    toks = answer.split()
+    if len(toks) < n * 2:
+        return 1
+    grams = Counter(tuple(toks[i : i + n]) for i in range(len(toks) - n + 1))
+    return max(grams.values()) if grams else 1
+
+
 def _is_degenerate(answer: str) -> bool:
-    """Aynı cümlenin tekrarı (overfit / bozuk üretim) — kaba sezgi."""
+    """Tekrar döngüsü / overfit-çöküş sezgisi (v5 dersi: token-düzeyi döngüyü de yakala).
+
+    Üç sinyalden herhangi biri: (1) aynı CÜMLE tekrarı, (2) aynı 3-gram'ın ≥4 kez
+    tekrarı (cümle ayıracı olmasa da; v5 adapter aynı ifadeyi 5 kez yazdı), (3) aynı
+    SATIRın (madde/liste) tekrarı. Eşikler muhafazakâr — sağlam cevabı yanlış-flag'lemez.
+    """
     sents = [s.strip() for s in answer.split(".") if len(s.strip()) > 15]
-    return len(sents) >= 3 and len(set(sents)) <= max(1, len(sents) // 2)
+    sent_dup = len(sents) >= 3 and len(set(sents)) <= max(1, len(sents) // 2)
+    ngram_loop = _max_ngram_repeat(answer, 3) >= 4
+    lines = [ln.strip() for ln in answer.splitlines() if len(ln.strip()) > 15]
+    line_dup = len(lines) >= 4 and len(set(lines)) <= max(1, len(lines) // 2)
+    return sent_dup or ngram_loop or line_dup
 
 
 def _flags_for(answer: str, must_avoid: list[str]) -> list[str]:

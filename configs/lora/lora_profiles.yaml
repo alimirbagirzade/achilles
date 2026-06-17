@@ -1,5 +1,17 @@
 # LoRA eğitim profilleri — hiperparametre ön ayarları.
 # Bu dosya yalnızca config sağlar; eğitim başlatmaz.
+# Yükleme: app.training.peft_lora_train.load_lora_profile(<ad>) → PeftTrainConfig alanları.
+# CLI: `achilles train --profile <ad>` profili uygular.
+#
+# Alan sözlüğü (araştırma entegrasyonu, doküman v1.2):
+#   r/alpha/dropout/epochs/max_seq_length/learning_rate/target_modules — temel.
+#   use_rslora           : rank-stabilized scaling (alpha/sqrt(r)); yüksek r'de stabil.
+#   use_dora             : weight-decomposed LoRA; düşük r'de daha iyi, ~2× yavaş.
+#   init_lora_weights    : true|gaussian|pissa|olora|eva|loftq (pissa/olora GGUF için
+#                          residual dönüşümü ister — DİKKAT).
+#   loraplus_lr_ratio    : LoRA+; B matrisine lr*ratio (0=kapalı).
+#   neftune_noise_alpha  : NEFTune embedding gürültüsü (0=kapalı, tipik 5) — overfit azaltır.
+#   weight_decay/warmup_ratio/lr_scheduler_type/max_grad_norm — regularizasyon.
 
 small_smoke_test:
   r: 8
@@ -17,6 +29,10 @@ standard_reasoning:
   dropout: 0.05
   epochs: 2
   max_seq_length: 2048
+  learning_rate: 0.0002
+  weight_decay: 0.01
+  warmup_ratio: 0.03
+  lr_scheduler_type: cosine
   target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
 
 high_capacity_reasoning:
@@ -25,4 +41,31 @@ high_capacity_reasoning:
   dropout: 0.05
   epochs: 3
   max_seq_length: 2048
+  learning_rate: 0.0002
+  weight_decay: 0.01
+  warmup_ratio: 0.03
+  lr_scheduler_type: cosine
+  # r=32'de standart alpha/r ölçeği büyür; rsLoRA (alpha/sqrt(r)) daha stabil öğrenir.
+  use_rslora: true
   target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+
+# v5 dersine göre tasarlanan reçete (bkz. memory/v5-adapter-regression.md):
+# adapter disiplinde GERİLEMİŞTİ (catastrophic forgetting + degenerate repetition).
+# Strateji: DÜŞÜK lr + AZ epoch + YÜKSEK dropout + NEFTune + grad-clip → instruct
+# davranışını koru, ezber/tekrar döngüsünü bastır. Veri tarafı: discipline_dataset
+# adversarial örnekleri ~%25 karıştır (lora-cloud-prep --discipline-ratio).
+discipline_safe:
+  r: 16
+  alpha: 32              # 2*r konvansiyonu
+  dropout: 0.1          # daha güçlü regularizasyon (overfit azalt)
+  epochs: 1             # az epoch → unutma/aşırı-uyum riski düşük
+  max_seq_length: 2048
+  learning_rate: 0.0001 # 2e-4 yerine 1e-4 → instruct/refusal davranışını koru
+  use_rslora: false     # muhafazakâr: standart ölçek (lr ile birlikte ayarlandı)
+  neftune_noise_alpha: 5
+  weight_decay: 0.01
+  warmup_ratio: 0.05
+  lr_scheduler_type: cosine
+  max_grad_norm: 1.0
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+  note: "v5 regresyonuna karşı; düşük lr + az epoch + NEFTune + grad-clip. Önce OFFLINE sınav, sonra bulut eğit, sonra adapter_eval gate."

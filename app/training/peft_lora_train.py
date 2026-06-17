@@ -21,6 +21,57 @@ logger = logging.getLogger(__name__)
 # klasörü onu gölgeler (ImportError). Tokenizasyon düz Python ile yapılır.
 REQUIRED_PACKAGES = ["torch", "transformers", "peft"]
 
+# target_modules AÇIKÇA sınırlı: Qwen3 tied-embeddings kullanır; lm_head/embed
+# deltaları GGUF dönüşümünde sessizce atlanır ve adapter bozulur. Yalnız
+# attention + MLP projeksiyonları hedeflenir (Ollama/llama.cpp uyumlu).
+TARGET_MODULES: tuple[str, ...] = (
+    "q_proj",
+    "k_proj",
+    "v_proj",
+    "o_proj",
+    "gate_proj",
+    "up_proj",
+    "down_proj",
+)
+
+# PEFT init_lora_weights için geçerli string stratejileri (bool dışında).
+# Kaynak: peft 0.19 LoraConfig — gaussian/pissa/olora/eva/loftq/corda/orthogonal.
+_INIT_STRATEGIES: frozenset[str] = frozenset(
+    {"gaussian", "pissa", "olora", "eva", "loftq", "corda", "orthogonal"}
+)
+# Base ağırlıkları init'te DEĞİŞTİREN stratejiler — GGUF/merge için adapter, ORİJİNAL
+# base'e karşı residual'a çevrilmeli (PeftModel.save_pretrained
+# path_initial_model_for_weight_conversion); aksi halde Ollama'da delta çift sayılır.
+_GGUF_UNSAFE_INIT: frozenset[str] = frozenset({"pissa", "olora", "corda"})
+
+
+def normalize_init_lora_weights(value: object) -> bool | str:
+    """init_lora_weights değerini PEFT'in beklediği bool|str'e çevir + doğrula.
+
+    "true"/"" → True, "false" → False; bilinen strateji adı (veya "pissa_niter_N")
+    aynen döner. Bilinmeyen değer ValueError (sessiz yanlış-init yerine erken hata).
+    """
+    if isinstance(value, bool):
+        return value
+    v = str(value).strip().lower()
+    if v in {"true", ""}:
+        return True
+    if v == "false":
+        return False
+    if v in _INIT_STRATEGIES or v.startswith("pissa_niter_"):
+        return v
+    valid = "true, false, " + ", ".join(sorted(_INIT_STRATEGIES)) + ", pissa_niter_N"
+    raise ValueError(f"Bilinmeyen init_lora_weights: {value!r}. Geçerli: {valid}")
+
+
+def init_is_gguf_unsafe(value: object) -> bool:
+    """init stratejisi base ağırlıkları değiştirip GGUF dönüşümünde dikkat ister mi?"""
+    norm = normalize_init_lora_weights(value)
+    if isinstance(norm, bool):
+        return False
+    base = norm.split("_niter_")[0]
+    return base in _GGUF_UNSAFE_INIT
+
 
 @dataclass
 class PeftTrainConfig:
@@ -37,6 +88,26 @@ class PeftTrainConfig:
     # Dinamik padding ile maliyet gerçek uzunluğa bağlı; 1024 sessiz kırpılmayı önler.
     # RAFT (golden+distractor bağlam) verisine geçişte 2048'e çıkarılmalı.
     max_seq_length: int = 1024
+    # --- İleri LoRA teknikleri (araştırma entegrasyonu, doküman v1.2) ---
+    # rsLoRA: ölçek alpha/r yerine alpha/sqrt(r) → yüksek r'de stabil, daha iyi öğrenme.
+    # Varsayılan KAPALI (efektif büyüklüğü değiştirir; açılırsa lr yeniden ayarlanmalı).
+    use_rslora: bool = False
+    # DoRA: ağırlığı yön + büyüklüğe ayırır; düşük r'de LoRA'yı sık geçer ama ~2× yavaş.
+    use_dora: bool = False
+    # init_lora_weights: "true"|"gaussian"|"pissa"|"olora"|"eva"|"loftq"|"corda"...
+    init_lora_weights: str = "true"
+    # LoRA+: B matrisine lr * ratio (A'dan hızlı) → daha iyi/hızlı yakınsama. 0 = kapalı.
+    loraplus_lr_ratio: float = 0.0
+    # --- Regularizasyon (catastrophic forgetting + degenerasyon azaltma) ---
+    # Yerel trainer bulut reçetesiyle hizalandı (warmup + cosine + weight_decay + clip).
+    weight_decay: float = 0.01
+    warmup_ratio: float = 0.03
+    lr_scheduler_type: str = "cosine"
+    max_grad_norm: float = 1.0
+    # NEFTune: embedding'e eğitimde gürültü → overfit/ezber azalır, yönerge takibi korunur.
+    # >0 açar (tipik 5). Yalnız eğitim-zamanı; mimariyi değiştirmez → GGUF-güvenli.
+    neftune_noise_alpha: float = 0.0
+    seed: int = 42
 
 
 def _check_deps() -> list[str]:
@@ -49,6 +120,128 @@ def _check_deps() -> list[str]:
     return missing
 
 
+def build_lora_kwargs(cfg: PeftTrainConfig) -> dict:
+    """PEFT ``LoraConfig`` için kwargs sözlüğü kur (torch/peft import'suz → offline test).
+
+    İleri teknikleri (rsLoRA / DoRA / init stratejisi) config'ten taşır. ``train()``
+    bunu doğrudan ``LoraConfig(**build_lora_kwargs(cfg))`` ile kullanır.
+    """
+    return {
+        "task_type": "CAUSAL_LM",  # TaskType str-enum; "CAUSAL_LM" == TaskType.CAUSAL_LM
+        "r": cfg.lora_r,
+        "lora_alpha": cfg.lora_alpha,
+        "lora_dropout": cfg.lora_dropout,
+        "bias": "none",
+        "target_modules": list(TARGET_MODULES),
+        "use_rslora": cfg.use_rslora,
+        "use_dora": cfg.use_dora,
+        "init_lora_weights": normalize_init_lora_weights(cfg.init_lora_weights),
+    }
+
+
+def build_training_kwargs(
+    cfg: PeftTrainConfig, *, num_epochs: int, output_dir: str, on_cuda: bool
+) -> dict:
+    """transformers ``TrainingArguments`` için kwargs sözlüğü kur (saf → offline test).
+
+    Regularizasyon (warmup + cosine + weight_decay + grad-clip) ve NEFTune burada
+    bağlanır; bunlar v5 catastrophic-forgetting/degenerasyon dersinin doğrudan yanıtı.
+    """
+    kwargs: dict = {
+        "output_dir": output_dir,
+        "num_train_epochs": num_epochs,
+        "per_device_train_batch_size": cfg.batch_size,
+        "learning_rate": cfg.learning_rate,
+        "weight_decay": cfg.weight_decay,
+        "warmup_ratio": cfg.warmup_ratio,
+        "lr_scheduler_type": cfg.lr_scheduler_type,
+        "max_grad_norm": cfg.max_grad_norm,
+        "fp16": on_cuda,
+        "logging_steps": 5,
+        "save_strategy": "epoch",
+        "save_total_limit": 1,
+        "eval_strategy": "no",
+        "report_to": "none",
+        "dataloader_pin_memory": False,
+        "seed": cfg.seed,
+    }
+    if cfg.neftune_noise_alpha and cfg.neftune_noise_alpha > 0:
+        kwargs["neftune_noise_alpha"] = cfg.neftune_noise_alpha
+    return kwargs
+
+
+def recipe_summary(cfg: PeftTrainConfig) -> dict:
+    """Eğitim reçetesinin (aktif teknikler) insan-okur özeti — dry-run/log için."""
+    techniques: list[str] = []
+    if cfg.use_rslora:
+        techniques.append("rsLoRA (alpha/sqrt(r) ölçek)")
+    if cfg.use_dora:
+        techniques.append("DoRA (ağırlık ayrıştırma)")
+    init = normalize_init_lora_weights(cfg.init_lora_weights)
+    if init is not True:
+        techniques.append(f"init={init}")
+    if cfg.loraplus_lr_ratio and cfg.loraplus_lr_ratio > 0:
+        techniques.append(f"LoRA+ (lr_ratio={cfg.loraplus_lr_ratio})")
+    if cfg.neftune_noise_alpha and cfg.neftune_noise_alpha > 0:
+        techniques.append(f"NEFTune (alpha={cfg.neftune_noise_alpha})")
+    return {
+        "r": cfg.lora_r,
+        "alpha": cfg.lora_alpha,
+        "dropout": cfg.lora_dropout,
+        "learning_rate": cfg.learning_rate,
+        "lr_scheduler": cfg.lr_scheduler_type,
+        "warmup_ratio": cfg.warmup_ratio,
+        "weight_decay": cfg.weight_decay,
+        "max_grad_norm": cfg.max_grad_norm,
+        "seed": cfg.seed,
+        "advanced_techniques": techniques or ["(yok — vanilya LoRA)"],
+        "gguf_unsafe_init": init_is_gguf_unsafe(cfg.init_lora_weights),
+    }
+
+
+def load_lora_profile(name: str, profiles_path: Path | None = None) -> dict:
+    """``configs/lora/lora_profiles.yaml``'tan bir profili PeftTrainConfig alanlarına çevir.
+
+    Yalnız tanınan alanları döndürür (ekstra YAML anahtarları yok sayılır). Profil
+    ``epochs`` içeriyorsa ``iterations``'a haritalanmaz (epoch↔iterasyon ayrı kavram;
+    çağıran ``epochs``'u ayrı kullanır). Bilinmeyen profil → KeyError.
+    """
+    import yaml
+
+    path = profiles_path or (
+        Path(__file__).resolve().parent.parent.parent / "configs" / "lora" / "lora_profiles.yaml"
+    )
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if name not in data:
+        raise KeyError(f"Profil bulunamadı: {name!r}. Mevcut: {sorted(data)}")
+    prof = data[name] or {}
+    field_map = {
+        "r": "lora_r",
+        "alpha": "lora_alpha",
+        "dropout": "lora_dropout",
+        "max_seq_length": "max_seq_length",
+        "learning_rate": "learning_rate",
+        "use_rslora": "use_rslora",
+        "use_dora": "use_dora",
+        "init_lora_weights": "init_lora_weights",
+        "loraplus_lr_ratio": "loraplus_lr_ratio",
+        "weight_decay": "weight_decay",
+        "warmup_ratio": "warmup_ratio",
+        "lr_scheduler_type": "lr_scheduler_type",
+        "max_grad_norm": "max_grad_norm",
+        "neftune_noise_alpha": "neftune_noise_alpha",
+    }
+    out: dict = {}
+    for yaml_key, cfg_field in field_map.items():
+        if yaml_key in prof and prof[yaml_key] is not None:
+            out[cfg_field] = prof[yaml_key]
+    # epochs/target_modules/max_examples/note çağırana ayrı bilgi olarak verilebilir.
+    for extra in ("epochs", "max_examples"):
+        if extra in prof:
+            out[extra] = prof[extra]
+    return out
+
+
 def dry_run(cfg: PeftTrainConfig) -> dict:
     missing = _check_deps()
     return {
@@ -58,6 +251,7 @@ def dry_run(cfg: PeftTrainConfig) -> dict:
         "valid_jsonl": str(cfg.valid_jsonl),
         "adapter_output": str(cfg.adapter_output_path),
         "iterations": cfg.iterations,
+        "recipe": recipe_summary(cfg),
         "missing_packages": missing,
         "install_cmd": f"uv pip install {' '.join(missing)}" if missing else None,
     }
@@ -117,7 +311,7 @@ def train(cfg: PeftTrainConfig) -> dict:
         }
 
     import torch
-    from peft import LoraConfig, TaskType, get_peft_model
+    from peft import LoraConfig, get_peft_model
     from transformers import (
         AutoModelForCausalLM,
         AutoTokenizer,
@@ -146,25 +340,16 @@ def train(cfg: PeftTrainConfig) -> dict:
         device_map="auto" if device == "cuda" else None,
     )
 
-    # target_modules AÇIKÇA sınırlı: Qwen3 tied-embeddings kullanır; lm_head/embed
-    # deltaları GGUF dönüşümünde sessizce atlanır ve adapter bozulur. Yalnız
-    # attention + MLP projeksiyonları hedeflenir (Ollama/llama.cpp uyumlu).
-    peft_config = LoraConfig(
-        task_type=TaskType.CAUSAL_LM,
-        r=cfg.lora_r,
-        lora_alpha=cfg.lora_alpha,
-        lora_dropout=cfg.lora_dropout,
-        bias="none",
-        target_modules=[
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "o_proj",
-            "gate_proj",
-            "up_proj",
-            "down_proj",
-        ],
-    )
+    # LoraConfig kwargs'ı saf builder'dan gelir (rsLoRA/DoRA/init dahil). target_modules
+    # TARGET_MODULES ile sınırlı (Qwen3 tied-embeddings → GGUF uyumu; bkz. modül başı).
+    if init_is_gguf_unsafe(cfg.init_lora_weights):
+        logger.warning(
+            "init_lora_weights=%s base ağırlıkları değiştirir; GGUF/merge öncesi adapter'ı "
+            "ORİJİNAL base'e karşı residual'a çevir (path_initial_model_for_weight_conversion).",
+            cfg.init_lora_weights,
+        )
+    logger.info("LoRA reçetesi: %s", recipe_summary(cfg))
+    peft_config = LoraConfig(**build_lora_kwargs(cfg))
     model = get_peft_model(model, peft_config)  # type: ignore[assignment]
     model.print_trainable_parameters()  # type: ignore[operator]
 
@@ -205,27 +390,35 @@ def train(cfg: PeftTrainConfig) -> dict:
     num_epochs = max(1, cfg.iterations // steps_per_epoch)
 
     output_dir = str(cfg.adapter_output_path)
-    # HIZ ayarları (CPU): eval kapalı (epoch başına ~35sn tasarruf), tek checkpoint,
-    # pin_memory kapalı (GPU yok), dinamik padding collator'da.
+    # HIZ ayarları (CPU): eval kapalı, tek checkpoint, pin_memory kapalı, dinamik padding.
+    # Regularizasyon (warmup/cosine/weight_decay/grad-clip/NEFTune) build_training_kwargs'ta.
     args = TrainingArguments(
-        output_dir=output_dir,
-        num_train_epochs=num_epochs,
-        per_device_train_batch_size=cfg.batch_size,
-        learning_rate=cfg.learning_rate,
-        fp16=(device == "cuda"),
-        logging_steps=5,
-        save_strategy="epoch",
-        save_total_limit=1,
-        eval_strategy="no",
-        report_to="none",
-        dataloader_pin_memory=False,
+        **build_training_kwargs(
+            cfg, num_epochs=num_epochs, output_dir=output_dir, on_cuda=(device == "cuda")
+        )
     )
+
+    # LoRA+ (opt-in): B matrisine A'dan `loraplus_lr_ratio` kat hızlı lr → daha iyi yakınsama.
+    optimizers: tuple = (None, None)
+    if cfg.loraplus_lr_ratio and cfg.loraplus_lr_ratio > 0:
+        from peft.optimizers import create_loraplus_optimizer
+
+        opt = create_loraplus_optimizer(
+            model=model,  # type: ignore[arg-type]
+            optimizer_cls=torch.optim.AdamW,
+            lr=cfg.learning_rate,
+            loraplus_lr_ratio=cfg.loraplus_lr_ratio,
+            weight_decay=cfg.weight_decay,
+        )
+        optimizers = (opt, None)
+        logger.info("LoRA+ optimizer aktif (lr_ratio=%s)", cfg.loraplus_lr_ratio)
 
     trainer = Trainer(
         model=model,
         args=args,
         train_dataset=train_ds,
         data_collator=DataCollatorForLanguageModeling(tokenizer, mlm=False),
+        optimizers=optimizers,
     )
 
     import datetime as _dt
@@ -301,6 +494,12 @@ def generate_colab_notebook(
         learning_rate=cfg.learning_rate,
         num_epochs=num_epochs,
         out_path=out_path,
+        lora_alpha=cfg.lora_alpha,
+        lora_dropout=cfg.lora_dropout,
+        use_rslora=cfg.use_rslora,
+        neftune_noise_alpha=cfg.neftune_noise_alpha,
+        weight_decay=cfg.weight_decay,
+        warmup_ratio=cfg.warmup_ratio,
     )
     write_modelfile(out_path.parent)
     logger.info("Stage 2 bulut notebook + Modelfile olusturuldu: %s", out_path)

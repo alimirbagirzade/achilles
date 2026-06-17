@@ -1,6 +1,6 @@
 # Achilles LoRA Eğitimi — Detaylı Anlatım
 
-Sürüm: v1.1 · 2026-06-16
+Sürüm: v1.2 · 2026-06-17
 
 ## Sürüm Geçmişi
 
@@ -8,6 +8,7 @@ Sürüm: v1.1 · 2026-06-16
 |-------|-------|------------|
 | v1.0 | 2026-06-16 | İlk kapsamlı sürüm |
 | v1.1 | 2026-06-16 | Denetçi düzeltmeleri: `check_flags` fiili davranışı, `cloud_notebook.py` net durumu, `chunk_size=1200` kesinleştirildi, `classify_curriculum` imzası iki-parametreli olarak düzeltildi |
+| v1.2 | 2026-06-17 | **İleri LoRA teknikleri entegrasyonu** (araştırma turu): rsLoRA / DoRA / `init_lora_weights` (PiSSA/OLoRA/EVA/LoftQ) / LoRA+ / NEFTune + regularizasyon (warmup·cosine·weight_decay·grad-clip) PEFT trainer'a saf, offline-test edilebilir builder'larla bağlandı; `discipline_safe` profili (v5 catastrophic-forgetting reçetesi); bulut notebook parametrik (alpha/dropout/rsLoRA/NEFTune); degenerasyon tespiti n-gram/satır döngüsünü de yakalar. Yeni: **Aşama 8** + **Araştırma Kaynakları & Log**. |
 
 > Not: Yeni eğitim geliştirmesinde sürüm numarası artırılır ve değişiklik buraya eklenir.
 
@@ -191,9 +192,10 @@ LoRA verisi, doğrudan PDF korpusundan türeyen yapılandırılmış bilgiye day
 
 - **NE:** torch + transformers + peft ile in-process LoRA eğitimi.
 - **NASIL:** `dry_run()` varsayılan — `--run` yoksa eğitim **başlatılmaz** (sadece bağımlılık kontrolü + kurulum komutu). `train()` (`--run` ile): tokenizer/model yükle → `LoraConfig` uygula → tokenize (padding yok, dinamik collator) → `Trainer.train()` → loss eğrisi JSON.
-- **DOSYA:** `app/training/peft_lora_train.py:25-262`, CLI `app/main.py:244-321`.
-- **MODEL/KÜTÜPHANE:** `Qwen/Qwen3-4B-Instruct-2507` (varsayılan base), torch/transformers/peft.
-- **PARAMETRELER:** `iterations=300`, `batch_size=1` (config) / `2` (CLI öneri, 8GB), `lr=2e-4`, `lora_r=8`, `lora_alpha=16`, `dropout=0.05`, `max_seq_length=1024`. `target_modules = [q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj]` — **lm_head/embed YOK** (Qwen3 tied-embeddings; GGUF uyumu). dtype varsayılan `fp32`, `ACHILLES_TRAIN_DTYPE=bf16` ile yarıya iner (AVX512-BF16 olmayan CPU'da emüle edilir → uyarı).
+- **DOSYA:** `app/training/peft_lora_train.py`, CLI `app/main.py:244-345`.
+- **MODEL/KÜTÜPHANE:** `Qwen/Qwen3-4B-Instruct-2507` (varsayılan base), torch/transformers/peft (kurulu: peft 0.19.1, transformers 5.12.0).
+- **PARAMETRELER:** `iterations=300`, `batch_size=1` (config) / `2` (CLI öneri, 8GB), `lr=2e-4`, `lora_r=8`, `lora_alpha=16`, `dropout=0.05`, `max_seq_length=1024`. `target_modules` = `TARGET_MODULES` sabiti `[q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj]` — **lm_head/embed YOK** (Qwen3 tied-embeddings; GGUF uyumu). dtype varsayılan `fp32`, `ACHILLES_TRAIN_DTYPE=bf16` ile yarıya iner (AVX512-BF16 olmayan CPU'da emüle edilir → uyarı).
+- **YENİ (v1.2):** `LoraConfig` ve `TrainingArguments` artık **saf builder'lardan** kurulur (`build_lora_kwargs` / `build_training_kwargs` — torch/peft import etmez → çevrimdışı test edilebilir). Yerel trainer bulut reçetesiyle **hizalandı**: artık `weight_decay=0.01`, `warmup_ratio=0.03`, `lr_scheduler_type="cosine"`, `max_grad_norm=1.0`, `seed=42` (önceden warmup/scheduler/weight_decay yoktu — degenerasyon/unutma riski). İleri teknikler (rsLoRA/DoRA/init/LoRA+/NEFTune) config alanlarıyla **opt-in** açılır; ayrıntı **Aşama 8**. Profiller `load_lora_profile()` + `achilles train --profile <ad>` ile uygulanır.
 
 #### 3c. MLX Eğitimi (macOS ARM)
 
@@ -213,19 +215,21 @@ LoRA verisi, doğrudan PDF korpusundan türeyen yapılandırılmış bilgiye day
 ### Aşama 4 — LoRA Profilleri
 
 - **NE:** Hazır eğitim ön-ayarları. **DOSYA:** `configs/lora/lora_profiles.yaml`.
+- **YENİ (v1.2):** Profiller artık **koda bağlı** — `load_lora_profile(name)` YAML'i `PeftTrainConfig` alanlarına çevirir; `achilles train --profile <ad>` uygular. Yeni alanlar: `use_rslora`, `use_dora`, `init_lora_weights`, `loraplus_lr_ratio`, `neftune_noise_alpha`, `weight_decay`, `warmup_ratio`, `lr_scheduler_type`, `max_grad_norm`.
 
-| Profil | r | alpha | dropout | epochs | target_modules | not |
-|--------|---|-------|---------|--------|----------------|-----|
-| `small_smoke_test` | 8 | 16 | 0.05 | 1 | 4 attn | `max_examples=200`, pipeline doğrulama |
-| `standard_reasoning` | 16 | 32 | 0.05 | 2 | 7 (attn+MLP) | varsayılan |
-| `high_capacity_reasoning` | 32 | 64 | 0.05 | 3 | 7 (attn+MLP) | büyük veri |
+| Profil | r | alpha | dropout | epochs | lr | ileri teknik | not |
+|--------|---|-------|---------|--------|----|--------------|-----|
+| `small_smoke_test` | 8 | 16 | 0.05 | 1 | — | — | `max_examples=200`, pipeline doğrulama |
+| `standard_reasoning` | 16 | 32 | 0.05 | 2 | 2e-4 | warmup·cosine·wd | varsayılan |
+| `high_capacity_reasoning` | 32 | 64 | 0.05 | 3 | 2e-4 | **rsLoRA** + warmup·cosine·wd | büyük veri (r=32'de rsLoRA ölçeği stabil) |
+| `discipline_safe` | 16 | 32 | **0.1** | **1** | **1e-4** | **NEFTune(5)** + grad-clip + warmup·cosine·wd | **v5 reçetesi**: düşük lr + az epoch + güçlü reg. → catastrophic-forgetting/tekrar döngüsüne karşı |
 
 ### Aşama 5 — Değerlendirme (adapter_eval)
 
 - **NE:** Eski `ModelEvaluator` base Ollama'yı ölçüyordu, adapter yüklemiyordu. Yeni `adapter_eval`, transformers/PEFT ile **gerçek** inference yapar ve **base vs adapter** yan-yana kıyaslar.
 - **NASIL:** `_load_model(base, adapter_dir=None)` ile önce BASE, sonra `PeftModel.from_pretrained` ile ADAPTER; her ikisi `model.eval()`, greedy (`do_sample=False`, deterministik), `max_new_tokens=220`. Her cevapta:
   - **red-flag** (`check_flags`): fiilen yalnız iki deseni uygular — `guaranteed_profit` ve `ignores_costs` (ikincisi **yalnız** cevapta `strateji`/`strategy` geçiyorsa tetiklenir, `evaluate_model.py:84-87`) — artı soru-bazlı `must_avoid` token'ları. **NOT:** `success_without_test` deseni `RED_FLAGS` sözlüğünde tanımlıdır (`evaluate_model.py:32-34`) ancak `check_flags` veya başka hiçbir yerde **kullanılmaz** — ölü koddur (grep ile doğrulandı: tek geçtiği yer tanım satırı). Bu doküman onu aktif bir red-flag olarak listelemez.
-  - **degenerasyon** (`_is_degenerate`): benzersiz cümle ≤ yarısı → tekrar döngüsü.
+  - **degenerasyon** (`_is_degenerate`): **v1.2'de güçlendirildi** — üç sinyalden biri yeterli: (1) aynı cümlenin tekrarı, (2) aynı 3-gram'ın ≥4 kez tekrarı (`_max_ngram_repeat`; nokta ayıracı olmadan da yakalar — v5 adapter aynı ifadeyi 5 kez yazmıştı), (3) aynı satırın (madde/liste) tekrarı. Eşikler muhafazakâr → sağlam cevabı yanlış-flag'lemez.
   Puan: `score = 1.0 - flags/n`; `verdict = accept | reject | inconclusive`.
 - **DOSYA:** `app/training/adapter_eval.py:1-156`, `app/training/evaluate_model.py:28-91` (`check_flags` :80-91), CLI `app/main.py:339-374` (`lora-eval`).
 - **MODEL/KÜTÜPHANE:** transformers (`AutoTokenizer`, `AutoModelForCausalLM`), peft (`PeftModel`), torch (`bfloat16`, `no_grad`).
@@ -252,9 +256,56 @@ LoRA verisi, doğrudan PDF korpusundan türeyen yapılandırılmış bilgiye day
 - **GATE 1–7 (audit):** `lora-audit` → `control_plane`. **KARAR:** ≥1000 örnek + audit geçti + kullanıcı onayı.
 - **HAZIRLIK KOMUTU:** `lora-cloud-prep` — birleşik dataset + dedup → `lora_sft.jsonl`; Unsloth notebook (`build_stage2_notebook`, placeholder doldurma) → `notebooks/achilles_lora_stage2.ipynb`; Ollama Modelfile (`write_modelfile`) → ChatML TEMPLATE + `<|im_start|>`/`<|im_end|>` stop token'ları. `app/main.py:1770-1849`, `app/training/cloud_notebook.py:23-66`.
 - **5 BİLİNEN HATA DÜZELTMESİ (notebook):** (1) 7 target_module, lm_head/embed yok (tied); (2) `{"messages":[...]}` formatı; (3) `apply_chat_template("qwen3-instruct")`; (4) dinamik padding + `train_on_responses_only` (loss maskeleme); (5) `save_pretrained_gguf("q4_k_m")` + fallback (16-bit merge → llama.cpp).
+- **YENİ (v1.2) — parametrik ileri teknikler:** notebook artık `{LORA_ALPHA}`, `{LORA_DROPOUT}`, `{USE_RSLORA}`, `{NEFTUNE_ALPHA}`, `{WEIGHT_DECAY}`, `{WARMUP_RATIO}` placeholder'larını da doldurur (`build_stage2_notebook` parametreleri config'ten alır). `alpha` verilmezse `2*r` konvansiyonu. NEFTune `SFTConfig(neftune_noise_alpha=...)` ile, rsLoRA `get_peft_model(use_rslora=...)` ile bağlanır. Hepsi **GGUF-güvenli** (eğitim-zamanı / ölçek; mimari değişmez).
 - **KRİTİK EŞLEŞMELER:** base = `Qwen/Qwen3-4B-Instruct-2507` (Ollama `qwen3:4b-instruct-2507` ile birebir; çıplak `qwen3:4b`=2504 ile uyuşmaz); T4'te `fp16` (bf16 DEĞİL — NaN); eğitim chat template ↔ Modelfile TEMPLATE birebir.
 - **DOKÜMAN:** `docs/PROTOKOL_ASAMALI_EGITIM.md`, `docs/PROTOKOL_BULUT_EGITIM.md`.
 - **NOT:** `app/training/cloud_notebook.py` **mevcuttur** (2379 bayt) ve `build_stage2_notebook` (`:23`) ile `write_modelfile` (`:57`) fonksiyonlarını içerir; `app/training/peft_lora_train.py:280` içinde `from app.training.cloud_notebook import build_stage2_notebook, write_modelfile` ile import edilerek aktif olarak kullanılır (`peft_lora_train.generate_colab_notebook` tarafından çağrılır). Önceki "çelişki/belirsizlik" notu hatalıydı; tek ve net bir durum vardır.
+
+---
+
+## Aşama 8 — İleri LoRA Teknikleri (araştırma entegrasyonu, v1.2)
+
+Bu aşama, 2024–2025 LoRA/SFT literatüründen doğrulanmış ve PEFT 0.19.1 / transformers 5.12.0 / Unsloth tarafından desteklenen iyileştirmeleri Achilles hattına bağlar. Tasarım ilkesi: **hepsi opt-in** (varsayılan davranış değişmez), **GGUF-güvenli** (embedding/lm_head eğitilmez), **deterministik** ve **çevrimdışı-test edilebilir** (saf config builder'lar). Birincil hedef, **v5 catastrophic-forgetting/degenerasyon regresyonunu** önlemek.
+
+### 8.1 Ölçek & mimari teknikleri
+
+| Teknik | Ne yapar | PEFT/Unsloth | Achilles'te | GGUF | Ne zaman |
+|--------|----------|--------------|-------------|------|----------|
+| **rsLoRA** (rank-stabilized) | Ölçeği `alpha/r` yerine `alpha/√r` yapar → yüksek r'de gradyan büyümesini dengeler, daha stabil öğrenir | `LoraConfig(use_rslora=True)` | `cfg.use_rslora`; `high_capacity_reasoning` profilinde **açık** | ✓ (ölçek merge'e gömülür) | r ≥ 16–32 olduğunda |
+| **DoRA** (weight-decomposed) | Ağırlığı **büyüklük + yön**e ayırır; yalnız yönü LoRA ile öğrenir → düşük r'de tam fine-tune'a yakın | `LoraConfig(use_dora=True)` | `cfg.use_dora` (opt-in) | ✓ (merge standart matris üretir) ama ~2× yavaş | düşük r'de kalite kritikse |
+| **init stratejisi** | Adapter'ı sıfır yerine bilgili başlatır: **PiSSA** (base'in temel bileşenleri), **OLoRA** (QR), **EVA** (SVD-aktivasyon), **LoftQ** (kuantizasyon-farkında), **gaussian** | `LoraConfig(init_lora_weights=...)` | `cfg.init_lora_weights` (varsayılan `true`) | **DİKKAT**: PiSSA/OLoRA/CorDA base'i değiştirir → GGUF öncesi residual dönüşümü şart (`init_is_gguf_unsafe()` uyarır) | hızlı yakınsama / az veri |
+| **LoRA+** | B matrisine A'dan `λ` kat **daha yüksek lr** → daha iyi/hızlı yakınsama (ek parametre yok) | `peft.optimizers.create_loraplus_optimizer` | `cfg.loraplus_lr_ratio>0` ise Trainer'a özel optimizer | ✓ (yalnız optimizer) | yakınsama yavaşsa |
+
+`build_lora_kwargs(cfg)` bu seçenekleri saf bir sözlüğe çevirir (torch import etmeden) → `LoraConfig(**build_lora_kwargs(cfg))`. `normalize_init_lora_weights()` `"true"→True`, `"pissa"→"pissa"` eşler ve bilinmeyen değerde **erken ValueError** verir (sessiz yanlış-init yerine).
+
+### 8.2 Regularizasyon & unutma-karşıtı (v5 dersinin doğrudan yanıtı)
+
+- **NEFTune** (noisy embedding fine-tuning): eğitimde embedding'lere ölçekli rastgele gürültü ekler → ezber/overfit azalır, yönerge-takibi davranışı **korunur**. `TrainingArguments(neftune_noise_alpha=α)` (transformers yerel desteği). `cfg.neftune_noise_alpha>0` açar; `0.0` → anahtar hiç eklenmez (hook açılmaz). `discipline_safe`'te **α=5**.
+- **Düşük lr + az epoch:** instruct modelini bozmamanın en güçlü kaldıracı. `discipline_safe`: `lr=1e-4` (2e-4 yerine), `epochs=1`. Aşırı epoch = unutma + tekrar döngüsü.
+- **Yüksek dropout (0.1):** küçük veri setinde overfit'i bastırır.
+- **Warmup + cosine + weight_decay + grad-clip:** yerel trainer artık bunları her zaman uygular (`build_training_kwargs`); ani gradyan sıçramaları (degenerasyon tetikleyicisi) `max_grad_norm=1.0` ile kırpılır.
+- **Veri tarafı (replay/rehearsal):** `discipline_dataset.py` adversarial disiplin örneklerini `mix_discipline()` ile ~%25 karıştırır → model yalnız "pasaja göre cevapla" öğrenip refusal/disiplin yeteneğini **unutmaz**. Bu, literatürdeki rehearsal/replay ilkesinin Achilles uygulamasıdır.
+
+### 8.3 v5 catastrophic-forgetting reçetesi (`discipline_safe`)
+
+v5 adapter base'den **daha kötü** oldu: garanti-kâr reddini bıraktı, maliyet uydurdu, aynı ifadeyi 5 kez tekrarladı (degenerate). Önerilen kombine reçete (kanıt biriktikçe ayarlanır):
+
+```
+profil: discipline_safe   (achilles train --profile discipline_safe)
+  r=16, alpha=32 (2r), dropout=0.1, epochs=1
+  lr=1e-4, scheduler=cosine, warmup=0.05, weight_decay=0.01, max_grad_norm=1.0
+  NEFTune α=5
+  veri: synth-QA + discipline_dataset ~%25 (lora-cloud-prep --discipline-ratio 0.25)
+  rsLoRA=kapalı (muhafazakâr; lr ile birlikte ayarlandı)
+```
+
+**Doğrulama zorunlu (CLAUDE.md Kural 2):** Bu reçete *hipotez*tir. Sıra: (1) dataset'i OFFLINE sınavdan geçir (L3/L4/L5 + understanding-score, **eğitMEDEN**), (2) bulutta eğit, (3) `adapter_eval` ile base-vs-adapter karşılaştır, (4) yalnız adapter base'i **geçerse** terfi. Aynı veriyle körlemesine retrain **yasak** (overfit).
+
+### 8.4 Değerlendirilen ama şimdilik entegre EDİLMEYEN
+
+- **QLoRA (4-bit) yerelde:** bulut notebook'unda zaten `load_in_4bit=True`; yerel CPU'da bnb kuantizasyonu pratik değil → yalnız bulutta.
+- **PiSSA/OLoRA varsayılan açma:** GGUF residual dönüşümü ek karmaşıklık → opt-in bırakıldı, dokümante edildi.
+- **DPO/ORPO (tercih optimizasyonu):** `auto_researcher` reward verisi üretir ama SFT sonrası ayrı bir aşama; bu turda kapsanmadı (gelecek tur).
 
 ---
 
@@ -314,7 +365,7 @@ LoRA verisi, doğrudan PDF korpusundan türeyen yapılandırılmış bilgiye day
 | `app/lora/control_plane.py` | Gate orkestrasyonu (`run_audit`/`run_full`), rapor |
 | `app/lora/auto_pipeline.py` | Durum makinesi + background_loop + eval/promote akışı |
 | `app/training/backend.py` | MLX vs PEFT platform tespiti |
-| `app/training/peft_lora_train.py` | PEFT eğitimi (dry-run/`--run`), loss eğrisi, `cloud_notebook` import (:280) |
+| `app/training/peft_lora_train.py` | PEFT eğitimi (dry-run/`--run`), loss eğrisi; **saf builder'lar** `build_lora_kwargs`/`build_training_kwargs`/`recipe_summary`, `load_lora_profile`, `normalize_init_lora_weights`, ileri teknikler (rsLoRA/DoRA/init/LoRA+/NEFTune) |
 | `app/training/mlx_lora_train.py` | MLX eğitimi, faz resume |
 | `app/training/detached_launch.py` | Detached subprocess başlatma + status + clobber onarımı |
 | `app/training/adapter_eval.py` | Base-vs-adapter gerçek PEFT değerlendirmesi |
@@ -322,7 +373,10 @@ LoRA verisi, doğrudan PDF korpusundan türeyen yapılandırılmış bilgiye day
 | `app/lora/adapter_registry.py` | JSONL yaşam döngüsü + `promote` (kullanıcı onayı) |
 | `app/training/adapter_registry.py` | (Eski) SQLite + sidecar registry |
 | `app/training/cloud_notebook.py` | Stage 2 notebook + Modelfile üretimi (`build_stage2_notebook`, `write_modelfile`); peft_lora_train tarafından aktif kullanılır |
-| `configs/lora/lora_profiles.yaml` | LoRA ön-ayar profilleri (r/alpha/epochs) |
+| `configs/lora/lora_profiles.yaml` | LoRA ön-ayar profilleri (r/alpha/epochs + ileri teknik alanları); `discipline_safe` v5 reçetesi; `load_lora_profile` ile koda bağlı |
+| `docs/egitim/LORA_ARASTIRMA_LOG.md` | Tekrarlı araştırma logu + dedup defteri (kapsanan teknik/kaynak) |
+| `tests/test_peft_lora_recipe.py` | İleri reçete builder'larının çevrimdışı regresyon testleri |
+| `tests/test_adapter_eval_degenerate.py` | Güçlendirilmiş degenerasyon (n-gram/satır döngüsü) testleri |
 | `configs/eval/lora_eval_questions.yaml` | ~50 soruluk disiplin eval seti |
 | `app/verification/exams/understanding_score.py` | L1–L5 sınav agregasyonu (objektif skor) |
 | `app/verification/exams/safe_eval.py` | Whitelist AST (eval/exec yok) |
@@ -340,7 +394,7 @@ LoRA verisi, doğrudan PDF korpusundan türeyen yapılandırılmış bilgiye day
 1. **Sistem son durumu `train_failed`.** `storage/auto_lora_state.json` örneğinde Gate geçilmiş ama eğitim tamamlanamamış. Hattın baştan-sona başarılı bir koşusu bu bulgularda **kanıtlanmadı**.
 2. **RAFT modülü yok.** Grounding RAFT ilkesini uygular ama bağımsız "RAFT seed" mekanizması **kodda bulunamadı**; `storage/_gen_raft_seed.py` izlenmemiş/doğrulanmamış.
 3. **Negasyon-kör red-flag.** Basit string/regex eşleşmesi olumsuzlamaları ayırt edemez.
-4. **Degenerasyon cezası hafif.** v5 örneğinde tekrar döngüsüne rağmen `accept`; otomatik reject override **kodda bulunamadı**.
+4. **Degenerasyon cezası hafif (kısmen giderildi).** v1.2'de **tespit** güçlendirildi (cümle + n-gram + satır döngüsü; `_max_ngram_repeat`). Ancak ceza hâlâ tek bir bayrak ağırlığındadır; "tek degenerasyon → koşulsuz reject" override henüz eklenmedi (skor + regression kontrolü dolaylı yakalar).
 5. **Inference hata yönetimi yok.** `adapter_eval`'de model yükleme/inference başarısızlığında try/except **kodda bulunamadı** → crash.
 6. **Eval rubric kullanılmaz.** YAML'deki `scoring_rubric`/`eval_thresholds` okunmaz; yalnız `must_avoid` token kontrolü.
 7. **Cross-batch duplicate izleme yok.** Gate 4 yalnız oturum-içi hash; kalıcı DB log yok.
@@ -350,6 +404,44 @@ LoRA verisi, doğrudan PDF korpusundan türeyen yapılandırılmış bilgiye day
 11. **MasterySFTBuilder / build_tool_use_dataset / ModelEvaluator / LoRAControlPlane.run_full iç detayı** bu bulgularda **tam okunmadı** → davranışları **doğrulanmadı**.
 12. **CPU'da eğitim pratik değil.** 4B model ~74–76 sn/adım; ≥1000 örnek için bulut-GPU zorunlu.
 13. **`auto_researcher` → tool-use** zinciri DPO hazırlığı üretir; DPO eğitiminin kendisi (eğitim döngüsüne bağlanması) bu bulgularda **gösterilmedi**.
+14. **v1.2 reçetesi (`discipline_safe`) henüz doğrulanmadı.** İleri teknikler kod+config olarak bağlandı ve çevrimdışı test edildi; ancak bir bulut eğitim koşusu + `adapter_eval` gate'i ile **fiilen daha iyi olduğu kanıtlanmadı** (Kural 2: test edilmeden "daha iyi" denmez). rsLoRA/DoRA/init/LoRA+/NEFTune **varsayılan kapalı** (opt-in) — yalnız regularizasyon (warmup/cosine/weight_decay/grad-clip) varsayılan etkin.
+
+---
+
+## Araştırma Kaynakları & Tekrarlı Tarama
+
+### Tekrarlı araştırma döngüsü (2026-06-17 kararı)
+
+LoRA literatürü sürekli ilerlediği için Achilles, yenilikleri periyodik tarar ve
+**işe yarayanları** entegre eder. Tasarım (kullanıcı kararı):
+
+- **Günlük hafif tarama:** arXiv/HF/Unsloth/PEFT'te `docs/egitim/LORA_ARASTIRMA_LOG.md`
+  defterinde **olmayan** yeni öğe var mı? Yoksa no-op. Varsa → loga aday + doküman auto-push.
+- **Haftalık derin tur:** tam çok-ajanlı sweep (paralel arama → adversarial doğrulama →
+  sentez) + entegrasyon.
+- **Kapı:** kod/reçete değişikliği `main`'e körlemesine push **edilmez** → PR / inceleme
+  (doğrulanmamış reçete riski; CLAUDE.md Kural 2/8). Doküman-yalnız güncelleme auto-push olabilir.
+- **Defter:** her tur `LORA_ARASTIRMA_LOG.md`'ye yazılır; "Kapsanan teknikler/kaynaklar"
+  listesi dedup anahtarıdır (aynı şey iki kez derin-araştırılmaz).
+
+### Bu sürümün (v1.2) kaynakları — Tur 1, 2026-06-17
+
+Aşağıdaki kaynaklar çok-ajanlı araştırma turunda **gerçekten getirilip** adversarial
+doğrulandı (uydurma değil; bağlantısı doğrulanamayan teknikler entegre edilmedi).
+
+| Teknik / Konu | Kaynak |
+|---------------|--------|
+| LoRA hiperparametre rehberi (rank/alpha/lr/epoch) | Unsloth — LoRA Hyperparameters Guide: <https://unsloth.ai/docs/get-started/fine-tuning-llms-guide/lora-hyperparameters-guide> |
+| Qwen3 fine-tune (chat template, target modules) | Unsloth — Qwen3 tutorial: <https://unsloth.ai/docs/models/tutorials/qwen3-how-to-run-and-fine-tune> |
+| rsLoRA / DoRA / init (PiSSA/OLoRA/EVA/LoftQ) / LoRA+ — API | HF PEFT — LoRA developer guide: <https://huggingface.co/docs/peft/main/en/developer_guides/lora> |
+| NEFTune / response-only / packing — SFT | HF TRL — SFTTrainer: <https://huggingface.co/docs/trl/sft_trainer> |
+| rsLoRA (rank-stabilized scaling) | arXiv 2312.03732 |
+| DoRA (weight-decomposed) | arXiv 2402.09353 · <https://github.com/NVlabs/DoRA> |
+| NEFTune (noisy embedding FT) | arXiv 2310.05914 · <https://github.com/neelsjain/NEFTune> |
+| LoftQ (kuantizasyon-farkında init) | <https://github.com/yxli2123/LoftQ> |
+| Nöral metin degenerasyonu (tekrar/repetition) | arXiv 1904.09751 |
+
+> Tam ve güncellenen liste: `docs/egitim/LORA_ARASTIRMA_LOG.md`.
 
 ---
 
@@ -376,3 +468,10 @@ LoRA verisi, doğrudan PDF korpusundan türeyen yapılandırılmış bilgiye day
 - **UnderstandingScore (L1–L5):** Anlamayı yüzdeyle değil sınavla kanıtlayan objektif skor.
 - **`source_id`:** Örneğin kaynak makalesi; train/test sızıntısını önlemek için bölme anahtarı.
 - **Ölü kod:** Tanımlı ama hiçbir çağrı yolunda kullanılmayan kod (örn. `success_without_test` deseni).
+- **rsLoRA (rank-stabilized LoRA):** Ölçeği `alpha/r` yerine `alpha/√r` yapan düzeltme; yüksek rank'ta öğrenmeyi stabilize eder.
+- **DoRA (weight-decomposed LoRA):** Ağırlığı büyüklük + yön bileşenine ayırıp yalnız yönü LoRA ile öğrenen yöntem; düşük rank'ta kaliteyi artırır.
+- **LoRA+:** A ve B düşük-rank matrislerine farklı (B'ye daha yüksek) öğrenme oranı veren optimizer ayarı.
+- **init_lora_weights (PiSSA/OLoRA/EVA/LoftQ/CorDA):** Adapter'ı sıfır yerine base'in yapısından bilgili başlatma stratejileri; hızlı yakınsama. PiSSA/OLoRA/CorDA base'i değiştirir → GGUF için residual dönüşümü gerekir.
+- **NEFTune:** Eğitimde embedding'lere ölçekli gürültü ekleyerek overfit'i azaltıp yönerge-takibini koruyan regularizasyon.
+- **Catastrophic forgetting:** Fine-tune sırasında modelin önceki yeteneklerini/davranışını (örn. refusal/disiplin) yitirmesi; v5 regresyonunun kökü.
+- **Rehearsal/replay:** Unutmayı önlemek için eğitime önceki davranışı temsil eden örnekler (Achilles'te adversarial disiplin örnekleri) karıştırmak.
