@@ -973,6 +973,17 @@ class SqliteStore:
         with self.session() as s:
             s.add(ConceptLink(**fields))
 
+    def delete_concept_links_for_paper(self, paper_id: str) -> int:
+        """Bir makaleye ait kavram bağlantılarını sil (idempotent yeniden-inşa için).
+
+        build_from_papers her ingest'te tüm makaleler üzerinde çalışıp link eklediğinden,
+        silmeden tekrar ekleme link tablosunu tekrar-kenarlarla şişirir (CLAUDE.md
+        'ingestion idempotent' ihlali). Yeniden inşadan önce çağrılır.
+        """
+        with self.session() as s:
+            res = s.execute(delete(ConceptLink).where(ConceptLink.source_paper_id == paper_id))
+            return int(getattr(res, "rowcount", 0) or 0)
+
     def list_concept_links(self, concept: str | None = None) -> list[dict[str, Any]]:
         with self.session() as s:
             q = select(ConceptLink)

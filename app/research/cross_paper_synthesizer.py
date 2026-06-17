@@ -272,7 +272,12 @@ def _select_cross_paper(
 
     if not selected_a or not selected_b:
         return []
-    return selected_a + selected_b
+    combined = selected_a + selected_b
+    # "cross-paper" sözleşmesi: en az 2 FARKLI makale olmalı. Bir makale hem cat_a hem
+    # cat_b'de formüle sahipse seçim tek makaleye çökebilir → yanıltıcı sentez. Reddet.
+    if len({f.get("paper_id", "") for f in combined}) < 2:
+        return []
+    return combined
 
 
 class CrossPaperSynthesizer:
@@ -387,14 +392,18 @@ class CrossPaperSynthesizer:
 
     def _save(self, ex_id: str, example: dict[str, str]) -> None:
         from app.memory.sqlite_store import TrainingExample
+
+        # merge (upsert): force=True yeniden ürettiğinde içerik SESSIZCE atılmasın
+        # (eski "yalnız yoksa ekle" mantığı force regenerasyonu boşa harcıyordu).
         with self.store.session() as s:
-            if s.get(TrainingExample, ex_id) is None:
-                s.add(TrainingExample(
+            s.merge(
+                TrainingExample(
                     example_id=ex_id,
                     source_paper_id=None,
                     example_type="cross_paper_synthesis",
                     instruction=example["instruction"],
                     input_text=example["input"],
                     output_text=example["output"],
-                ))
-                s.commit()
+                )
+            )
+            s.commit()

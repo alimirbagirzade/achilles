@@ -20,3 +20,14 @@ def test_chunk_ids_are_sequential():
 def test_token_estimate():
     c = TextChunk(paper_id="p", chunk_index=0, text="a" * 400)
     assert c.token_estimate == 100
+
+
+def test_oversized_paragraph_after_small_is_split():
+    # Küçük başlık + tek dev (math olmayan) gövde paragrafı: gövde cümle sınırında
+    # bölünmeli; eskiden buf doluyken oversized chunk bölünmeden tek parça çıkıyordu.
+    big_body = "Bu bir cümledir. " * 400  # ~6800 karakter, formül yok
+    text = "Giris\n\n" + big_body
+    chunks = chunk_text("p", text, chunk_size=600, overlap=0)
+    # chunk_size sözleşmesi: hiçbir chunk limitin makul katından büyük olmamalı
+    assert max(len(c.text) for c in chunks) <= 700
+    assert len(chunks) >= 5

@@ -88,61 +88,54 @@ def chunk_text(
     chunks: list[TextChunk] = []
     buf = ""
     idx = 0
+
+    def _emit(piece: str) -> None:
+        nonlocal idx
+        chunks.append(
+            TextChunk(
+                paper_id=paper_id,
+                chunk_index=idx,
+                text=piece,
+                page_number=page_number,
+                section_name=_detect_section(piece),
+            )
+        )
+        idx += 1
+
+    def _emit_para(para: str) -> None:
+        # Tek paragraf: sığıyorsa ya da math-heavy ise (formül bütünlüğü) bütün bırak;
+        # aksi halde cümle sınırında (nokta/satırsonu) böl → chunk_size sözleşmesi korunur.
+        if len(para) + 2 <= size or _is_math_heavy(para):
+            _emit(para)
+            return
+        start = 0
+        while start < len(para):
+            end = start + size
+            if end < len(para):
+                cut = para.rfind(". ", start, end)
+                if cut == -1:
+                    cut = para.rfind("\n", start, end)
+                end = cut + 1 if cut != -1 and cut > start else end
+            _emit(para[start:end])
+            start = end
+
     for para in _split_paragraphs(text):
         if len(buf) + len(para) + 2 <= size:
             buf = f"{buf}\n\n{para}" if buf else para
             continue
         if buf:
-            chunks.append(
-                TextChunk(
-                    paper_id=paper_id,
-                    chunk_index=idx,
-                    text=buf,
-                    page_number=page_number,
-                    section_name=_detect_section(buf),
-                )
-            )
-            idx += 1
+            _emit(buf)
             tail = buf[-over:] if over else ""
-            buf = f"{tail}\n\n{para}" if tail else para
-        else:
-            # Tek aşırı büyük paragraf: formül içeriyorsa bölme, değilse cümle sınırında kes
-            if _is_math_heavy(para):
-                # Formül bütünlüğünü koru — oversized chunk kabul et
-                chunks.append(
-                    TextChunk(
-                        paper_id=paper_id,
-                        chunk_index=idx,
-                        text=para,
-                        page_number=page_number,
-                        section_name=_detect_section(para),
-                    )
-                )
-                idx += 1
-            else:
-                # Cümle sınırında kes (nokta/satırsonu tercih et)
-                start = 0
-                while start < len(para):
-                    end = start + size
-                    if end < len(para):
-                        # nokta veya satırsonu bul
-                        cut = para.rfind(". ", start, end)
-                        if cut == -1:
-                            cut = para.rfind("\n", start, end)
-                        end = cut + 1 if cut != -1 and cut > start else end
-                    piece = para[start:end]
-                    chunks.append(
-                        TextChunk(
-                            paper_id=paper_id,
-                            chunk_index=idx,
-                            text=piece,
-                            page_number=page_number,
-                            section_name=_detect_section(piece),
-                        )
-                    )
-                    idx += 1
-                    start = end
             buf = ""
+            # tail+para tek chunk'a sığarsa biriktir; sığmazsa büyük para'yı HEMEN böl.
+            # (Eskiden oversized buf bir sonraki turda bölünmeden tek dev chunk çıkıyordu.)
+            candidate = f"{tail}\n\n{para}" if tail else para
+            if len(candidate) + 2 <= size:
+                buf = candidate
+            else:
+                _emit_para(para)
+        else:
+            _emit_para(para)
     if buf:
         chunks.append(
             TextChunk(

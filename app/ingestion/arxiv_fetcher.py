@@ -8,6 +8,7 @@ ingestion pipeline ile indekslenir.
 from __future__ import annotations
 
 import logging
+import re
 import urllib.parse
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -65,7 +66,10 @@ def search_arxiv(query: str, max_results: int = 10) -> list[ArxivEntry]:
     for node in root.findall("atom:entry", _NS):
         raw_id = node.findtext("atom:id", default="", namespaces=_NS) or ""
         # "http://arxiv.org/abs/2301.12345v2" → "2301.12345"
-        arxiv_id = raw_id.rsplit("/", 1)[-1].split("v")[0] if raw_id else ""
+        # Eski stil "http://arxiv.org/abs/hep-th/9901001v2" → "hep-th/9901001" (kategori KORUNUR;
+        # eski rsplit('/')+split('v') kategoriyi düşürüp 404 PDF URL + dosya çakışması yaratıyordu).
+        stripped = raw_id.split("/abs/")[-1].split("/pdf/")[-1] if raw_id else ""
+        arxiv_id = re.sub(r"v\d+$", "", stripped)
         if not arxiv_id:
             continue
         title = (node.findtext("atom:title", default="", namespaces=_NS) or "").strip()

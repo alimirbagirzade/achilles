@@ -142,9 +142,11 @@ class FormulaExtractor:
 
     def _rule_based_extract(self, text: str, paper_id: str) -> list[dict[str, Any]]:
         found: list[dict[str, Any]] = []
-        text_upper = text.upper()
         for name, (category, description) in _KNOWN_INDICATORS.items():
-            if name.upper() in text_upper:
+            # Kelime-sınırı eşleşmesi: kısa akronimler (EMA/SMA/ATR/OBV) başka kelimelerin
+            # içinde ("scheme", "plasma", "theatre", "obvious") YANLIŞ eşleşmesin → kaynak
+            # uydurma (latex=None sahte formül) önlenir (CLAUDE.md Kural 7).
+            if re.search(rf"\b{re.escape(name)}\b", text, re.IGNORECASE):
                 found.append(
                     {
                         "name": name,

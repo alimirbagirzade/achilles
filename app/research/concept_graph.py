@@ -70,6 +70,9 @@ class ConceptGraph:
             context = "\n\n".join(c.text[:500] for c in chunks[:5])
             formula_list = "\n".join(f["name"] for f in paper_formulas)
 
+            # İdempotency: bu makalenin eski bağlantılarını sil, sonra yeniden ekle.
+            # (Aksi halde her ingest'te aynı kenarlar tekrar eklenip tabloyu şişirir.)
+            self.store.delete_concept_links_for_paper(paper.paper_id)
             links = self._extract_links(formula_list, context, paper.paper_id)
             for link in links:
                 self.store.save_concept_link(
