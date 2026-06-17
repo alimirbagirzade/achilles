@@ -136,6 +136,18 @@ def test_permentropy_l3_not_dead_exam() -> None:
     assert res.status == "passed"  # no_data DEĞİL
 
 
+def test_entropy_exam_reference_excludes_phantom_first_bar() -> None:
+    # ENTROPY sınav referansı bar 0'daki NaN-kaynaklı sahte 'düşüşü' SAYMAZ: ilk `period`
+    # bar warmup (NaN), tanımlı bölge index period'tan (period gerçek fark) başlar.
+    from app.verification.exams.registry import get_spec
+
+    closes = ReferenceOracle.synthetic_closes(20, 0)
+    df = pd.DataFrame({"close": closes})
+    ref = get_spec("ENTROPY").reference(df, 4).to_numpy(dtype=float)
+    assert np.all(np.isnan(ref[:4]))
+    assert not np.isnan(ref[4])
+
+
 def test_parse_values_birimleri() -> None:
     assert _parse_values('{"values": [1, 2.5, 3]}') == [1.0, 2.5, 3.0]
     assert _parse_values("[4, 5]") == [4.0, 5.0]

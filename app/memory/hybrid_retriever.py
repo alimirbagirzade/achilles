@@ -75,7 +75,10 @@ class HybridRetriever:
         semantic_scores: dict[str, float] = {}
         chunk_by_id: dict[str, RetrievedChunk] = {}
         for chunk in semantic_chunks:
-            score = 1.0 - (chunk.distance or 1.0)
+            # distance==0.0 (kosinüste kusursuz eşleşme) falsy → `or 1.0` onu en KÖTÜ
+            # skora çeviriyordu (sıralama tersine). Açık None kontrolü şart.
+            dist = chunk.distance if chunk.distance is not None else 1.0
+            score = 1.0 - dist
             semantic_scores[chunk.chunk_id] = max(0.0, score)
             chunk_by_id[chunk.chunk_id] = chunk
 

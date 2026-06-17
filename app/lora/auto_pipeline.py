@@ -327,13 +327,15 @@ class AutoLoRAPipeline:
                 for es in eval_sets:
                     r = scores.get(es.stem, {})
                     n_items = int(r.get("n", 0))
-                    adapter_score = float(r.get("adapter_score", 0.0))
+                    # adapter_score [0,1] dışına (negatif) çıkabilir (çok-bayraklı cevap);
+                    # DB'ye anlamsız negatif pass_rate/passed_items yazmamak için kelepçele.
+                    adapter_score = max(0.0, float(r.get("adapter_score", 0.0)))
                     store.save_eval_history(
                         adapter_name=adapter_name,
                         eval_set=es.stem,
                         pass_rate=adapter_score,
                         total_items=n_items,
-                        passed_items=round(adapter_score * n_items),
+                        passed_items=max(0, round(adapter_score * n_items)),
                     )
             except Exception:
                 log.warning("Auto-LoRA: eval_history kaydedilemedi")

@@ -58,6 +58,17 @@ def test_abstain_on_insufficient_context() -> None:
     assert decision.should_abstain is True
 
 
+def test_abstain_when_cannot_answer_non_insufficient() -> None:
+    """can_answer=False (MISSING_FORMULA_CONTINUATION), INSUFFICIENT olmasa da çekimser."""
+    policy = AbstentionPolicy()
+    confidence = _make_confidence(0.9)  # yüksek güven olsa bile
+    sufficiency = _make_sufficiency(
+        SufficiencyLevel.MISSING_FORMULA_CONTINUATION, can_answer=False
+    )
+    decision = policy.decide(confidence, sufficiency)
+    assert decision.should_abstain is True
+
+
 def test_warn_threshold_still_answers() -> None:
     """Orta güven (0.6, 'warn') → should_abstain=False olmalı."""
     policy = AbstentionPolicy()

@@ -131,6 +131,26 @@ def test_collect_includes_synthesis_examples(tmp_path: Path) -> None:
     assert len(records) == 1  # sentez örneği filtreyle elenmedi
 
 
+def test_curriculum_phase_no_synthesis_duplication(tmp_path: Path) -> None:
+    # Faz yolunda current/prev/nxt sentez örneğini 3x getirebilir; global dedup tek bırakmalı.
+    store = _make_store_with_examples(0)
+    with store.session() as s:
+        s.add(
+            TrainingExample(
+                example_id="synth_x",
+                source_paper_id=None,
+                example_type="cross_paper_synthesis",
+                instruction="birleştir",
+                input_text="",
+                output_text="sentez (benzersiz)",
+            )
+        )
+    b = DatasetBuilder(store=store)
+    b.settings = type("S", (), {"jsonl_dir": tmp_path})()  # type: ignore[assignment]
+    r = b.build(phase=2, lora_eligible_only=False)
+    assert r.n_train + r.n_valid == 1  # 3 kopya değil
+
+
 def test_deterministic_with_seed(tmp_path: Path) -> None:
     b = _builder_with_store(20, tmp_path)
     r1 = b.build(seed=42, lora_eligible_only=False)

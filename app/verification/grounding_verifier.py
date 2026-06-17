@@ -88,29 +88,24 @@ class GroundingVerifier:
             if len(sentence) < 20:
                 continue
 
-            # Spekülatif mi?
-            if _SPECULATIVE_RE.search(sentence):
-                results.append(
-                    GroundingResult(
-                        claim=sentence,
-                        level=GroundingLevel.SPECULATIVE,
-                        evidence_chunk_id=None,
-                    )
-                )
-                continue
-
             s_tokens = _tokenize(sentence)
             if not s_tokens:
                 continue
 
+            # Önce DESTEĞİ ölç (spekülatif kısa-devresi YOK): hedge'li ama DESTEKSİZ iddia
+            # (örtülü halüsinasyon) UNSUPPORTED(0.0) kalmalı. SPECULATIVE(0.3) yalnız
+            # gerçekten desteklenen ama temkinli ('olabilir/might') ifadeler için indirgemedir.
+            is_speculative = bool(_SPECULATIVE_RE.search(sentence))
             supporting = _find_supporting_chunk(s_tokens, chunks, min_overlap=3)
 
             if supporting:
-                # Güçlü destek (≥5 token örtüşmesi)
                 overlap = len(s_tokens & _tokenize(supporting.text))
-                level = (
-                    GroundingLevel.SUPPORTED if overlap >= 5 else GroundingLevel.PARTIALLY_SUPPORTED
-                )
+                if is_speculative:
+                    level = GroundingLevel.SPECULATIVE
+                elif overlap >= 5:
+                    level = GroundingLevel.SUPPORTED
+                else:
+                    level = GroundingLevel.PARTIALLY_SUPPORTED
                 results.append(
                     GroundingResult(
                         claim=sentence,

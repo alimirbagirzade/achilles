@@ -92,6 +92,11 @@ def build_dpo_dataset(
         if not c_steps or not r_steps:
             continue
         prompt = c_steps[0]["question"] if c_steps else ""
+        rejected_question = r_steps[0]["question"] if r_steps else ""
+        # DPO sözleşmesi: chosen ve rejected AYNI prompt'a iki yanıt olmalı. Farklı soruya
+        # ait rejected, prompt'la ilgisiz → gürültülü/yanlış tercih gradyanı; çifti atla.
+        if prompt != rejected_question:
+            continue
         examples.append(
             {
                 "prompt": prompt,

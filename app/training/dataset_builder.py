@@ -155,6 +155,18 @@ class DatasetBuilder:
         else:
             records = self.collect(lora_eligible_only=lora_eligible_only)
 
+        # GLOBAL dedup: faz yolunda cross_paper_synthesis örnekleri faz-muaf olduğundan
+        # current/prev/nxt'in her birinde tekrar gelir (ayrı 'seen' set'leri). Bölmeden
+        # önce tekilleştir → ağırlık şişmesi + valid/train sızıntısı (sahte OOS) önlenir.
+        _seen_keys: set[str] = set()
+        _deduped: list[dict] = []
+        for _rec in records:
+            _k = f"{_rec.get('prompt', '')}||{_rec.get('completion', '')}"
+            if _k not in _seen_keys:
+                _seen_keys.add(_k)
+                _deduped.append(_rec)
+        records = _deduped
+
         rng.shuffle(records)
         # Valid seti train'den AYRIK olmalı (OOS garantisi, CLAUDE.md Kural 2):
         # eski "bootstrap" kopyalama (valid ⊂ train) KALDIRILDI → sahte OOS yok.

@@ -44,6 +44,27 @@ def _rsi_exam_reference(df: pd.DataFrame, period: int) -> pd.Series:
     return out.mask((avg_loss == 0) & (avg_gain > 0), 100.0)
 
 
+def _entropy_exam_reference(df: pd.DataFrame, period: int) -> pd.Series:
+    """ENTROPY referansı — bar 0'daki NaN-kaynaklı SAHTE 'düşüş' artefaktı OLMADAN.
+
+    Üretim entropy()'si close.diff()[0]=NaN'i (delta>0)→0.0 (düşüş) sayar; ilk tanımlı
+    pencere yalnız period-1 GERÇEK fark + 1 sahte düşüş içerir → tanımı doğru uygulayan
+    modeli L3'te haksızca fail ettirir (RSI fillna(50) ile aynı warmup-artefakt sınıfı).
+    Burada bar 0 tanımsız (NaN) bırakılır → pencere period GERÇEK fark ister.
+    """
+    close = df["close"]
+    delta = close.diff()
+    up = (delta > 0).astype(float)
+    up[delta.isna()] = float("nan")  # sahte 'düşüş' yerine tanımsız
+    p = up.rolling(period).mean()  # min_periods=period → period GERÇEK fark gerekir
+    q = 1.0 - p
+    out = pd.Series(0.0, index=p.index, dtype=float)
+    mask = (p > 0.0) & (p < 1.0)
+    out[mask] = -(p[mask] * np.log2(p[mask]) + q[mask] * np.log2(q[mask]))
+    out[p.isna()] = float("nan")
+    return out
+
+
 @dataclass(frozen=True)
 class ExamSpec:
     name: str
@@ -112,6 +133,7 @@ _SPECS: dict[str, ExamSpec] = {
         rtol=1e-3,
         atol=1e-3,
         monotonic={"period": "periyot artarsa daha pürüzsüz (daha az oynak)"},
+        ref_override=_entropy_exam_reference,
     ),
     "PERMENTROPY": ExamSpec(
         name="PERMENTROPY",

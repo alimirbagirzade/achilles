@@ -84,6 +84,16 @@ def test_hybrid_retriever_topk_filled_with_text_chunks() -> None:
     assert len(out) == 3  # top_k gerçek chunk'larla dolduruldu
 
 
+def test_hybrid_retriever_zero_distance_ranks_first() -> None:
+    # distance==0.0 (kusursuz eşleşme) EN İYİ skoru almalı; eski `or 1.0` onu en kötü yapıyordu.
+    from app.memory.hybrid_retriever import HybridRetriever
+
+    sem = [_chunk("perfect", "exact match document", 0.0), _chunk("far", "unrelated text", 0.9)]
+    hr = HybridRetriever(semantic=_StubBase(sem), bm25=BM25Index())
+    out = hr.retrieve("exact match", top_k=2, alpha=1.0)  # alpha=1 → saf semantik
+    assert out[0].chunk_id == "perfect"
+
+
 def test_get_corpus_bm25_empty_returns_none() -> None:
     reset_cache()
     bm25, chunks = get_corpus_bm25(chroma=_FakeChroma([]))

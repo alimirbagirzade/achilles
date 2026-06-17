@@ -93,8 +93,17 @@ class PaperMasteryAgent:
             new_status = self._status_mgr.status_from_score(score.total_score)
             self._status_mgr.update(paper_id, new_status, f"Mastery skor: {score.total_score:.1f}")
 
-            json_path, md_path = self._reporter.generate(paper_id, test_id, score)
-            logger.info("Rapor: %s", json_path)
+            # Rapor üretimi best-effort: dosya hatası (Windows kilidi 'os error 32' vb.)
+            # BAŞARILI test/skor/durumu BOZMASIN — aksi halde except bloğu finish_test'i
+            # (0,0) + status'u 'failed' ile ezip skorla tutarsız kalıcı durum bırakıyordu.
+            report_json = ""
+            report_md = ""
+            try:
+                _jp, _mp = self._reporter.generate(paper_id, test_id, score)
+                report_json, report_md = str(_jp), str(_mp)
+                logger.info("Rapor: %s", report_json)
+            except Exception as exc:
+                logger.warning("Mastery raporu üretilemedi (test/skor korundu): %s", exc)
 
             return MasteryRunResult(
                 paper_id=paper_id,
@@ -103,8 +112,8 @@ class PaperMasteryAgent:
                 n_questions=len(questions),
                 n_passed=passed,
                 n_failed=failed,
-                report_json=str(json_path),
-                report_md=str(md_path),
+                report_json=report_json,
+                report_md=report_md,
             )
 
         except Exception as exc:

@@ -14,12 +14,16 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 import re
+import shutil
 from pathlib import Path
 from typing import Any
 
 from app.config import get_settings
 from app.memory.sqlite_store import SqliteStore
+
+logger = logging.getLogger(__name__)
 
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9_.-]+\.md$")
 
@@ -29,6 +33,38 @@ def synthesis_reports_dir() -> Path:
     d = get_settings().reports_dir / "synthesis"
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def synthesis_mirror_dir() -> Path | None:
+    """Sentezlerin aynalandığı (kopyalandığı) ek dizin — yapılandırılmamışsa None.
+
+    Ayar `ACHILLES_SYNTHESIS_MIRROR_DIR` (config: ``synthesis_mirror_dir``) ile
+    verilir. Boşsa aynalama kapalıdır.
+    """
+    raw = (get_settings().synthesis_mirror_dir or "").strip()
+    if not raw:
+        return None
+    return Path(raw).expanduser()
+
+
+def mirror_synthesis_report(path: Path) -> Path | None:
+    """Üretilen sentez makalesini yapılandırılmış ayna dizinine kopyala.
+
+    Best-effort: ayna dizini yoksa oluşturur; herhangi bir hata sentez üretimini
+    KIRMAZ, yalnızca uyarı loglar. Aynalama kapalıysa (dizin yok) None döner.
+    """
+    mirror = synthesis_mirror_dir()
+    if mirror is None:
+        return None
+    try:
+        mirror.mkdir(parents=True, exist_ok=True)
+        dest = mirror / path.name
+        shutil.copy2(path, dest)
+        logger.info("Sentez aynalandı: %s", dest)
+        return dest
+    except OSError as exc:
+        logger.warning("Sentez aynalama başarısız (%s): %s", mirror, exc)
+        return None
 
 
 def is_safe_report_name(name: str) -> bool:
@@ -185,4 +221,5 @@ def generate_synthesis_paper(
 
     out = synthesis_reports_dir() / f"sentez_{now.strftime('%Y%m%d_%H%M')}.md"
     out.write_text("\n".join(lines), encoding="utf-8")
+    mirror_synthesis_report(out)
     return out

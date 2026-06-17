@@ -112,6 +112,12 @@ class Settings(BaseSettings):
     allow_fake_embeddings: bool = True
     log_level: str = "INFO"
 
+    # --- Sentez aynalama (synthesis mirror) ---
+    # Üretilen her sentez makalesi (reports/synthesis/sentez_*.md) bu dizine de
+    # kopyalanır. Boşsa aynalama kapalıdır (varsayılan → test/CI davranışı değişmez).
+    # Makineye özel yol .env içinde verilir: ACHILLES_SYNTHESIS_MIRROR_DIR=...
+    synthesis_mirror_dir: str = ""
+
     # --- Auto-LoRA Pipeline ---
     auto_lora_enabled: bool = False  # otomatik döngü; varsayılan kapalı
     auto_lora_min_cards: int = 20  # eğitim başlamadan gereken minimum kart

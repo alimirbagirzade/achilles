@@ -74,18 +74,21 @@ def _check_percentage_sanity(text: str) -> list[str]:
     (örn. >%1000 yıllık) şüpheli olarak işaretlenir.
     """
     issues: list[str] = []
-    lowered = text.lower()
+    # tr_fold: 'YILLIK GETİRİ'/'RİSK' büyük harf bağlamı str.lower() ile (İ→i+nokta)
+    # kaçıyordu → modülün diğer taramalarıyla tutarlı olsun (Gate 5 bağlam tespiti).
+    folded = tr_fold(text)
     percentages = _extract_percentages(text)
 
     has_return_context = any(
-        kw in lowered for kw in ("getiri", "return", "kâr", "kar", "profit", "yıllık", "annual")
+        tr_fold(kw) in folded
+        for kw in ("getiri", "return", "kâr", "kar", "profit", "yıllık", "annual")
     )
     if has_return_context:
         for pct in percentages:
             if pct > 1000:
                 issues.append(f"şüpheli yüksek getiri iddiası (%{pct:g})")
 
-    has_risk_context = "risk" in lowered
+    has_risk_context = tr_fold("risk") in folded
     if has_risk_context:
         for pct in percentages:
             if pct > 100:

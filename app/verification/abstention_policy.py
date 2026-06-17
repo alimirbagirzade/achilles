@@ -48,8 +48,9 @@ class AbstentionPolicy:
         Returns:
             AbstentionDecision nesnesi.
         """
-        # Bağlam tamamen yetersizse
-        if sufficiency.level == SufficiencyLevel.INSUFFICIENT:
+        # INSUFFICIENT veya can_answer=False (ör. MISSING_FORMULA_CONTINUATION) → çekimser kal.
+        # Eskiden yalnız INSUFFICIENT yakalanıyordu; can_answer=False sızıp cevap üretiliyordu.
+        if sufficiency.level == SufficiencyLevel.INSUFFICIENT or not sufficiency.can_answer:
             return AbstentionDecision(
                 should_abstain=True,
                 reason=_INSUFFICIENT_MESSAGE,
