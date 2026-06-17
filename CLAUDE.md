@@ -31,6 +31,24 @@ make format && make lint && make typecheck && make test
 Testler **çevrimdışı** çalışmalı (fake embedding + sentetik veri). Ollama/MLX
 gerektiren testler `@pytest.mark.ollama` / `@pytest.mark.slow` ile işaretli.
 
+## 🔁 Bug-avı kadansı (kademeli)
+
+Bug yoğunluğu takvimle değil **kod değişimiyle (churn)** artar; bu yüzden maliyet
+seviyesine göre kademeli tarama:
+
+| Kademe | Ne | Tetikleyici | Otonomi |
+|--------|-----|-------------|---------|
+| **0 — Kapı** | `make format && lint && typecheck && test` (+ pre-commit/CI) | **Her commit** | Otomatik |
+| **1 — Hafif tarama** | Tek `claude -p` rapor-only tarama (son diff + çekirdek) | **Haftalık** (yerel Task Scheduler: `scripts/weekly-bug-scan.ps1`) | **Rapor-only** (kod değiştirmez, push etmez) |
+| **2 — Derin adversarial av** | Çok-ajan workflow (finder + 2-oylu adversarial doğrulama) | **Ayda 1 + her LoRA eğitiminden ÖNCE (zorunlu)** veya ~25-30 commit'te | **Denetimli** (fix+push insan gözetiminde) |
+
+- **Kademe 2 her eğitimden önce zorunlu** — projenin tüm amacı backtest/eval'e güvenmek;
+  v5 regresyonu tam bu yüzden olmuştu. Eğitime başlamadan derin av çalıştır.
+- Kademe 1 raporu: `reports/bug-scan/scan-<tarih>.md` + HANDOFF özeti. Bulgular bir sonraki
+  **denetimli** seansta düzeltilir (otomatik fix YOK — yanlış fix'i gözetimsiz main'e basma).
+- Derin av deseni: alt-sistem başına paralel finder → her bulgu adversarial doğrulama
+  (şüpheci, varsayılan çürütülmüş) → yalnız onaylananları düzelt → Kademe 0 kapısı → commit+push.
+
 ## Mimari sözleşmeleri
 - `paper_id` içerik hash'inden türer → ingestion **idempotent**.
 - Strateji yaşam döngüsü: `hipotez → StrategyIR → backtest → evaluate → verdict`.
