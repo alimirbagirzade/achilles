@@ -793,6 +793,50 @@ def arxiv_fetch(
             console.print(f"  {status}  {r.arxiv_id}  {r.title[:55]}")
 
 
+@app.command("rag-scan")
+def rag_scan(
+    max_per_query: int = typer.Option(8, help="Sorgu başına maksimum arXiv sonucu (1-20)"),
+    min_score: int = typer.Option(2, help="Minimum heuristik alaka skoru (eşik)"),
+    dry_run: bool = typer.Option(False, help="Watchlist'e yazma; yalnız adayları listele"),
+) -> None:
+    """RAG yöntem trendlerini arXiv'de tara → izleme listesine aday ekle.
+
+    Güncel-RAG döngüsünün **ucuz tarama** katmanı (projeye yerleşik ajan): Claude/kota
+    gerektirmez. Pahalı entegrasyon ayrıdır (haftalık kodlama ajanı turu).
+    """
+    from app.research.rag_trend_scanner import (
+        append_candidates,
+        scan_rag_trends,
+        watchlist_path,
+    )
+
+    max_per_query = max(1, min(max_per_query, 20))
+    console.print("[cyan]RAG trend taraması (arXiv)…[/cyan]")
+    candidates = scan_rag_trends(max_per_query=max_per_query, min_score=min_score)
+    if not candidates:
+        console.print("[yellow]Aday bulunamadı (ağ erişimi yok veya hepsi eşik altı).[/yellow]")
+        raise typer.Exit()
+
+    t = Table(title="RAG trend adayları (arXiv)")
+    t.add_column("Skor")
+    t.add_column("arXiv")
+    t.add_column("Başlık")
+    t.add_column("Tarih")
+    for c in candidates[:20]:
+        t.add_row(str(c.score), c.arxiv_id, c.title[:60], c.published)
+    console.print(t)
+
+    if dry_run:
+        console.print("[yellow]dry-run: izleme listesine yazılmadı.[/yellow]")
+        return
+
+    added = append_candidates(watchlist_path(), candidates)
+    if added:
+        console.print(f"[green]İzleme listesine eklenen yeni aday:[/green] {added}")
+    else:
+        console.print("[yellow]Yeni aday yok (hepsi zaten izleme listesinde).[/yellow]")
+
+
 @app.command("profile")
 def oss_profile(
     as_json: bool = typer.Option(False, "--json", help="JSON formatında çıktı ver"),

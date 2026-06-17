@@ -55,7 +55,46 @@ if ($IntervalHours -le 0) {
     $IntervalHours = if ($Mode -eq 'Scan') { 24 } else { 168 }
 }
 
-function Invoke-Cycle {
+function New-LogPath {
+    $logDir = Join-Path $RepoRoot 'logs'
+    if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir | Out-Null }
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    return (Join-Path $logDir "rag-$($Mode.ToLower())-$stamp.log")
+}
+
+function Invoke-ScanCycle {
+    # UCUZ tarama: projeye yerleşik 'achilles rag-scan' (Claude/kota YOK). arXiv'de RAG
+    # yontemi arar, adaylari docs/egitim/rag-watchlist.md'ye isler; watchlist'i best-effort
+    # push eder (git hatasi turu cokertmez).
+    Set-Location $RepoRoot
+    $log = New-LogPath
+    Write-Host "[$(Get-Date -Format o)] RAG tarama (achilles rag-scan) -> $log"
+    & uv run achilles rag-scan *>> $log
+    $code = $LASTEXITCODE
+    $wl = 'docs/egitim/rag-watchlist.md'
+    try {
+        $changed = git status --porcelain -- $wl
+        if ($changed) {
+            git add -- $wl *>> $log
+            git commit -m 'docs(rag-watchlist): otomatik tarama adaylari (rag-scan)' *>> $log
+            git fetch origin *>> $log
+            git rebase origin/main *>> $log
+            git push origin main *>> $log
+            Write-Host "Watchlist guncellendi ve push edildi."
+        }
+        else {
+            Write-Host "Watchlist'te degisiklik yok (yeni aday bulunamadi)."
+        }
+    }
+    catch {
+        Write-Host "Watchlist push best-effort basarisiz (sonraki turda tekrar denenir): $_"
+    }
+    Write-Host "[$(Get-Date -Format o)] Tarama bitti (exit=$code). Log: $log"
+    return $code
+}
+
+function Invoke-IntegrateCycle {
+    # AGIR entegrasyon: kodlama ajani (Claude headless) gerekir.
     if (-not (Test-Path $PromptPath)) {
         throw "Tur talimati bulunamadi: $PromptPath"
     }
@@ -64,17 +103,18 @@ function Invoke-Cycle {
         throw "claude CLI PATH'te bulunamadi. Claude Code kurulu mu?"
     }
     Set-Location $RepoRoot
-    $logDir = Join-Path $RepoRoot 'logs'
-    if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir | Out-Null }
-    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $log = Join-Path $logDir "rag-$($Mode.ToLower())-$stamp.log"
+    $log = New-LogPath
     $prompt = Get-Content -Raw -Encoding utf8 $PromptPath
-
-    Write-Host "[$(Get-Date -Format o)] RAG $Mode turu basliyor -> $log"
+    Write-Host "[$(Get-Date -Format o)] RAG entegrasyon turu basliyor -> $log"
     & $claude.Source -p $prompt --permission-mode $PermissionMode *>> $log
     $code = $LASTEXITCODE
-    Write-Host "[$(Get-Date -Format o)] $Mode turu bitti (exit=$code). Log: $log"
+    Write-Host "[$(Get-Date -Format o)] Entegrasyon bitti (exit=$code). Log: $log"
     return $code
+}
+
+function Invoke-Cycle {
+    if ($Mode -eq 'Scan') { return (Invoke-ScanCycle) }
+    return (Invoke-IntegrateCycle)
 }
 
 function Register-Loop {
