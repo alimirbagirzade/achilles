@@ -182,9 +182,16 @@ class LocalLLM:
         }
         if fmt:
             payload["format"] = fmt
-        with httpx.Client(timeout=timeout) as client:
-            r = client.post(f"{self._ollama_host}/api/generate", json=payload)
-        r.raise_for_status()
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                r = client.post(f"{self._ollama_host}/api/generate", json=payload)
+            r.raise_for_status()
+        except httpx.HTTPError as exc:
+            # Zaman aşımı / bağlantı / HTTP hatası → yerel model bu çağrıda yanıt
+            # üretemedi. Ham httpx hatasını, çağıranların ZATEN ele aldığı
+            # LLMUnavailable'a çeviriyoruz; aksi halde (ör. yavaş CPU'da
+            # ReadTimeout) sınav harness'i ve /api/understanding-score 500 olur.
+            raise LLMUnavailable(f"Ollama yanıt vermedi ({type(exc).__name__}): {exc}") from exc
         data = r.json()
         # qwen3 gibi thinking-mode modeller response bos birakilip thinking'e yazar
         response = data.get("response", "").strip()
@@ -224,13 +231,17 @@ class LocalLLM:
             "Authorization": f"Bearer {self._openai_key}",
             "Content-Type": "application/json",
         }
-        with httpx.Client(timeout=timeout) as client:
-            r = client.post(
-                f"{self._openai_base}/chat/completions",
-                json=payload,
-                headers=headers,
-            )
-        r.raise_for_status()
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                r = client.post(
+                    f"{self._openai_base}/chat/completions",
+                    json=payload,
+                    headers=headers,
+                )
+            r.raise_for_status()
+        except httpx.HTTPError as exc:
+            # Bkz. _generate_ollama: ağ/zaman aşımı hatası → LLMUnavailable.
+            raise LLMUnavailable(f"OpenAI yanıt vermedi ({type(exc).__name__}): {exc}") from exc
         return r.json()["choices"][0]["message"]["content"].strip()
 
     def _generate_anthropic(

@@ -54,6 +54,39 @@ def test_hic_notlanan_yoksa_insufficient() -> None:
     assert score.graded == 0
 
 
+def test_score_indicator_exams_llm_yoksa_insufficient(monkeypatch) -> None:
+    # LLM erişilemezse tüm sınavlar 'skipped' → insufficient_data, çökme yok.
+    from app.brain.local_llm import LocalLLM
+    from app.verification.exams.understanding_score import score_indicator_exams
+
+    monkeypatch.setattr(LocalLLM, "available", lambda self: False)
+    score = score_indicator_exams(seed=0)
+    assert score.status == "insufficient_data"
+    assert score.graded == 0
+    assert score.skipped == score.total > 0
+
+
+def test_score_indicator_exams_llm_timeout_500_yok(monkeypatch) -> None:
+    # REGRESYON: Ollama erişilebilir görünüp generate() zaman aşımına uğrarsa
+    # (yavaş CPU) önceden ham httpx.ReadTimeout sızıp /api/understanding-score'u
+    # 500 yapıyordu. Artık 'skipped' → insufficient_data olmalı, çökme YOK.
+    import httpx
+
+    from app.brain.local_llm import LocalLLM
+    from app.verification.exams.understanding_score import score_indicator_exams
+
+    monkeypatch.setattr(LocalLLM, "available", lambda self: True)
+
+    def _timeout(self, *a, **k):
+        raise httpx.ReadTimeout("timed out")
+
+    monkeypatch.setattr(LocalLLM, "generate", _timeout)
+    score = score_indicator_exams(seed=0)  # çökmemeli
+    assert score.status == "insufficient_data"
+    assert score.graded == 0
+    assert score.skipped > 0
+
+
 def test_by_level_kirilimi() -> None:
     score = aggregate([_r("L3", "passed"), _r("L4", "failed"), _r("L4", "passed")])
     assert score.by_level["L3"]["passed"] == 1

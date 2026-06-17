@@ -136,6 +136,7 @@ def score_indicator_exams(seed: int = 0) -> UnderstandingScore:
     LLM gerektirir; çevrimdışıysa sınavlar 'skipped' olur → graded=0 → status
     'insufficient_data' (sahte yüksek skor üretmeyiz, CLAUDE.md Kural 2).
     """
+    from app.brain.local_llm import LLMUnavailable
     from app.verification.exams.l3_application import ApplicationExam
     from app.verification.exams.l4_counterfactual import CounterfactualExam
     from app.verification.exams.registry import list_specs
@@ -143,9 +144,45 @@ def score_indicator_exams(seed: int = 0) -> UnderstandingScore:
     l3 = ApplicationExam()
     l4 = CounterfactualExam()
     results: list[ExamResult] = []
+    # LLM bir kez yanıt vermezse (zaman aşımı/unavailable) kalan çağrıları boşuna
+    # bekleme: hepsini hızlıca 'skipped' işaretle. Aksi halde yavaş CPU'da 5 spec ×
+    # 2 sınav × 60sn zaman aşımı = uç dakikalarca asılı kalır. Tek bir sınav HİÇBİR
+    # durumda /api/understanding-score'u 500 yapmamalı (CLAUDE.md Kural 2).
+    llm_down = False
     for spec in list_specs():
-        results.append(l3.run(spec, seed=seed))
-        results.append(l4.run(spec, seed=seed))
+        for level, exam in (("L3", l3), ("L4", l4)):
+            if llm_down:
+                results.append(
+                    ExamResult(
+                        level,
+                        spec.name,
+                        False,
+                        "skipped",
+                        seed,
+                        {"reason": "LLM yanıt vermedi (önceki çağrı başarısız) — atlandı"},
+                    )
+                )
+                continue
+            try:
+                res = exam.run(spec, seed=seed)
+            except LLMUnavailable:
+                res = ExamResult(
+                    level, spec.name, False, "skipped", seed, {"reason": "LLMUnavailable"}
+                )
+            except Exception as exc:  # beklenmedik hata tek sınavı atlasın, uç çökmesin
+                res = ExamResult(
+                    level,
+                    spec.name,
+                    False,
+                    "skipped",
+                    seed,
+                    {"reason": f"beklenmedik hata: {type(exc).__name__}: {exc}"[:200]},
+                )
+            results.append(res)
+            # score_indicator_exams'te 'skipped' YALNIZCA LLM kaynaklıdır
+            # (no_data/failed ayrı) → ilk skipped'ta fail-fast.
+            if res.status == "skipped":
+                llm_down = True
     return aggregate(results)
 
 
