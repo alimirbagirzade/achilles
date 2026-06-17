@@ -58,7 +58,10 @@ class MultiQueryRetriever:
                 cid = chunk.chunk_id
                 prev = chunk_by_id.get(cid)
                 # Görüntü için en iyi (en düşük distance) varyantı sakla; sıralama RRF'le.
-                if prev is None or (chunk.distance or 1.0) < (prev.distance or 1.0):
+                # distance==0.0 falsy → `or 1.0` onu en kötü sayardı; açık None kontrolü.
+                cur_d = chunk.distance if chunk.distance is not None else 1.0
+                prev_d = prev.distance if prev is not None and prev.distance is not None else 1.0
+                if prev is None or cur_d < prev_d:
                     chunk_by_id[cid] = chunk
                 ids.append(cid)
             if ids:
