@@ -10,12 +10,14 @@ Varsayılan: http://127.0.0.1:8765 (yalnız localhost).
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.config import configure_logging, get_settings
@@ -1844,12 +1846,38 @@ def api_download_pkg(backtest_id: str) -> Response:
 
 # ====================== Statik frontend ======================
 # API yollarından SONRA monte edilir.
+# index.html'deki `/assets/app.js?v=2` gibi sabit sürüm etiketleri elle bump
+# edilmeyince eskiyor: dosya değişse de URL aynı kaldığı için tarayıcı ESKİ
+# kopyayı önbellekten servis eder (kullanıcı eski arayüzü görür). Aşağıdaki
+# regex bu etiketleri DOSYA İÇERİĞİNİN hash'iyle değiştirir → içerik değişince
+# URL otomatik değişir, önbellek kendiliğinden tazelenir.
+_ASSET_VERSION_RE = re.compile(r"(/assets/(app\.(?:js|css)))\?v=[\w.]+")
+
+
+def _asset_version(filename: str) -> str:
+    """assets/<filename> içeriğinin kısa hash'i (cache-bust anahtarı)."""
+    try:
+        data = (_STATIC_DIR / "assets" / filename).read_bytes()
+    except OSError:
+        return "0"
+    return hashlib.sha256(data).hexdigest()[:12]
+
+
 if _STATIC_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(_STATIC_DIR / "assets")), name="assets")
 
     @app.get("/")
-    def index() -> FileResponse:
-        return FileResponse(str(_STATIC_DIR / "index.html"))
+    def index() -> HTMLResponse:
+        """index.html'i içerik-hash'li asset sürümleriyle servis et.
+
+        app.js/app.css değişince URL otomatik değişir → tarayıcı daima güncel
+        dosyayı çeker (manuel `?v=` bump'ı gerekmez). HTML'in kendisi `no-cache`
+        ile döner ki yeni hash her zaman görülsün; aksi halde eski index.html
+        önbellekte kalıp eski asset URL'lerine işaret eder.
+        """
+        html = (_STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        html = _ASSET_VERSION_RE.sub(lambda m: f"{m.group(1)}?v={_asset_version(m.group(2))}", html)
+        return HTMLResponse(html, headers={"Cache-Control": "no-cache, must-revalidate"})
 
 
 def run() -> None:

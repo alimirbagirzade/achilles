@@ -50,6 +50,27 @@ def test_understanding_score_endpoint(client: TestClient) -> None:
     assert body["skipped"] > 0  # tüm spec'ler LLM yokluğunda atlandı
 
 
+def test_index_cache_busting(client: TestClient) -> None:
+    # index.html, app.js/app.css'i İÇERİK-HASH'li sürümle servis etmeli ve HTML
+    # `no-cache` dönmeli. Aksi halde sabit `?v=2` etiketi elle bump edilmeyince
+    # tarayıcı ESKİ app.js'i önbellekten servis eder → kullanıcı eski arayüzü
+    # görür (örn. "anlama %" yerine güncel "öz-değ. %" etiketi gelmez). Regresyon.
+    import re as _re
+
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "no-cache" in r.headers.get("cache-control", "").lower()
+
+    m = _re.search(r"/assets/app\.js\?v=([\w.]+)", r.text)
+    assert m is not None, "app.js sürümlü referansı bulunamadı"
+    ver = m.group(1)
+    # Sabit eski literal ('2') DEĞİL; içerik hash'i (>=12 hex) olmalı.
+    assert ver not in {"2", "4"}
+    assert len(ver) >= 12 and all(c in "0123456789abcdef" for c in ver)
+    # app.css de aynı şekilde otomatik sürümlenmeli.
+    assert _re.search(r"/assets/app\.css\?v=[0-9a-f]{12}", r.text) is not None
+
+
 def test_security_headers_present(client: TestClient) -> None:
     r = client.get("/api/status")
     assert "content-security-policy" in {k.lower() for k in r.headers}
