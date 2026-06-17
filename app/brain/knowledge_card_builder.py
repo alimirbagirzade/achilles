@@ -143,6 +143,10 @@ class KnowledgeCardBuilder:
         ``fmt="json"`` ile geçerli JSON garanti altına alınır; boş kalırsa daha
         kısa metinle bir kez daha denenir.
         """
+        # Windows/CRLF savunması: paper_id'ye takılı kalan \r/\n/boşluk hem DB kaydını
+        # hem 'reports/papers/<id>_card.json' dosya adını kirletir; ikincisi Windows'ta
+        # OSError [Errno 22] Invalid argument verir. Girişte tek noktada temizle.
+        paper_id = paper_id.strip()
         try:
             system = load_prompt("knowledge_card")
         except FileNotFoundError:

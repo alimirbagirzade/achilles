@@ -133,6 +133,21 @@ def test_build_parses_card_and_persists(tmp_path):
     assert json.loads(written.read_text(encoding="utf-8"))["paper_id"] == "paper_abc"
 
 
+def test_build_sanitizes_paper_id_crlf(tmp_path):
+    # Regresyon: Windows'ta python stdout CRLF yüzünden paper_id sonuna \r takılınca
+    # dosya adı 'paper_crlf\r_card.json' olup OSError [Errno 22] veriyordu. build()
+    # girişte strip() ile temizlemeli; hem DB kaydı hem dosya adı temiz olmalı.
+    store = _FakeStore(["chunk metni"])
+    builder = _builder(tmp_path, store, _StubLLM(_VALID_CARD_JSON))
+
+    card = builder.build("paper_crlf\r")  # kirli id (trailing CR)
+
+    assert card.paper_id == "paper_crlf"
+    assert store.saved[0]["paper_id"] == "paper_crlf"
+    written = tmp_path / "papers" / "paper_crlf_card.json"
+    assert written.exists()  # \r olsaydı Errno 22 ile patlardı
+
+
 def test_build_handles_non_json_gracefully(tmp_path):
     store = _FakeStore(["bir metin"])
     builder = _builder(tmp_path, store, _StubLLM("Bu JSON değil, sadece düz metin."))
