@@ -2453,3 +2453,67 @@ def understanding_history_cmd(
             console.print(f"  Seviye Δ: {ld}")
         elif cmp["delta"] is not None:
             console.print(f"[green]Regresyon yok[/] · Δoran {cmp['delta'] * 100:+.1f}% · Δ: {ld}")
+
+
+@app.command("pretrain-gate")
+def pretrain_gate_cmd(
+    jsonl: Path = typer.Option(
+        Path("data/lora_sft/lora_sft.jsonl"),
+        "--jsonl",
+        help="Denetlenecek SFT JSONL dosyası.",
+    ),
+    check_discipline: bool = typer.Option(
+        True,
+        "--check-discipline/--no-check-discipline",
+        help="Disiplin havuzunu da kapsam uyum denetiminden geçir.",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Makine-okunabilir JSON çıktı."),
+) -> None:
+    """LLM'siz GO / NO-GO ön eğitim kalite kapısı (kural 7 doğrulama, v5 fix'i).
+
+    Veriyi birleştirmeden, eğitim başlatmadan çalışır; salt denetim aracıdır.
+    Hard-block: garanti-vaadi regex, açılış-ezberi (>%40 tek bigram), minimum boyut.
+    Uyarılar: sızıntı ön-eki, maliyet-token eksikliği, disiplin kapsam açığı.
+    """
+    from app.training.dataset_quality import audit_dataset
+    from app.training.discipline_dataset import discipline_jsonl_lines
+
+    if not jsonl.is_absolute():
+        jsonl = get_settings().root / jsonl
+    if not jsonl.exists():
+        console.print(f"[red]Dosya bulunamadı:[/red] {jsonl}")
+        raise typer.Exit(1)
+
+    lines = [ln for ln in jsonl.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    disc_lines = discipline_jsonl_lines() if check_discipline else None
+    report = audit_dataset(lines, discipline_lines=disc_lines)
+
+    if as_json:
+        console.print_json(json.dumps(report.to_dict(), ensure_ascii=False))
+        return
+
+    color = "green" if report.verdict == "GO" else "red"
+    opening = (
+        f"En sık açılış: '{report.top_opening}' (%{report.top_opening_share * 100:.0f})\n"
+        if report.top_opening
+        else ""
+    )
+    console.print(
+        Panel(
+            f"[bold {color}]{report.verdict}[/bold {color}]\n"
+            f"Toplam örnek: {report.total}\n"
+            f"Öneri: {report.recommended_epochs} epoch\n"
+            + opening
+            + (
+                "[red]ENGEL:[/red]\n  " + "\n  ".join(report.blockers) + "\n"
+                if report.blockers
+                else ""
+            )
+            + (
+                "[yellow]UYARI:[/yellow]\n  " + "\n  ".join(report.warnings)
+                if report.warnings
+                else "[dim]Uyarı yok[/dim]"
+            ),
+            title=f"Ön Eğitim Kalite Kapısı — {jsonl.name}",
+        )
+    )
