@@ -148,9 +148,7 @@ _FALLBACK_TEMPLATES: dict[frozenset[str], dict[str, str]] = {
     frozenset({"entropy", "risk"}): {
         "name": "Belirsizlik-Düzeltmeli Kelly (UAK)",
         "formula": (
-            "f_ua = f_kelly × (1 − H_norm)²\n"
-            "f_kelly = (b·p − q) / b\n"
-            "H_norm = H_shannon / log₂(N)"
+            "f_ua = f_kelly × (1 − H_norm)²\nf_kelly = (b·p − q) / b\nH_norm = H_shannon / log₂(N)"
         ),
         "rationale": (
             "Kelly kriteri beklenen büyümeyi maksimize eder ancak piyasa belirsizliğini "
@@ -236,9 +234,7 @@ def _formula_block(formulas: list[dict[str, Any]]) -> str:
         desc = f.get("description") or ""
         math_repr = latex or plain or "(formül gösterimi yok)"
         lines.append(
-            f"• [{cat}] **{name}** (makale: {pid})\n"
-            f"  Formül: {math_repr}\n"
-            f"  Açıklama: {desc}"
+            f"• [{cat}] **{name}** (makale: {pid})\n  Formül: {math_repr}\n  Açıklama: {desc}"
         )
     return "\n\n".join(lines)
 
@@ -342,6 +338,7 @@ class CrossPaperSynthesizer:
 
     def _exists(self, ex_id: str) -> bool:
         from app.memory.sqlite_store import TrainingExample
+
         with self.store.session() as s:
             return s.get(TrainingExample, ex_id) is not None
 

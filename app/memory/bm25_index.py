@@ -101,7 +101,10 @@ class BM25Index:
                 )
                 scores[doc_id] = scores.get(doc_id, 0.0) + idf * tf_norm
 
-        sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        # Berabere skorlarda ikincil doc_id tie-break → determinizm (CLAUDE.md Kural 6).
+        # set-iterasyon sırası PYTHONHASHSEED'e bağlı olduğundan tie-break olmadan
+        # eşit-skorlu belgelerin sırası süreçler arası değişir (rank_fusion ile aynı sözleşme).
+        sorted_scores = sorted(scores.items(), key=lambda x: (-x[1], x[0]))
         return sorted_scores[:top_k]
 
     def __len__(self) -> int:

@@ -6,6 +6,7 @@ B. RAG Hassasiyeti (ağırlık 0.40): ChromaDB precision@5 — kart terimleri ar
 C. LLM Doğrulama  (ağırlık 0.30): Ollama'ya kart içeriğinden basit soru sorulur,
    cevabın kart terimleriyle örtüşme oranı ölçülür. Ollama kapalıysa 0.5 varsayılan.
 """
+
 from __future__ import annotations
 
 import re
@@ -15,7 +16,13 @@ from datetime import UTC, datetime
 WEIGHTS = {"extraction": 0.30, "retrieval": 0.40, "llm_verify": 0.30}
 
 _CARD_FIELDS = [
-    "title", "summary", "main_claim", "trading_relevance", "domain", "methods", "formulas",
+    "title",
+    "summary",
+    "main_claim",
+    "trading_relevance",
+    "domain",
+    "methods",
+    "formulas",
 ]
 
 
@@ -26,10 +33,10 @@ def _utcnow() -> str:
 @dataclass
 class ComprehensionScore:
     paper_id: str
-    extraction: float = 0.0    # A — 0-1
-    retrieval: float = 0.0     # B — 0-1
-    llm_verify: float = 0.0    # C — 0-1
-    total: float = 0.0         # ağırlıklı toplam × 100 → 0-100
+    extraction: float = 0.0  # A — 0-1
+    retrieval: float = 0.0  # B — 0-1
+    llm_verify: float = 0.0  # C — 0-1
+    total: float = 0.0  # ağırlıklı toplam × 100 → 0-100
     details: dict = field(default_factory=dict)
     computed_at: str = field(default_factory=_utcnow)
 
@@ -89,9 +96,7 @@ class ComprehensionScorer:
 
     def _score_retrieval(self, paper_id: str, card_json: dict) -> float:
         query_text = " ".join(
-            str(card_json.get(f, ""))
-            for f in ["title", "main_claim", "domain"]
-            if card_json.get(f)
+            str(card_json.get(f, "")) for f in ["title", "main_claim", "domain"] if card_json.get(f)
         ).strip()
         if not query_text:
             return 0.0
@@ -118,9 +123,7 @@ class ComprehensionScorer:
             if not llm.available():
                 return 0.5
 
-            prompt = (
-                f"Aşağıdaki araştırma iddiası hakkında tek cümlelik özet yaz:\n\n{main_claim}"
-            )
+            prompt = f"Aşağıdaki araştırma iddiası hakkında tek cümlelik özet yaz:\n\n{main_claim}"
             answer = llm.generate(prompt, max_tokens=120, temperature=0.0)
             if not answer:
                 return 0.5
@@ -135,8 +138,23 @@ class ComprehensionScorer:
 
 def _extract_keywords(text: str) -> list[str]:
     STOP = {
-        "with", "that", "this", "from", "have", "been", "they", "were",
-        "için", "olan", "veya", "ile", "bir", "the", "and", "using", "based",
+        "with",
+        "that",
+        "this",
+        "from",
+        "have",
+        "been",
+        "they",
+        "were",
+        "için",
+        "olan",
+        "veya",
+        "ile",
+        "bir",
+        "the",
+        "and",
+        "using",
+        "based",
     }
     words = re.findall(r"[a-zA-ZğüşıöçĞÜŞİÖÇ]{5,}", text.lower())
     return [w for w in words if w not in STOP][:15]

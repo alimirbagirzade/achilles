@@ -64,3 +64,23 @@ def test_len() -> None:
     idx.add_document("d1", "text one")
     idx.add_document("d2", "text two")
     assert len(idx) == 2
+
+
+def test_tie_break_deterministic() -> None:
+    """Eşit skorlu belgeler doc_id'ye göre deterministik sıralanmalı (Kural 6).
+
+    Aynı metinli belgeler özdeş skor alır; tie-break olmadan sıra set-iterasyonuna
+    (PYTHONHASHSEED) bağlı kalır. doc_id artan tie-break ile sıra her zaman aynı olmalı.
+    """
+    idx = BM25Index()
+    # Bilinçli olarak id-sırası dışında eklenmiş, özdeş metinli belgeler.
+    for doc_id in ("d_c", "d_a", "d_e", "d_b", "d_d"):
+        idx.add_document(doc_id, "momentum volatility regime filter")
+
+    results = idx.search("momentum volatility", top_k=5)
+    ids = [doc_id for doc_id, _ in results]
+    scores = [round(s, 6) for _, s in results]
+    # Hepsi özdeş skor → tamamı berabere.
+    assert len(set(scores)) == 1, f"Skorlar berabere olmalı: {scores}"
+    # Berabere → doc_id artan sırada deterministik.
+    assert ids == sorted(ids), f"Berabere sıralama doc_id artan olmalı, alınan: {ids}"

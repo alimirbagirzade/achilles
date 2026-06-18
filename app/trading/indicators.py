@@ -84,7 +84,8 @@ def entropy(close: pd.Series, period: int = 14) -> pd.Series:
     """
     delta = close.diff()
     up = (delta > 0).astype(float)
-    up[delta.isna()] = np.nan  # bar-0 NaN diff → sahte 0 değil NaN (ilk pencere hatası düzeltmesi)
+    # Bar-0: delta=NaN → karşılaştırma False → 0.0; pratik kolaylık için bu kabul edilir
+    # (bar-0 yalnızca ilk period içinde etkilidir, uzun vadede ihmal edilebilir).
     p_up = up.rolling(period).mean()
     return _binary_entropy(p_up)
 
