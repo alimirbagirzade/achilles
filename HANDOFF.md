@@ -16,6 +16,31 @@ LLM'i "trader gibi düşünen" bir araştırma motoru yapmak:
 3. Otomatik backtest et → sonuçtan öğren → LoRA eğitim verisi üret
 4. 3B modeli test eder; gerçek çıktı için 120B kullanılacak
 
+### Mevcut durum (2026-06-19) — ✅ KAD-2 TAMAMLANDI + 🔄 SYNTH-QA ÜRETİMİ DEVAM EDİYOR
+
+> **Kademe-2 derin bug-avı TAMAMLANDI** (Sprint 1-5, toplam 18 onaylanan fix, commit `ceae006`).
+> Şu an kritik tek bekleyen: `synthetic_qa.jsonl` → 362'den 1300'e (seed=100 CPU'da sürüyor).
+> 1300'e ulaşınca: `achilles lora-split` yenile → Kaggle "Run All" tıkla (tek manuel adım).
+
+**KAD-2 SPRINT FİX ÖZETİ (hepsi committer ve test edildi):**
+- Sprint-1: rag_exam_runner sahte-geçme, bollinger registry, entropy bar-0 NaN, adapter peft_base_model, rag_answerer seed, significant_numbers binlik ayraç
+- Sprint-2: BM25 tie-break (determinizm), citation_score gerçek parse, dataset_quality false-positive (192→6), entropy warmup=period (7 test yeşil)
+- Sprint-3: paper_indexer embedded erken yazım (BUG-M6), sqlite_store mark_chunks_embedded, auto_pipeline eval_pass_threshold (BUG-M9)
+- Sprint-4: peft_llm_shim.py (PEFT adapter → LocalLLM), auto_pipeline anlama-merdiveni kıyası (v5 savunma dikişi)
+- Sprint-5: server.py BUG-H3 (komisyon+slippage eksikti), agents/runtime Phase 2 (approvals/supervisor/task_queue), overfit_checks BUG-M7 IS+OOS
+
+**SYNTH-QA DURUMU:**
+- Mevcut: 362/1300 (`data/lora_sft/synthetic_qa.jsonl`)
+- Aktif: `logs/synth_qa_seed100.log` — PID 8044 çalışıyor (~3 dk/chunk, CPU-only)
+- Hedef ulaşmazsa: `powershell scripts/synth_qa_chain.ps1 -Target 1300 -StartSeed 200`
+- **1300'e ulaşınca:** `uv run achilles lora-split` → Kaggle "Run All"
+
+**KALAN (KAD-2 sonrası):**
+- grounding_verifier markdown sentence splitter (BUG-M8, ertelendi — büyük refactor)
+- PR: `feat/agent-runtime-phase2` → `main` merge (Kad-2 tamamlanınca)
+
+---
+
 ### Mevcut durum (2026-06-17) — 🔒 ANLAMA MERDİVENİ KALICI + 📚 MAKALE LOOP + 🐛 `\r` BUG
 
 > Kullanıcı: "L2/L3/L4/L5'i kalıcı yap + push; bug'ları loop'la çöz; faydalı makaleleri
