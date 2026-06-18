@@ -117,7 +117,8 @@ class RagExamRunner:
             gnd_score = supported / len(grounding_results)
             hallucination = any(g.level == GroundingLevel.UNSUPPORTED for g in grounding_results)
         else:
-            gnd_score = 1.0 if not no_answer else 0.0
+            # Boş grounding → kanıtsız geçme yasak; 0.0 ata (fake-pass kapısını kapat).
+            gnd_score = 0.0
             hallucination = False
 
         # Geçti mi?

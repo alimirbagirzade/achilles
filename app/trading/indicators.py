@@ -84,6 +84,7 @@ def entropy(close: pd.Series, period: int = 14) -> pd.Series:
     """
     delta = close.diff()
     up = (delta > 0).astype(float)
+    up[delta.isna()] = np.nan  # bar-0 NaN diff → sahte 0 değil NaN (ilk pencere hatası düzeltmesi)
     p_up = up.rolling(period).mean()
     return _binary_entropy(p_up)
 
@@ -154,4 +155,7 @@ def compute_indicator(name: str, df: pd.DataFrame, period: int = 14) -> pd.Serie
         return entropy(df["close"], period)
     if name == "PERMENTROPY":
         return permutation_entropy(df["close"], period)
+    if name in ("BOLLINGER", "BB"):
+        _, mid, _ = bollinger(df["close"], period)
+        return mid
     raise ValueError(f"Bilinmeyen gösterge: {name}")

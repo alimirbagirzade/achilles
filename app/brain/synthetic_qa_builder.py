@@ -104,11 +104,22 @@ def _anchor_tokens(text: str) -> set[str]:
     return anchors
 
 
+_EN_THOUSAND_RE = re.compile(r"^\d{1,3}(,\d{3})+$")
+
+
 def _significant_numbers(text: str) -> set[str]:
-    """Metindeki "anlamlı" sayıları normalize ederek döndür (virgül→nokta, % atılır)."""
+    """Metindeki "anlamlı" sayıları normalize ederek döndür.
+
+    İngilizce binlik ayraç ('1,000', '10,000') ile ondalık virgülü ('1,5') ayırt eder:
+    N,DDD kalıbı (binlik) → virgülsüz tam sayı ('1000'), aksi halde virgül → nokta.
+    Bu sayede '10,000 iterations' pasajından doğru cevap '10000' reddedilmez.
+    """
     out: set[str] = set()
     for m in _SIG_NUM_RE.findall(text):
-        out.add(m.replace(",", ".").rstrip("%"))
+        if _EN_THOUSAND_RE.match(m):
+            out.add(m.replace(",", ""))
+        else:
+            out.add(m.replace(",", ".").rstrip("%"))
     return out
 
 

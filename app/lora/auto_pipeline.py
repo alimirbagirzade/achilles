@@ -21,6 +21,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from app.agents.runtime import log_step, tracked
+
 log = logging.getLogger(__name__)
 
 
@@ -134,6 +136,7 @@ class AutoLoRAPipeline:
 
     # ------------------------------------------------------------------ gates
 
+    @tracked("auto-lora-pipeline", trigger_type="background_loop")
     async def check_and_prepare(self) -> dict:
         """Gate 0-8 çalıştır. Geçerse READY_TO_TRAIN'e geçer (kullanıcı onayı bekler)."""
         async with self._lock:
@@ -147,6 +150,7 @@ class AutoLoRAPipeline:
 
             store = SqliteStore()
             n_approved = len(store.list_approved_cards())
+            log_step(f"{n_approved} onaylı kart ile Gate 0-8 kontrolü")
 
             async with self._lock:
                 self._state.approved_cards_at_last_check = n_approved
@@ -384,7 +388,7 @@ class AutoLoRAPipeline:
                 None,
             )
             record = AdapterRecord(
-                base_model=settings.mlx_base_model,
+                base_model=settings.peft_base_model,
                 adapter_name=adapter_name,
                 eval_score=adapter_score,
             )
