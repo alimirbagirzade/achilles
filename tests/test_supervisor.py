@@ -91,3 +91,24 @@ def test_run_with_supervision_runs_readonly(st, tmp_path) -> None:
         "model-advisor", lambda: {"ran": True}, "recommend", store=st, root=tmp_path
     )
     assert out == {"ran": True}
+
+
+def test_startup_sweep_cancels_stale_running(st) -> None:
+    """Startup sweep: bayat (eski) 'running' koşuları 'cancelled' yapar; tazeyi korur."""
+    import datetime as dt
+
+    from app.agents.runtime.tracker import cancel_stale_running_agent_runs
+
+    old_ts = (dt.datetime.now(dt.UTC) - dt.timedelta(hours=48)).isoformat()
+    fresh_ts = dt.datetime.now(dt.UTC).isoformat()
+    st.create_agent_run(run_id="arun_old", agent_id="x", status="running", started_at=old_ts)
+    st.create_agent_run(run_id="arun_fresh", agent_id="x", status="running", started_at=fresh_ts)
+
+    swept = cancel_stale_running_agent_runs(store=st, stale_after_hours=6)
+    assert "arun_old" in swept
+    assert "arun_fresh" not in swept  # taze koşu korunur (eşzamanlı koşu güvenliği)
+
+    old_run = st.get_agent_run("arun_old")
+    fresh_run = st.get_agent_run("arun_fresh")
+    assert old_run is not None and old_run["status"] == "cancelled"
+    assert fresh_run is not None and fresh_run["status"] == "running"
