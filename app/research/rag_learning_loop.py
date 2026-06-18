@@ -50,9 +50,10 @@ class RagLoopState:
     cards_per_cycle: int = 3  # turda en çok kaç kart (CPU sınırı)
     scores_per_cycle: int = 5  # turda en çok kaç skor
     score_use_llm: bool = True  # comprehension skorunda LLM kullan (yavaş ama kaliteli)
+    rebuild_empty: bool = False  # içeriksiz (boş) kartı olan makaleleri YENİDEN üret (opt-in)
 
     # --- çalışma durumu (anlık) ---
-    stage: str = "idle"  # idle|fetching|carding|scoring|paused_training|error
+    stage: str = "idle"  # idle|fetching|carding|rebuilding|scoring|paused_training|error
     running: bool = False  # şu an bir tur yürütülüyor mu
     last_cycle_at: str = ""
     last_fetch_at: str = ""
@@ -63,12 +64,18 @@ class RagLoopState:
     last_fetched: int = 0
     last_ingested: int = 0
     last_cards: int = 0
+    last_rebuilt: int = 0
     last_scored: int = 0
 
     # kümülatif sayaçlar
     total_fetched: int = 0
     total_cards: int = 0
+    total_rebuilt: int = 0
     total_scored: int = 0
+
+    # boş kart rebuild edilmeye ÇALIŞILMIŞ makaleler (başarılı olsa da içerik gelmese de —
+    # aynı makaleyi sonsuz tekrar denememek için; bkz. _rebuild_empty_cards).
+    rebuilt_paper_ids: list[str] = field(default_factory=list)
 
     mastery_percent: int | None = None
     history: list[dict[str, Any]] = field(default_factory=list)  # son ~20 tur özeti
@@ -130,7 +137,7 @@ class RagLearningLoop:
                 except (TypeError, ValueError):
                     continue
                 setattr(self._state, key, max(lo, min(hi, val)))
-        for flag in ("fetch_enabled", "score_use_llm", "enabled"):
+        for flag in ("fetch_enabled", "score_use_llm", "enabled", "rebuild_empty"):
             if kw.get(flag) is not None:
                 setattr(self._state, flag, bool(kw[flag]))
         self._save_state()
@@ -240,6 +247,50 @@ class RagLearningLoop:
                 log.warning("RAG loop: kart üretilemedi (%s): %s", p.paper_id, exc)
         return built
 
+    def _rebuild_empty_cards(self, limit: int) -> int:
+        """İçeriksiz (boş) kartı olan makaleleri yeniden kartla (opt-in; en çok `limit`).
+
+        `_build_missing_cards` bir makaleyi 'kartı var' diye atlar; ama o kart İÇERİKSİZ
+        olabilir (build_dataset örnek üretmez → coverage düşük, LoRA darboğazı). Burada
+        içerik üretmeyen makaleleri saptayıp YENİDEN kartlarız. Bir makale başarıyla
+        yeniden üretildikten sonra (içerik hâlâ boş olsa bile) `rebuilt_paper_ids`'e
+        eklenir → sonsuz tekrar denenmez. Başarısızlıkta (örn. Ollama kapalı) eklenmez,
+        sonraki turda tekrar denenir.
+        """
+        if limit <= 0 or not self._state.rebuild_empty:
+            return 0
+        from app.brain.knowledge_card_builder import KnowledgeCardBuilder
+        from app.lora.dataset_builder import build_dataset
+        from app.memory.sqlite_store import SqliteStore
+
+        store = SqliteStore()
+        cards = store.list_approved_cards()
+        if not cards:
+            return 0
+        examples = build_dataset(cards)
+        with_real = {
+            str(e.metadata.get("paper_id", "")) for e in examples if e.metadata.get("paper_id")
+        }
+        carded = {str(c["paper_id"]) for c in cards if c.get("paper_id")}
+        attempted = set(self._state.rebuilt_paper_ids)
+        empty = [pid for pid in carded if pid not in with_real and pid not in attempted]
+        if not empty:
+            return 0
+
+        builder = KnowledgeCardBuilder()
+        done = 0
+        for pid in empty:
+            if done >= limit:
+                break
+            try:
+                builder.build(pid)
+                attempted.add(pid)  # başarıyla yeniden üretildi → bir daha deneme
+                done += 1
+            except Exception as exc:
+                log.warning("RAG loop: boş kart rebuild başarısız (%s): %s", pid, exc)
+        self._state.rebuilt_paper_ids = sorted(attempted)
+        return done
+
     def _score_missing(self, limit: int) -> int:
         """Kartı olup comprehension skoru olmayan makaleleri skorla (en çok `limit`)."""
         if limit <= 0:
@@ -297,7 +348,7 @@ class RagLearningLoop:
                 log.info("RAG loop: LoRA eğitimi sürüyor → tur atlandı (duraklatıldı)")
                 return {"ok": True, "skipped": "training_running", "mastery": mastery}
 
-            fetched = ingested = cards = scored = 0
+            fetched = ingested = cards = rebuilt = scored = 0
 
             # 1) yeni makale çek (nazik kadans; yalnız çekim aralığı dolduysa)
             if self._state.fetch_enabled and self._fetch_due():
@@ -307,9 +358,16 @@ class RagLearningLoop:
                     self._state.last_fetch_at = _utcnow()
                     self._save_state()
 
-            # 2) eksik kartları üret
+            # 2) eksik kartları üret (kartı HİÇ olmayan makaleler)
             await self._update_stage("carding")
             cards = await asyncio.to_thread(self._build_missing_cards, self._state.cards_per_cycle)
+
+            # 2b) içeriksiz (boş) kartları yeniden üret (opt-in — coverage darboğazı)
+            if self._state.rebuild_empty:
+                await self._update_stage("rebuilding")
+                rebuilt = await asyncio.to_thread(
+                    self._rebuild_empty_cards, self._state.cards_per_cycle
+                )
 
             # 3) eksik skorları hesapla
             await self._update_stage("scoring")
@@ -323,9 +381,11 @@ class RagLearningLoop:
                 self._state.last_fetched = fetched
                 self._state.last_ingested = ingested
                 self._state.last_cards = cards
+                self._state.last_rebuilt = rebuilt
                 self._state.last_scored = scored
                 self._state.total_fetched += fetched
                 self._state.total_cards += cards
+                self._state.total_rebuilt += rebuilt
                 self._state.total_scored += scored
                 self._state.mastery_percent = mastery
                 self._state.cycles_completed += 1
@@ -336,6 +396,7 @@ class RagLearningLoop:
                         "at": now,
                         "ingested": ingested,
                         "cards": cards,
+                        "rebuilt": rebuilt,
                         "scored": scored,
                         "mastery": mastery,
                     }
@@ -344,9 +405,10 @@ class RagLearningLoop:
                 self._save_state()
 
             log.info(
-                "RAG loop turu bitti: +%d makale, +%d kart, +%d skor (ustalık %s%%)",
+                "RAG loop turu bitti: +%d makale, +%d kart, +%d rebuild, +%d skor (ustalık %s%%)",
                 ingested,
                 cards,
+                rebuilt,
                 scored,
                 mastery,
             )
@@ -355,6 +417,7 @@ class RagLearningLoop:
                 "fetched": fetched,
                 "ingested": ingested,
                 "cards": cards,
+                "rebuilt": rebuilt,
                 "scored": scored,
                 "mastery": mastery,
             }

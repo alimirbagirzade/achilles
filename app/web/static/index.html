@@ -636,6 +636,8 @@
                 <input type="checkbox" id="ragLoopFetchEnabled" checked /> Yeni makale çek</label>
               <label style="display:flex;align-items:flex-end;gap:6px;font-size:.85rem">
                 <input type="checkbox" id="ragLoopUseLlm" checked /> Skorda LLM kullan</label>
+              <label style="display:flex;align-items:flex-end;gap:6px;font-size:.85rem" title="İçeriksiz (boş) kartı olan makaleleri yeniden üret — coverage darboğazını açar (ağır, her makale 1 kez denenir)">
+                <input type="checkbox" id="ragLoopRebuildEmpty" /> Boş kartları yeniden üret</label>
             </div>
             <button class="btn btn-sm" id="ragLoopSaveCfgBtn" style="margin-top:10px">Ayarları Kaydet</button>
             <p class="setting-desc">Yeni makale çekimi arXiv'e nazik olmak için ayrı, daha seyrek bir kadansta yapılır (varsayılan 24 saatte bir); kart/skor üretimi her turda yapılır. "Tur başına" sınırları CPU'yu boğmamak içindir. Yeni makale çekmek için <strong>Makaleler</strong> sekmesinde en az bir <em>kayıtlı sorgu</em> olmalı (auto-ingest açık).</p>

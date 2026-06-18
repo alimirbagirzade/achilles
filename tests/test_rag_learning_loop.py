@@ -117,3 +117,33 @@ def test_fetch_skipped_when_not_due(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert fetch_called["n"] == 0  # çekim atlandı
     assert res["cards"] == 2
     assert res["scored"] == 2
+
+
+def test_rebuild_runs_only_when_enabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    loop = _make(tmp_path, monkeypatch)
+    monkeypatch.setattr(loop, "_training_running", lambda: False)
+    monkeypatch.setattr(loop, "_fetch_new_papers", lambda: (0, 0))
+    monkeypatch.setattr(loop, "_build_missing_cards", lambda limit: 0)
+    monkeypatch.setattr(loop, "_score_missing", lambda limit: 0)
+    monkeypatch.setattr(loop, "_refresh_mastery", lambda: 60)
+    calls = {"n": 0}
+
+    def _rebuild(limit: int) -> int:
+        calls["n"] += 1
+        return 4
+
+    monkeypatch.setattr(loop, "_rebuild_empty_cards", _rebuild)
+
+    # Kapalıyken (varsayılan) rebuild çağrılmaz.
+    res_off = asyncio.run(loop.run_one_cycle())
+    assert calls["n"] == 0
+    assert res_off["rebuilt"] == 0
+
+    # Açıkken rebuild çağrılır ve sayaçlar güncellenir.
+    loop.set_config(rebuild_empty=True)
+    res_on = asyncio.run(loop.run_one_cycle())
+    assert calls["n"] == 1
+    assert res_on["rebuilt"] == 4
+    st = loop.get_status()
+    assert st["last_rebuilt"] == 4
+    assert st["total_rebuilt"] == 4

@@ -2457,9 +2457,9 @@
       ['Tamamlanan tur', esc(d.cycles_completed)],
       ['Son tur', d.last_cycle_at ? esc(d.last_cycle_at.slice(0, 16).replace('T', ' ')) : '—'],
       ['Son tur özeti', '+' + esc(d.last_ingested) + ' makale · +' + esc(d.last_cards) +
-        ' kart · +' + esc(d.last_scored) + ' skor'],
+        ' kart · +' + esc(d.last_rebuilt) + ' yeniden · +' + esc(d.last_scored) + ' skor'],
       ['Toplam', esc(d.total_fetched) + ' makale · ' + esc(d.total_cards) + ' kart · ' +
-        esc(d.total_scored) + ' skor'],
+        esc(d.total_rebuilt) + ' yeniden · ' + esc(d.total_scored) + ' skor'],
       ['Son çekim', d.last_fetch_at ? esc(d.last_fetch_at.slice(0, 16).replace('T', ' ')) : '—'],
       ['Hata', esc(d.last_error || '—')]
     ];
@@ -2492,6 +2492,8 @@
     if (fe && document.activeElement !== fe) fe.checked = !!d.fetch_enabled;
     var ul = document.getElementById('ragLoopUseLlm');
     if (ul && document.activeElement !== ul) ul.checked = !!d.score_use_llm;
+    var re = document.getElementById('ragLoopRebuildEmpty');
+    if (re && document.activeElement !== re) re.checked = !!d.rebuild_empty;
   }
 
   function loadRagLoopStatus() {
@@ -2549,7 +2551,8 @@
       'cards_per_cycle=' + encodeURIComponent(val('ragLoopCards')),
       'scores_per_cycle=' + encodeURIComponent(val('ragLoopScores')),
       'fetch_enabled=' + chk('ragLoopFetchEnabled'),
-      'score_use_llm=' + chk('ragLoopUseLlm')
+      'score_use_llm=' + chk('ragLoopUseLlm'),
+      'rebuild_empty=' + chk('ragLoopRebuildEmpty')
     ].join('&');
     api('/rag-loop/config?' + qs, { method: 'POST' })
       .then(function () { ragLoopMsg('Ayarlar kaydedildi.', true); loadRagLoopStatus(); })
