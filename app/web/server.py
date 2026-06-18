@@ -1648,6 +1648,7 @@ async def api_rag_loop_config(
     cards_per_cycle: int | None = None,
     scores_per_cycle: int | None = None,
     score_use_llm: bool | None = None,
+    rebuild_empty: bool | None = None,
 ) -> dict:
     """Döngü ayarlarını güncelle (değerler güvenli aralığa kelepçelenir)."""
     from app.research.rag_learning_loop import get_rag_loop
@@ -1660,6 +1661,7 @@ async def api_rag_loop_config(
         cards_per_cycle=cards_per_cycle,
         scores_per_cycle=scores_per_cycle,
         score_use_llm=score_use_llm,
+        rebuild_empty=rebuild_empty,
     )
 
 
