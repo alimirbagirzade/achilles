@@ -74,11 +74,13 @@ for p in s.list_papers():
   done
   uv run python -c "
 from app.memory.sqlite_store import SqliteStore
+from app.research.rag_learning_loop import is_substantive_card
 s = SqliteStore()
 a = k = 0
 for c in s.list_pending_cards():
-    cj = c.get('card_json') or {}
-    if str(cj.get('title') or '').strip() and str(cj.get('main_claim') or '').strip():
+    # GÜÇLÜ gate: dejenere '...'/'unknown' kartları onaylama (eski non-empty ölçütü
+    # coverage'ı çöple şişiriyordu — v5-tipi risk). Anlamlı title≥8 + main_claim≥40.
+    if is_substantive_card(c.get('card_json') or {}):
         s.approve_card(c['card_id']); a += 1
     else:
         k += 1
