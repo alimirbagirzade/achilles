@@ -320,8 +320,14 @@ class AutoLoRAPipeline:
                 await self._register_adapter(adapter_name)
                 return
 
-            # Terfi yalnız adapter base'den İYİ ise: hiç regresyon yok + en az bir gelişme.
-            passed = improved_any and not regression_any
+            # Terfi yalnız adapter base'den İYİ ise: hiç regresyon yok + en az bir gelişme
+            # + en iyi eval skoru kullanıcı eşiğini (eval_pass_threshold) geçiyor.
+            # BUG-M9 fix: eval_pass_threshold parametre tanımlı ama hiç kullanılmıyordu.
+            best_score = max(
+                (max(0.0, float(s.get("adapter_score", 0.0))) for s in scores.values()),
+                default=0.0,
+            )
+            passed = improved_any and not regression_any and best_score >= self.eval_pass_threshold
 
             # Eval sonuçlarını kalıcı DB'ye kaydet
             try:

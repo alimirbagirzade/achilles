@@ -32,10 +32,22 @@ def test_monoton_trend_sifir_entropi() -> None:
 
 
 def test_warmup_nan() -> None:
+    # bar-0 yönü tanımsız → ilk geçerli entropi index=period'da (bar-0'ı içeren pencere
+    # warmup). period=3 → index 0,1,2 NaN, index 3,4 geçerli.
     close = pd.Series([100.0, 101.0, 102.0, 101.0, 103.0])
     h = entropy(close, 3)
-    assert h.iloc[:2].isna().all()  # ilk period-1 değer tanımsız
-    assert not h.iloc[2:].isna().any()
+    assert h.iloc[:3].isna().all()  # ilk period değer tanımsız (bar-0 dahil)
+    assert not h.iloc[3:].isna().any()
+
+
+def test_bar0_sahte_belirsizlik_regresyonu() -> None:
+    # REGRESYON (Kademe-2): bar-0 sahte "aşağı" sayılınca temiz monoton trendin ilk
+    # geçerli penceresi ~0.92 (sahte maks-belirsizlik) raporluyordu. bar-0 NaN olunca
+    # ilk geçerli değer 0 (net trend) olmalı.
+    close = pd.Series([100.0, 101.0, 102.0, 103.0, 104.0, 105.0])
+    h = entropy(close, 3)
+    first_valid = h.dropna().iloc[0]
+    assert abs(first_valid) < 1e-12, f"ilk geçerli entropi 0 olmalı, geldi: {first_valid}"
 
 
 def test_compute_indicator_entropy() -> None:

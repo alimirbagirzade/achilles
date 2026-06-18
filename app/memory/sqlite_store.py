@@ -32,6 +32,7 @@ from sqlalchemy import (
     delete,
     select,
     text,
+    update,
 )
 from sqlalchemy.orm import (
     DeclarativeBase,
@@ -565,6 +566,11 @@ class AgentEventRow(Base):
     payload_json: Mapped[str | None] = mapped_column(Text, default=None)
 
 
+# Toplu budamada tek IN(...) ifadesinin SQLite değişken sınırını (~32766) aşmaması için
+# parça boyu. Küçük tutuldu (güvenli marj + her DELETE hızlı).
+_PRUNE_CHUNK = 500
+
+
 class SqliteStore:
     """Thin wrapper around a SQLAlchemy engine + session factory."""
 
@@ -719,7 +725,9 @@ class SqliteStore:
             stmt = (
                 select(AgentEventRow)
                 .where(AgentEventRow.run_id == run_id)
-                .order_by(AgentEventRow.ts.asc())
+                # ts benzersiz değil (Windows saat çözünürlüğü ~15ms) → eşit-ts olaylarda
+                # deterministik sıra için ikincil anahtar. (CLAUDE.md Kural 6.)
+                .order_by(AgentEventRow.ts.asc(), AgentEventRow.event_id.asc())
             )
             return [self._agent_event_to_dict(r) for r in s.scalars(stmt)]
 
@@ -731,14 +739,26 @@ class SqliteStore:
         cutoff = (dt.datetime.now(dt.UTC) - dt.timedelta(days=max_age_days)).isoformat()
         with self.session() as s:
             old = set(s.scalars(select(AgentEventRow.event_id).where(AgentEventRow.ts < cutoff)))
+            # ts benzersiz değil → eşit-ts sınırında hangi olayın budanacağı belirsiz olmasın
+            # diye ikincil deterministik anahtar (event_id). (CLAUDE.md Kural 6.)
             ids_newest_first = list(
-                s.scalars(select(AgentEventRow.event_id).order_by(AgentEventRow.ts.desc()))
+                s.scalars(
+                    select(AgentEventRow.event_id).order_by(
+                        AgentEventRow.ts.desc(), AgentEventRow.event_id.desc()
+                    )
+                )
             )
             overflow = set(ids_newest_first[max_events:])
             to_delete = old | overflow
             if not to_delete:
                 return 0
-            s.execute(delete(AgentEventRow).where(AgentEventRow.event_id.in_(to_delete)))
+            # SQLite SQLITE_MAX_VARIABLE_NUMBER (~32766) sınırı: tek IN(...) ile budama,
+            # retention'ın asıl tetiklendiği büyük backlog'da OperationalError fırlatır ve
+            # çağıran tarafça sessizce yutulur → retention kalıcı çalışmaz. Parçalı sil.
+            ids = list(to_delete)
+            for i in range(0, len(ids), _PRUNE_CHUNK):
+                batch = ids[i : i + _PRUNE_CHUNK]
+                s.execute(delete(AgentEventRow).where(AgentEventRow.event_id.in_(batch)))
             return len(to_delete)
 
     def _agent_run_to_dict(self, r: AgentRunRow) -> dict[str, Any]:
@@ -818,6 +838,18 @@ class SqliteStore:
             for c in chunks:
                 s.merge(Chunk(**c))
             return len(chunks)
+
+    def mark_chunks_embedded(self, chunk_ids: list[str]) -> int:
+        """Chroma'ya başarıyla eklenen chunk'ları embedded=1 olarak işaretle (BUG-M6 fix).
+
+        add_chunks embedded=0 ile çağrılır → Chroma.add() başarılı olunca bu metot
+        embedded=1 yazar. Chroma başarısız olursa embedded=0 kalır → sessiz kayıp önlenir.
+        """
+        if not chunk_ids:
+            return 0
+        with self.session() as s:
+            s.execute(update(Chunk).where(Chunk.chunk_id.in_(chunk_ids)).values(embedded=1))
+        return len(chunk_ids)
 
     def delete_chunks_for_paper(self, paper_id: str) -> int:
         """Bir makaleye ait tüm chunk'ları sil (force re-index'te bayat chunk bırakmamak için).

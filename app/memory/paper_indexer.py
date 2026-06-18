@@ -139,6 +139,9 @@ class PaperIndexer:
         self.chroma.delete_by_paper(disc.paper_id)
 
         chunks = chunk_parsed_pdf(disc.paper_id, parsed)
+        # BUG-M6 fix: embedded=0 olarak yaz; Chroma başarılı olunca embedded=1'e güncelle.
+        # Eski: embedded=1 önceden yazılıyordu → Chroma hatasında SQLite'ta "gömülü"
+        # görünür ama retrieval'da kayıp olurdu (sessiz bozulma).
         self.store.add_chunks(
             [
                 {
@@ -150,7 +153,7 @@ class PaperIndexer:
                     "text": c.text,
                     "char_count": c.char_count,
                     "token_estimate": c.token_estimate,
-                    "embedded": 1,
+                    "embedded": 0,
                 }
                 for c in chunks
             ]
@@ -176,6 +179,8 @@ class PaperIndexer:
                 for c in chunks
             ],
         )
+        # Chroma başarılıysa embedded=1 olarak işaretle
+        self.store.mark_chunks_embedded([c.chunk_id for c in chunks])
 
         # BM25 korpus cache'i (chunk-sayısı anahtarlı) içerik değişince bayatlar —
         # ingestion sonrası sıfırla ki hibrit retrieval taze metni görsün.

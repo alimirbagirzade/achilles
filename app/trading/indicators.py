@@ -84,8 +84,11 @@ def entropy(close: pd.Series, period: int = 14) -> pd.Series:
     """
     delta = close.diff()
     up = (delta > 0).astype(float)
-    # Bar-0: delta=NaN → karşılaştırma False → 0.0; pratik kolaylık için bu kabul edilir
-    # (bar-0 yalnızca ilk period içinde etkilidir, uzun vadede ihmal edilebilir).
+    # Bar-0: delta=NaN → yön TANIMSIZ. Sahte "aşağı" (0.0) saymak, bar-0'ı içeren ilk
+    # pencereyi (index=period-1) bozar: temiz monoton trend ~0.92 sahte-belirsizlik
+    # raporlar. NaN'a çevirerek o pencereyi warmup yapıyoruz → ilk geçerli değer index
+    # =period'da, gerçek yön örtüşmesiyle. (CLAUDE.md Kural 4/6: look-ahead'siz, deterministik.)
+    up[delta.isna()] = np.nan
     p_up = up.rolling(period).mean()
     return _binary_entropy(p_up)
 

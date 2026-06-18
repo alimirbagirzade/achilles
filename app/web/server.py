@@ -1384,7 +1384,11 @@ def api_backtest_risk(
     enriched = _compute_columns(df, ir)
     position = _position_series(enriched, ir)
     bar_ret = enriched["close"].pct_change().fillna(0.0)
-    net_ret = position.shift(1).fillna(0.0) * bar_ret
+    strat_ret = position.shift(1).fillna(0.0) * bar_ret
+    # BUG-H3 fix: komisyon + slippage maliyet düşüldü (backtester ile aynı mantık)
+    turnover = position.diff().abs().fillna(0.0)
+    cost = turnover * (ir.costs.commission + ir.costs.slippage)
+    net_ret = strat_ret - cost
     equity_curve = (1 + net_ret).cumprod()
 
     report = analyze_risk(
