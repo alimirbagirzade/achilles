@@ -525,14 +525,63 @@ class UnderstandingSnapshot(Base):
     context_json: Mapped[str] = mapped_column(Text, default="{}")  # llm/adapter/with_rag meta
 
 
+class AgentRunRow(Base):
+    """Agent runtime gözlemcisi (Phase 1) — tek bir ajan koşusu.
+
+    Davranışı zorlamaz; yalnız KAYIT tutar (run_id, durum, tetik, zaman, özet).
+    Yeni tablo olduğundan ``Base.metadata.create_all`` ile idempotent oluşturulur.
+    """
+
+    __tablename__ = "agent_runs"
+
+    run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    agent_id: Mapped[str] = mapped_column(String(64), index=True)
+    task_id: Mapped[str | None] = mapped_column(String(64), default=None, index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    trigger_type: Mapped[str | None] = mapped_column(String(32), default=None)
+    trigger_payload_json: Mapped[str | None] = mapped_column(Text, default=None)
+    started_at: Mapped[str] = mapped_column(String(40), index=True)
+    finished_at: Mapped[str | None] = mapped_column(String(40), default=None)
+    error: Mapped[str | None] = mapped_column(Text, default=None)
+    summary_json: Mapped[str | None] = mapped_column(Text, default=None)
+    outputs_json: Mapped[str | None] = mapped_column(Text, default=None)
+
+
+class AgentEventRow(Base):
+    """Agent runtime gözlemcisi (Phase 1) — bir koşu içindeki tek bir olay.
+
+    Retention (kullanıcı kararı): 30 gün VEYA en çok 50.000 son olay
+    (``SqliteStore.prune_agent_events``).
+    """
+
+    __tablename__ = "agent_events"
+
+    event_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(64), index=True)
+    ts: Mapped[str] = mapped_column(String(40), index=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    level: Mapped[str] = mapped_column(String(16), default="info")
+    message: Mapped[str | None] = mapped_column(Text, default=None)
+    payload_json: Mapped[str | None] = mapped_column(Text, default=None)
+
+
 class SqliteStore:
     """Thin wrapper around a SQLAlchemy engine + session factory."""
 
-    def __init__(self, db_path: str | Path | None = None) -> None:
+    def __init__(
+        self, db_path: str | Path | None = None, *, check_same_thread: bool = True
+    ) -> None:
         settings = get_settings()
         self.db_path = Path(db_path) if db_path else settings.sqlite_file
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.engine = create_engine(f"sqlite:///{self.db_path}", future=True)
+        # check_same_thread=False yalnız çok-thread'li yazıcılar (agent tracker —
+        # asyncio.to_thread içinden de yazabilir) için gevşetilir. Varsayılan True →
+        # mevcut tüm çağıranlar için davranış BİREBİR korunur.
+        self.engine = create_engine(
+            f"sqlite:///{self.db_path}",
+            future=True,
+            connect_args={"check_same_thread": check_same_thread},
+        )
         self._Session = sessionmaker(bind=self.engine, expire_on_commit=False, future=True)
         self.create_all()
         self._migrate()
@@ -562,6 +611,163 @@ class SqliteStore:
                         )
                     )
             conn.commit()
+
+    # --- agent runtime gözlemcisi (Phase 1) ------------------------------
+    def create_agent_run(
+        self,
+        *,
+        run_id: str,
+        agent_id: str,
+        task_id: str | None = None,
+        status: str = "running",
+        trigger_type: str | None = None,
+        trigger_payload: dict[str, Any] | None = None,
+        started_at: str | None = None,
+    ) -> None:
+        """Yeni bir ajan koşusu kaydı oluştur (status='running')."""
+        with self.session() as s:
+            s.add(
+                AgentRunRow(
+                    run_id=run_id,
+                    agent_id=agent_id,
+                    task_id=task_id,
+                    status=status,
+                    trigger_type=trigger_type,
+                    trigger_payload_json=(
+                        json.dumps(trigger_payload, ensure_ascii=False)
+                        if trigger_payload is not None
+                        else None
+                    ),
+                    started_at=started_at or _utcnow(),
+                )
+            )
+
+    def finish_agent_run(
+        self,
+        *,
+        run_id: str,
+        status: str,
+        finished_at: str | None = None,
+        error: str | None = None,
+        summary: dict[str, Any] | None = None,
+        outputs: list[Any] | None = None,
+    ) -> None:
+        """Koşuyu sonlandır (status/finished_at/error/summary/outputs günceller)."""
+        with self.session() as s:
+            row = s.get(AgentRunRow, run_id)
+            if row is None:
+                return
+            row.status = status
+            row.finished_at = finished_at or _utcnow()
+            if error is not None:
+                row.error = error
+            if summary is not None:
+                row.summary_json = json.dumps(summary, ensure_ascii=False, default=str)
+            if outputs is not None:
+                row.outputs_json = json.dumps(outputs, ensure_ascii=False, default=str)
+
+    def add_agent_event(
+        self,
+        *,
+        event_id: str,
+        run_id: str,
+        kind: str,
+        ts: str | None = None,
+        level: str = "info",
+        message: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        """Bir koşuya olay ekle."""
+        with self.session() as s:
+            s.add(
+                AgentEventRow(
+                    event_id=event_id,
+                    run_id=run_id,
+                    ts=ts or _utcnow(),
+                    kind=kind,
+                    level=level,
+                    message=message,
+                    payload_json=(
+                        json.dumps(payload, ensure_ascii=False, default=str)
+                        if payload is not None
+                        else None
+                    ),
+                )
+            )
+
+    def list_agent_runs(
+        self, limit: int = 20, agent_id: str | None = None, status: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Son ajan koşularını (en yeni önce) döndür; agent_id/status ile filtrele."""
+        with self.session() as s:
+            stmt = select(AgentRunRow).order_by(AgentRunRow.started_at.desc())
+            if agent_id:
+                stmt = stmt.where(AgentRunRow.agent_id == agent_id)
+            if status:
+                stmt = stmt.where(AgentRunRow.status == status)
+            stmt = stmt.limit(limit)
+            return [self._agent_run_to_dict(r) for r in s.scalars(stmt)]
+
+    def get_agent_run(self, run_id: str) -> dict[str, Any] | None:
+        with self.session() as s:
+            row = s.get(AgentRunRow, run_id)
+            return self._agent_run_to_dict(row) if row else None
+
+    def list_agent_events(self, run_id: str) -> list[dict[str, Any]]:
+        """Bir koşunun olaylarını zaman sırasıyla döndür."""
+        with self.session() as s:
+            stmt = (
+                select(AgentEventRow)
+                .where(AgentEventRow.run_id == run_id)
+                .order_by(AgentEventRow.ts.asc())
+            )
+            return [self._agent_event_to_dict(r) for r in s.scalars(stmt)]
+
+    def prune_agent_events(self, max_events: int = 50_000, max_age_days: int = 30) -> int:
+        """Retention: max_age_days'ten eski VEYA en yeni max_events dışındaki olayları sil.
+
+        Silinen olay sayısını döndürür. (run kayıtları korunur; yalnız olaylar budanır.)
+        """
+        cutoff = (dt.datetime.now(dt.UTC) - dt.timedelta(days=max_age_days)).isoformat()
+        with self.session() as s:
+            old = set(s.scalars(select(AgentEventRow.event_id).where(AgentEventRow.ts < cutoff)))
+            ids_newest_first = list(
+                s.scalars(select(AgentEventRow.event_id).order_by(AgentEventRow.ts.desc()))
+            )
+            overflow = set(ids_newest_first[max_events:])
+            to_delete = old | overflow
+            if not to_delete:
+                return 0
+            s.execute(delete(AgentEventRow).where(AgentEventRow.event_id.in_(to_delete)))
+            return len(to_delete)
+
+    def _agent_run_to_dict(self, r: AgentRunRow) -> dict[str, Any]:
+        return {
+            "run_id": r.run_id,
+            "agent_id": r.agent_id,
+            "task_id": r.task_id,
+            "status": r.status,
+            "trigger_type": r.trigger_type,
+            "trigger_payload": (
+                json.loads(r.trigger_payload_json) if r.trigger_payload_json else None
+            ),
+            "started_at": r.started_at,
+            "finished_at": r.finished_at,
+            "error": r.error,
+            "summary": json.loads(r.summary_json) if r.summary_json else None,
+            "outputs": json.loads(r.outputs_json) if r.outputs_json else None,
+        }
+
+    def _agent_event_to_dict(self, r: AgentEventRow) -> dict[str, Any]:
+        return {
+            "event_id": r.event_id,
+            "run_id": r.run_id,
+            "ts": r.ts,
+            "kind": r.kind,
+            "level": r.level,
+            "message": r.message,
+            "payload": json.loads(r.payload_json) if r.payload_json else None,
+        }
 
     @contextmanager
     def session(self) -> Iterator[Session]:

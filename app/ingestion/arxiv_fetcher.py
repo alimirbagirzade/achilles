@@ -16,6 +16,7 @@ from pathlib import Path
 
 import httpx
 
+from app.agents.runtime import log_step, tracked
 from app.config import get_settings
 
 _SEARCH_URL = "https://export.arxiv.org/api/query"
@@ -92,6 +93,7 @@ def search_arxiv(query: str, max_results: int = 10) -> list[ArxivEntry]:
     return entries
 
 
+@tracked("arxiv-fetcher", trigger_type="manual")
 def fetch_arxiv_papers(
     query: str,
     max_results: int = 5,
@@ -106,6 +108,7 @@ def fetch_arxiv_papers(
 
     entries = search_arxiv(query, max_results=max_results)
     results: list[FetchResult] = []
+    log_step(f"{len(entries)} arXiv sonucu indirilecek")
 
     with httpx.Client(headers=_HEADERS, timeout=90, follow_redirects=True) as client:
         for entry in entries:

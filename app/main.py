@@ -262,6 +262,18 @@ def train(
 
     resolved = detect_lora_backend() if backend == "auto" else backend
 
+    if run:
+        # GÜVENLİK DONDURMA (Phase 1): davranışı değiştirmez, yalnız uyarır.
+        console.print(
+            Panel.fit(
+                "[bold red]Bu GERÇEK LoRA eğitimidir.[/bold red]\n"
+                "Phase 2 (supervisor + approval) gelene kadar bunu OTOMATİK bir "
+                "döngü içinde GÖZETİMSİZ çalıştırmayın.\n"
+                "Her gerçek eğitim ayrı, elle onay gerektirir (CLAUDE.md Kural 8).",
+                title="⚠ Güvenlik Dondurma (Phase 1)",
+            )
+        )
+
     if resolved == "mlx":
         from app.training.mlx_lora_train import TrainConfig
         from app.training.mlx_lora_train import main as train_main
@@ -2453,6 +2465,107 @@ def understanding_history_cmd(
             console.print(f"  Seviye Δ: {ld}")
         elif cmp["delta"] is not None:
             console.print(f"[green]Regresyon yok[/] · Δoran {cmp['delta'] * 100:+.1f}% · Δ: {ld}")
+
+
+# --------------------------------------------------------------------------
+# Agent runtime gözlemcisi (Phase 1) — yalnız gözlem; kontrol/onay Phase 2'de
+# --------------------------------------------------------------------------
+@app.command("agents-list")
+def agents_list() -> None:
+    """Kayıtlı runtime agent'ları (automation_manifest.yaml) listele."""
+    from app.agents.runtime import list_agents
+
+    try:
+        agents = list_agents()
+    except Exception as exc:
+        console.print(f"[red]Manifest okunamadı:[/red] {exc}")
+        raise typer.Exit(1) from exc
+    t = Table(title="Achilles — runtime agent'lar")
+    t.add_column("agent_id")
+    t.add_column("otonomi")
+    t.add_column("tehlikeli")
+    t.add_column("onay")
+    t.add_column("vars. açık")
+    t.add_column("dosya")
+    for a in agents:
+        t.add_row(
+            a.agent_id,
+            a.autonomy.value,
+            "⚠️" if a.dangerous else "—",
+            "✓" if a.approval_required else "—",
+            "✓" if a.default_enabled else "—",
+            a.file,
+        )
+    console.print(t)
+
+
+@app.command("agents-runs")
+def agents_runs(
+    limit: int = typer.Option(20, help="Kaç koşu gösterilsin"),
+    agent: str = typer.Option(None, "--agent", help="agent_id ile filtrele"),
+    status: str = typer.Option(None, "--status", help="status ile filtrele"),
+) -> None:
+    """Son agent koşularını göster (en yeni önce)."""
+    from app.memory.sqlite_store import SqliteStore
+
+    runs = SqliteStore().list_agent_runs(limit=limit, agent_id=agent, status=status)
+    if not runs:
+        console.print("[yellow]Kayıtlı agent koşusu yok.[/yellow]")
+        return
+    t = Table(title="Agent koşuları")
+    t.add_column("run_id")
+    t.add_column("agent")
+    t.add_column("durum")
+    t.add_column("tetik")
+    t.add_column("başladı")
+    t.add_column("bitti")
+    for r in runs:
+        t.add_row(
+            r["run_id"],
+            r["agent_id"],
+            r["status"],
+            r.get("trigger_type") or "—",
+            str(r.get("started_at") or "")[:19],
+            str(r.get("finished_at") or "—")[:19],
+        )
+    console.print(t)
+
+
+@app.command("agents-log")
+def agents_log(run_id: str) -> None:
+    """Bir agent koşusunun olay günlüğünü (events) göster."""
+    from app.memory.sqlite_store import SqliteStore
+
+    store = SqliteStore()
+    run = store.get_agent_run(run_id)
+    if not run:
+        console.print(f"[red]Koşu bulunamadı:[/red] {run_id}")
+        raise typer.Exit(1)
+    console.print(
+        Panel.fit(
+            f"agent: {run['agent_id']}\n"
+            f"durum: {run['status']}\n"
+            f"tetik: {run.get('trigger_type') or '—'}\n"
+            f"başladı: {run.get('started_at') or '—'}\n"
+            f"bitti: {run.get('finished_at') or '—'}\n"
+            f"hata: {run.get('error') or '—'}",
+            title=run_id,
+        )
+    )
+    events = store.list_agent_events(run_id)
+    t = Table(title="Olaylar")
+    t.add_column("ts")
+    t.add_column("kind")
+    t.add_column("level")
+    t.add_column("mesaj")
+    for e in events:
+        t.add_row(
+            str(e.get("ts") or "")[:23],
+            e.get("kind") or "",
+            e.get("level") or "",
+            e.get("message") or "",
+        )
+    console.print(t)
 
 
 @app.command("pretrain-gate")

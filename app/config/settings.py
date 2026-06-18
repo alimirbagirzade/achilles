@@ -194,6 +194,11 @@ class Settings(BaseSettings):
         return PROJECT_ROOT / "models" / "adapters"
 
     @property
+    def agent_runs_dir(self) -> Path:
+        """Agent runtime gözlemcisi (Phase 1) — koşu başına JSONL günlükleri."""
+        return PROJECT_ROOT / "reports" / "agent_runs"
+
+    @property
     def prompts_dir(self) -> Path:
         return PROJECT_ROOT / "app" / "prompts"
 
@@ -212,6 +217,7 @@ class Settings(BaseSettings):
             self.reports_dir / "training",
             self.reports_dir / "backtests",
             self.reports_dir / "evals",
+            self.reports_dir / "agent_runs",
         ):
             d.mkdir(parents=True, exist_ok=True)
 

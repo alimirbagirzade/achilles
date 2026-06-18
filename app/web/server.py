@@ -1492,6 +1492,41 @@ def api_learning_summary() -> dict:
     }
 
 
+# --- Agent runtime gözlemcisi (Phase 1) — salt-okuma; kontrol/onay Phase 2'de ---
+@app.get("/api/agents", dependencies=[api_auth])
+def api_agents() -> dict:
+    """Kayıtlı runtime agent'lar (automation_manifest.yaml). Salt-okuma."""
+    from app.agents.runtime import list_agents
+
+    try:
+        agents = list_agents()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Manifest okunamadı: {exc}") from exc
+    return {"agents": [a.model_dump(mode="json") for a in agents]}
+
+
+@app.get("/api/agents/runs", dependencies=[api_auth])
+def api_agent_runs(limit: int = 20, agent_id: str | None = None, status: str | None = None) -> dict:
+    """Son agent koşuları (en yeni önce). Salt-okuma."""
+    from app.memory.sqlite_store import SqliteStore
+
+    limit = max(1, min(limit, 200))
+    runs = SqliteStore().list_agent_runs(limit=limit, agent_id=agent_id, status=status)
+    return {"runs": runs}
+
+
+@app.get("/api/agents/runs/{run_id}", dependencies=[api_auth])
+def api_agent_run_detail(run_id: str) -> dict:
+    """Tek bir agent koşusu + olay günlüğü. Salt-okuma."""
+    from app.memory.sqlite_store import SqliteStore
+
+    store = SqliteStore()
+    run = store.get_agent_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Koşu bulunamadı")
+    return {"run": run, "events": store.list_agent_events(run_id)}
+
+
 @app.get("/api/learning/eval-history", dependencies=[api_auth])
 def api_learning_eval_history() -> dict:
     """Tüm adapter versiyonlarının eval skor geçmişi."""

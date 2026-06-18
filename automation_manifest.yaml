@@ -1,0 +1,366 @@
+# Achilles — Automation Manifest (Phase 0)
+#
+# Denetimde (audit) bulunan TÜM runtime-agent benzeri bileşenlerin tek,
+# bildirimsel kaynağı. `app/agents/runtime/registry.py` bunu okur.
+#
+# Bu dosya BELGE + KEŞİF kaydıdır: çalışma zamanında davranışı ZORLAMAZ (Phase 1
+# yalnız gözlem). Onay/durdurma zorlaması Phase 2 supervisor/approvals işidir.
+#
+# autonomy ∈ {manual, semi_auto, autonomous, requires_approval, dangerous_without_approval}
+#
+# GÜVENLİK DONDURMA NOTU: `dangerous: true` veya `approval_required: true` olan
+# hiçbir ajan, Phase 2 supervisor/approval gelene kadar GÖZETİMSİZ döngüde
+# çalıştırılmamalıdır (özellikle gerçek LoRA eğitimi + adapter terfisi).
+
+version: 1
+phase: 1  # observer only
+
+agents:
+  - agent_id: auto-lora-pipeline
+    name: Auto-LoRA Pipeline
+    file: app/lora/auto_pipeline.py
+    entrypoint: AutoLoRAPipeline.check_and_prepare / start_training / promote_to_production / background_loop
+    trigger: "web /api/auto-lora/* + asyncio background_loop"
+    autonomy: requires_approval
+    dangerous: true
+    default_enabled: false
+    writes:
+      - storage/auto_lora_state.json
+      - "sqlite: eval_history"
+      - "sqlite: adapters (registry)"
+      - models/adapters/  # eğitim çıktısı (yalnız onaylı eğitimde)
+    reads:
+      - "sqlite: knowledge_cards (approved count)"
+      - evals/*.jsonl
+      - reports/evals/
+    safety_gates:
+      - "start_training READY_TO_TRAIN durumunu şart koşar (insan onayı)"
+      - "promote_to_production EVAL_PASSED şart koşar (insan onayı)"
+      - "regresyon → EVAL_FAILED (terfi engellenir)"
+      - "varsayılan KAPALI (auto_lora_enabled=false)"
+    approval_required: true
+    stop_method: "/api/auto-lora/reset; (gerçek eğitim detached → Phase 2 düzeltmesi bekliyor)"
+    status_location: storage/auto_lora_state.json
+    known_failure_modes:
+      - "torch/peft yoksa → EVAL_SKIPPED"
+      - "detached eğitim ölürse → TRAIN_FAILED"
+      - "state dosyası bozuksa sessiz IDLE"
+
+  - agent_id: rag-learning-loop
+    name: RAG Learning Loop
+    file: app/research/rag_learning_loop.py
+    entrypoint: RagLearningLoop.run_one_cycle / background_loop / trigger_once_bg
+    trigger: "asyncio background_loop (15s heartbeat) + web /api/rag-loop/*"
+    autonomy: autonomous
+    dangerous: false
+    default_enabled: false
+    writes:
+      - storage/rag_learning_state.json
+      - "sqlite: papers, chunks, knowledge_cards, paper_comprehension (builder'lar üzerinden)"
+    reads:
+      - "sqlite: arxiv_saved_queries (auto_ingest), papers, knowledge_cards"
+    safety_gates:
+      - "LoRA eğitimi sürerken DURAKLAR (_training_running → stage=paused_training)"
+      - "is_substantive_card içerik kapısı (dejenerasyon kartlarını reddeder)"
+      - "tur başına bütçeler (cards_per_cycle vb. clamp'li)"
+      - "asyncio lock — eşzamanlı tur yok"
+      - "varsayılan KAPALI (enabled=false)"
+    approval_required: false
+    stop_method: "/api/rag-loop/enable false (+ enabled state'i kalıcı)"
+    status_location: storage/rag_learning_state.json
+    known_failure_modes:
+      - "öğe-başı hatalar yakalanır, tur devam eder"
+      - "tur istisnası → stage=error + last_error"
+      - "eşzamanlı tur reddedilir"
+
+  - agent_id: research-orchestrator
+    name: Research Orchestrator
+    file: app/research/orchestrator.py
+    entrypoint: ResearchOrchestrator.run
+    trigger: "CLI `research` / web /api/research/run"
+    autonomy: semi_auto
+    dangerous: false
+    default_enabled: false
+    writes:
+      - "sqlite: research_sessions"
+    reads:
+      - "OHLCV (data/market/raw/* veya sentetik)"
+      - "sentez motoru / makaleler"
+    safety_gates:
+      - "look-ahead güvenli backtest (shift(1)), L5 için tek backtest yeniden kullanılır"
+      - "IR doğrulama + example_ir fallback"
+      - "verdict != pass → 'aday', 'hazır' değil (CLAUDE.md Kural 2)"
+      - "novelty dedup (_signature)"
+    approval_required: false
+    stop_method: "senkron çağrı — iptal yok (Phase 2 task iptali)"
+    status_location: "sqlite: research_sessions + agent_runs (Phase 1)"
+    known_failure_modes:
+      - "sentez None → döngü kırılır"
+      - "LLM çevrimdışı → reflection no-op"
+
+  - agent_id: rag-trend-scanner
+    name: RAG Trend Scanner
+    file: app/research/rag_trend_scanner.py
+    entrypoint: scan_rag_trends / append_candidates
+    trigger: "CLI `rag-scan` / scripts/rag-research-loop.ps1 -Mode Scan (Task Scheduler)"
+    autonomy: semi_auto
+    dangerous: false
+    default_enabled: false
+    writes:
+      - docs/egitim/rag-watchlist.md
+    reads:
+      - "arXiv (ağ, enjekte edilebilir searcher)"
+      - docs/egitim/rag-watchlist.md
+    safety_gates:
+      - "yalnız rapor/biriktirme — ingest/train/push YOK"
+      - "çevrimdışı-güvenli (ağ hatası → boş, çökme yok)"
+      - "deterministik skorlama + idempotent dedup"
+    approval_required: false
+    stop_method: "Task Scheduler görevini kaldır (Achilles-RAG-Scan)"
+    status_location: "docs/egitim/rag-watchlist.md + logs/rag-scan-*.log"
+    known_failure_modes:
+      - "sorgu başına arama hatası yutulur"
+      - "boş sonuç → boş liste"
+
+  - agent_id: reflection-agent
+    name: Reflection Agent
+    file: app/research/reflection_agent.py
+    entrypoint: ReflectionAgent.reflect
+    trigger: "ResearchOrchestrator tarafından (başarısız iterasyonda)"
+    autonomy: manual
+    dangerous: false
+    default_enabled: false
+    writes: []
+    reads:
+      - "indikatör + backtest metrikleri + verdict"
+    safety_gates:
+      - "LLM fmt=json, katı regex/JSON parse (eval/exec YOK — Kural 5)"
+      - "strategy_ir yoksa None döner"
+    approval_required: false
+    stop_method: "yok (orchestrator içi advisory adım)"
+    status_location: "orchestrator log + research_sessions"
+    known_failure_modes:
+      - "LLM erişilemez / bozuk JSON → None (graceful)"
+
+  - agent_id: paper-mastery-agent
+    name: Paper Mastery Agent
+    file: app/learning/paper_mastery_agent.py
+    entrypoint: PaperMasteryAgent.run / LearningQueue.run_next / run_all
+    trigger: "CLI `mastery-run` / `mastery-queue` / web"
+    autonomy: semi_auto
+    dangerous: false
+    default_enabled: false
+    writes:
+      - "sqlite: paper_mastery_tests/questions/answers/scores, paper_status_history"
+      - reports/papers/mastery/*.json + *.md
+    reads:
+      - "sqlite: papers, knowledge_cards"
+    safety_gates:
+      - "rapor yazımı başarısız olsa bile skor/durum korunur"
+      - "skor eşikleri → durum (deterministik)"
+    approval_required: false
+    stop_method: "Ctrl-C / kuyruğu boşalt (manuel)"
+    status_location: "sqlite: MasteryStore + reports/papers/mastery/"
+    known_failure_modes:
+      - "istisna → finish_test(0,0) + status=failed"
+      - "rapor dosyası kilidi (Windows os error 32) best-effort"
+
+  - agent_id: status-manager
+    name: Status Manager
+    file: app/learning/status_manager.py
+    entrypoint: StatusManager.update / status_from_score / get_current / get_history
+    trigger: "PaperMasteryAgent tarafından çağrılır"
+    autonomy: manual
+    dangerous: false
+    default_enabled: false
+    writes:
+      - "sqlite: paper_status_history"
+    reads:
+      - "sqlite: MasteryStore (mevcut durum/skor)"
+    safety_gates:
+      - "VALID_STATUSES whitelist (15 durum)"
+      - "skor→durum eşikleri"
+    approval_required: false
+    stop_method: "yok (yardımcı)"
+    status_location: "sqlite: MasteryStore"
+    known_failure_modes:
+      - "MasteryStore'a bağımlı; iç try/except yok (çağıran ele alır)"
+
+  - agent_id: lora-control-plane
+    name: LoRA Control Plane
+    file: app/lora/control_plane.py
+    entrypoint: LoRAControlPlane.run_full / run_audit
+    trigger: "CLI `lora-audit` / auto-lora-pipeline tarafından"
+    autonomy: semi_auto
+    dangerous: false
+    default_enabled: false
+    writes:
+      - reports/lora/audit_report.md
+      - data/lora_sft/  # dataset split (Gate 8)
+    reads:
+      - "sqlite: knowledge_cards (approved)"
+    safety_gates:
+      - "boş/içeriksiz kart filtresi (_card_text)"
+      - "Gate 7 safety scanner = BLOCKER"
+      - "herhangi gate başarısız → PipelineReport.passed=False (eğitim BAŞLATMAZ)"
+    approval_required: false
+    stop_method: "yok (senkron audit)"
+    status_location: "reports/lora/ + PipelineReport"
+    known_failure_modes:
+      - "gate fonksiyonu istisnası → çağıran yakalar"
+      - "boş kart havuzu → passed olabilir ama eğitim ayrı kapıda"
+
+  - agent_id: adapter-eval
+    name: Adapter Evaluator
+    file: app/training/adapter_eval.py
+    entrypoint: evaluate_adapter
+    trigger: "auto-lora-pipeline._run_eval / CLI `lora-eval`"
+    autonomy: semi_auto
+    dangerous: false
+    default_enabled: false
+    writes:
+      - reports/evals/adapter_eval_*.json
+    reads:
+      - models/adapters/<name>
+      - evals/*.jsonl
+    safety_gates:
+      - "GERÇEK base-vs-adapter (PEFT yükler), greedy/deterministik üretim"
+      - "regresyon → reject; dejenerasyon cezası (v5 dersi)"
+      - "TERFİ ETMEZ (yalnız verdict)"
+    approval_required: false
+    stop_method: "yok (senkron, ağır)"
+    status_location: reports/evals/
+    known_failure_modes:
+      - "torch/transformers/peft yoksa → ImportError → EVAL_SKIPPED"
+      - "CPU'da çok yavaş"
+
+  - agent_id: dataset-quality-gate
+    name: Dataset Quality Gate (pretrain-gate #3)
+    file: app/training/dataset_quality.py
+    entrypoint: audit_dataset
+    trigger: "python'dan (CLI komutu KAYIP — Phase 2/ileride re-add)"
+    autonomy: semi_auto
+    dangerous: false
+    default_enabled: false
+    writes:
+      - reports/evals/pretrain_gate.json  # çağıran yazar
+    reads:
+      - "birleşik SFT JSONL satırları + opsiyonel disiplin havuzu"
+    safety_gates:
+      - "GO/NO-GO: garanti-vaadi zehiri → NO-GO"
+      - "açılış-ezberi (>%40 tek bigram açılış) → NO-GO (v5 mekanizması)"
+      - "eğitim BAŞLATMAZ; deterministik"
+    approval_required: false
+    stop_method: "yok (saf rapor)"
+    status_location: reports/evals/pretrain_gate.json
+    known_failure_modes:
+      - "bozuk JSONL satırı sessiz atlanır"
+
+  - agent_id: tool-use-trainer
+    name: Tool-Use Trainer
+    file: app/training/tool_use_trainer.py
+    entrypoint: ToolUseTrainer.run_session / run_batch
+    trigger: "CLI `tool-use-train` / auto-researcher tarafından"
+    autonomy: semi_auto
+    dangerous: false
+    default_enabled: false
+    writes:
+      - "sqlite: tool_use_examples"
+    reads:
+      - "araştırma sorusu + OHLCV (gerçek/sentetik)"
+    safety_gates:
+      - "MODEL eğitmez (yalnız SFT verisi toplar)"
+      - "backtest+evaluator verdict; seed=42 determinizm"
+    approval_required: false
+    stop_method: "Ctrl-C (manuel)"
+    status_location: "sqlite: tool_use_examples + logger"
+    known_failure_modes:
+      - "LLM çevrimdışı → sentez None → seans durur"
+      - "geçersiz IR → verdict=fail; batch'te istisna yutulur"
+
+  - agent_id: auto-researcher
+    name: Auto Researcher Pipeline
+    file: app/pipeline/auto_researcher.py
+    entrypoint: run_pipeline
+    trigger: "CLI `auto-research`"
+    autonomy: semi_auto
+    dangerous: false
+    default_enabled: false
+    writes:
+      - "sqlite: tool_use_examples + DPO sessions (score_and_save_sessions)"
+    reads:
+      - "sqlite: knowledge_cards"
+    safety_gates:
+      - "dry_run bayrağı; seans istisnaları yakalanır; seed"
+      - "MODEL eğitmez (orkestrasyon + veri)"
+    approval_required: false
+    stop_method: "Ctrl-C (manuel)"
+    status_location: "logger + PipelineRun.summary()"
+    known_failure_modes:
+      - "soru çıkmazsa erken döner"
+      - "LLM çevrimdışı → 0 seans"
+
+  - agent_id: arxiv-fetcher
+    name: arXiv Fetcher
+    file: app/ingestion/arxiv_fetcher.py
+    entrypoint: fetch_arxiv_papers / search_arxiv
+    trigger: "web /api/arxiv/* + saved-query run + CLI `arxiv`"
+    autonomy: autonomous
+    dangerous: false
+    default_enabled: false
+    writes:
+      - data/papers/raw_pdf/arxiv_*.pdf
+    reads:
+      - "arXiv (ağ)"
+    safety_gates:
+      - "idempotent (var olan dosya atlanır)"
+      - "%PDF magic-byte doğrulama"
+      - "kategori-korumalı id parse"
+    approval_required: false
+    stop_method: "Ctrl-C / saved-query'yi kaldır (manuel)"
+    status_location: "logger + data/papers/raw_pdf/ + agent_runs (Phase 1)"
+    known_failure_modes:
+      - "ağ/HTTP hatası → skipped + error (öğe-başı)"
+      - "geçersiz PDF içeriği → skipped"
+
+  - agent_id: rules-updater
+    name: Rules Updater
+    file: app/agents/learning/rules_updater.py
+    entrypoint: generate_rule_suggestions / analyze_failed_trials
+    trigger: "CLI `rules-update`"
+    autonomy: requires_approval
+    dangerous: false
+    default_enabled: false
+    writes:
+      - "sqlite (learning memory): rule_suggestions (status=pending_review)"
+    reads:
+      - "sqlite: model_trials, error_patterns"
+    safety_gates:
+      - "HİÇBİR şeyi otomatik uygulamaz (yalnız öneri)"
+      - "dry_run; dedup; approve bayrağı insan kararı"
+    approval_required: true
+    stop_method: "yok (tek seferlik analiz)"
+    status_location: "sqlite (learning memory): rule_suggestions"
+    known_failure_modes:
+      - "DB erişim hatası yakalanmaz"
+      - "öneri uygulanmaz (manuel patch gerekir)"
+
+  - agent_id: model-advisor
+    name: Model Advisor
+    file: app/agents/model_advisor/advisor.py
+    entrypoint: recommend / _score_model
+    trigger: "CLI `recommend` / web /api/recommend"
+    autonomy: autonomous
+    dangerous: false
+    default_enabled: false
+    writes: []
+    reads:
+      - "SystemProfile + configs model_registry.yaml"
+    safety_gates:
+      - "salt-okuma öneri (RAM/VRAM sert reddleri)"
+    approval_required: false
+    stop_method: "yok (saf hesap)"
+    status_location: "AdvisorResult (dönüş)"
+    known_failure_modes:
+      - "registry yaml yok/bozuk → yaml hatası"
+      - "eksik alanlar .get default"
