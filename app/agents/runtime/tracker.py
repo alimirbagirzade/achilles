@@ -21,6 +21,7 @@ API:
 
 from __future__ import annotations
 
+import asyncio
 import contextvars
 import datetime as dt
 import functools
@@ -350,6 +351,12 @@ def tracked(agent_id: str, trigger_type: str = "manual") -> Callable[[F], F]:
                 token = _current_run.set(run_id)
                 try:
                     result = await fn(*args, **kwargs)
+                except asyncio.CancelledError:
+                    # CancelledError BaseException'dır (Exception DEĞİL) → ayrıca yakala ki
+                    # sunucu kapanışında iptal edilen arka plan turu sonsuza dek 'running'
+                    # kalmasın. İptal AYNEN yeniden fırlatılır (gözlemci davranışı bozmaz).
+                    tr.safe_finish(run_id, status=AgentRunStatus.cancelled, error="cancelled")
+                    raise
                 except Exception as exc:
                     tr.safe_finish(run_id, status=AgentRunStatus.failed, error=repr(exc))
                     raise

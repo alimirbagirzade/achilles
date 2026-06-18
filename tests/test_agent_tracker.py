@@ -119,11 +119,11 @@ def test_decorator_ok_false_is_failed(tracker) -> None:
         set_tracker(None)
 
 
-def test_async_decorator_runs() -> None:
+def test_async_decorator_runs(tmp_path) -> None:
     """Async dekoratör yolu da koşu kaydeder (asyncio.run ile, offline — marker gerekmez)."""
     import asyncio
 
-    tr = RunTracker(store=SqliteStore())
+    tr = RunTracker(store=SqliteStore(), jsonl_dir=tmp_path / "agent_runs")
     set_tracker(tr)
     try:
 
@@ -134,5 +134,27 @@ def test_async_decorator_runs() -> None:
         asyncio.run(afn())
         runs = tr.store.list_agent_runs(agent_id="async-agent")
         assert runs and runs[0]["status"] == "completed"
+    finally:
+        set_tracker(None)
+
+
+def test_async_decorator_cancelled_not_left_running(tmp_path) -> None:
+    """İptal edilen async koşu 'running' kalmaz; 'cancelled' kaydedilir, iptal fırlatılır."""
+    import asyncio
+
+    tr = RunTracker(store=SqliteStore(), jsonl_dir=tmp_path / "agent_runs")
+    set_tracker(tr)
+    try:
+
+        @tracked("cancel-agent")
+        async def cancel_fn():
+            raise asyncio.CancelledError
+
+        with pytest.raises(asyncio.CancelledError):
+            asyncio.run(cancel_fn())
+
+        runs = tr.store.list_agent_runs(agent_id="cancel-agent")
+        assert runs and runs[0]["status"] == "cancelled"
+        assert all(r["status"] != "running" for r in runs)
     finally:
         set_tracker(None)
