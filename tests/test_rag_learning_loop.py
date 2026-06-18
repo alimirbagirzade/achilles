@@ -11,7 +11,24 @@ from pathlib import Path
 
 import pytest
 
-from app.research.rag_learning_loop import RagLearningLoop
+from app.research.rag_learning_loop import RagLearningLoop, is_substantive_card
+
+
+def test_is_substantive_card_rejects_degenerate() -> None:
+    # Dejenere "..." kartı (LLM ön-madde/çekişmede üretir) ONAYLANMAMALI.
+    assert is_substantive_card({"title": "...", "main_claim": "..."}) is False
+    assert is_substantive_card({"title": "", "main_claim": ""}) is False
+    assert is_substantive_card({"title": "Vol", "main_claim": "kısa"}) is False  # main_claim<40
+    # Gerçek içerik KABUL edilmeli (anlamlı title≥8 + main_claim≥40).
+    assert (
+        is_substantive_card(
+            {
+                "title": "Volatilite Kümelenmesi",
+                "main_claim": "Volatilite kümelenmesi momentum sinyallerinin kalıcılığını artırır.",
+            }
+        )
+        is True
+    )
 
 
 def _make(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> RagLearningLoop:

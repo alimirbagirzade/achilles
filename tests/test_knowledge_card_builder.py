@@ -160,6 +160,40 @@ def test_build_handles_non_json_gracefully(tmp_path):
     assert card.methods == []
 
 
+class _MiddleAwareLLM:
+    """Yalnız prompt'ta 'REAL_CLAIM' geçince (belge ORTASI) dolu kart döndürür."""
+
+    def __init__(self, full_card: str) -> None:
+        self.full_card = full_card
+        self.model = "stub-mid"
+
+    def generate(self, prompt: str, *, system: str | None = None, **_: object) -> str:
+        return self.full_card if "REAL_CLAIM" in prompt else "{}"
+
+
+def test_build_middle_slice_rescues_front_matter_books(tmp_path):
+    # Büyük kitap: ilk 6000+ krk kapak/ön-madde (claim yok); gerçek içerik ortada.
+    # Builder ilk iki deneme boş kalınca ORTA-KESİTİ denemeli → claim yakalanır.
+    front = "x" * 8200  # [:6000] ve [:3000] yalnız bunu görür → claim yok
+    middle = "REAL_CLAIM " + "y" * 40000  # ofset 8000 penceresine düşer
+    store = _FakeStore([front, middle])
+    builder = _builder(tmp_path, store, _MiddleAwareLLM(_VALID_CARD_JSON))
+
+    card = builder.build("paper_book")
+
+    assert card.main_claim.startswith("Volatilite")  # orta-kesitten kurtarıldı
+
+
+def test_build_no_middle_slice_when_small(tmp_path):
+    # Küçük belge: orta-kesit denemesi tetiklenmez → ilk denemeler boşsa boş kalır.
+    store = _FakeStore(["kısa metin, marker yok"])
+    builder = _builder(tmp_path, store, _MiddleAwareLLM(_VALID_CARD_JSON))
+
+    card = builder.build("paper_small")
+
+    assert card.main_claim == ""  # belge küçük; orta-kesit yok
+
+
 # --------------------------------------------------------------------------
 # Integration: real local model (skipped unless Ollama + model are ready)
 # --------------------------------------------------------------------------

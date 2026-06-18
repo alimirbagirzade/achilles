@@ -155,10 +155,19 @@ class KnowledgeCardBuilder:
                 "SADECE geçerli JSON döndür (markdown/açıklama yok). Kaynak uydurma."
             )
 
-        data = self._card_json(self._load_text(paper_id)[:max_chars], system, max_tokens=900)
-        if not data.get("main_claim"):
+        full_text = self._load_text(paper_id)
+        data = self._card_json(full_text[:max_chars], system, max_tokens=900)
+        if not str(data.get("main_claim") or "").strip():
             # daha kısa alıntıyla tek retry (8GB'da hız + JSON sağlamlığı)
-            data = self._card_json(self._load_text(paper_id)[:3000], system, max_tokens=700) or data
+            data = self._card_json(full_text[:3000], system, max_tokens=700) or data
+        if not str(data.get("main_claim") or "").strip() and len(full_text) > max_chars * 2:
+            # Büyük belgelerde (kitaplar) ilk 6000 krk kapak/içindekiler/ön-madde olabilir →
+            # gerçek içerik için BELGENİN ORTASINDAN bir kesit dene (boş kart darboğazı fix).
+            offset = min(len(full_text) // 5, 8000)
+            data = (
+                self._card_json(full_text[offset : offset + max_chars], system, max_tokens=900)
+                or data
+            )
 
         data["paper_id"] = paper_id
         card = KnowledgeCard.model_validate(data)

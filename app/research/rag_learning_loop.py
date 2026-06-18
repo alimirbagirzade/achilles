@@ -24,6 +24,7 @@ import dataclasses
 import datetime as dt
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -35,6 +36,23 @@ _STATE_PATH = Path("storage") / "rag_learning_state.json"
 
 def _utcnow() -> str:
     return dt.datetime.now(dt.UTC).isoformat()
+
+
+_ALNUM_RE = re.compile(r"[^0-9A-Za-zÇĞİÖŞÜçğıöşü]")
+
+
+def is_substantive_card(card_json: dict[str, Any]) -> bool:
+    """Kart ANLAMLI içerik taşıyor mu — dejenere ('...', tek kelime) kartları eler.
+
+    Yalnız non-empty bakmak yetmez: LLM ön-madde/çekişmede `"..."` döndürebilir ve bu
+    onaylanırsa coverage çöple şişer (v5-tipi risk). Anlamlı (alfanümerik) karakter say:
+    title ≥ 8 ve main_claim ≥ 40 → gerçek içerik kabul edilir.
+    """
+    if not isinstance(card_json, dict):
+        return False
+    title = _ALNUM_RE.sub("", str(card_json.get("title") or ""))
+    main_claim = _ALNUM_RE.sub("", str(card_json.get("main_claim") or ""))
+    return len(title) >= 8 and len(main_claim) >= 40
 
 
 @dataclass
@@ -225,8 +243,26 @@ class RagLearningLoop:
                 store.mark_arxiv_query_ran(q["query_id"])
         return fetched, ingested
 
+    @staticmethod
+    def _approve_if_content(store: Any, paper_id: str) -> bool:
+        """En yeni pending kartı ANLAMLI içerik taşıyorsa onayla.
+
+        continuous-learning.sh sadece `title+main_claim` non-empty bakıyor; bu ÇOK ZAYIF —
+        dejenere `"..."` kartları (LLM ön-madde/çekişmede "..." döndürür) onaylanıp coverage'ı
+        ÇÖPLE şişiriyor (v5-tipi risk). Burada `is_substantive_card` ile gerçek-uzunluk eşiği
+        uygulanır: anlamlı (alfanümerik) title ≥8 ve main_claim ≥40 karakter. Onaylanan kart
+        `papers_with_real`'e girer → coverage GERÇEK içerikle yükselir.
+        """
+        pend = [c for c in store.list_pending_cards() if str(c.get("paper_id", "")) == paper_id]
+        if not pend:
+            return False
+        newest = max(pend, key=lambda c: str(c.get("created_at", "")))
+        if is_substantive_card(newest.get("card_json") or {}):
+            return bool(store.approve_card(newest["card_id"]))
+        return False
+
     def _build_missing_cards(self, limit: int) -> int:
-        """Kartı olmayan makalelere bilgi kartı üret (en çok `limit` adet)."""
+        """Kartı olmayan makalelere bilgi kartı üret + içerikliyse onayla (en çok `limit`)."""
         if limit <= 0:
             return 0
         from app.brain.knowledge_card_builder import KnowledgeCardBuilder
@@ -242,6 +278,7 @@ class RagLearningLoop:
                 continue
             try:
                 builder.build(p.paper_id)
+                self._approve_if_content(store, p.paper_id)
                 built += 1
             except Exception as exc:
                 log.warning("RAG loop: kart üretilemedi (%s): %s", p.paper_id, exc)
@@ -284,6 +321,7 @@ class RagLearningLoop:
                 break
             try:
                 builder.build(pid)
+                self._approve_if_content(store, pid)  # içerikliyse onayla → coverage'a girsin
                 attempted.add(pid)  # başarıyla yeniden üretildi → bir daha deneme
                 done += 1
             except Exception as exc:
