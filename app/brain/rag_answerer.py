@@ -93,7 +93,7 @@ class RagAnswerer:
         prompt = f"SOURCES / KAYNAKLAR:\n{context}\n\nQUESTION / SORU: {question}"
 
         try:
-            text = self.llm.generate(prompt, system=system, temperature=0.2)
+            text = self.llm.generate(prompt, system=system, temperature=0.2, seed=42)
             return RagAnswer(question=question, answer=text, sources=chunks, llm_used=True)
         except LLMUnavailable:
             # Graceful degradation: still return retrieved sources.
