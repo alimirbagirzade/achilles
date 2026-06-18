@@ -85,3 +85,14 @@ def test_normalize_yonler() -> None:
     assert _normalize("aynı kalır") == "ayni"
     assert _normalize("decreases") == "azalir"
     assert _normalize("kuş uçtu") is None
+
+
+def test_normalize_olumsuzluk_ve_registry_dili() -> None:
+    # Olumsuzluk: alt-dizgi 'art'/'azal' yönü TERS çevirmemeli (eski bug).
+    assert _normalize("artmaz") == "ayni"  # eskiden yanlışlıkla 'artar'
+    assert _normalize("azalmaz") == "ayni"  # eskiden yanlışlıkla 'azalir'
+    assert _normalize("değişmez") == "ayni"
+    assert _normalize("no change") == "ayni"
+    # Registry'nin kendi monoton dili artık tanınmalı (eskiden None).
+    assert _normalize("daha pürüzsüz") == "azalir"  # registry SMA/EMA/ENTROPY dili
+    assert _normalize("daha az oynak") == "azalir"

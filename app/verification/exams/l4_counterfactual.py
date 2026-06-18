@@ -168,13 +168,36 @@ def _parse_direction(raw: str) -> str | None:
 
 
 def _normalize(text: str) -> str | None:
+    r"""Model çıktısındaki yön ifadesini kanonik etikete (artar/azalir/ayni) indir.
+
+    Kelime-sınırı (``\b``) + OLUMSUZLUK-farkında. Eski sürüm düz alt-dizgi (``in``)
+    kullandığı için 'artmaz' (=artmıyor) içindeki 'art' yanlışlıkla ARTIŞ, 'azalmaz'
+    içindeki 'azal' yanlışlıkla AZALIŞ sayılıyordu — yani anlamı TERS çeviriyordu.
+    Bu yüzden olumsuzluk/eşitlik kalıpları artış/azalış testlerinden ÖNCE 'aynı'ya
+    eşlenir. Ayrıca registry'nin kendi dili ("daha pürüzsüz", "daha az oynak")
+    pürüzsüzlük = oynaklık AZALMASI olarak tanınır. Yalnız regex — eval/exec yok
+    (CLAUDE.md Kural 5).
+    """
     t = text.lower()
-    # Türkçe + İngilizce eş anlamlılar; "azal" önce ("artar" da 'art' içerir ama
-    # azalma metni 'azal' ile başlar, çakışma yok).
-    if "azal" in t or "decreas" in t or "düş" in t or "lower" in t or "smooth" in t:
+
+    # 1) OLUMSUZLUK / EŞİTLİK önce: içlerindeki 'art'/'azal'/'değiş' alt-dizgisi
+    #    aşağıdaki yön testlerini KANDIRMASIN diye en başta 'aynı'ya eşlenir.
+    if re.search(r"\b(artmaz|azalmaz|değişmez|değişmedi|sabit|unchang\w*)\b|\bno\s+chang\w*", t):
+        return _SAME
+
+    # 2) Pürüzsüzlük / oynaklık ifadeleri (registry bu dili kullanır). Daha pürüzsüz /
+    #    pürüz azalır / daha az oynak → oynaklık AZALIR; pürüz artar / daha oynak → ARTAR.
+    if re.search(r"pürüzsüz|pürüz\w*\s+azal|\baz\s+oynak\b", t):
         return _DECREASE
-    if "art" in t or "increas" in t or "yüksel" in t or "higher" in t:
+    if re.search(r"pürüz\w*\s+art|\bdaha\s+(çok\s+)?oynak\b", t):
         return _INCREASE
-    if "ayn" in t or "değişme" in t or "sabit" in t or "same" in t or "unchang" in t:
+
+    # 3) Genel yön anahtar kelimeleri — kelime sınırıyla ('art' artık 'artmaz'/'sanat'
+    #    içine, 'azal' de 'azalmaz' içine DÜŞMEZ).
+    if re.search(r"\b(azal\w*|decreas\w*|düş\w*|lower|smooth\w*)\b", t):
+        return _DECREASE
+    if re.search(r"\b(art\w*|increas\w*|yüksel\w*|higher)\b", t):
+        return _INCREASE
+    if re.search(r"\b(ayn\w*|değişme\w*|same)\b", t):
         return _SAME
     return None
