@@ -350,6 +350,46 @@ class AutoLoRAPipeline:
             except Exception:
                 log.warning("Auto-LoRA: eval_history kaydedilemedi")
 
+            # Anlama-merdiveni kıyası (v5-savunması dikişi — adapter vs base L3/L4).
+            # PEFT bağımlılıkları yoksa veya adapter dizini yoksa sessizce atlanır.
+            try:
+                from app.lora.peft_llm_shim import PeftAdapterLLMShim
+                from app.memory.sqlite_store import SqliteStore as _Store
+                from app.verification.exams.understanding_score import score_full_ladder
+
+                shim = await asyncio.to_thread(PeftAdapterLLMShim.load, adapter_dir)
+                if shim is not None:
+                    _store = _Store()
+                    base_ladder = await asyncio.to_thread(
+                        score_full_ladder, 0, store=_store, use_sessions_l5=False
+                    )
+                    adapter_ladder = await asyncio.to_thread(
+                        score_full_ladder, 0, llm=shim, store=_store, use_sessions_l5=False
+                    )
+                    base_rate = base_ladder.pass_rate or 0.0
+                    adapter_rate = adapter_ladder.pass_rate or 0.0
+                    scores["_ladder"] = {
+                        "base_pass_rate": round(base_rate, 4),
+                        "adapter_pass_rate": round(adapter_rate, 4),
+                    }
+                    # Anlama regresyonu: adapter base'in %5'ten fazla altındaysa ek-red.
+                    if base_rate > 0 and adapter_rate < base_rate - 0.05:
+                        regression_any = True
+                        passed = False
+                        log.warning(
+                            "Auto-LoRA: anlama-merdiveni GERİLEMESİ — base %.0f%% > adapter %.0f%%",
+                            base_rate * 100,
+                            adapter_rate * 100,
+                        )
+                    else:
+                        log.info(
+                            "Auto-LoRA: anlama-merdiveni OK — base %.0f%% / adapter %.0f%%",
+                            base_rate * 100,
+                            adapter_rate * 100,
+                        )
+            except Exception as _ladder_exc:
+                log.debug("Auto-LoRA: anlama-merdiveni kıyası atlandı — %s", _ladder_exc)
+
             async with self._lock:
                 self._state.eval_scores = scores
                 if passed:
