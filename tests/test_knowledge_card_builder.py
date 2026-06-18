@@ -174,14 +174,14 @@ class _MiddleAwareLLM:
 def test_build_middle_slice_rescues_front_matter_books(tmp_path):
     # Büyük kitap: ilk 6000+ krk kapak/ön-madde (claim yok); gerçek içerik ortada.
     # Builder ilk iki deneme boş kalınca ORTA-KESİTİ denemeli → claim yakalanır.
-    front = "x" * 8200  # [:6000] ve [:3000] yalnız bunu görür → claim yok
-    middle = "REAL_CLAIM " + "y" * 40000  # ofset 8000 penceresine düşer
+    front = "x" * 7000  # [:6000] ve [:3000] yalnız bunu görür → claim yok
+    middle = "REAL_CLAIM " * 3000  # belge gövdesi; orantılı (%25/%55) kesitler buna düşer
     store = _FakeStore([front, middle])
     builder = _builder(tmp_path, store, _MiddleAwareLLM(_VALID_CARD_JSON))
 
     card = builder.build("paper_book")
 
-    assert card.main_claim.startswith("Volatilite")  # orta-kesitten kurtarıldı
+    assert card.main_claim.startswith("Volatilite")  # orantılı kesitten kurtarıldı
 
 
 def test_build_no_middle_slice_when_small(tmp_path):

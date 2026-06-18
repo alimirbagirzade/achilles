@@ -162,12 +162,16 @@ class KnowledgeCardBuilder:
             data = self._card_json(full_text[:3000], system, max_tokens=700) or data
         if not str(data.get("main_claim") or "").strip() and len(full_text) > max_chars * 2:
             # Büyük belgelerde (kitaplar) ilk 6000 krk kapak/içindekiler/ön-madde olabilir →
-            # gerçek içerik için BELGENİN ORTASINDAN bir kesit dene (boş kart darboğazı fix).
-            offset = min(len(full_text) // 5, 8000)
-            data = (
-                self._card_json(full_text[offset : offset + max_chars], system, max_tokens=900)
-                or data
-            )
+            # gerçek içerik için belge BOYUNCA orantılı birkaç kesit dene. (Sabit 8000 krk
+            # ofset, devasa kitaplarda HÂLÂ ön-madde kalıyordu — boş kart darboğazı fix.)
+            for frac in (0.25, 0.55):
+                offset = min(int(len(full_text) * frac), len(full_text) - max_chars)
+                data = (
+                    self._card_json(full_text[offset : offset + max_chars], system, max_tokens=900)
+                    or data
+                )
+                if str(data.get("main_claim") or "").strip():
+                    break
 
         data["paper_id"] = paper_id
         card = KnowledgeCard.model_validate(data)
