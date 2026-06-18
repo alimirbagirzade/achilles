@@ -496,15 +496,42 @@ def api_rag_mastery() -> dict:
 
 
 @app.get("/api/understanding-score", dependencies=[api_auth])
-def api_understanding_score(seed: int = 0) -> dict:
-    """Objektif anlama skoru — L3+L4 sınav geçme oranı (kaba öz-değerlendirme %'nin yerine).
+def api_understanding_score(
+    seed: int = 0, full: bool = False, with_rag: bool = False, record: bool = False
+) -> dict:
+    """Objektif anlama skoru — sınav geçme oranı (kaba öz-değerlendirme %'nin yerine).
 
-    LLM gerektirir (model formülü uygular); çevrimdışıysa sınavlar 'skipped' olur ve
-    status 'insufficient_data' döner — sahte skor üretmeyiz (CLAUDE.md Kural 2).
+    Varsayılan: L3+L4 gösterge sınavı (LLM; çevrimdışı → 'insufficient_data', Kural 2).
+    ``full=true`` → L5 kompozisyon dahil tam merdiven (L5 deterministik, çevrimdışı bile
+    notlanır). ``with_rag=true`` → Taban/L1/L2 için canlı RAG sınavı da. ``record=true`` →
+    skoru KALICI yap (understanding_snapshots + JSON rapor).
     """
-    from app.verification.exams.understanding_score import score_indicator_exams
+    from app.verification.exams.understanding_score import (
+        score_full_ladder,
+        score_indicator_exams,
+    )
 
-    return score_indicator_exams(seed=seed).to_dict()
+    score = (
+        score_full_ladder(seed=seed, with_rag=with_rag)
+        if (full or with_rag)
+        else score_indicator_exams(seed=seed)
+    )
+    out = score.to_dict()
+    if record:
+        from app.verification.exams.understanding_record import record_understanding
+
+        out["recorded"] = record_understanding(
+            score, seed=seed, context={"full": full, "with_rag": with_rag, "source": "web"}
+        )
+    return out
+
+
+@app.get("/api/understanding-score/history", dependencies=[api_auth])
+def api_understanding_history(limit: int = 20) -> dict:
+    """KALICI anlama skoru geçmişi (zaman serisi) — understanding_snapshots."""
+    from app.verification.exams.understanding_record import load_understanding_history
+
+    return {"history": load_understanding_history(limit=limit)}
 
 
 @app.get("/api/synthesis/reports", dependencies=[api_auth])

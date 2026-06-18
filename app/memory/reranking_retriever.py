@@ -49,6 +49,7 @@ class RerankingRetriever:
         enabled: bool | None = None,
         hybrid: bool | None = None,
         rrf: bool | None = None,
+        graph: bool | None = None,
     ) -> None:
         self.settings = get_settings()
         self.base = base or RetrievalService()
@@ -62,6 +63,9 @@ class RerankingRetriever:
         # kalibrasyonu gerektirmez → karşılaştırılamaz skorlu kaynaklarda sağlam.
         # Varsayılan kapalı → mevcut over-fetch+rerank davranışı değişmez.
         self.rrf = rrf if rrf is not None else self.settings.rag_rrf
+        # Graf modu (SPRIG-lite, opt-in): dense-hit'lerden tohumlanmış PPR + RRF füzyonu
+        # (çok-hop recall). Açıksa rrf/rerank yerine graf yolu çalışır. Varsayılan kapalı.
+        self.graph = graph if graph is not None else self.settings.rag_graph
 
     def _default_reranker(self) -> RerankerLike:
         # Cross-encoder OPT-IN (Faz A8); açıksa onu kullan (model yoksa kendi içinde
@@ -77,6 +81,10 @@ class RerankingRetriever:
 
         if not self.enabled:
             return self.base.retrieve(query, top_k=k)
+
+        # Graf modu (opt-in): dense tohum → PPR → RRF füzyonu (çok-hop recall).
+        if self.graph:
+            return self._graph_retrieve(query, k)
 
         # RRF füzyon modu (opt-in): dense + BM25 sıralı listelerini RRF ile birleştir.
         if self.rrf:
@@ -126,6 +134,48 @@ class RerankingRetriever:
         if not ranked_lists:
             return []
 
+        fused = fuse_ranked(ranked_lists, k=self.settings.rag_rrf_k)
+        out = [chunk_by_id[cid] for cid in fused if cid in chunk_by_id]
+        return out[:k]
+
+    def _graph_retrieve(self, query: str, k: int) -> list[RetrievedChunk]:
+        """SPRIG-lite: dense-hit'lerden tohumlanmış PPR → dense ile RRF füzyonu.
+
+        Korpus term–chunk grafı (lazy) üzerinde, dense aday id'lerinden tohumlanan
+        Personalized PageRank çalıştırır; graf-sıralı liste ile dense-sıralı listeyi RRF
+        ile birleştirir. Böylece dense'in kaçırdığı ama paylaşılan terimlerle bağlı
+        chunk'lar yüzeye çıkabilir (çok-hop recall). Graf yoksa/erişilemezse dense-only'e
+        düşer (güvenli). Metni olmayan id'ler atlanır (Kural 7).
+        """
+        from app.memory.graph_corpus import get_corpus_graph
+        from app.memory.graph_retriever import personalized_pagerank, seed_weights_from_ids
+        from app.memory.rank_fusion import fuse_ranked
+
+        candidate_k = max(k, k * max(1, self.overfetch))
+        dense = self.base.retrieve(query, top_k=candidate_k)
+        if not dense:
+            return []
+        dense_ids = [c.chunk_id for c in dense]
+        chunk_by_id: dict[str, RetrievedChunk] = {c.chunk_id: c for c in dense}
+
+        graph, corpus_chunks = get_corpus_graph()
+        if graph is None:
+            return dense[:k]  # graf yok → dense-only
+
+        ppr = personalized_pagerank(
+            graph,
+            seed_weights_from_ids(dense_ids),
+            damping=self.settings.rag_graph_damping,
+            iterations=self.settings.rag_graph_iters,
+        )
+        graph_ids = [
+            cid for cid, _s in sorted(ppr.items(), key=lambda kv: (-kv[1], kv[0])) if ppr[cid] > 0.0
+        ][:candidate_k]
+        for cid in graph_ids:
+            if cid not in chunk_by_id and cid in corpus_chunks:
+                chunk_by_id[cid] = corpus_chunks[cid]
+
+        ranked_lists = [lst for lst in (dense_ids, graph_ids) if lst]
         fused = fuse_ranked(ranked_lists, k=self.settings.rag_rrf_k)
         out = [chunk_by_id[cid] for cid in fused if cid in chunk_by_id]
         return out[:k]

@@ -98,6 +98,14 @@ class Settings(BaseSettings):
     # ACHILLES_RAG_RRF=true. RRF sabiti `rag_rrf_k` (yaygın varsayılan 60).
     rag_rrf: bool = False
     rag_rrf_k: int = 60
+    # Graf-tabanlı retrieval (SPRIG-lite, opt-in): term–chunk bipartite graf üzerinde
+    # dense-hit'lerden tohumlanmış Personalized PageRank ile çok-hop ilgili chunk'ları
+    # yüzeye çıkarır; sonucu dense ile RRF ile füzyonlar. LLM-free, deterministik, CPU-only.
+    # Dense'in kaçırdığı (paylaşılan terimle bağlı) chunk'ları getirebilir. Varsayılan kapalı
+    # → mevcut retrieval davranışı değişmez. Açmak için ACHILLES_RAG_GRAPH=true.
+    rag_graph: bool = False
+    rag_graph_damping: float = 0.85  # PageRank yayılma katsayısı (1-damping = restart)
+    rag_graph_iters: int = 20  # sabit iterasyon (determinizm)
     # Contextual Retrieval (Faz P2): chunk'ı embed etmeden önce "başlık / bölüm:" ön-eki
     # ekler (orijinal metin Chroma document'ında korunur). Tutarlılık için TÜM korpus
     # aynı ayarla embed edilmeli → açmadan önce `achilles reindex-contextual` çalıştır.

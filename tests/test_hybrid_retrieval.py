@@ -177,3 +177,33 @@ def test_rrf_mode_dense_only_when_bm25_empty(monkeypatch) -> None:
     )
     out = rr.retrieve("x", top_k=5)
     assert [c.chunk_id for c in out] == ["p_c0", "p_c1"]  # dense sırası korunur
+
+
+# ----------------------------------------------------- Graf modu (SPRIG-lite, opt-in)
+def test_graph_mode_pulls_multihop_chunk(monkeypatch) -> None:
+    # Dense yalnız c0 döner; korpus grafında c1, c0 ile 'rsi' terimini paylaşır →
+    # PPR (c0'dan tohumlu) c1'i yüzeye çıkarmalı, dense kaçırmış olsa bile.
+    from app.memory.graph_retriever import build_graph
+
+    dense = [_chunk("p_c0", "rsi momentum strategy", 0.2)]
+    texts = {"p_c0": "rsi momentum strategy", "p_c1": "rsi volatility filter"}
+    graph = build_graph(texts, max_df_ratio=1.0)
+    corpus_chunks = {
+        "p_c0": _chunk("p_c0", texts["p_c0"], None),
+        "p_c1": _chunk("p_c1", texts["p_c1"], None),
+    }
+    monkeypatch.setattr(
+        "app.memory.graph_corpus.get_corpus_graph", lambda chroma=None: (graph, corpus_chunks)
+    )
+    rr = RerankingRetriever(base=_StubBase(dense), enabled=True, graph=True)
+    out = rr.retrieve("rsi", top_k=5)
+    ids = {c.chunk_id for c in out}
+    assert "p_c0" in ids and "p_c1" in ids  # graf çok-hop chunk'ı ekledi
+
+
+def test_graph_mode_dense_only_when_graph_empty(monkeypatch) -> None:
+    dense = [_chunk("p_c0", "momentum", 0.2), _chunk("p_c1", "trend", 0.3)]
+    monkeypatch.setattr("app.memory.graph_corpus.get_corpus_graph", lambda chroma=None: (None, {}))
+    rr = RerankingRetriever(base=_StubBase(dense), enabled=True, graph=True)
+    out = rr.retrieve("x", top_k=5)
+    assert [c.chunk_id for c in out] == ["p_c0", "p_c1"]  # graf yok → dense-only

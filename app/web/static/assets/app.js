@@ -170,6 +170,18 @@
         }
       })
       .catch(function () {});
+    // Son KALICI objektif anlama skorunu rozette pasif göster (DB okuması, LLM çağırmaz)
+    api("/understanding-score/history?limit=1", { method: "GET" })
+      .then(function (h) {
+        var el = document.getElementById("objUnderstanding");
+        var r = h && h.history && h.history[0];
+        if (!el || !r || r.pass_rate == null) return;
+        el.textContent = "obj. anlama %" + Math.round(r.pass_rate * 100);
+        el.title =
+          "Son KALICI sınav skoru (" + String(r.created_at || "").slice(0, 10) +
+          ") — tıkla: tazele + kaydet\nSeviyeler: " + levelBreakdown(r.by_level);
+      })
+      .catch(function () {});
   }
 
   // ---------- ask (RAG) ----------
@@ -1036,22 +1048,28 @@
     objUnderstandingEl.addEventListener("click", function () {
       var prev = objUnderstandingEl.textContent;
       objUnderstandingEl.textContent = "obj. anlama: …";
-      api("/understanding-score", { method: "GET" })
+      // Tam merdiven (L5 + L3/L4) + KALICI kayıt: tıklayınca snapshot DB'ye yazılır
+      // → anlama zaman içinde izlenir (understanding-history).
+      api("/understanding-score?full=true&record=true", { method: "GET" })
         .then(function (s) {
+          var brk = levelBreakdown(s.by_level);  // Taban→L5 sırasında (alfabetik değil)
+          var snap = s.recorded && s.recorded.snapshot_id ? s.recorded.snapshot_id : null;
           if (s.status !== "scored" || s.pass_rate == null) {
             objUnderstandingEl.textContent = "obj. anlama: veri yok";
             objUnderstandingEl.title =
               "Objektif sınav notlanamadı (LLM çevrimdışı olabilir). Notlanan: " +
-              s.graded + " · atlanan: " + s.skipped;
+              s.graded + " · atlanan: " + s.skipped + (brk ? "\nSeviyeler: " + brk : "");
             toast("Objektif anlama: notlanan sınav yok (LLM çevrimdışı?).", true);
             return;
           }
           var pct = Math.round(s.pass_rate * 100);
           objUnderstandingEl.textContent = "obj. anlama %" + pct;
           objUnderstandingEl.title =
-            "Objektif L3/L4 sınav geçme oranı — geçti " + s.passed + "/" + s.graded +
-            " (atlanan " + s.skipped + ", veri yok " + s.no_data + ")";
-          toast("Objektif anlama skoru: %" + pct + " (" + s.graded + " sınav)");
+            "Objektif merdiven (Taban/L1/L2/L3/L4/L5) geçme oranı — geçti " +
+            s.passed + "/" + s.graded + " (atlanan " + s.skipped + ", veri yok " +
+            s.no_data + ")" + (brk ? "\nSeviyeler: " + brk : "") +
+            (snap ? "\nKALICI kaydedildi: " + snap : "");
+          toast("Objektif anlama: %" + pct + " (" + s.graded + " sınav) — kalıcı kaydedildi");
         })
         .catch(function (err) {
           objUnderstandingEl.textContent = prev;
@@ -2385,15 +2403,94 @@
     el.innerHTML = html;
   }
 
+  // ---- Anlama merdiveni seviye sıralaması (Taban→L1→…→L5; alfabetik DEĞİL) ----
+  var LADDER_ORDER = ['Taban', 'L1', 'L2', 'L3', 'L4', 'L5'];
+  function orderedLevels(byLevel) {
+    return Object.keys(byLevel || {}).sort(function (a, b) {
+      var ia = LADDER_ORDER.indexOf(a); if (ia === -1) ia = LADDER_ORDER.length;
+      var ib = LADDER_ORDER.indexOf(b); if (ib === -1) ib = LADDER_ORDER.length;
+      return ia - ib || a.localeCompare(b);
+    });
+  }
+  function levelBreakdown(byLevel) {
+    return orderedLevels(byLevel).map(function (k) {
+      var v = byLevel[k] || {};
+      return k + ': ' + (v.passed || 0) + '/' + ((v.passed || 0) + (v.failed || 0));
+    }).join(' · ');
+  }
+  function ctxSummary(ctx) {
+    ctx = ctx || {};
+    var parts = [ctx.model_kind || '', String(ctx.llm_model || '')];
+    if (ctx.with_rag) parts.push('rag');
+    return parts.filter(Boolean).join('·') || '—';
+  }
+
+  function renderUnderstandingHistory(rows) {
+    var svg = document.getElementById('lrnUndSvg');
+    var tbl = document.getElementById('lrnUndTable');
+    if (!rows || !rows.length) {
+      if (svg) svg.innerHTML = '<text x="350" y="85" text-anchor="middle" fill="#666" font-size="13">Henüz kayıt yok — "obj. anlama" rozetine tıkla</text>';
+      if (tbl) tbl.innerHTML = '<span class="muted small">Henüz kayıtlı anlama skoru yok</span>';
+      return;
+    }
+    var chrono = rows.slice().reverse();  // rows en yeni→eski; grafik eski→yeni
+    if (svg) {
+      var W = 700, H = 160, padX = 40, padY = 20, pts = [];
+      chrono.forEach(function (r, i) {
+        if (r.pass_rate == null) return;  // notlanmamış (graded=0) → sahte 0% çizme (Kural 2)
+        var x = padX + (chrono.length > 1 ? i * (W - padX * 2) / (chrono.length - 1) : (W - padX * 2) / 2);
+        var y = H - padY - r.pass_rate * (H - padY * 2);
+        pts.push({ x: x, y: y, pr: r.pass_rate });
+      });
+      if (!pts.length) {
+        svg.innerHTML = '<text x="350" y="85" text-anchor="middle" fill="#666" font-size="13">Notlanmış skor yok (LLM çevrimdışı olabilir)</text>';
+      } else {
+        var midY = (H - padY - 0.5 * (H - padY * 2)).toFixed(1);
+        var ref = '<line x1="' + padX + '" y1="' + midY + '" x2="' + (W - padX) + '" y2="' + midY +
+          '" stroke="#555" stroke-dasharray="4 4" stroke-width="1"/>' +
+          '<text x="' + (W - padX) + '" y="' + (parseFloat(midY) - 4) + '" text-anchor="end" fill="#777" font-size="10">%50</text>';
+        var line = '<polyline fill="none" stroke="#4af" stroke-width="2" points="' +
+          pts.map(function (p) { return p.x.toFixed(1) + ',' + p.y.toFixed(1); }).join(' ') + '"/>';
+        var dots = pts.map(function (p) {
+          return '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="3" fill="' +
+            (p.pr >= 0.5 ? '#4a4' : '#a44') + '"/>';
+        }).join('');
+        svg.innerHTML = ref + line + dots;
+      }
+    }
+    if (tbl) {
+      var html = '<table style="width:100%;border-collapse:collapse;font-size:.85rem"><thead><tr>' +
+        '<th style="text-align:left;padding:.3rem .5rem;border-bottom:1px solid var(--border)">Zaman</th>' +
+        '<th style="text-align:right;padding:.3rem .5rem;border-bottom:1px solid var(--border)">Oran</th>' +
+        '<th style="text-align:right;padding:.3rem .5rem;border-bottom:1px solid var(--border)">Notlanan</th>' +
+        '<th style="text-align:left;padding:.3rem .5rem;border-bottom:1px solid var(--border)">Seviyeler</th>' +
+        '<th style="text-align:left;padding:.3rem .5rem;border-bottom:1px solid var(--border)">Bağlam</th>' +
+        '</tr></thead><tbody>';
+      rows.forEach(function (r) {
+        var rate = r.pass_rate == null ? '—' : Math.round(r.pass_rate * 100) + '%';
+        var color = r.pass_rate == null ? '#888' : (r.pass_rate >= 0.5 ? '#4a4' : '#a44');
+        html += '<tr>' +
+          '<td style="padding:.3rem .5rem;color:#888;font-size:.75rem">' + esc(String(r.created_at || '').slice(0, 19)) + '</td>' +
+          '<td style="text-align:right;padding:.3rem .5rem;color:' + color + '"><strong>' + rate + '</strong></td>' +
+          '<td style="text-align:right;padding:.3rem .5rem">' + (r.graded || 0) + '</td>' +
+          '<td style="padding:.3rem .5rem;font-size:.78rem">' + esc(levelBreakdown(r.by_level)) + '</td>' +
+          '<td style="padding:.3rem .5rem;font-size:.75rem;color:#888">' + esc(ctxSummary(r.context)) + '</td>' +
+          '</tr>';
+      });
+      tbl.innerHTML = html + '</tbody></table>';
+    }
+  }
+
   let _lrnRuns = [];
 
   async function loadLearningDashboard() {
     try {
-      const [sum, evalData, runsData, growthData] = await Promise.all([
+      const [sum, evalData, runsData, growthData, undData] = await Promise.all([
         api('/learning/summary', { method: 'GET' }),       // api() = auth header + hata
         api('/learning/eval-history', { method: 'GET' }),
         api('/learning/training-runs', { method: 'GET' }),
         api('/learning/card-growth', { method: 'GET' }),
+        api('/understanding-score/history?limit=30', { method: 'GET' }).catch(function () { return { history: [] }; }),
       ]);
       document.getElementById('lrn-papers').textContent  = sum.n_papers   ?? '—';
       document.getElementById('lrn-chunks').textContent  = sum.n_chunks   ?? '—';
@@ -2412,6 +2509,7 @@
       }
 
       renderCardGrowth(growthData.rows || []);
+      renderUnderstandingHistory((undData && undData.history) || []);
     } catch (e) {
       console.error('learning dashboard yüklenemedi', e);
     }

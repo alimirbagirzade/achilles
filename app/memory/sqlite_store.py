@@ -499,6 +499,32 @@ class PaperComprehension(Base):
     computed_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
 
 
+class UnderstandingSnapshot(Base):
+    """Objektif anlama merdiveni anlık görüntüsü — KALICI zaman serisi.
+
+    Her satır, bir zaman noktasında L(Taban/1/2/3/4/5) sınavlarının toplanmış
+    OBJEKTİF sonucudur (öz-değerlendirme değil). ``score_indicator_exams`` /
+    ``score_full_ladder`` çıktısı buraya yazılır → "okuduğunu anladı mı" zaman
+    içinde yüzdeyle değil SINAV geçme oranıyla izlenir (CLAUDE.md Kural 2).
+    """
+
+    __tablename__ = "understanding_snapshots"
+
+    snapshot_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    created_at: Mapped[str] = mapped_column(String(40), default=_utcnow, index=True)
+    seed: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(32), default="insufficient_data")
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    passed: Mapped[int] = mapped_column(Integer, default=0)
+    failed: Mapped[int] = mapped_column(Integer, default=0)
+    skipped: Mapped[int] = mapped_column(Integer, default=0)
+    no_data: Mapped[int] = mapped_column(Integer, default=0)
+    graded: Mapped[int] = mapped_column(Integer, default=0)
+    pass_rate: Mapped[float | None] = mapped_column(Float, default=None)
+    by_level_json: Mapped[str] = mapped_column(Text, default="{}")  # seviye kırılımı
+    context_json: Mapped[str] = mapped_column(Text, default="{}")  # llm/adapter/with_rag meta
+
+
 class SqliteStore:
     """Thin wrapper around a SQLAlchemy engine + session factory."""
 
@@ -664,6 +690,73 @@ class SqliteStore:
     def get_comprehension_score(self, paper_id: str) -> PaperComprehension | None:
         with self.session() as s:
             return s.get(PaperComprehension, paper_id)
+
+    # --- objektif anlama merdiveni (KALICI snapshot'lar) ------------------
+    def save_understanding_snapshot(
+        self,
+        score: Any,
+        *,
+        seed: int = 0,
+        context: dict[str, Any] | None = None,
+    ) -> str:
+        """Anlama skorunu KALICI yap → ``understanding_snapshots`` (zaman serisi).
+
+        ``score``: UnderstandingScore (``to_dict`` alanları). ``context``: serbest
+        meta (ör. ``{"llm_model": ..., "with_rag": bool}``). Üretilen snapshot_id döner.
+        """
+        import uuid as _uuid
+
+        d = score.to_dict() if hasattr(score, "to_dict") else dict(score)
+        sid = "und_" + _uuid.uuid4().hex[:12]
+        with self.session() as s:
+            s.add(
+                UnderstandingSnapshot(
+                    snapshot_id=sid,
+                    seed=seed,
+                    status=str(d.get("status", "insufficient_data")),
+                    total=int(d.get("total", 0)),
+                    passed=int(d.get("passed", 0)),
+                    failed=int(d.get("failed", 0)),
+                    skipped=int(d.get("skipped", 0)),
+                    no_data=int(d.get("no_data", 0)),
+                    graded=int(d.get("graded", 0)),
+                    pass_rate=d.get("pass_rate"),
+                    by_level_json=json.dumps(d.get("by_level", {}), ensure_ascii=False),
+                    context_json=json.dumps(context or {}, ensure_ascii=False),
+                )
+            )
+        return sid
+
+    @staticmethod
+    def _snapshot_to_dict(row: UnderstandingSnapshot) -> dict[str, Any]:
+        return {
+            "snapshot_id": row.snapshot_id,
+            "created_at": row.created_at,
+            "seed": row.seed,
+            "status": row.status,
+            "total": row.total,
+            "passed": row.passed,
+            "failed": row.failed,
+            "skipped": row.skipped,
+            "no_data": row.no_data,
+            "graded": row.graded,
+            "pass_rate": row.pass_rate,
+            "by_level": json.loads(row.by_level_json or "{}"),
+            "context": json.loads(row.context_json or "{}"),
+        }
+
+    def list_understanding_snapshots(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self.session() as s:
+            rows = s.scalars(
+                select(UnderstandingSnapshot)
+                .order_by(UnderstandingSnapshot.created_at.desc())
+                .limit(limit)
+            )
+            return [self._snapshot_to_dict(r) for r in rows]
+
+    def latest_understanding_snapshot(self) -> dict[str, Any] | None:
+        snaps = self.list_understanding_snapshots(limit=1)
+        return snaps[0] if snaps else None
 
     def get_latest_knowledge_card(self, paper_id: str) -> dict | None:
         """En son üretilmiş kartın JSON içeriğini döndür (yoksa None)."""

@@ -16,6 +16,66 @@ LLM'i "trader gibi düşünen" bir araştırma motoru yapmak:
 3. Otomatik backtest et → sonuçtan öğren → LoRA eğitim verisi üret
 4. 3B modeli test eder; gerçek çıktı için 120B kullanılacak
 
+### Mevcut durum (2026-06-17) — 🔒 ANLAMA MERDİVENİ KALICI + 📚 MAKALE LOOP + 🐛 `\r` BUG
+
+> Kullanıcı: "L2/L3/L4/L5'i kalıcı yap + push; bug'ları loop'la çöz; faydalı makaleleri
+> sürekli indir; sonra eğitime devam." Eğitim kararı DEĞİŞMEDİ: **önce bitir, sonra bulut-GPU**
+> (lokal CPU = v5 çıkmazı; veri kapısı temiz-regen bitince GO → manuel Kaggle "Run All").
+
+**KALICILIK (L2-L5) ✅ — bu seansta inşa edildi:**
+- `understanding_snapshots` SQLite tablosu + `SqliteStore.save_/list_/latest_understanding_snapshot`.
+- `app/verification/exams/understanding_record.py`: `record_understanding` (DB + zaman-damgalı
+  `reports/evals/understanding/*.json`), `load_understanding_history`.
+- `understanding_score.py`: `score_full_ladder` (L5 deterministik—**çevrimdışı bile notlanır**
+  + L3/L4 LLM + opsiyonel RAG Taban/L1/L2), `l5_example_result`, `run_rag_ladder_answers`;
+  `score_indicator_exams` geri-uyumlu (refactor → `_indicator_exam_results`).
+- CLI: `understanding-score --full --with-rag --record` + yeni `understanding-history`.
+- Web: `/api/understanding-score`'a `full/with_rag/record` query (**VARSAYILAN DAVRANIŞ DEĞİŞMEDİ**)
+  + yeni `/api/understanding-score/history`; "obj. anlama" rozeti tıklayınca tam merdiven + KALICI kayıt.
+- **6 yeni test + tüm offline paket yeşil · ruff+mypy temiz.** Uçtan uca denendi (snapshot DB + CLI history).
+
+**🔬 GENİŞ DENETİM SONRASI SAĞLAMLAŞTIRMA (2026-06-18) — kullanıcı "acele etmeden geniş bakalım ve çözelim":**
+Çok-ajan denetim (5 boyut, 24 doğrulanmış bulgu) → 11 "now" çözüldü, hepsi offline test edildi:
+1. **L5 yanlış-negatif BUG fix** — `composition_to_result`: backtest YALNIZ "çok az işlem/veri yok/belirsiz"
+   yüzünden düştüyse artık `failed` değil `skipped` (test edilemedi). Sahte ~%0 sinyali bitti.
+2. **L5 gerçek sinyal** — `l5_results_from_sessions`: `score_full_ladder` sabit `example_ir` yerine sistemin
+   KENDİ ürettiği kompozisyonların (`research_sessions.verdict`) gerçek sonucunu okur (`use_sessions_l5`).
+3. **Bağlam otomatik kaydı** — snapshot context'ine `llm_model`/`model_kind`/`n_papers`/`n_carded` otomatik
+   yazılır (zaman serisi yorumlanabilir; base vs adapter ayrımı için temel).
+4. **Merdiven sırası** — `Taban→L1..L5` sabit sıra (alfabetik sort Taban'ı sona atıyordu); CLI + web ortak.
+5. **Regresyon kıyası** — `compare_understanding(prev,curr)` (yalnız aynı `llm_model` → `regressed` bayrağı) +
+   CLI `understanding-history --compare` + "Bağlam" sütunu. v5-tipi gerilemeyi yakalamanın temeli.
+6. **Web görünürlük** — Öğrenme paneline "Objektif Anlama Geçmişi" kartı (sparkline + tablo, `/history`
+   tüketilir, XSS-güvenli esc) + açılışta son skor rozette pasif gösterilir. **Canlı sunucuda doğrulandı (HTTP 200).**
+7. **Adapter-ölçüm dikişi** — `score_full_ladder(llm=...)` + `_indicator_exam_results(llm=...)` → base yerine
+   ADAPTER ölçülebilir (sahte-LLM ile offline test edildi). v5-savunmasının altyapısı.
+- **12 yeni test (toplam) + tüm offline paket yeşil (exit 0) · ruff+mypy temiz.** 145/145 makale artık kartlı.
+
+**🔴 "NEXT" (eğitilmiş adapter gerektirir / daha büyük — denetim doğruladı, henüz YAPILMADI):**
+- **Adapter promosyonunu anlama-merdivenine BAĞLA (en kritik):** `auto_pipeline._run_eval` base-vs-adapter
+  `score_full_ladder` koşsun; adapter pass_rate base'in altındaysa promosyonu BLOKLA. (#7 dikişi hazır; PEFT
+  LLM shim + eğitilmiş adapter gerekir — v6 daha yok, o yüzden offline doğrulanamaz.)
+- **Disiplin/dürüstlük sınav basamağı:** merdiven "maliyetsiz getiri / garanti / pasaja-göre" v5 patolojilerine
+  KÖR (onlar adapter_eval + pretrain-gate'te). `discipline_core` red-flag'lerini bir ExamResult'a sar.
+- **pretrain-gate → auto_pipeline zinciri:** `dataset_quality.audit_dataset` Gate 0-8 sonrası çağrılmalı (NO-GO → bloke).
+
+**🐛 `\r` BUG (kart üretimi OSError 22):** Windows Python stdout CRLF → bash `for pid` döngüsüne `\r`
+sızıyor → `paper_xxx\r_card.json`. Kök sebep doğrulandı (DB id'leri TEMİZ: 138 makale, 0 bozuk).
+`continuous-learning.sh` (satır 71/101) **eşzamanlı oturum/makine** tarafından düzeltildi; `auto-chain.sh`
+de düzeltiliyor → scriptlere DOKUNMADIM (çakışmamak için). `continuous-learning` loop synth-yazma
+yarışı için duraklatıldı (`storage/STOP_LEARNING`); bulk-regen bağımsız sürüyor. **KALAN:** mac-loop.sh
+aynı `\r` desenine sahip (macOS'ta zararsız ama robustluk için bir gün düzeltilebilir).
+
+**Synth temiz yeniden-üretim (AKTİF):** `synth-qa-bulk → 1300` arka planda; yeni veride "pasaja göre"
+oranı **%0** (eski %68 = v5'i batıran). 1300'e ulaşınca kapı GO beklenir.
+
+**📚 Makale loop:** 6 yeni gerçek arXiv makalesi `Desktop\RAG Kaynak\Gerekli kaynaklar\` köküne indi
+(1905.05023 backtest-OVF, 2512.12924 walk-forward, 2309.15217 RAGAS, 2401.15884 CRAG, 2601.05716
+Kalman-Markov, 2605.17117 geometrik rejim) + `00_NEDEN_ONEMLI_oku_once.md` güncellendi. DSR/PBO arXiv'de
+yok (uydurulmadı, Kural 7). Yeni `lora-arastirma` ajanı da mevcut (LoRA tekniği araştırması için).
+
+---
+
 ### Mevcut durum (2026-06-16 SON) — 🧠 ANLAMA DOĞRULAMA SİSTEMİ İNŞA EDİLDİ ✅
 
 > Bu seans (06-16 akşam/gece): RAG vs LoRA netleşti + **"Anlama Doğrulama" merdiveni —

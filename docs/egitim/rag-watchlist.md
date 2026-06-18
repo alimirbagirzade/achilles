@@ -15,6 +15,7 @@
 | 2026-06-17 | Corrective RAG (CRAG) | arxiv.org/abs/2401.15884 | ertelendi | hafif offline retrieval-evaluator ileride; web-arama kademesi offline değil |
 | 2026-06-17 | HyDE | — | ertelendi | LLM + latency/halüsinasyon; opsiyonel graceful HyDE ileride |
 | 2026-06-17 | GraphRAG / LightRAG / HippoRAG | arxiv.org/abs/2507.03226 | ertelendi | token-pahalı; LightRAG/HippoRAG hafif varyant olarak ileride |
+| 2026-06-17 | SPRIG: CPU-only GraphRAG (PPR) | arxiv.org/abs/2602.23372 | entegre (v1.4) | `graph_retriever.py`+`graph_corpus.py` term–chunk graf + tohumlu PPR + RRF; opt-in `rag_graph` |
 | 2026-06-17 | RAGAS offline metrikleri | docs.ragas.io | entegre (v1.3, kısmi) | `app/evals/rag_ragas_offline.py` — faithfulness/context-precision/recall, LLM'siz deterministik |
 | 2026-06-17 | RbFT / ALoFTRAG (RAFT varyantları) | arxiv.org/abs/2403.10131 | ertelendi | LoRA reçetesi notu; `discipline_dataset` RbFT ruhunda |
 | 2026-06-17 | Matryoshka / nomic-embed v2 (MoE) | nomic.ai | ertelendi | Ollama embedding modeli değişince yükseltme yolu |

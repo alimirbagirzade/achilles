@@ -1,6 +1,6 @@
 # Achilles RAG Eğitimi — Detaylı Anlatım
 
-Sürüm: v1.3 · 2026-06-17
+Sürüm: v1.4 · 2026-06-17
 
 ## Sürüm Geçmişi
 
@@ -8,6 +8,7 @@ Sürüm: v1.3 · 2026-06-17
 |-------|-------|-----------|
 | v1.0 | 2026-06-16 | İlk kapsamlı sürüm. |
 | v1.1 | 2026-06-16 | Denetim düzeltmeleri: embedding boyutu (256-d yalnız fake yedek; nomic-embed-text boyutu Ollama modeli tarafından belirlenir), `chunk_size`/`overlap` doğru satır referansı (settings.py:77-78), hayali "~8000 chunk_size çelişkisi" kaldırıldı, test kapsamı doğru yansıtıldı (BM25/cross-encoder ve L3/L4/L5 testleri mevcut), auto-chain eğitim çağrısı doğru tarif edildi (doğrudan CLI, web subprocess değil). |
+| v1.4 | 2026-06-17 | **Güncel araştırma entegrasyonu (3. tur) — CPU-only GraphRAG.** SPRIG-lite (arXiv:2602.23372) reçetesi eklendi: yeni `app/memory/graph_retriever.py` (term–chunk bipartite graf + deterministik Personalized PageRank) + `app/memory/graph_corpus.py` (Chroma'dan lazy korpus grafı) + `RerankingRetriever` opt-in `rag_graph` modu (dense-hit'lerden tohumlanmış PPR → dense ile RRF füzyonu; çok-hop recall). LLM-free, deterministik, CPU-only; varsayılan kapalı (canlı davranış değişmez). 15 yeni test. Önceki GraphRAG ertelemesi bu hafif/offline dilimle açıldı. |
 | v1.3 | 2026-06-17 | **Güncel araştırma entegrasyonu (2. tur).** Offline RAGAS-tarzı RAG metrikleri eklendi: yeni `app/evals/rag_ragas_offline.py` — `faithfulness` (cevap cümlelerinin bağlamca desteklenme oranı), `context_precision` (çekilen bağlamın gürültü azlığı), `context_recall` (referans cevabın bağlamca kapsanması). Hepsi LLM'siz, deterministik, golden-id gerektirmez; canlı RAG cevabında ucuz kalite/uydurma sinyali. 9 yeni test. `rag-scan` ajanı backlog'u ~40 adaya büyüttü (CPU-only GraphRAG, Adaptive Chunking, Self-RAG, Blended RAG dahil). |
 | v1.2 | 2026-06-17 | **Güncel araştırma entegrasyonu (1. tur).** Reciprocal Rank Fusion (RRF / RAG-Fusion) eklendi: yeni `app/memory/rank_fusion.py` (saf, deterministik) + `MultiQueryRetriever` artık naif dedup yerine RRF füzyonu kullanıyor + `RerankingRetriever`'a opt-in `rag_rrf` modu (dense+BM25 sıra-füzyonu). Cross-encoder reranker modeli yapılandırılabilir hale getirildi ve yanıltıcı "çok dilli" yorumu düzeltildi (gerçek çok-dilli için `bge-reranker-v2-m3` önerisi). Yeni "Güncel Araştırma Entegrasyonu (Sürüm Günlüğü)" bölümü: taranan 14 teknik (late chunking, CRAG, Self-RAG, HyDE, GraphRAG/LightRAG/HippoRAG, RAGAS, RbFT/ALoFTRAG, Matryoshka embeddings…) Achilles koduna eşlendi; her biri için adopt/belgele/ertele gerekçesi + kaynak atıfları. |
 
@@ -237,7 +238,7 @@ soru → RerankingRetriever.retrieve(query, top_k)
 
 **Self-refining RAG (`self_refining_rag.py:44-114`):** Çok turlu — bağlam kalitesinde sorun varsa (`has_incomplete_formula`/`has_incomplete_argument`) `top_k += 3` ile genişletip yeniden çeker.
 
-**Kontrol bayrakları (`settings.py:76-110`):** `rag_top_k=6` (satır 76), `chunk_size=1200`/`chunk_overlap=200` (satır 77-78), `rag_rerank=True` (satır 81), `rag_overfetch=4` (satır 82), `rag_hybrid=True` (satır 85), `rag_cross_encoder=False` (satır 89), `rag_cross_encoder_model="BAAI/bge-reranker-base"` (satır 93; çok-dilli için `bge-reranker-v2-m3` önerilir, `ACHILLES_RAG_CROSS_ENCODER_MODEL` ile değiştir), `rag_rrf=False` (satır 99, opt-in), `rag_rrf_k=60` (satır 100), `rag_contextual_embed=False` (satır ~107).
+**Kontrol bayrakları (`settings.py:76-110`):** `rag_top_k=6` (satır 76), `chunk_size=1200`/`chunk_overlap=200` (satır 77-78), `rag_rerank=True` (satır 81), `rag_overfetch=4` (satır 82), `rag_hybrid=True` (satır 85), `rag_cross_encoder=False` (satır 89), `rag_cross_encoder_model="BAAI/bge-reranker-base"` (satır 93; çok-dilli için `bge-reranker-v2-m3` önerilir, `ACHILLES_RAG_CROSS_ENCODER_MODEL` ile değiştir), `rag_rrf=False` (satır 99, opt-in), `rag_rrf_k=60` (satır 100), `rag_graph=False` (opt-in SPRIG-lite graf modu; açıksa dense→PPR→RRF), `rag_graph_damping=0.85`, `rag_graph_iters=20`, `rag_contextual_embed=False`.
 
 ---
 
@@ -337,6 +338,47 @@ taranan RAG teknikleri Achilles koduna eşlenir; her biri için **adopt (entegre
 belgele / ertele** kararı + gerekçe + kaynak atıfları tutulur. En yeni tur en üstte.
 CLAUDE.md Kural 2 gereği hiçbir teknik için "çalışıyor/başarılı" denmez; yalnızca
 "kodda eklendi" veya "önerildi/belgelendi" denir — etki ölçümü ayrı backtest/eval işidir.
+
+### Tur 3 — 2026-06-17 (v1.4) — CPU-only GraphRAG (SPRIG-lite)
+
+Backlog'un en güçlü adayı **"Democratizing GraphRAG: Linear, CPU-Only Graph Retrieval for
+Multi-Hop QA" (SPRIG, arXiv:2602.23372)** entegre edildi. SPRIG'in çekirdeği: pahalı LLM
+graf-inşası yerine hafif co-occurrence ile entity–doküman bipartite grafı + dense-hit'lerden
+**tohumlanmış Personalized PageRank (PPR)** + RRF füzyonu — CPU-only, token-free. Bu, modest
+donanımımıza ve "offline + deterministik" kuralımıza birebir uyduğu için önceki GraphRAG
+ertelemesini açtı.
+
+**Bu turda entegre edilen (adopt):**
+
+1. **SPRIG-lite graf retrieval** (`app/memory/graph_retriever.py`):
+   - `build_graph(chunks)` — term–chunk bipartite graf (≥3 karakter terimler → RSI/ATR gibi
+     finans kısaltmaları korunur; **hub pruning** `max_df_ratio` ile çok-sık terimleri atar).
+   - `personalized_pagerank(graph, seeds)` — iki-adımlı (chunk→terim→chunk) **deterministik**
+     güç iterasyonu; restart tohum dağılımına döner. Tohumun grafsal komşuluğundaki chunk'lar
+     skor alır (çok-hop), bağlantısızlar 0.
+   - `graph_rank(...)` kolaylık sarmalayıcı + `seed_weights_from_ids(...)`.
+2. **Korpus grafı cache** (`app/memory/graph_corpus.py`): `bm25_corpus` desenini aynalar —
+   Chroma'dan lazy kurulur, chunk sayısı değişince yeniden; boş/erişilemezse `(None, {})`.
+3. **`RerankingRetriever` opt-in `rag_graph` modu**: dense aday id'lerinden tohumlanmış PPR
+   çalıştırır, graf-sıralı + dense-sıralı listeleri **RRF** ile füzyonlar (Tur 1 RRF altyapısını
+   kullanır). Dense'in kaçırdığı ama paylaşılan terimlerle bağlı chunk'ları getirebilir.
+   Varsayılan kapalı (`rag_graph=False`) → canlı retrieval davranışı değişmez. Graf yoksa
+   dense-only'e düşer (güvenli).
+
+Gerekçe: GraphRAG'ın çok-hop recall faydasını, LLM/GPU maliyeti olmadan, deterministik ve
+opt-in olarak sağlar. **Sınır:** co-occurrence anlamsal değil yapısaldır (proxy); SPRIG'in de
+bulgusu "güçlü lexical hibrit (RRF) çoğu zaman yeterli" — bu yüzden graf, dense+RRF'in YERİNE
+değil, onunla füzyon olarak konumlanır; etkisi Achilles korpusunda backtest/eval ile ölçülmeli
+(Kural 2). Test: `tests/test_graph_retriever.py` (8) + `test_hybrid_retrieval.py` graf-modu (2).
+
+**Belgelendi / ertelendi:** Tam SPRIG NER (SpaCy) + alias disambiguation + sorgu-entity tohumlama
+ileride (şimdilik dense-hit tohumlama + regex terim çıkarımı). LightRAG/HippoRAG (dual-level /
+hippocampal) ayrı, daha ağır yaklaşımlar olarak watchlist'te.
+
+**Kaynaklar (Tur 3):** SPRIG — Democratizing GraphRAG (arXiv:2602.23372); HippoRAG (Personalized
+PageRank); LightRAG; LinearRAG (arXiv:2510.10114).
+
+---
 
 ### Tur 2 — 2026-06-17 (v1.3)
 
@@ -470,6 +512,8 @@ RbFT/ALoFTRAG (LoRA reçetesi notu — `discipline_dataset` zaten RbFT ruhunda).
 | `app/memory/cross_encoder_reranker.py` | Model tabanlı rerank (opt-in, graceful) |
 | `app/memory/hybrid_retriever.py` | Alpha-harman semantic+BM25 (standalone) |
 | `app/memory/rank_fusion.py` | Reciprocal Rank Fusion (RRF) — sıra-tabanlı liste füzyonu (v1.2) |
+| `app/memory/graph_retriever.py` | SPRIG-lite graf retrieval — term–chunk graf + deterministik PPR (v1.4) |
+| `app/memory/graph_corpus.py` | Chroma'dan lazy korpus term–chunk grafı (graf modu için, v1.4) |
 | `app/memory/bm25_index.py` / `bm25_corpus.py` | Saf Python BM25 + lazy corpus |
 | `app/memory/contextual_chunker.py` | Chunk kalite bayrakları (ingestion'da henüz tetiklenmiyor) |
 | `app/brain/knowledge_card_builder.py` | Bilgi kartı üretimi (Pydantic + LLM JSON) |
@@ -519,6 +563,7 @@ Proje testleri `tests/` kökünde toplanmıştır (yaklaşık 70 test dosyası).
 - **Retrieval (BM25 + hibrit + RRF + cross-encoder + rerank):** `test_bm25_index.py`, `test_hybrid_retrieval.py` (RRF füzyon modu senaryoları dahil), `test_rank_fusion.py` (RRF birim testleri: determinizm/ağırlık/k/kenar durumlar), `test_cross_encoder_reranker.py`, `test_reranker.py`, `test_reranking_retriever.py`, `test_multi_query_retriever.py` (RRF uzlaşma testi dahil), `test_query_expander.py`.
 - **Embedding / depo:** `test_embedding_and_chroma.py`, `test_contextual_embed.py`.
 - **Offline RAGAS metrikleri + tarama ajanı (v1.2/v1.3):** `test_rag_ragas_offline.py` (faithfulness/context-precision/recall, deterministik), `test_rag_trend_scanner.py` (tarama ajanı, çevrimdışı).
+- **CPU-only GraphRAG / SPRIG-lite (v1.4):** `test_graph_retriever.py` (term çıkarımı/hub pruning/PPR çok-hop yayılım/determinizm) + `test_hybrid_retrieval.py` graf-modu senaryoları (PPR+RRF füzyon, graf-yok dense-only).
 - **Göstergeler:** `test_entropy_indicator.py`, `test_permutation_entropy.py`, `test_indicators.py`.
 
 Not: `app/verification/tests/` adlı bir **alt-dizin yoktur**; doğrulama ve merdiven testleri ayrı bir alt-dizin yerine ortak `tests/` kökünde tutulur. Bu doküman, bu testlerin **var olduğunu** belgeler; testlerin güncel çalışma durumu (geçti/kaldı) bu dokümanda iddia edilmez — kanıt için `make test` çalıştırılmalıdır (CLAUDE.md Kural 2).
@@ -550,6 +595,8 @@ Not: `app/verification/tests/` adlı bir **alt-dizin yoktur**; doğrulama ve mer
 - **BM25** — kelime sıklığı tabanlı klasik sıralama; teknik terimleri dense'in kaçırdığı yerde yakalar.
 - **RRF (Reciprocal Rank Fusion)** — birden çok sıralı listeyi skor normalize etmeden, sadece sıraya göre `w/(k+rank)` ile birleştiren parametre-az füzyon; karşılaştırılamaz skorlu kaynaklarda (dense vs. BM25) sağlamdır. Achilles'te `rank_fusion.py` (v1.2).
 - **RAG-Fusion** — çoklu sorgu varyantı + RRF birleşimi; Achilles'te `MultiQueryRetriever` bu deseni kural-tabanlı genişletme ile uygular.
+- **SPRIG / CPU-only GraphRAG** — LLM'siz, lineer, CPU-only graf retrieval: hafif co-occurrence ile term–chunk grafı + tohumlu PPR + RRF (arXiv:2602.23372). Achilles'te `graph_retriever.py` (opt-in `rag_graph`, v1.4).
+- **Personalized PageRank (PPR)** — bir tohum dağılımından graf üzerinde yayılan PageRank; tohuma grafsal yakın düğümler yüksek skor alır. Çok-hop retrieval'da kullanılır (deterministik, sabit iterasyon).
 - **HyDE** — sorgu yerine LLM'in ürettiği hipotetik cevabı embed edip ona yakın dokümanları çekme (Achilles'te yok; LLM gerektirir, ertelendi).
 - **CRAG (Corrective RAG)** — hafif retrieval-evaluator ile çekilen bağlamı correct/ambiguous/incorrect olarak puanlayıp düzeltici aksiyon (Achilles'te kısmi: confidence + self-refine).
 - **Late chunking** — önce tüm dokümanı uzun-bağlam embed edip sonra chunk vektörlerini türetme (Achilles'te iskelet, ertelendi).

@@ -2310,27 +2310,146 @@ def exam_l5(
     console.print(table)
 
 
+_LADDER_ORDER = ("Taban", "L1", "L2", "L3", "L4", "L5")
+
+
+def _ladder_sort_key(level: str) -> tuple[int, str]:
+    """Merdiven sırası: Taban→L1→…→L5; listede olmayan seviyeler sona (alfabetik).
+
+    Alfabetik sort 'Taban'ı (merdivenin TABANI) en sona atıyordu — kavramsal olarak yanlış.
+    """
+    return (
+        (_LADDER_ORDER.index(level), "") if level in _LADDER_ORDER else (len(_LADDER_ORDER), level)
+    )
+
+
+def _by_level_summary(by_level: dict) -> str:
+    """Seviye kırılımı 'Taban:1/1, L3:2/3' (geçti/notlanan) — merdiven sırasında."""
+    return ", ".join(
+        f"{k}:{v.get('passed', 0)}/{v.get('passed', 0) + v.get('failed', 0)}"
+        for k, v in sorted((by_level or {}).items(), key=lambda kv: _ladder_sort_key(kv[0]))
+    )
+
+
+def _context_summary(ctx: dict) -> str:
+    """Snapshot bağlamını 'base·qwen3:4b·rag' gibi kısa özetle (hangi koşulda ölçüldü)."""
+    ctx = ctx or {}
+    parts = [ctx.get("model_kind") or "", str(ctx.get("llm_model") or "")]
+    if ctx.get("with_rag"):
+        parts.append("rag")
+    return "·".join(p for p in parts if p) or "—"
+
+
 @app.command("understanding-score")
 def understanding_score_cmd(
     seed: int = typer.Option(0),
+    full: bool = typer.Option(
+        False, "--full", help="Tam merdiven (L5 + L3/L4; --with-rag ile Taban/L1/L2 da)"
+    ),
+    with_rag: bool = typer.Option(
+        False, "--with-rag", help="Taban/L1/L2 için canlı RAG sınavı da koş (LLM + korpus)"
+    ),
+    record: bool = typer.Option(
+        False, "--record", help="Skoru KALICI kaydet (DB + reports/evals/understanding JSON)"
+    ),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
-    """Objektif ANLAMA SKORU — L3+L4 sınavları → geçme oranı (kaba %'nin yerine)."""
-    from app.verification.exams.understanding_score import score_indicator_exams
+    """Objektif ANLAMA SKORU — sınav geçme oranı (kaba %'nin yerine). --record ile kalıcı."""
+    from app.verification.exams.understanding_score import (
+        score_full_ladder,
+        score_indicator_exams,
+    )
 
-    score = score_indicator_exams(seed=seed)
+    score = (
+        score_full_ladder(seed=seed, with_rag=with_rag)
+        if (full or with_rag)
+        else score_indicator_exams(seed=seed)
+    )
+
+    rec_info = None
+    if record:
+        from app.verification.exams.understanding_record import record_understanding
+
+        rec_info = record_understanding(
+            score, seed=seed, context={"full": full, "with_rag": with_rag, "source": "cli"}
+        )
+
     if as_json:
-        console.print_json(json.dumps(score.to_dict(), ensure_ascii=False))
+        out = score.to_dict()
+        if rec_info:
+            out["recorded"] = rec_info
+        console.print_json(json.dumps(out, ensure_ascii=False))
         return
     rate = (
         "yok (notlanan sınav yok)" if score.pass_rate is None else f"{score.pass_rate * 100:.1f}%"
     )
-    console.print(
-        Panel(
-            f"Geçme oranı: [bold]{rate}[/]\n"
-            f"Notlanan: {score.graded}  (geçti {score.passed}, kaldı {score.failed})\n"
-            f"Atlanan (LLM yok): {score.skipped} · Veri/yön yok: {score.no_data}\n"
-            f"Durum: {score.status}",
-            title="Anlama Skoru (objektif sınav-geçme-oranı)",
-        )
+    levels = _by_level_summary(score.by_level)
+    body = (
+        f"Geçme oranı: [bold]{rate}[/]\n"
+        f"Notlanan: {score.graded}  (geçti {score.passed}, kaldı {score.failed})\n"
+        f"Atlanan (LLM yok): {score.skipped} · Veri/yön yok: {score.no_data}\n"
+        f"Seviyeler: {levels or '—'}\n"
+        f"Durum: {score.status}"
     )
+    if rec_info:
+        body += f"\n[green]KAYDEDİLDİ[/] · snapshot={rec_info['snapshot_id']}"
+    console.print(Panel(body, title="Anlama Skoru (objektif sınav-geçme-oranı)"))
+
+
+@app.command("understanding-history")
+def understanding_history_cmd(
+    limit: int = typer.Option(20, help="Kaç anlık görüntü gösterilsin"),
+    compare: bool = typer.Option(
+        False, "--compare", help="Son iki snapshot'ı kıyasla → regresyon (v5-tipi gerileme) tespiti"
+    ),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """KALICI anlama skorlarının geçmişi (zaman serisi) + opsiyonel regresyon kıyası."""
+    from app.verification.exams.understanding_record import (
+        compare_understanding,
+        load_understanding_history,
+    )
+
+    rows = load_understanding_history(limit=limit)
+    cmp = compare_understanding(rows[1], rows[0]) if (compare and len(rows) >= 2) else None
+    if as_json:
+        out: dict[str, object] = {"history": rows}
+        if cmp:
+            out["compare"] = cmp
+        console.print_json(json.dumps(out, ensure_ascii=False))
+        return
+    if not rows:
+        console.print(
+            "Henüz kayıtlı anlama skoru yok. 'achilles understanding-score --record' ile oluştur."
+        )
+        return
+    table = Table(title="Anlama Skoru Geçmişi (objektif, kalıcı)")
+    table.add_column("Zaman (UTC)")
+    table.add_column("Oran")
+    table.add_column("Notlanan")
+    table.add_column("Durum")
+    table.add_column("Seviyeler")
+    table.add_column("Bağlam")
+    for r in rows:
+        rate = "—" if r.get("pass_rate") is None else f"{r['pass_rate'] * 100:.0f}%"
+        table.add_row(
+            str(r.get("created_at", "?"))[:19],
+            rate,
+            str(r.get("graded", 0)),
+            str(r.get("status", "?")),
+            _by_level_summary(r.get("by_level") or {}),
+            _context_summary(r.get("context") or {}),
+        )
+    console.print(table)
+    if cmp:
+        ld = cmp["level_delta"]
+        if not cmp["comparable"]:
+            console.print(f"[yellow]Kıyas güvenilmez:[/] {cmp['note']}")
+        elif cmp["regressed"]:
+            console.print(
+                f"[red]⚠ REGRESYON:[/] geçme oranı {cmp['delta'] * 100:+.1f}% düştü "
+                f"({cmp['pass_rate_prev']:.0%} → {cmp['pass_rate_curr']:.0%})."
+            )
+            console.print(f"  Seviye Δ: {ld}")
+        elif cmp["delta"] is not None:
+            console.print(f"[green]Regresyon yok[/] · Δoran {cmp['delta'] * 100:+.1f}% · Δ: {ld}")
