@@ -566,6 +566,54 @@ class AgentEventRow(Base):
     payload_json: Mapped[str | None] = mapped_column(Text, default=None)
 
 
+class AutomationTaskRow(Base):
+    """Agent runtime (Phase 2) — bir otomasyon görevi (task queue).
+
+    Zamanlama (schedule) bilgilendirici alandır; Windows Task Scheduler DIŞ cron
+    olarak kalır (Phase 2'de app içine taşınmaz) — yalnız izlenebilir kayıt tutulur.
+    """
+
+    __tablename__ = "automation_tasks"
+
+    task_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    agent_id: Mapped[str] = mapped_column(String(64), index=True)
+    title: Mapped[str] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(Text, default=None)
+    params_json: Mapped[str | None] = mapped_column(Text, default=None)
+    schedule: Mapped[str | None] = mapped_column(String(64), default=None)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    requires_approval: Mapped[int] = mapped_column(Integer, default=0)  # 0/1
+    created_at: Mapped[str] = mapped_column(String(40), index=True)
+    updated_at: Mapped[str | None] = mapped_column(String(40), default=None)
+    claimed_at: Mapped[str | None] = mapped_column(String(40), default=None)
+    completed_at: Mapped[str | None] = mapped_column(String(40), default=None)
+    error: Mapped[str | None] = mapped_column(Text, default=None)
+
+
+class ApprovalRequestRow(Base):
+    """Agent runtime (Phase 2) — bir onay isteği.
+
+    ``consumed_at``: taze-onay tek kullanımlıktır (standing/kalıcı yetki YOK) —
+    onaylanmış istek bir tehlikeli aksiyonda tüketilince damgalanır.
+    """
+
+    __tablename__ = "approval_requests"
+
+    approval_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str | None] = mapped_column(String(64), default=None, index=True)
+    task_id: Mapped[str | None] = mapped_column(String(64), default=None, index=True)
+    agent_id: Mapped[str] = mapped_column(String(64), index=True)
+    action: Mapped[str] = mapped_column(String(64), index=True)
+    summary: Mapped[str | None] = mapped_column(Text, default=None)
+    risk: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    requested_at: Mapped[str] = mapped_column(String(40), index=True)
+    decided_at: Mapped[str | None] = mapped_column(String(40), default=None)
+    decided_by: Mapped[str | None] = mapped_column(String(64), default=None)
+    decision_note: Mapped[str | None] = mapped_column(Text, default=None)
+    consumed_at: Mapped[str | None] = mapped_column(String(40), default=None)
+
+
 # Toplu budamada tek IN(...) ifadesinin SQLite değişken sınırını (~32766) aşmaması için
 # parça boyu. Küçük tutuldu (güvenli marj + her DELETE hızlı).
 _PRUNE_CHUNK = 500
@@ -787,6 +835,224 @@ class SqliteStore:
             "level": r.level,
             "message": r.message,
             "payload": json.loads(r.payload_json) if r.payload_json else None,
+        }
+
+    def list_recent_agent_events(
+        self, limit: int = 100, run_id: str | None = None, level: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Tüm koşulardan son olaylar (genel akış — /api/events). En yeni önce."""
+        with self.session() as s:
+            stmt = select(AgentEventRow).order_by(
+                AgentEventRow.ts.desc(), AgentEventRow.event_id.desc()
+            )
+            if run_id:
+                stmt = stmt.where(AgentEventRow.run_id == run_id)
+            if level:
+                stmt = stmt.where(AgentEventRow.level == level)
+            stmt = stmt.limit(limit)
+            return [self._agent_event_to_dict(r) for r in s.scalars(stmt)]
+
+    def mark_running_agent_runs_cancelled(
+        self, reason: str, cutoff_iso: str | None = None
+    ) -> list[str]:
+        """status='running' kalan koşuları 'cancelled' yap (startup sweep).
+
+        cutoff_iso verilirse yalnız ondan ESKİ başlamış koşular süpürülür (canlı
+        eşzamanlı koşuları yanlışlıkla iptal etmemek için). Süpürülen run_id'leri döndürür.
+        """
+        now = _utcnow()
+        run_ids: list[str] = []
+        with self.session() as s:
+            stmt = select(AgentRunRow).where(AgentRunRow.status == "running")
+            if cutoff_iso:
+                stmt = stmt.where(AgentRunRow.started_at < cutoff_iso)
+            for row in s.scalars(stmt):
+                row.status = "cancelled"
+                row.finished_at = now
+                row.error = reason
+                if not row.summary_json:
+                    row.summary_json = json.dumps({"note": reason}, ensure_ascii=False)
+                run_ids.append(row.run_id)
+        return run_ids
+
+    # --- automation tasks (Phase 2) --------------------------------------
+    def create_automation_task(
+        self,
+        *,
+        task_id: str,
+        agent_id: str,
+        title: str,
+        description: str | None = None,
+        params: dict[str, Any] | None = None,
+        schedule: str | None = None,
+        status: str = "pending",
+        requires_approval: bool = False,
+        created_at: str | None = None,
+    ) -> None:
+        with self.session() as s:
+            s.add(
+                AutomationTaskRow(
+                    task_id=task_id,
+                    agent_id=agent_id,
+                    title=title,
+                    description=description,
+                    params_json=(
+                        json.dumps(params, ensure_ascii=False) if params is not None else None
+                    ),
+                    schedule=schedule,
+                    status=status,
+                    requires_approval=1 if requires_approval else 0,
+                    created_at=created_at or _utcnow(),
+                )
+            )
+
+    def get_automation_task(self, task_id: str) -> dict[str, Any] | None:
+        with self.session() as s:
+            row = s.get(AutomationTaskRow, task_id)
+            return self._automation_task_to_dict(row) if row else None
+
+    def list_automation_tasks(
+        self, limit: int = 50, status: str | None = None, agent_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        with self.session() as s:
+            stmt = select(AutomationTaskRow).order_by(AutomationTaskRow.created_at.desc())
+            if status:
+                stmt = stmt.where(AutomationTaskRow.status == status)
+            if agent_id:
+                stmt = stmt.where(AutomationTaskRow.agent_id == agent_id)
+            stmt = stmt.limit(limit)
+            return [self._automation_task_to_dict(r) for r in s.scalars(stmt)]
+
+    def update_automation_task(self, task_id: str, **fields: Any) -> dict[str, Any] | None:
+        """Görev alanlarını güncelle (status/error/zaman damgaları). updated_at otomatik."""
+        allowed = {
+            "status",
+            "error",
+            "claimed_at",
+            "completed_at",
+            "schedule",
+            "title",
+            "description",
+        }
+        with self.session() as s:
+            row = s.get(AutomationTaskRow, task_id)
+            if row is None:
+                return None
+            for k, v in fields.items():
+                if k in allowed:
+                    setattr(row, k, v)
+            row.updated_at = _utcnow()
+            return self._automation_task_to_dict(row)
+
+    def _automation_task_to_dict(self, r: AutomationTaskRow) -> dict[str, Any]:
+        return {
+            "task_id": r.task_id,
+            "agent_id": r.agent_id,
+            "title": r.title,
+            "description": r.description,
+            "params": json.loads(r.params_json) if r.params_json else None,
+            "schedule": r.schedule,
+            "status": r.status,
+            "requires_approval": bool(r.requires_approval),
+            "created_at": r.created_at,
+            "updated_at": r.updated_at,
+            "claimed_at": r.claimed_at,
+            "completed_at": r.completed_at,
+            "error": r.error,
+        }
+
+    # --- approval requests (Phase 2) -------------------------------------
+    def create_approval_request(
+        self,
+        *,
+        approval_id: str,
+        agent_id: str,
+        action: str,
+        summary: str | None = None,
+        risk: str = "medium",
+        status: str = "pending",
+        run_id: str | None = None,
+        task_id: str | None = None,
+        requested_at: str | None = None,
+    ) -> None:
+        with self.session() as s:
+            s.add(
+                ApprovalRequestRow(
+                    approval_id=approval_id,
+                    run_id=run_id,
+                    task_id=task_id,
+                    agent_id=agent_id,
+                    action=action,
+                    summary=summary,
+                    risk=risk,
+                    status=status,
+                    requested_at=requested_at or _utcnow(),
+                )
+            )
+
+    def get_approval_request(self, approval_id: str) -> dict[str, Any] | None:
+        with self.session() as s:
+            row = s.get(ApprovalRequestRow, approval_id)
+            return self._approval_to_dict(row) if row else None
+
+    def list_approval_requests(
+        self, status: str | None = None, limit: int = 50, agent_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        with self.session() as s:
+            stmt = select(ApprovalRequestRow).order_by(ApprovalRequestRow.requested_at.desc())
+            if status:
+                stmt = stmt.where(ApprovalRequestRow.status == status)
+            if agent_id:
+                stmt = stmt.where(ApprovalRequestRow.agent_id == agent_id)
+            stmt = stmt.limit(limit)
+            return [self._approval_to_dict(r) for r in s.scalars(stmt)]
+
+    def update_approval_request(self, approval_id: str, **fields: Any) -> dict[str, Any] | None:
+        allowed = {"status", "decided_at", "decided_by", "decision_note", "consumed_at"}
+        with self.session() as s:
+            row = s.get(ApprovalRequestRow, approval_id)
+            if row is None:
+                return None
+            for k, v in fields.items():
+                if k in allowed:
+                    setattr(row, k, v)
+            return self._approval_to_dict(row)
+
+    def find_fresh_approval(self, agent_id: str, action: str) -> dict[str, Any] | None:
+        """En son ONAYLANMIŞ + TÜKETİLMEMİŞ onay (taze onay). Yoksa None.
+
+        Tek kullanımlık: tüketim ``consumed_at`` ile damgalanır → standing yetki yok.
+        """
+        with self.session() as s:
+            stmt = (
+                select(ApprovalRequestRow)
+                .where(
+                    ApprovalRequestRow.agent_id == agent_id,
+                    ApprovalRequestRow.action == action,
+                    ApprovalRequestRow.status == "approved",
+                    ApprovalRequestRow.consumed_at.is_(None),
+                )
+                .order_by(ApprovalRequestRow.requested_at.desc())
+                .limit(1)
+            )
+            row = s.scalar(stmt)
+            return self._approval_to_dict(row) if row else None
+
+    def _approval_to_dict(self, r: ApprovalRequestRow) -> dict[str, Any]:
+        return {
+            "approval_id": r.approval_id,
+            "run_id": r.run_id,
+            "task_id": r.task_id,
+            "agent_id": r.agent_id,
+            "action": r.action,
+            "summary": r.summary,
+            "risk": r.risk,
+            "status": r.status,
+            "requested_at": r.requested_at,
+            "decided_at": r.decided_at,
+            "decided_by": r.decided_by,
+            "decision_note": r.decision_note,
+            "consumed_at": r.consumed_at,
         }
 
     @contextmanager

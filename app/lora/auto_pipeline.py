@@ -214,6 +214,32 @@ class AutoLoRAPipeline:
                     ),
                 }
 
+        # Phase 2: STOP_ALL + TAZE manuel onay (standing yetki yok — CLAUDE.md Kural 8).
+        from app.agents.runtime import approvals, supervisor
+
+        if supervisor.is_stop_all_active():
+            return {
+                "ok": False,
+                "reason": "STOP_ALL aktif — eğitim bloklandı.",
+                "blocked_by": "stop_all",
+            }
+        decision = approvals.require_fresh_approval(
+            "auto-lora-pipeline",
+            "auto_lora_start_training",
+            "critical",
+            f"Auto-LoRA gerçek eğitimi: {adapter_name} ({iters} adım)",
+        )
+        if not decision.authorized:
+            return {
+                "ok": False,
+                "needs_approval": True,
+                "approval_id": decision.approval_id,
+                "reason": (
+                    "Gerçek eğitim TAZE onay gerektirir. Onayla: "
+                    f"achilles approval-approve {decision.approval_id}, sonra tekrar başlat."
+                ),
+            }
+
         from app.training.detached_launch import launch
 
         res = await asyncio.to_thread(launch, adapter_name, iters)
@@ -470,6 +496,32 @@ class AutoLoRAPipeline:
 
         if not adapter_id:
             return {"ok": False, "reason": "Kayıtlı adapter ID bulunamadı"}
+
+        # Phase 2: STOP_ALL + TAZE manuel onay (her terfi ayrı onay — CLAUDE.md Kural 8).
+        from app.agents.runtime import approvals, supervisor
+
+        if supervisor.is_stop_all_active():
+            return {
+                "ok": False,
+                "reason": "STOP_ALL aktif — terfi bloklandı.",
+                "blocked_by": "stop_all",
+            }
+        decision = approvals.require_fresh_approval(
+            "auto-lora-pipeline",
+            "auto_lora_promote_adapter",
+            "high",
+            f"Adapter production terfisi: {adapter_id}",
+        )
+        if not decision.authorized:
+            return {
+                "ok": False,
+                "needs_approval": True,
+                "approval_id": decision.approval_id,
+                "reason": (
+                    "Terfi TAZE onay gerektirir. Onayla: "
+                    f"achilles approval-approve {decision.approval_id}, sonra tekrar dene."
+                ),
+            }
 
         try:
             from app.lora.adapter_registry import AdapterRegistry

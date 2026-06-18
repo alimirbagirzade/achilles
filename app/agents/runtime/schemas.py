@@ -97,3 +97,98 @@ class AgentRun(BaseModel):
     error: str | None = None
     summary: dict[str, Any] | None = None
     outputs: list[Any] | None = None
+
+
+# --------------------------------------------------------------------------
+# Phase 2 — task queue + approvals + supervisor
+# --------------------------------------------------------------------------
+class TaskStatus(StrEnum):
+    """Bir otomasyon görevinin yaşam döngüsü."""
+
+    pending = "pending"
+    claimed = "claimed"
+    running = "running"
+    completed = "completed"
+    failed = "failed"
+    cancelled = "cancelled"
+    blocked_approval = "blocked_approval"  # onay bekliyor
+    blocked_stop_all = "blocked_stop_all"  # STOP_ALL aktif → bloklandı
+
+
+class ApprovalStatus(StrEnum):
+    """Bir onay isteğinin durumu."""
+
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+    expired = "expired"
+    cancelled = "cancelled"
+
+
+class RiskLevel(StrEnum):
+    """Tehlikeli aksiyon risk seviyesi."""
+
+    low = "low"
+    medium = "medium"
+    high = "high"
+    critical = "critical"
+
+
+class AutomationTask(BaseModel):
+    """``automation_tasks`` satırı."""
+
+    task_id: str
+    agent_id: str
+    title: str
+    description: str | None = None
+    params: dict[str, Any] | None = None
+    schedule: str | None = None
+    status: TaskStatus = TaskStatus.pending
+    requires_approval: bool = False
+    created_at: str
+    updated_at: str | None = None
+    claimed_at: str | None = None
+    completed_at: str | None = None
+    error: str | None = None
+
+
+class ApprovalRequest(BaseModel):
+    """``approval_requests`` satırı.
+
+    ``consumed_at``: taze-onay (fresh approval) tek kullanımlıktır — onaylanmış bir
+    istek bir tehlikeli aksiyonda tüketilince işaretlenir; standing/kalıcı yetki YOK.
+    """
+
+    approval_id: str
+    run_id: str | None = None
+    task_id: str | None = None
+    agent_id: str
+    action: str
+    summary: str | None = None
+    risk: RiskLevel = RiskLevel.medium
+    status: ApprovalStatus = ApprovalStatus.pending
+    requested_at: str
+    decided_at: str | None = None
+    decided_by: str | None = None
+    decision_note: str | None = None
+    consumed_at: str | None = None
+
+
+class ApprovalDecision(BaseModel):
+    """``require_fresh_approval`` sonucu."""
+
+    authorized: bool
+    approval_id: str
+    status: ApprovalStatus
+    created: bool  # True = yeni pending oluşturuldu; False = mevcut taze onay tüketildi
+
+
+class SupervisorDecision(BaseModel):
+    """``can_run_agent`` kararı."""
+
+    allowed: bool
+    reason: str = ""
+    requires_approval: bool = False
+    approval_id: str | None = None
+    # "stop_all" | "approval" | "unknown_agent" | "cancelled" | "already_running" | None
+    blocked_by: str | None = None

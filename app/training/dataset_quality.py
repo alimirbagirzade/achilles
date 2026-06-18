@@ -154,9 +154,7 @@ def audit_dataset(
     cost_hits = sum(
         1
         for a in answers
-        if _STRAT_RE.search(a)
-        and not _COST_RE.search(a)
-        and not _HYPOTHESIS_STRAT_RE.search(a)
+        if _STRAT_RE.search(a) and not _COST_RE.search(a) and not _HYPOTHESIS_STRAT_RE.search(a)
     )
     if cost_hits:
         warnings.append(

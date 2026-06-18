@@ -30,7 +30,7 @@ import json
 import logging
 import uuid
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
@@ -328,6 +328,56 @@ def track_agent_run(
         tr.safe_finish(run_id, status=AgentRunStatus.completed)
     finally:
         _current_run.reset(token)
+
+
+def log_system_event(
+    message: str,
+    agent_id: str = "system",
+    level: str = "info",
+    action: str | None = None,
+    payload: dict[str, Any] | None = None,
+    run_id: str = "system",
+) -> None:
+    """Bir koşuya bağlı OLMAYAN sistem olayı (STOP_ALL, approval, task) → run_id='system'.
+
+    Genel olay akışında (``/api/events``) görünür. Asla fırlatmaz.
+    """
+    body: dict[str, Any] = {"agent_id": agent_id}
+    if action:
+        body["action"] = action
+    if payload:
+        body.update(payload)
+    try:
+        get_tracker().log_event(run_id, AgentEventKind.info, message, level=level, payload=body)
+    except Exception:
+        log.debug("log_system_event hatası (yok sayıldı)", exc_info=True)
+
+
+def cancel_stale_running_agent_runs(
+    reason: str = "startup_sweep",
+    stale_after_hours: int = 6,
+    store: SqliteStore | None = None,
+) -> list[str]:
+    """Crash sonrası 'running' kalan ESKİ koşuları 'cancelled' yap (startup sweep).
+
+    ``stale_after_hours``'tan eski başlamış running koşular süpürülür (canlı eşzamanlı
+    koşuları yanlışlıkla iptal etmemek için). Süpürülen run_id'leri döndürür. Asla fırlatmaz.
+    """
+    try:
+        st = store if store is not None else get_tracker().store
+        cutoff = (dt.datetime.now(dt.UTC) - dt.timedelta(hours=stale_after_hours)).isoformat()
+        run_ids = st.mark_running_agent_runs_cancelled(reason, cutoff_iso=cutoff)
+        for rid in run_ids:
+            with suppress(Exception):
+                get_tracker().log_event(
+                    rid, AgentEventKind.finish, f"{reason}: iptal (bayat running)", level="warning"
+                )
+        if run_ids:
+            log.info("Startup sweep: %d bayat 'running' koşu iptal edildi", len(run_ids))
+        return run_ids
+    except Exception:
+        log.debug("cancel_stale_running_agent_runs hatası (yok sayıldı)", exc_info=True)
+        return []
 
 
 F = TypeVar("F", bound=Callable[..., Any])

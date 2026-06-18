@@ -15,11 +15,13 @@ clobber (train.jsonl'in 0'a düşmesi) başlatmada otomatik onarılır.
 from __future__ import annotations
 
 import contextlib
+import datetime as dt
 import json
 import logging
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -308,6 +310,10 @@ def launch(
         logs.mkdir(parents=True, exist_ok=True)
         env = os.environ.copy()
         env["ACHILLES_TRAIN_DTYPE"] = dtype
+        # Bu yol (auto_pipeline/web buton) onayı ÜST katmanda alır; spawn edilen
+        # `achilles train --run` iç onay kapısını atlasın (çift onay olmasın). STOP_ALL
+        # iç komutta yine de geçerlidir. Manuel `achilles train --run` bu env'i ALMAZ.
+        env["ACHILLES_TRAIN_SUPERVISED"] = "1"
 
         popen_kwargs: dict = {"cwd": str(root), "env": env, "close_fds": True}
         if os.name == "nt":
@@ -321,7 +327,7 @@ def launch(
         out_f = open(logs / "train-full.log", "ab")  # noqa: SIM115
         err_f = open(logs / "train-full-err.log", "ab")  # noqa: SIM115
         try:
-            subprocess.Popen(cmd, stdout=out_f, stderr=err_f, **popen_kwargs)
+            proc = subprocess.Popen(cmd, stdout=out_f, stderr=err_f, **popen_kwargs)
         except (OSError, ValueError) as exc:
             log.exception("Detached eğitim başlatılamadı")
             return {
@@ -334,8 +340,17 @@ def launch(
             err_f.close()
 
         (root / "storage").mkdir(parents=True, exist_ok=True)
+        # pid kaydı (Phase 2): /api/training/stop detached koşuyu pid ile durdurabilsin.
         (root / "storage" / "train_status.json").write_text(
-            json.dumps({"adapter": adapter_name, "dtype": dtype, "iterations": iters}),
+            json.dumps(
+                {
+                    "adapter": adapter_name,
+                    "dtype": dtype,
+                    "iterations": iters,
+                    "pid": proc.pid,
+                    "started_at": _utcnow_iso(),
+                }
+            ),
             encoding="utf-8",
         )
         spawned = True
@@ -356,3 +371,127 @@ def launch(
         # guard'ı devralana kadar) tutulur.
         if not spawned:
             _release_launch_lock(root)
+
+
+# --------------------------------------------------------------------------
+# Detached eğitim DURDURMA (Phase 2) — /api/training/stop gerçek durdurma
+# --------------------------------------------------------------------------
+def _utcnow_iso() -> str:
+    return dt.datetime.now(dt.UTC).isoformat()
+
+
+def read_detached_training_status(root: Path | None = None) -> dict:
+    """``storage/train_status.json`` içeriğini döndür (yoksa/bozuksa {})."""
+    r = root or get_settings().root
+    st = r / "storage" / "train_status.json"
+    if not st.exists():
+        return {}
+    try:
+        data = json.loads(st.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _pid_alive(pid: int) -> bool:
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    try:
+        import psutil
+
+        return bool(psutil.pid_exists(pid))
+    except Exception:
+        try:
+            os.kill(pid, 0)
+            return True
+        except (OSError, ProcessLookupError):
+            return False
+        except Exception:
+            return False
+
+
+def is_detached_training_running(root: Path | None = None) -> bool:
+    """Detached eğitim süreci canlı mı? Önce pid (varsa), sonra log tazeliği."""
+    info = read_detached_training_status(root)
+    pid = info.get("pid")
+    if isinstance(pid, int) and _pid_alive(pid):
+        return True
+    try:
+        return bool(_detached_status(get_settings()))
+    except Exception:
+        return False
+
+
+def _terminate_tree(pid: int) -> tuple[bool, str]:
+    """Süreci ve (varsa) çocuklarını nazikçe sonlandır; gerekirse kill. (psutil)."""
+    try:
+        import psutil
+    except Exception:
+        # psutil yoksa tek-süreç kaba terminate (yine de çalışır).
+        try:
+            if _pid_alive(pid):
+                os.kill(pid, signal.SIGTERM)
+                return True, f"SIGTERM pid {pid} (psutil yok)"
+            return False, f"pid {pid} zaten ölü — stop_requested"
+        except Exception as exc:
+            return False, f"stop_requested (terminate hatası: {exc})"
+    try:
+        if not psutil.pid_exists(pid):
+            return False, f"pid {pid} zaten ölü — stop_requested"
+        proc = psutil.Process(pid)
+        procs = [*proc.children(recursive=True), proc]
+        for p in procs:
+            with contextlib.suppress(Exception):
+                p.terminate()
+        _gone, alive = psutil.wait_procs(procs, timeout=8)
+        for p in alive:
+            with contextlib.suppress(Exception):
+                p.kill()
+        return True, f"terminated pid {pid} (+{len(procs) - 1} çocuk)"
+    except Exception as exc:
+        return False, f"stop_requested (terminate hatası: {exc})"
+
+
+def _stop_event(detail: str, terminated: bool) -> None:
+    try:
+        from app.agents.runtime.tracker import log_system_event
+
+        log_system_event(
+            f"Detached eğitim durdurma: {detail}",
+            agent_id="lora-trainer",
+            level="warning",
+            action="train_stop",
+            payload={"terminated": terminated},
+        )
+    except Exception:
+        log.debug("stop event yazılamadı", exc_info=True)
+
+
+def request_stop_detached_training(root: Path | None = None) -> dict:
+    """Detached eğitimi durdurmayı iste (Windows/Linux/macOS uyumlu).
+
+    1) ``storage/STOP_TRAINING`` bırak (loop-script'ler + güvenlik sinyali).
+    2) ``train_status.json``'dan pid oku; süreç (ve çocukları) canlıysa terminate
+       (gerekirse kill) et. pid yok/ölüyse HATA VERME → 'stop_requested' döndür.
+    Olay genel akışa yazılır.
+    """
+    r = root or get_settings().root
+    storage = r / "storage"
+    storage.mkdir(parents=True, exist_ok=True)
+    (storage / "STOP_TRAINING").write_text(_utcnow_iso(), encoding="utf-8")
+
+    info = read_detached_training_status(r)
+    pid = info.get("pid")
+    terminated = False
+    if isinstance(pid, int) and pid > 0:
+        terminated, detail = _terminate_tree(pid)
+    else:
+        detail = "stop_requested (pid kaydı yok — STOP_TRAINING bırakıldı)"
+
+    info["stop_requested_at"] = _utcnow_iso()
+    info["stop_detail"] = detail
+    with contextlib.suppress(Exception):
+        (storage / "train_status.json").write_text(json.dumps(info), encoding="utf-8")
+
+    _stop_event(detail, terminated)
+    return {"ok": True, "stopped": terminated, "detail": detail, "pid": pid}

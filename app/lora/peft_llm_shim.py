@@ -66,7 +66,7 @@ class PeftAdapterLLMShim:
                 pad_token_id=self._tokenizer.eos_token_id,
             )
         # Yalnız üretilen kısmı al (girdi token'larını çıkar)
-        generated = output_ids[0][inputs["input_ids"].shape[1]:]
+        generated = output_ids[0][inputs["input_ids"].shape[1] :]
         return self._tokenizer.decode(generated, skip_special_tokens=True)
 
     # ---------------------------------------------------------------- factory
