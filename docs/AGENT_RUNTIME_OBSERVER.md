@@ -81,11 +81,34 @@ etiketli issue → Claude Code branch → CI kapısı → PR (asla `main`'e push
 
 | Bileşen | Durum |
 |---------|-------|
-| schemas / registry / tracker | ✅ yapıldı |
-| SQLite `agent_runs` + `agent_events` (+ retention) | ✅ yapıldı |
-| 4 ajan hafif sarmalama (davranış değişmeden) | ✅ yapıldı |
-| CLI agents-list/runs/log | ✅ yapıldı |
-| Web GET /api/agents[/runs[/{id}]] | ✅ yapıldı |
-| task_queue / approvals / supervisor | ❌ Phase 2 |
-| dashboard sekmesi / detached-stop fix | ❌ Phase 2/3 |
+| schemas / registry / tracker | ✅ yapıldı (Phase 1) |
+| SQLite `agent_runs` + `agent_events` (+ retention) | ✅ yapıldı (Phase 1) |
+| 4 ajan hafif sarmalama (davranış değişmeden) | ✅ yapıldı (Phase 1) |
+| CLI agents-list/runs/log | ✅ yapıldı (Phase 1) |
+| Web GET /api/agents[/runs[/{id}]] | ✅ yapıldı (Phase 1) |
+| task_queue (`automation_tasks`) | ✅ yapıldı (Phase 2) |
+| approvals (`approval_requests`, tek kullanımlık taze onay) | ✅ yapıldı (Phase 2) |
+| supervisor + STOP_ALL kill-switch | ✅ yapıldı (Phase 2) |
+| detached training stop fix (pid + STOP_TRAINING) | ✅ yapıldı (Phase 2) |
+| startup sweep (bayat running → cancelled) | ✅ yapıldı (Phase 2) |
+| tehlikeli aksiyon entegrasyonu (train/promote/rules) | ✅ yapıldı (Phase 2) |
+| CLI task/approval/stop-all + web /automation,/approvals,/events,/healthz,/supervisor | ✅ yapıldı (Phase 2) |
+| dashboard sekmesi (mevcut Web UI içinde) | ❌ Phase 3 |
 | GitHub Claude Code PR automation | ❌ Phase 4 |
+
+## Phase 2 API yüzeyi (özet)
+
+**Yeni SQLite tabloları:** `automation_tasks`, `approval_requests`.
+
+**Yeni CLI:** `task-create`, `tasks-list`, `task-cancel`, `approvals-list`,
+`approval-approve`, `approval-reject`, `stop-all`, `clear-stop-all`.
+
+**Yeni web (api_auth korumalı):** `GET/POST /api/automation/tasks`,
+`POST /api/automation/tasks/{id}/cancel`, `GET /api/approvals`,
+`POST /api/approvals/{id}/approve|reject`, `GET /api/events`, `GET /api/healthz`,
+`POST /api/supervisor/stop-all`, `POST /api/supervisor/clear-stop-all`,
+`GET /api/supervisor/status` + `/api/training/stop` artık detached'i de durdurur.
+
+**Politika:** her gerçek eğitim ve her adapter terfisi AYRI manuel onay ister
+(tek kullanımlık taze onay; standing yetki yok). STOP_ALL tüm tehlikeli aksiyonları bloklar.
+Tam otomasyon hâlâ kapalı; GitHub PR otomasyonu Phase 4'e kadar kapalı; dashboard Phase 3'te.

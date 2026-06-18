@@ -99,5 +99,72 @@ Phase 1 `train --run` çalıştırıldığında konsola bu uyarıyı basar (davr
    CI offline testleri eğitim kalitesini KANITLAYAMAZ; bu yüzden insan kapısı şart.
 4. **Kaynak çakışması.** Eğitim ~7GB RAM ister; LLM/RAG ile çakışır. Zamanlamayı insan görmeli.
 
-Phase 2'de bu, supervisor + `approval_requests` ile **zorunlu** hale gelecek; Phase 1'de
-yalnız **belge + uyarı** düzeyindedir (mevcut davranış bilinçli olarak korunmuştur).
+Phase 2'de bu, supervisor + `approval_requests` ile **zorunlu** hale geldi (aşağıya bakın);
+Phase 1'de yalnız **belge + uyarı** düzeyindeydi.
+
+---
+
+## 7. Phase 2 — otomasyon freni (task queue + approvals + supervisor)
+
+Phase 2 "gerçek otomasyon frenini" kurar. **Tam otonomi HÂLÂ aktif değildir**; tehlikeli
+her aksiyon insan onayı arkasındadır. Bu fazda web dashboard UI YOK (Phase 3), GitHub
+Claude PR otomasyonu KAPALI (Phase 4). Yalnız backend + CLI + API + test.
+
+### 7.1 Task queue (`app/agents/runtime/task_queue.py`)
+- SQLite `automation_tasks` tablosu. Durumlar: pending, claimed, running, completed,
+  failed, cancelled, **blocked_approval**, **blocked_stop_all**.
+- Fonksiyonlar: `create_task / list_tasks / get_task / claim_task / complete_task /
+  fail_task / cancel_task` (+ supervisor için `mark_blocked`).
+- **Windows Task Scheduler DIŞ cron olarak KALIR** (kullanıcı kararı): bu kuyruk görevleri
+  yalnız KAYIT + DURUM olarak izler; zamanlama henüz app içine taşınmadı. (Mevcut dış
+  görevler: `Achilles-WeeklyBugScan`, `AchillesWeb`, `AchillesUpdate`, `Achilles-RAG-*`.)
+
+### 7.2 Approval system (`app/agents/runtime/approvals.py`)
+- SQLite `approval_requests` tablosu (+ `consumed_at`). Risk: low/medium/high/critical.
+  Durum: pending/approved/rejected/expired/cancelled.
+- **TEK KULLANIMLIK taze onay** — `require_fresh_approval`: onaylı + tüketilmemiş onay
+  varsa tüketir ve yetki verir; yoksa yeni pending oluşturur ve yetki VERMEZ.
+  **Standing / kalıcı yetki YOK** — onaylanan istek bir aksiyonda tüketilince biter.
+
+### 7.3 Supervisor (`app/agents/runtime/supervisor.py`)
+- Tehlikeli ajan çalıştırma için TEK kapı: registry → görev iptal → STOP_ALL → zaten
+  çalışıyor → taze onay. `can_run_agent` (salt kontrol) + `run_with_supervision` (onay
+  tüketir, tracker koşusu içinde çalıştırır).
+
+### 7.4 STOP_ALL küresel kill-switch
+- `storage/STOP_ALL` dosyası varken **hiçbir tehlikeli aksiyon** çalışmaz; **salt-okuma
+  ajanlar (örn. model-advisor) STOP_ALL altında bile çalışır**. CLI: `stop-all` /
+  `clear-stop-all`; web: `/api/supervisor/{stop-all,clear-stop-all,status}`.
+
+### 7.5 Detached training stop fix
+- Eski açık: `/api/training/stop` yalnız in-process `TrainingManager`'ı durduruyordu;
+  detached koşu sürüyordu. Düzeltme: `detached_launch.request_stop_detached_training` —
+  `storage/train_status.json`'dan **pid** okur (artık `launch` pid yazar), süreci (+çocuk
+  süreçleri) `psutil` ile sonlandırır, `storage/STOP_TRAINING` bırakır; süreç yoksa hata
+  vermez, `stop_requested` döner. Windows/Linux/macOS uyumlu. `/api/training/stop` artık
+  hem in-process hem detached'i durdurur.
+
+### 7.6 Startup sweep
+- Web açılışında `cancel_stale_running_agent_runs()` — crash sonrası `status='running'`
+  kalan ESKİ (varsayılan >6 saat) koşuları `cancelled` yapar (canlı eşzamanlı koşuları
+  yanlışlıkla iptal etmemek için yaş eşiği). Phase 1'deki orphan-run açığını kapatır.
+
+### 7.7 Tehlikeli aksiyon politikası (ŞİMDİ ZORLANIYOR)
+| Aksiyon | Kapı | Davranış |
+|---------|------|----------|
+| `achilles train --run` (manuel) | STOP_ALL + taze onay (`lora-trainer`/`train_run`, critical) | Onay yoksa eğitim BAŞLAMAZ; approval_id basılır, exit 3 |
+| auto-lora `start_training` | STOP_ALL + taze onay (`auto-lora-pipeline`/`auto_lora_start_training`, critical) | Onay yoksa `needs_approval` döner |
+| auto-lora `promote_to_production` | STOP_ALL + taze onay (`.../auto_lora_promote_adapter`, high) | Onay yoksa `needs_approval` döner |
+| `rules-update --approve` | STOP_ALL + taze onay (`rules-updater`/`rules_apply`, medium) | Onay yoksa uygulanmaz, exit 3 |
+
+`launch()` (auto_pipeline/web buton) onayı ÜST katmanda alır ve spawn ettiği iç
+`achilles train --run`'a `ACHILLES_TRAIN_SUPERVISED=1` geçer → **çift onay olmaz**; ama
+STOP_ALL iç komutta da geçerlidir. Manuel `achilles train --run` bu env'i ALMAZ → onay ister.
+
+### 7.8 Net durum (Phase 2 sonrası)
+- **Tam otomasyon HÂLÂ aktif değil.** Her gerçek eğitim AYRI manuel onay ister.
+  Her adapter terfisi AYRI manuel onay ister. Standing yetki yok.
+- **GitHub Claude PR otomasyonu Phase 4'e kadar KAPALI.**
+- **Web dashboard Phase 3'te** yapılacak (bu fazda yalnız backend + CLI + API).
+- Eğitim kabuk döngüleri (`train-loop.ps1`, `auto-chain.sh`, `mac-loop.sh`) artık iç
+  `train --run` onay kapısına takılır → gözetimsiz tekrar eğitim KENDİLİĞİNDEN olmaz.
