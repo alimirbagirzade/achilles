@@ -124,3 +124,19 @@ referansı kullanılır (literal değer yok).
 - [ ] `ANTHROPIC_API_KEY` secret'ını repo ayarlarından ekle.
 - [ ] main için branch protection (PR review zorunlu, force-push kapalı).
 - [ ] Nightly için `ENABLE_NIGHTLY_AUDIT` repo variable'ını bilinçli set et.
+
+## 11. Local-first mode (default) — cloud Claude Action disabled
+
+> GitHub Claude Action is intentionally disabled for local-first mode.
+> Do not set ENABLE_CLAUDE_TASK unless cloud GitHub automation is explicitly desired.
+> Local Claude Code operator is the default automation path.
+
+Varsayılan otomasyon yolu **lokal Claude Code operatörüdür** (bkz.
+[LOCAL_CLAUDE_OPERATOR.md](LOCAL_CLAUDE_OPERATOR.md)). Cloud Action yalnız
+`ENABLE_CLAUDE_TASK` repo variable'ı `true` yapılır **ve** `ANTHROPIC_API_KEY` GitHub
+secret'ı eklenirse çalışır; ikisi de yapılmadıkça workflow `main`'de kalsa bile
+**inert**'tir. Phase 4E kararı: ikisi de YAPILMAYACAK.
+
+## Local dry-run note
+
+This local dry-run confirms that Achilles can be operated by a local Claude Code operator without enabling cloud GitHub automation.
