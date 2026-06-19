@@ -837,6 +837,7 @@ uv run achilles train                   # LoRA — SADECE ÖNIZLEME (çalıştı
 uv run achilles train --run             # LoRA — yerel (smoke; ağır 4B için bulut tercih et)
 uv run achilles evaluate <eval.jsonl>   # modeli failure-mode eval setiyle test et
 uv run achilles local-training-audit    # eğitim-HAZIRLIK denetimi — SALT RAPOR (eğitim başlatmaz, 5A)
+uv run achilles local-training-request  # onay-kapılı eğitim İSTEĞİ — onay oluşturabilir, eğitim/onay-tüketimi YOK (5B)
 ```
 
 ### Anlama Doğrulama (L3/L4/L5 — objektif sınav)

@@ -2750,6 +2750,48 @@ def local_training_audit_cmd(
     console.print(f"[bold]{REPORT_ONLY_BANNER}[/bold]")
 
 
+@app.command("local-training-request")
+def local_training_request_cmd(
+    create_approval: bool = typer.Option(
+        False,
+        "--create-approval",
+        help="Readiness READY ise PENDING onay isteği oluştur (onay TÜKETMEZ).",
+    ),
+    preview: bool = typer.Option(
+        False, "--preview", help="Her zaman yalnız ön izleme; onay oluşturmaz."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Makine-okunabilir JSON çıktı."),
+    out: Path = typer.Option(
+        Path("reports/local_training_orchestrator"),
+        "--out",
+        help="İstek raporu çıktı dizini.",
+    ),
+    write: bool = typer.Option(True, "--write/--no-write", help="İstek raporunu diske yaz."),
+) -> None:
+    """Onay-kapılı lokal eğitim İSTEĞİ — eğitim BAŞLATMAZ, onay TÜKETMEZ (Phase 5B).
+
+    Varsayılan: audit + ön izleme (onay oluşturmaz). `--create-approval`: readiness
+    READY ise PENDING onay isteği oluşturur ve onay komutunu gösterir. STOP_ALL/risk/
+    READY-değil → blocked. Hiçbir durumda `launch`/`train --run`/`start_training`/
+    `promote`/`require_fresh_approval` çağırmaz.
+    """
+    from app.agents.local_training_request import REQUEST_BANNER, build_request, render_markdown
+
+    out_dir = out if out.is_absolute() else get_settings().root / out
+    result = build_request(
+        create_approval=create_approval and not preview,
+        preview=preview,
+        out_dir=out_dir,
+        write=write,
+    )
+
+    if as_json:
+        console.print_json(json.dumps(result, ensure_ascii=False))
+    else:
+        console.print(render_markdown(result))
+    console.print(f"[bold]{REQUEST_BANNER}[/bold]")
+
+
 # --------------------------------------------------------------------------
 # Agent runtime — task queue + approvals + supervisor (Phase 2)
 # --------------------------------------------------------------------------
