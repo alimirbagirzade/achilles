@@ -2707,6 +2707,49 @@ def pretrain_gate_cmd(
     )
 
 
+@app.command("local-training-audit")
+def local_training_audit_cmd(
+    out: Path = typer.Option(
+        Path("reports/local_training_orchestrator"),
+        "--out",
+        help="Rapor çıktısı dizini (markdown + json).",
+    ),
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--no-dry-run",
+        help="Bu komut DAİMA salt-rapordur; eğitim başlatmaz.",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Makine-okunabilir JSON çıktı."),
+    write: bool = typer.Option(True, "--write/--no-write", help="Raporu diske yaz (md+json)."),
+) -> None:
+    """Lokal eğitim-hazırlık DENETİMİ — SALT RAPOR (Phase 5A).
+
+    Sistem durumunu OKUR (STOP_ALL, bekleyen onaylar, veri, ön-eğitim kalite kapısı,
+    AutoLoRA durumu) ve eğitim-hazırlık skoru + riskler üretip reports/ altına yazar.
+    GERÇEK EĞİTİM BAŞLATMAZ; onay TÜKETMEZ; `train --run`/`launch`/terfi çağırmaz.
+    `--run` gibi bir mod bu fazda DESTEKLENMEZ.
+    """
+    from app.agents.local_training_orchestrator import (
+        REPORT_ONLY_BANNER,
+        render_markdown,
+        run_audit,
+    )
+
+    if not dry_run:
+        console.print(
+            "[yellow]Not:[/yellow] Bu komut yalnız salt-rapor modunda çalışır; "
+            "gerçek eğitim başlatmaz (Phase 5A)."
+        )
+    out_dir = out if out.is_absolute() else get_settings().root / out
+    report = run_audit(out_dir=out_dir, write=write)
+
+    if as_json:
+        console.print_json(json.dumps(report.to_dict(), ensure_ascii=False))
+    else:
+        console.print(render_markdown(report))
+    console.print(f"[bold]{REPORT_ONLY_BANNER}[/bold]")
+
+
 # --------------------------------------------------------------------------
 # Agent runtime — task queue + approvals + supervisor (Phase 2)
 # --------------------------------------------------------------------------
