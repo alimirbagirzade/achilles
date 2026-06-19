@@ -17,6 +17,19 @@ from app.memory.retrieval_service import RetrievedChunk
 # Modül düzeyi cache (process ömrü). Anahtar: chunk sayısı.
 _cache: dict[str, object] = {"count": -1, "bm25": None, "chunks": {}}
 
+# Modül düzeyi paylaşılan ChromaStore: get_corpus_bm25 her çağrıda YENİ ChromaStore()
+# yaratıyordu → her çağrı SOĞUK koleksiyon yüklemesi (~10s count()) ödüyordu; BM25
+# cache dolu olsa bile count() kontrolü her sorguda bu maliyeti tekrarlıyordu (canlı
+# RAG ~18s/sorgu). Paylaşılan örnek ile count() ilk çağrıdan sonra ISINIR (~50ms).
+_shared_chroma: ChromaStore | None = None
+
+
+def _corpus_chroma() -> ChromaStore:
+    global _shared_chroma
+    if _shared_chroma is None:
+        _shared_chroma = ChromaStore()
+    return _shared_chroma
+
 
 def get_corpus_bm25(
     chroma: ChromaStore | None = None,
@@ -26,7 +39,7 @@ def get_corpus_bm25(
     Returns:
         (bm25, chunks). Korpus boş/erişilemezse (None, {}).
     """
-    chroma = chroma or ChromaStore()
+    chroma = chroma or _corpus_chroma()
     try:
         count = chroma.count()
     except Exception:
@@ -64,4 +77,6 @@ def get_corpus_bm25(
 
 def reset_cache() -> None:
     """Cache'i sıfırla (test izolasyonu / yeniden ingest sonrası)."""
+    global _shared_chroma
     _cache.update(count=-1, bm25=None, chunks={})
+    _shared_chroma = None

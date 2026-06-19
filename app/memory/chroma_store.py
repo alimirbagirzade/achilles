@@ -97,25 +97,37 @@ class ChromaStore:
         col = self._ensure()
         return int(col.count())
 
-    def get_all(self) -> list[dict[str, Any]]:
+    def get_all(self, page: int = 5000) -> list[dict[str, Any]]:
         """Tüm chunk'ları döndür (BM25 korpus indeksi kurmak için).
 
         Her öğe: {chunk_id, document, metadata}. Boş koleksiyonda boş liste.
+
+        SAYFALANIR (limit/offset): tek `get()` çağrısı tüm id'leri tek SQL sorgusuna
+        koyar → büyük korpusta (>~30k chunk) SQLite "too many SQL variables" hatası
+        verir ve get_all KOMPLE BAŞARISIZ olurdu (BM25 hibrit sessizce ölür, her sorgu
+        ~20s boşa gider). Sayfalama bu limiti aşar; davranış küçük korpusta aynıdır.
         """
         col = self._ensure()
-        res = col.get(include=["documents", "metadatas"])
-        ids = res.get("ids", []) or []
-        docs = res.get("documents", []) or []
-        metas = res.get("metadatas", []) or []
         out: list[dict[str, Any]] = []
-        for i, cid in enumerate(ids):
-            out.append(
-                {
-                    "chunk_id": cid,
-                    "document": docs[i] if i < len(docs) else "",
-                    "metadata": metas[i] if i < len(metas) else {},
-                }
-            )
+        offset = 0
+        while True:
+            res = col.get(include=["documents", "metadatas"], limit=page, offset=offset)
+            ids = res.get("ids", []) or []
+            if not ids:
+                break
+            docs = res.get("documents", []) or []
+            metas = res.get("metadatas", []) or []
+            for i, cid in enumerate(ids):
+                out.append(
+                    {
+                        "chunk_id": cid,
+                        "document": docs[i] if i < len(docs) else "",
+                        "metadata": metas[i] if i < len(metas) else {},
+                    }
+                )
+            if len(ids) < page:
+                break
+            offset += page
         return out
 
     def reset(self) -> None:
