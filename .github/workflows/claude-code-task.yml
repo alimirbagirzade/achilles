@@ -1,0 +1,120 @@
+name: Claude Code Task (guarded · TEMPLATE)
+
+# ============================================================================
+# PHASE 4A ŞABLONU — GERÇEK AKTİVASYON KULLANICI ONAYINDA.
+# Etkinleştirmeden ÖNCE:
+#   1) TODO: anthropics/claude-code-action TAM input adlarını/sürümünü DOĞRULA
+#      (prompt / allowed_tools / branch / base input adları sürümle değişir).
+#      Uydurma syntax'a güvenme — resmi action README'sini kontrol et.
+#   2) ANTHROPIC_API_KEY secret'ını repo ayarlarından ekle (repoya YAZMA, loglama).
+#   3) main için branch protection AÇIK olsun; bu workflow main'e PUSH ETMEZ.
+#   4) Otomatik birleştirme (merge) YOKTUR — PR yalnız İNSAN onayıyla merge edilir.
+# Çalıştırma yalnız: elle dispatch VEYA 'claude-task' etiketi eklenince.
+# ============================================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "İşlenecek issue numarası"
+        required: true
+  issues:
+    types: [labeled]
+
+# Minimum yetki. main'e push YOK; yalnız iş-branch'i + PR + issue yorumu.
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+
+concurrency:
+  group: claude-task-${{ github.event.issue.number || github.event.inputs.issue_number }}
+  cancel-in-progress: false
+
+env:
+  # Claude Code'a verilecek SERT GÜVENLİK KURALLARI (aktivasyonda prompt'a eklenir).
+  CLAUDE_HARD_RULES: |
+    You are working on Achilles.
+
+    Hard safety rules:
+    - Do not run train --run.
+    - Do not start LoRA training.
+    - Do not promote adapters.
+    - Do not modify data/, storage/, vector_db/, models/, models/adapters/.
+    - Do not change secrets, .env files, keys, tokens.
+    - Do not push to main.
+    - Do not auto-merge.
+    - Do not claim trading success without backtest + OOS.
+    - Do not remove safety gates.
+    - Keep changes limited to the issue scope.
+    - Run offline CI before final summary.
+
+jobs:
+  guard-and-run:
+    # Yalnız 'claude-task' etiketi VEYA elle dispatch. Diğer etiketler tetiklemez.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' && github.event.label.name == 'claude-task')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (tam geçmiş — guard base...HEAD için)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      # --- GUARD #1 — Claude'dan ÖNCE: taban korumalı yola dokunmuyor mu ---
+      - name: Protected path guard (pre)
+        run: >-
+          python scripts/check_protected_paths.py
+          --base "origin/${{ github.event.repository.default_branch }}"
+
+      # --- Claude Code (ŞABLON — aktivasyon öncesi doğrulanacak) ---
+      # TODO: anthropics/claude-code-action tam input adlarını/sürümünü doğrula ve
+      #       aşağıyı aç. Prompt'a $CLAUDE_HARD_RULES MUTLAKA eklenmeli; allowed_tools
+      #       yalnız app/tests/docs düzenlemesi + offline komutlarla sınırlandırılmalı.
+      # - name: Claude Code (guarded)
+      #   uses: anthropics/claude-code-action@<PINNED_VERSION>   # TODO: pin
+      #   env:
+      #     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      #   with:
+      #     prompt: ${{ env.CLAUDE_HARD_RULES }}
+      #     # + issue gövdesi / kapsam
+      - name: Claude Code (TEMPLATE placeholder)
+        run: |
+          echo "TEMPLATE: Claude Code Action burada koşacak (TODO: action input'larını doğrula)."
+          echo "Sert kurallar env.CLAUDE_HARD_RULES içinde ve dokümanda zorunlu."
+
+      # --- CI kapısı (offline; Phase 3.5 sonrası torch'suz mypy temiz) ---
+      - name: CI — sync + lint + format + types + tests
+        run: |
+          uv sync --extra dev
+          uv run ruff check app tests
+          uv run ruff format --check app tests
+          uv run mypy app
+          uv run pytest -m "not ollama" --basetemp=.pytest_tmp
+
+      # --- GUARD #2 — Claude'dan SONRA: değişiklikler korumalı yola dokundu mu ---
+      # İhlal varsa workflow FAIL olur, PR AÇILMAZ, issue'ya güvenlik ihlali yazılır.
+      - name: Protected path guard (post)
+        run: >-
+          python scripts/check_protected_paths.py
+          --base "origin/${{ github.event.repository.default_branch }}"
+
+      # --- PR aç (yalnız iş-branch → main HEDEF; MERGE YOK, insan onayı şart) ---
+      # TODO: PR açma adımı (peter-evans/create-pull-request veya `gh pr create`).
+      #       Otomatik birleştirme ASLA eklenmez; PR yalnız insan onayıyla kapanır.
+      - name: Open PR (TEMPLATE placeholder)
+        run: |
+          echo "TEMPLATE: iş-branch'ten PR açılacak; main'e merge YALNIZ insan onayıyla."
+
+      - name: Güvenlik ihlali → issue notu (yalnız önceki adım fail ederse)
+        if: failure()
+        run: |
+          echo "Guard veya CI başarısız — PR açılmadı. (TODO: issue'ya otomatik yorum.)"
