@@ -168,3 +168,43 @@ STOP_ALL iç komutta da geçerlidir. Manuel `achilles train --run` bu env'i ALMA
 - **Web dashboard Phase 3'te** yapılacak (bu fazda yalnız backend + CLI + API).
 - Eğitim kabuk döngüleri (`train-loop.ps1`, `auto-chain.sh`, `mac-loop.sh`) artık iç
   `train --run` onay kapısına takılır → gözetimsiz tekrar eğitim KENDİLİĞİNDEN olmaz.
+
+---
+
+## 8. Phase 3 — Agent/Otomasyon Dashboard
+
+Mevcut Achilles Web UI'na yeni bir sekme (**10 · AGENTS / OTOMASYON**) eklendi —
+ayrı uygulama DEĞİL, mevcut `app/web/static/` (vanilla JS) içine. **Yeni backend yetenek
+EKLENMEDİ**; yalnız Phase 1/2 endpoint'leri tüketilir.
+
+**Dashboard ne gösterir:**
+- **Supervisor/Sağlık** — STOP_ALL durumu, danger gate (her zaman aktif), bekleyen onay
+  sayısı, çalışan koşu sayısı, son olay zamanı, `/healthz` durumu + büyük kırmızı STOP_ALL
+  kill-switch.
+- **Onay İstekleri** — pending önce; Approve/Reject (confirm zorunlu).
+- **Agents** — 15 ajan; tehlikeli olanlar uyarı rozetli; tıkla → koşu filtrele.
+- **Agent Koşuları** — run listesi; run_id → metadata + outputs + error + **olay zaman
+  çizelgesi**.
+- **Otomasyon Görevleri** — liste + iptal (confirm) + basit görev oluşturma.
+- **Genel Olay Akışı** — son 100 olay; error/warning görsel ayrışır.
+
+**Kullandığı endpoint'ler:** `GET /api/agents`, `/api/agents/runs`,
+`/api/agents/runs/{id}`, `/api/automation/tasks` (GET/POST) + `/cancel`,
+`/api/approvals` (GET) + `/approve` + `/reject`, `/api/events`, `/api/healthz`,
+`/api/supervisor/status` + `/stop-all` + `/clear-stop-all`.
+
+**Dashboard NE YAPMAZ:**
+- Eğitim/terfi başlatmaz; yalnız görünürlük + onay + STOP_ALL kontrol yüzeyidir.
+- Yeni tehlikeli backend yeteneği eklemez.
+- **GitHub Claude PR otomasyonu Phase 4'e kadar KAPALI.**
+- training/promotion HÂLÂ manuel TAZE onay ister (dashboard'dan approve dahi tek
+  kullanımlıktır; standing yetki yok).
+
+**Güvenlik:** mevcut `api_auth` token akışı korunur; tüm dinamik içerik `esc()` ile
+kaçırılır (XSS); STOP_ALL/approve/reject/cancel `confirm()` olmadan çalışmaz; satır
+butonları CSP-safe olay-delegasyonuyla bağlanır (inline `onclick` yok).
+
+**Bilinen sınır (raporlandı, backend EKLENMEDİ):** `POST /api/automation/tasks`
+query-param tabanlı → create formunda `params_json` yok; `/healthz` kaba (granüler
+sqlite/runtime bayrağı yok); approval `decision_note` UI'da girilmiyor. İleride istenirse
+küçük read-only zenginleştirme — bu fazda backend büyütülmedi.

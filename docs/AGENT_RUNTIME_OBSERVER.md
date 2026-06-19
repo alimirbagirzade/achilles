@@ -93,7 +93,7 @@ etiketli issue → Claude Code branch → CI kapısı → PR (asla `main`'e push
 | startup sweep (bayat running → cancelled) | ✅ yapıldı (Phase 2) |
 | tehlikeli aksiyon entegrasyonu (train/promote/rules) | ✅ yapıldı (Phase 2) |
 | CLI task/approval/stop-all + web /automation,/approvals,/events,/healthz,/supervisor | ✅ yapıldı (Phase 2) |
-| dashboard sekmesi (mevcut Web UI içinde) | ❌ Phase 3 |
+| dashboard sekmesi (mevcut Web UI içinde) | ✅ yapıldı (Phase 3) |
 | GitHub Claude Code PR automation | ❌ Phase 4 |
 
 ## Phase 2 API yüzeyi (özet)
@@ -111,4 +111,25 @@ etiketli issue → Claude Code branch → CI kapısı → PR (asla `main`'e push
 
 **Politika:** her gerçek eğitim ve her adapter terfisi AYRI manuel onay ister
 (tek kullanımlık taze onay; standing yetki yok). STOP_ALL tüm tehlikeli aksiyonları bloklar.
-Tam otomasyon hâlâ kapalı; GitHub PR otomasyonu Phase 4'e kadar kapalı; dashboard Phase 3'te.
+Tam otomasyon hâlâ kapalı; GitHub PR otomasyonu Phase 4'e kadar kapalı.
+
+## Phase 3 — Agent/Otomasyon Dashboard (özet)
+
+Mevcut Web UI'ye **10 · AGENTS / OTOMASYON** sekmesi eklendi (vanilla JS; ayrı uygulama
+değil). Paneller: Supervisor/Sağlık (+ büyük kırmızı STOP_ALL), Onay İstekleri
+(Approve/Reject), Agents (tehlikeli rozet + filtre), Agent Koşuları (+ olay zaman çizelgesi),
+Otomasyon Görevleri (+ iptal/oluştur), Genel Olay Akışı.
+
+**Yalnız Phase 1/2 endpoint'lerini tüketir; yeni backend yetenek EKLENMEDİ.** Mevcut
+`api_auth` token akışı korunur; tüm dinamik içerik `esc()` ile kaçırılır; tehlikeli
+butonlar `confirm()` ister; satır butonları CSP-safe olay-delegasyonuyla bağlanır.
+
+**Değişen dosyalar:** `app/web/static/index.html`, `app/web/static/assets/app.js`,
+`app/web/static/assets/app.css`, `tests/test_agent_dashboard_static.py`.
+
+**Dashboard NE YAPMAZ:** eğitim/terfi başlatmaz; yeni tehlikeli yetenek eklemez;
+GitHub PR otomasyonu (Phase 4) kapalı; training/promotion hâlâ manuel taze onay ister.
+Dashboard yalnız **görünürlük + onay + STOP_ALL kontrol yüzeyidir**.
+
+**Bilinen sınır:** create form query-param tabanlı (`params_json` yok); `/healthz` kaba;
+approval `decision_note` UI'da yok. İleride küçük read-only zenginleştirme.
