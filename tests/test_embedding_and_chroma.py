@@ -41,3 +41,25 @@ def test_chroma_delete_by_paper():
     remaining = {r["chunk_id"] for r in chroma.get_all()}
     assert "del_p2_c0" in remaining
     assert "del_p1_c0" not in remaining and "del_p1_c1" not in remaining
+
+
+def test_chroma_get_all_paginates():
+    """get_all küçük sayfa boyutuyla TÜM chunk'ları döndürmeli (sayfalama döngüsü).
+
+    Regresyon: tek `get()` çağrısı tüm id'leri tek SQL sorgusuna koyuyordu → büyük
+    korpusta (>~30k chunk) SQLite "too many SQL variables" → get_all KOMPLE çöküyor,
+    BM25 hibrit sessizce ölüyor ve her RAG sorgusu ~18s boşa gidiyordu. Sayfalama şart.
+    """
+    e = EmbeddingService(allow_fake=True)
+    e._mode = "fake"
+    chroma = ChromaStore(collection="test_paging_collection")
+    n = 7
+    ids = [f"pg_c{i}" for i in range(n)]
+    texts = [f"chunk metni {i} volatilite momentum entropi" for i in range(n)]
+    metas = [{"paper_id": "pg_p", "page_number": i} for i in range(n)]
+    chroma.add(ids, e.embed(texts), texts, metas)
+    # page=3 → 7 kayıt 3 sayfada (3+3+1) gelmeli; hepsi eksiksiz dönmeli.
+    rows = chroma.get_all(page=3)
+    got = {r["chunk_id"] for r in rows}
+    assert got == set(ids), f"sayfalama eksik döndü: {got}"
+    assert all(r["document"] for r in rows)
