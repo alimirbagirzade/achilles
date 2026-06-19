@@ -435,13 +435,18 @@ def api_comprehension_get(paper_id: str) -> dict:
     row = SqliteStore().get_comprehension_score(paper_id)
     if row is None:
         return {"paper_id": paper_id, "total": None, "computed_at": None}
+    # details_json bozuk/yarım kalmışsa (DB bozulması) 500 yerine boş sözlüğe düş.
+    try:
+        details = _json.loads(row.details_json or "{}")
+    except (ValueError, TypeError):
+        details = {}
     return {
         "paper_id": paper_id,
         "total": row.total_score,
         "extraction": row.extraction_score,
         "retrieval": row.retrieval_score,
         "llm_verify": row.llm_score,
-        "details": _json.loads(row.details_json or "{}"),
+        "details": details,
         "computed_at": row.computed_at,
     }
 

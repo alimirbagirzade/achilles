@@ -16,7 +16,7 @@ import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from app.verification.comprehension_scorer import ComprehensionScore
@@ -1036,6 +1036,44 @@ class SqliteStore:
                 .limit(1)
             )
             row = s.scalar(stmt)
+            return self._approval_to_dict(row) if row else None
+
+    def consume_fresh_approval(self, agent_id: str, action: str) -> dict[str, Any] | None:
+        """Atomik: en yeni taze (approved+unconsumed) onayı BUL ve TÜKET — TEK transaction.
+
+        ``find_fresh_approval`` + ``update_approval_request`` İKİ ayrı transaction'dı:
+        iki eşzamanlı çağrı aynı onayı bulup ikisi de tüketebiliyordu (TOCTOU çift-tüketim;
+        Kural 8 eğitim kapısında kritik — bir onay iki gerçek eğitimi yetkilendirirdi).
+        Burada koşullu UPDATE (``consumed_at IS NULL``) + ``rowcount`` ile karşılaştır-ve-
+        değiştir (CAS): araya giren eşzamanlı çağrılardan yalnız BİRİ tüketir, diğeri None alır.
+        """
+        with self.session() as s:
+            aid = s.scalar(
+                select(ApprovalRequestRow.approval_id)
+                .where(
+                    ApprovalRequestRow.agent_id == agent_id,
+                    ApprovalRequestRow.action == action,
+                    ApprovalRequestRow.status == "approved",
+                    ApprovalRequestRow.consumed_at.is_(None),
+                )
+                .order_by(ApprovalRequestRow.requested_at.desc())
+                .limit(1)
+            )
+            if aid is None:
+                return None
+            res = s.execute(
+                update(ApprovalRequestRow)
+                .where(
+                    ApprovalRequestRow.approval_id == aid,
+                    ApprovalRequestRow.consumed_at.is_(None),
+                )
+                .values(consumed_at=_utcnow())
+                .execution_options(synchronize_session=False)
+            )
+            # DML sonucu CursorResult'tır (rowcount taşır); Session.execute imzası Result[Any].
+            if cast("Any", res).rowcount != 1:
+                return None  # araya giren eşzamanlı çağrı bu onayı tüketti → taze onay yok
+            row = s.get(ApprovalRequestRow, aid)
             return self._approval_to_dict(row) if row else None
 
     def _approval_to_dict(self, r: ApprovalRequestRow) -> dict[str, Any]:
