@@ -96,6 +96,8 @@ class RagLoopState:
     # boş kart rebuild edilmeye ÇALIŞILMIŞ makaleler (başarılı olsa da içerik gelmese de —
     # aynı makaleyi sonsuz tekrar denememek için; bkz. _rebuild_empty_cards).
     rebuilt_paper_ids: list[str] = field(default_factory=list)
+    # bayat comprehension skoru BİR kez yeniden hesaplanmış makaleler (sonsuz re-score yok).
+    rescored_paper_ids: list[str] = field(default_factory=list)
 
     mastery_percent: int | None = None
     history: list[dict[str, Any]] = field(default_factory=list)  # son ~20 tur özeti
@@ -332,28 +334,51 @@ class RagLearningLoop:
         return done
 
     def _score_missing(self, limit: int) -> int:
-        """Kartı olup comprehension skoru olmayan makaleleri skorla (en çok `limit`)."""
+        """Skorsuz VEYA bayat (içerik kartı düzeldi ama skor düşük kaldı) makaleleri skorla.
+
+        Comprehension skoru bir kez hesaplanıp kalıcı; kart boşken 15 alıp sonra içerik
+        kazanan makale 15'te DONUYORDU (hiçbir döngü yeniden hesaplamıyordu — kök sorun).
+        Artık: skoru hiç olmayanları VE içerik kartı olup skoru ≤20 olan BAYAT makaleleri
+        (her birini BİR kez — rescored_paper_ids defteri ile sonsuz döngü yok) yeniden skorla.
+        """
         if limit <= 0:
             return 0
+        from app.lora.dataset_builder import build_dataset
         from app.memory.sqlite_store import SqliteStore
         from app.verification.comprehension_scorer import ComprehensionScorer
 
         store = SqliteStore()
         scorer = ComprehensionScorer()
+        content_pids = {
+            str(e.metadata.get("paper_id", ""))
+            for e in build_dataset(store.list_approved_cards())
+            if e.metadata.get("paper_id")
+        }
+        rescored = set(self._state.rescored_paper_ids)
         scored = 0
         for p in store.list_papers():
             if scored >= limit:
                 break
             if not store.has_knowledge_card(p.paper_id):
                 continue
-            if store.get_comprehension_score(p.paper_id) is not None:
+            row = store.get_comprehension_score(p.paper_id)
+            stale = (
+                row is not None
+                and p.paper_id in content_pids
+                and row.total_score <= 20
+                and p.paper_id not in rescored
+            )
+            if row is not None and not stale:
                 continue
             try:
                 result = scorer.score(p.paper_id, use_llm=self._state.score_use_llm)
                 store.save_comprehension_score(result)
                 scored += 1
+                if stale:
+                    rescored.add(p.paper_id)  # bayat → bir kez yeniden skorlandı
             except Exception as exc:
                 log.warning("RAG loop: skor hesaplanamadı (%s): %s", p.paper_id, exc)
+        self._state.rescored_paper_ids = sorted(rescored)
         return scored
 
     @staticmethod
