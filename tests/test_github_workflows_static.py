@@ -140,3 +140,25 @@ def test_task_dependency_change_detector() -> None:
     c = _r(_TASK)
     assert "needs-approval" in c
     assert "pyproject" in c  # bağımlılık/iş-akışı değişimi tespiti
+
+
+# --- Phase 4C: doğrulanmış tool-kısıtlama + PR-tetikli needs-approval label ---
+def test_task_tool_restriction_verified_format() -> None:
+    c = _r(_TASK)
+    # docs/configuration.md ile doğrulandı: claude_args içinde --allowedTools (camelCase)
+    assert "--allowedTools" in c
+    assert "--disallowedTools" in c
+    # allow-list yalnız güvenli düzenleme + offline komut içerir
+    assert "Bash(uv run pytest" in c
+    assert "Bash(uv run mypy app)" in c
+    # tehlikeli komutlar açıkça yasak
+    assert "Bash(achilles train" in c
+    assert "Bash(rm" in c
+
+
+def test_task_pull_request_needs_approval_job() -> None:
+    c = _r(_TASK)
+    assert "pull_request:" in c  # PR olayında label işi koşar
+    assert "dependency-approval-label" in c
+    assert "gh pr edit" in c  # mekanik label-add (PR numarası bilinir)
+    assert "github.event.pull_request.number" in c
