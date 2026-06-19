@@ -915,6 +915,9 @@
   var startTrainBtn = document.getElementById("startTrainBtn");
   if (startTrainBtn) {
     startTrainBtn.addEventListener("click", function () {
+      // Phase 4D-1: gerçek eğitim tehlikeli → tek-tık yok, önce confirm.
+      if (!window.confirm("Bu işlem gerçek LoRA training başlatabilir. Fresh manual "
+          + "approval olmadan başlamamalıdır. Devam etmek istiyor musunuz?")) return;
       var payload = {
         base_model: (document.getElementById("drBaseModel") || {}).value || "",
         adapter_name: (document.getElementById("trAdapterName") || {}).value || "achilles_lora",
@@ -929,6 +932,17 @@
       if (logEl) logEl.textContent = "";
       api("/training/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
         .then(function (data) {
+          // Phase 4D-1: backend taze manuel onay isteyebilir (needs_approval).
+          if (data && data.status === "needs_approval") {
+            var cmd = data.approve_command || ("uv run achilles approval-approve " + (data.approval_id || ""));
+            if (logEl) {
+              logEl.textContent = "Onay gerekli. Approval ID: " + (data.approval_id || "")
+                + "\nCLI ile onayla: " + cmd
+                + "\nOnayladıktan sonra eğitimi yeniden başlat.";
+            }
+            toast(data.message || "Onay gerekli — fresh manual approval şart.", true);
+            return;
+          }
           toast(data.message, !data.ok);
           // Detached eğitim: SSE yerine /api/training/live poll'u (mirrorTrainTab) besler.
           if (data.ok) refreshTrain();
