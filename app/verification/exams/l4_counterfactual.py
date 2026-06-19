@@ -109,7 +109,7 @@ class CounterfactualExam:
         prompt = _PROMPT.format(definition=spec.definition, p=p, p2=p2)
         try:
             raw = self.llm.generate(
-                prompt, fmt="json", temperature=0.0, max_tokens=64, timeout=60, seed=seed
+                prompt, fmt="json", temperature=0.0, max_tokens=64, timeout=240, seed=seed
             )
         except LLMUnavailable:
             return ExamResult("L4", spec.name, False, "skipped", seed, {"reason": "LLMUnavailable"})
