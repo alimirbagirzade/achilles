@@ -109,3 +109,34 @@ def test_doc_has_safety_model_sections() -> None:
 
 def test_guard_referenced_by_task_workflow() -> None:
     assert "scripts/check_protected_paths.py" in _r(_TASK)
+
+
+# --- Phase 4B: doğrulanmış action syntax + label/dependency guard'ları ---
+def test_task_skips_dangerous_and_human_only_labels() -> None:
+    c = _r(_TASK)
+    for lbl in ("human-only", "no-claude", "dangerous-change", "needs-approval"):
+        assert lbl in c, f"bloklayıcı label eksik: {lbl}"
+    # skip-notice işi bu görevleri atlayıp açıklama yazar
+    assert "skip-notice" in c
+    assert "skipped" in c.lower()
+
+
+def test_task_uses_verified_claude_action() -> None:
+    c = _r(_TASK)
+    assert "anthropics/claude-code-action@v1" in c  # resmi README ile doğrulandı
+    assert "anthropic_api_key:" in c
+    assert "claude_args:" in c or "allowed_tools:" in c
+    assert "prompt:" in c
+
+
+def test_task_activation_gated_inert_by_default() -> None:
+    c = _r(_TASK)
+    # Claude adımı repo değişkeni olmadan SKIP → varsayılan inert (aktivasyon kullanıcıda)
+    assert "vars.ENABLE_CLAUDE_TASK == 'true'" in c
+    assert "vars.ENABLE_CLAUDE_TASK != 'true'" in c  # inert placeholder
+
+
+def test_task_dependency_change_detector() -> None:
+    c = _r(_TASK)
+    assert "needs-approval" in c
+    assert "pyproject" in c  # bağımlılık/iş-akışı değişimi tespiti
