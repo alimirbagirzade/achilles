@@ -20,6 +20,7 @@ from typing import Any
 
 import pandas as pd
 
+from app.agents.runtime import log_step, tracked
 from app.memory.sqlite_store import SqliteStore
 from app.research.reflection_agent import ReflectionAgent
 from app.research.synthesis_engine import SynthesisEngine, SynthesisResult
@@ -133,10 +134,12 @@ class ResearchOrchestrator:
         label = f"synthetic(n={self.n_bars})"
         return generate_synthetic_ohlcv(n=self.n_bars, seed=self.seed), label
 
+    @tracked("research-orchestrator", trigger_type="manual")
     def run(self, question: str, paper_ids: list[str] | None = None) -> ResearchResult:
         """Bir araştırma sorusu için tam döngüyü çalıştır."""
         logger.info("Araştırma başladı: %s", question)
         result = ResearchResult(question=question)
+        log_step(f"Araştırma turu başladı: {question[:80]}")
         df, data_source = self._load_data()
 
         current_indicator: SynthesisResult | None = None

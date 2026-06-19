@@ -14,6 +14,7 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -333,7 +334,10 @@ def train(cfg: PeftTrainConfig) -> dict:
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    model = AutoModelForCausalLM.from_pretrained(
+    # model: Any → PEFT/torch yokken (CI: yalnız --extra dev) get_peft_model/
+    # print_trainable_parameters satırları "unused type: ignore" üretmesin; torch
+    # varken de gereksiz ignore kalmasın. Runtime/eğitim davranışı DEĞİŞMEZ.
+    model: Any = AutoModelForCausalLM.from_pretrained(
         cfg.base_model,
         trust_remote_code=True,
         torch_dtype=dtype,
@@ -350,8 +354,8 @@ def train(cfg: PeftTrainConfig) -> dict:
         )
     logger.info("LoRA reçetesi: %s", recipe_summary(cfg))
     peft_config = LoraConfig(**build_lora_kwargs(cfg))
-    model = get_peft_model(model, peft_config)  # type: ignore[assignment]
-    model.print_trainable_parameters()  # type: ignore[operator]
+    model = get_peft_model(model, peft_config)
+    model.print_trainable_parameters()
 
     train_rows = _load_jsonl(cfg.train_jsonl)
 
@@ -404,7 +408,7 @@ def train(cfg: PeftTrainConfig) -> dict:
         from peft.optimizers import create_loraplus_optimizer
 
         opt = create_loraplus_optimizer(
-            model=model,  # type: ignore[arg-type]
+            model=model,
             optimizer_cls=torch.optim.AdamW,
             lr=cfg.learning_rate,
             loraplus_lr_ratio=cfg.loraplus_lr_ratio,

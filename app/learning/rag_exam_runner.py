@@ -102,9 +102,17 @@ class RagExamRunner:
         sufficiency = self._sufficiency.classify(q.question_text, chunks)
         context_ok = sufficiency.can_answer
 
-        # Citation skoru: kaç chunks paper_id ile eşleşiyor?
-        paper_chunks = [c for c in chunks if c.paper_id == paper_id]
-        cit_score = min(1.0, len(paper_chunks) / max(1, len(chunks))) if chunks else 0.0
+        # Citation skoru: modelin cevap metnindeki GERÇEK atıflarından ([paper:chunk])
+        # hesaplanır — getirilen chunk örtüşmesinden DEĞİL. Aksi halde "atıf disiplini"
+        # aslında retrieval-kapsamını ölçer (retrieval_score ile çift-sayım) ve model hiç
+        # atıf yapmadan puan alır → eval/SFT dürüstlüğü ihlali (CLAUDE.md Kural 2).
+        # CitationVerifier cevaptaki [paper:chunk] atıflarını parse edip getirilen
+        # chunk'larda var mı diye doğrular; oran = doğrulanan / toplam atıf.
+        citation_checks = self._citation_v.verify(answer_text, chunks)
+        if citation_checks:
+            cit_score = sum(1 for c in citation_checks if c.exists) / len(citation_checks)
+        else:
+            cit_score = 0.0  # cevapta hiç atıf yok → atıf disiplini puanı yok
 
         # Grounding skoru
         grounding_results = self._grounding_v.verify(answer_text, chunks)

@@ -9,6 +9,7 @@ asla sahte 'pass' üretmez (Kural 2).
 
 from __future__ import annotations
 
+from app.verification.exams.discipline_exam import run_discipline_exam
 from app.verification.exams.l3_application import ApplicationExam, ExamResult
 from app.verification.exams.l4_counterfactual import CounterfactualExam
 from app.verification.exams.l5_composition import (
@@ -32,5 +33,6 @@ __all__ = [
     "UnsafeExpressionError",
     "get_spec",
     "list_specs",
+    "run_discipline_exam",
     "safe_eval",
 ]

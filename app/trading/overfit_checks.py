@@ -59,7 +59,12 @@ def in_out_of_sample(
     in_res = run_backtest(in_df, ir)
     out_res = run_backtest(out_df, ir)
 
-    warnings = static_checks(out_res.metrics, min_trades=min_trades)
+    # BUG-M7 fix: IS metrikleri de kontrol edilmeli — IS'in kendisi şüpheliyse
+    # OOS'a hiç geçilmeden uyarı verilmeli.
+    is_warnings = [f"[IS] {w}" for w in static_checks(in_res.metrics, min_trades=min_trades)]
+    oos_warnings = static_checks(out_res.metrics, min_trades=min_trades)
+    warnings = is_warnings + oos_warnings
+
     deg_in = in_res.metrics.total_return_pct
     deg_out = out_res.metrics.total_return_pct
     if deg_in > 0 and deg_out < 0:

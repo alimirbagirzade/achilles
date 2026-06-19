@@ -36,6 +36,11 @@ _DISCIPLINE_COVERAGE_WARN = 0.9
 
 _COST_RE = re.compile(r"komisyon|slippage|spread|commission|slip", re.I)
 _STRAT_RE = re.compile(r"strateji|strategy", re.I)
+# "Olası strateji hipotezleri" / "strategy hypothesis" → araştırma özeti başlığı; gerçek
+# al/sat tavsiyesi değil. Bu desenle başlayan cevaplar maliyet-körü sayılmaz.
+_HYPOTHESIS_STRAT_RE = re.compile(
+    r"olası strateji hipotez|strategy hypothesis|strateji hipotez|hypothes", re.I
+)
 _WORD_RE = re.compile(r"[A-Za-zÇĞİÖŞÜçğıöşü]+")
 _LEAKAGE_PREFIXES = ("pasaja göre", "pasaja gore", "pasaj a göre")
 
@@ -144,7 +149,13 @@ def audit_dataset(
         )
 
     # 4) Maliyet-körü strateji cevabı (WARN; ignores_costs flag'inin veri-tarafı).
-    cost_hits = sum(1 for a in answers if _STRAT_RE.search(a) and not _COST_RE.search(a))
+    # Araştırma özetlerindeki "Olası strateji hipotezleri" başlıkları hariç:
+    # bunlar gerçek al/sat tavsiyesi değil, kart-özeti formatının bir parçası.
+    cost_hits = sum(
+        1
+        for a in answers
+        if _STRAT_RE.search(a) and not _COST_RE.search(a) and not _HYPOTHESIS_STRAT_RE.search(a)
+    )
     if cost_hits:
         warnings.append(
             f"{cost_hits} 'strateji' cevabı maliyet token'ı (komisyon/slippage) içermiyor"

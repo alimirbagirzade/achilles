@@ -1,4 +1,4 @@
-from app.ingestion.chunker import TextChunk, chunk_text
+from app.ingestion.chunker import _MATH_WHOLE_MAX_CHARS, TextChunk, chunk_text
 
 
 def test_chunk_text_basic():
@@ -31,3 +31,24 @@ def test_oversized_paragraph_after_small_is_split():
     # chunk_size sözleşmesi: hiçbir chunk limitin makul katından büyük olmamalı
     assert max(len(c.text) for c in chunks) <= 700
     assert len(chunks) >= 5
+
+
+def test_math_heavy_under_cap_stays_whole():
+    # Güvenli tavanın altındaki math-heavy paragraf formül bütünlüğü için bütün kalır
+    # (chunk_size'ı aşsa bile bölünmez).
+    para = "$$x = y + z$$ " + "Bu denklem onemlidir. " * 100  # ~2200 char, math bloğu var
+    chunks = chunk_text("p", para, chunk_size=600, overlap=0)
+    assert len(chunks) == 1, "Tavan altı math-heavy paragraf bütün kalmalı"
+    assert len(chunks[0].text) > 600, "Formül bütünlüğü: chunk_size'ı aşıp bütün kalmalı"
+
+
+def test_math_heavy_over_cap_is_split():
+    # Güvenli tavanı (_MATH_WHOLE_MAX_CHARS) aşan math-heavy paragraf yine de bölünür →
+    # embedding'de sessiz kesilme önlenir (kesik formül > sessizce kaybolan kuyruk).
+    para = "$$x = y + z$$ " + "Bu denklem onemlidir. " * 400  # ~8800 char, tavanı aşar
+    assert len(para) > _MATH_WHOLE_MAX_CHARS
+    chunks = chunk_text("p", para, chunk_size=600, overlap=0)
+    assert len(chunks) >= 2, "Tavanı aşan math-heavy paragraf bölünmeli"
+    assert max(len(c.text) for c in chunks) <= _MATH_WHOLE_MAX_CHARS, (
+        "Hiçbir chunk embedding-güvenli tavanı aşmamalı"
+    )

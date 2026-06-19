@@ -262,6 +262,54 @@ def train(
 
     resolved = detect_lora_backend() if backend == "auto" else backend
 
+    if run:
+        # Phase 2: STOP_ALL + TAZE manuel onay kapısı (CLAUDE.md Kural 8).
+        import os as _os
+
+        from app.agents.runtime import approvals, supervisor
+
+        if supervisor.is_stop_all_active():
+            console.print(
+                "[bold red]STOP_ALL aktif[/bold red] — gerçek eğitim bloklandı. "
+                "Kaldır: [cyan]uv run achilles clear-stop-all[/cyan]"
+            )
+            raise typer.Exit(2)
+
+        # auto_pipeline/launch zaten kendi onayını aldıysa (supervised) iç kapı atlanır
+        # — çift onay olmasın; ama STOP_ALL her zaman geçerli.
+        if not _os.environ.get("ACHILLES_TRAIN_SUPERVISED"):
+            decision = approvals.require_fresh_approval(
+                agent_id="lora-trainer",
+                action="train_run",
+                risk="critical",
+                summary=(
+                    f"Gerçek LoRA eğitimi: {adapter_name} ({iterations} adım, backend={backend})"
+                ),
+            )
+            if not decision.authorized:
+                console.print(
+                    Panel.fit(
+                        "[bold red]Gerçek eğitim TAZE manuel onay gerektirir.[/bold red]\n"
+                        f"Onay isteği oluşturuldu: [yellow]{decision.approval_id}[/yellow]\n"
+                        f"Onayla: [cyan]uv run achilles approval-approve "
+                        f"{decision.approval_id}[/cyan]\n"
+                        "Sonra bu komutu TEKRAR çalıştır. "
+                        "(Standing yetki yok — her eğitim ayrı onay ister.)",
+                        title="⛔ Onay gerekli (Phase 2)",
+                    )
+                )
+                raise typer.Exit(3)
+            console.print(
+                Panel.fit(
+                    "[bold red]Bu GERÇEK LoRA eğitimidir.[/bold red] "
+                    f"Taze onay tüketildi ([yellow]{decision.approval_id}[/yellow]).\n"
+                    "Otomatik gözetimsiz döngüde çalıştırmayın (CLAUDE.md Kural 8).",
+                    title="⚠ Onaylı gerçek eğitim",
+                )
+            )
+        else:
+            console.print("[dim]Denetimli (supervised) eğitim — üst katman onayı kullanıldı.[/dim]")
+
     if resolved == "mlx":
         from app.training.mlx_lora_train import TrainConfig
         from app.training.mlx_lora_train import main as train_main
@@ -1211,6 +1259,23 @@ def oss_rules_update(
     )
 
     if approve:
+        # Phase 2: kural uygulama (sistem-değiştiren) TAZE onay gerektirir.
+        from app.agents.runtime import approvals, supervisor
+
+        if supervisor.is_stop_all_active():
+            console.print("[red]STOP_ALL aktif — kural uygulama bloklandı.[/red]")
+            raise typer.Exit(2)
+        decision = approvals.require_fresh_approval(
+            "rules-updater", "rules_apply", "medium", f"Kural önerisi uygula: {approve}"
+        )
+        if not decision.authorized:
+            console.print(
+                f"[yellow]Kural uygulama TAZE onay gerektirir.[/yellow] "
+                f"Onay isteği: [cyan]{decision.approval_id}[/cyan]\n"
+                f"Onayla: uv run achilles approval-approve {decision.approval_id}, "
+                "sonra tekrar çalıştır."
+            )
+            raise typer.Exit(3)
         ok = approve_suggestion(approve)
         console.print("[green]✓ Onaylandı[/green]" if ok else "[red]Bulunamadı[/red]")
         return
@@ -1657,13 +1722,18 @@ def synth_qa_bulk(
     seed: int = typer.Option(0, "--seed"),
     target: int = typer.Option(1000, "--target", help="Bu örnek sayısına ulaşınca dur"),
     output: Path = typer.Option(Path("data/lora_sft"), "--output"),
+    resume: bool = typer.Option(
+        False, "--resume/--no-resume", help="Zaten işlenmiş makaleleri atla (kaldığı yerden devam)"
+    ),
 ) -> None:
     """TÜM korpustan checkpoint'li bulk sentetik QA üret (Stage 2 eşiğine hızlı ulaşım).
 
     synth-qa (yalnız en yeni N makale) yerine TÜM makaleleri batch'ler hâlinde işler;
     her batch sonrası dosyaya yazar (çökme-güvenli, atomik). Hedefe ulaşınca durur.
+    --resume: mevcut çıktıda paper_id'si bulunan makaleleri atla (kesilme sonrası devam).
     Eğitim BAŞLATMAZ (CLAUDE.md kural 8); yalnız veri üretir.
     """
+    import json as _json
     import os
 
     from app.brain.local_llm import LocalLLM
@@ -1696,10 +1766,27 @@ def synth_qa_bulk(
         tmp.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
         os.replace(tmp, out_path)
 
+    # --resume: mevcut JSONL'daki paper_id'lere bakarak işlenmiş makaleleri atla
+    if resume:
+        processed_ids: set[str] = set()
+        for ln in _read_existing():
+            try:
+                meta = _json.loads(ln).get("metadata") or {}
+                pid = meta.get("paper_id") or meta.get("source_id")
+                if pid:
+                    processed_ids.add(pid)
+            except Exception:
+                pass
+        if processed_ids:
+            n_before = len(all_ids)
+            all_ids = [pid for pid in all_ids if pid not in processed_ids]
+            skipped = n_before - len(all_ids)
+            console.print(f"  --resume: {skipped} işlenmiş makale atlandı → {len(all_ids)} kalan")
+
     n_batches = (len(all_ids) + batch - 1) // batch
     console.print(
         f"[cyan]Bulk sentetik üretim[/cyan] ({len(all_ids)} makale, {n_batches} batch, "
-        f"hedef={target}, backend={llm.active_backend()})…"
+        f"hedef={target}, seed={seed}, backend={llm.active_backend()})…"
     )
     total = len(dedup_jsonl_lines(_read_existing()))
     for bi, i in enumerate(range(0, len(all_ids), batch), 1):
@@ -2455,6 +2542,107 @@ def understanding_history_cmd(
             console.print(f"[green]Regresyon yok[/] · Δoran {cmp['delta'] * 100:+.1f}% · Δ: {ld}")
 
 
+# --------------------------------------------------------------------------
+# Agent runtime gözlemcisi (Phase 1) — yalnız gözlem; kontrol/onay Phase 2'de
+# --------------------------------------------------------------------------
+@app.command("agents-list")
+def agents_list() -> None:
+    """Kayıtlı runtime agent'ları (automation_manifest.yaml) listele."""
+    from app.agents.runtime import list_agents
+
+    try:
+        agents = list_agents()
+    except Exception as exc:
+        console.print(f"[red]Manifest okunamadı:[/red] {exc}")
+        raise typer.Exit(1) from exc
+    t = Table(title="Achilles — runtime agent'lar")
+    t.add_column("agent_id")
+    t.add_column("otonomi")
+    t.add_column("tehlikeli")
+    t.add_column("onay")
+    t.add_column("vars. açık")
+    t.add_column("dosya")
+    for a in agents:
+        t.add_row(
+            a.agent_id,
+            a.autonomy.value,
+            "⚠️" if a.dangerous else "—",
+            "✓" if a.approval_required else "—",
+            "✓" if a.default_enabled else "—",
+            a.file,
+        )
+    console.print(t)
+
+
+@app.command("agents-runs")
+def agents_runs(
+    limit: int = typer.Option(20, help="Kaç koşu gösterilsin"),
+    agent: str = typer.Option(None, "--agent", help="agent_id ile filtrele"),
+    status: str = typer.Option(None, "--status", help="status ile filtrele"),
+) -> None:
+    """Son agent koşularını göster (en yeni önce)."""
+    from app.memory.sqlite_store import SqliteStore
+
+    runs = SqliteStore().list_agent_runs(limit=limit, agent_id=agent, status=status)
+    if not runs:
+        console.print("[yellow]Kayıtlı agent koşusu yok.[/yellow]")
+        return
+    t = Table(title="Agent koşuları")
+    t.add_column("run_id")
+    t.add_column("agent")
+    t.add_column("durum")
+    t.add_column("tetik")
+    t.add_column("başladı")
+    t.add_column("bitti")
+    for r in runs:
+        t.add_row(
+            r["run_id"],
+            r["agent_id"],
+            r["status"],
+            r.get("trigger_type") or "—",
+            str(r.get("started_at") or "")[:19],
+            str(r.get("finished_at") or "—")[:19],
+        )
+    console.print(t)
+
+
+@app.command("agents-log")
+def agents_log(run_id: str) -> None:
+    """Bir agent koşusunun olay günlüğünü (events) göster."""
+    from app.memory.sqlite_store import SqliteStore
+
+    store = SqliteStore()
+    run = store.get_agent_run(run_id)
+    if not run:
+        console.print(f"[red]Koşu bulunamadı:[/red] {run_id}")
+        raise typer.Exit(1)
+    console.print(
+        Panel.fit(
+            f"agent: {run['agent_id']}\n"
+            f"durum: {run['status']}\n"
+            f"tetik: {run.get('trigger_type') or '—'}\n"
+            f"başladı: {run.get('started_at') or '—'}\n"
+            f"bitti: {run.get('finished_at') or '—'}\n"
+            f"hata: {run.get('error') or '—'}",
+            title=run_id,
+        )
+    )
+    events = store.list_agent_events(run_id)
+    t = Table(title="Olaylar")
+    t.add_column("ts")
+    t.add_column("kind")
+    t.add_column("level")
+    t.add_column("mesaj")
+    for e in events:
+        t.add_row(
+            str(e.get("ts") or "")[:23],
+            e.get("kind") or "",
+            e.get("level") or "",
+            e.get("message") or "",
+        )
+    console.print(t)
+
+
 @app.command("pretrain-gate")
 def pretrain_gate_cmd(
     jsonl: Path = typer.Option(
@@ -2517,3 +2705,145 @@ def pretrain_gate_cmd(
             title=f"Ön Eğitim Kalite Kapısı — {jsonl.name}",
         )
     )
+
+
+# --------------------------------------------------------------------------
+# Agent runtime — task queue + approvals + supervisor (Phase 2)
+# --------------------------------------------------------------------------
+@app.command("task-create")
+def task_create(
+    agent: str = typer.Option(..., "--agent", help="agent_id"),
+    title: str = typer.Option(..., "--title", help="Görev başlığı"),
+    description: str = typer.Option("", "--description", help="Açıklama"),
+    requires_approval: bool = typer.Option(
+        False, "--requires-approval", help="Çalıştırma onay gerektirir mi"
+    ),
+) -> None:
+    """Yeni bir otomasyon görevi oluştur (pending)."""
+    from app.agents.runtime import task_queue
+
+    t = task_queue.create_task(
+        agent_id=agent,
+        title=title,
+        description=description or None,
+        requires_approval=requires_approval,
+    )
+    console.print(f"[green]Görev oluşturuldu:[/green] {t.task_id} ({t.status.value})")
+
+
+@app.command("tasks-list")
+def tasks_list(
+    limit: int = typer.Option(50, help="Kaç görev"),
+    status: str = typer.Option(None, "--status", help="status ile filtrele"),
+) -> None:
+    """Otomasyon görevlerini listele (en yeni önce)."""
+    from app.agents.runtime import task_queue
+
+    tasks = task_queue.list_tasks(limit=limit, status=status)
+    if not tasks:
+        console.print("[yellow]Görev yok.[/yellow]")
+        return
+    t = Table(title="Otomasyon görevleri")
+    for c in ("task_id", "agent", "durum", "onay", "başlık", "oluşturuldu"):
+        t.add_column(c)
+    for x in tasks:
+        t.add_row(
+            x.task_id,
+            x.agent_id,
+            x.status.value,
+            "✓" if x.requires_approval else "—",
+            (x.title or "")[:40],
+            str(x.created_at)[:19],
+        )
+    console.print(t)
+
+
+@app.command("task-cancel")
+def task_cancel(
+    run_id: str, reason: str = typer.Option("", "--reason", help="İptal nedeni")
+) -> None:
+    """Bir görevi iptal et (task_id)."""
+    from app.agents.runtime import task_queue
+
+    t = task_queue.cancel_task(run_id, reason=reason or None)
+    if t is None:
+        console.print(f"[red]Görev bulunamadı:[/red] {run_id}")
+        raise typer.Exit(1)
+    console.print(f"[yellow]Görev durumu:[/yellow] {t.status.value}")
+
+
+@app.command("approvals-list")
+def approvals_list(
+    status: str = typer.Option(None, "--status", help="status ile filtrele"),
+    limit: int = typer.Option(50, help="Kaç istek"),
+) -> None:
+    """Onay isteklerini listele (en yeni önce)."""
+    from app.agents.runtime import approvals
+
+    items = approvals.list_approvals(status=status, limit=limit)
+    if not items:
+        console.print("[yellow]Onay isteği yok.[/yellow]")
+        return
+    t = Table(title="Onay istekleri")
+    for c in ("approval_id", "agent", "aksiyon", "risk", "durum", "tüketildi", "özet"):
+        t.add_column(c)
+    for a in items:
+        t.add_row(
+            a.approval_id,
+            a.agent_id,
+            a.action,
+            a.risk.value,
+            a.status.value,
+            "✓" if a.consumed_at else "—",
+            (a.summary or "")[:36],
+        )
+    console.print(t)
+
+
+@app.command("approval-approve")
+def approval_approve(approval_id: str, note: str = typer.Option("", "--note")) -> None:
+    """Bir onay isteğini ONAYLA (tek kullanımlık taze onay — standing yetki yok)."""
+    from app.agents.runtime import approvals
+
+    a = approvals.approve(approval_id, note=note or None)
+    if a is None:
+        console.print(f"[red]Onay bulunamadı:[/red] {approval_id}")
+        raise typer.Exit(1)
+    console.print(f"[green]Durum:[/green] {a.status.value} ({a.action})")
+
+
+@app.command("approval-reject")
+def approval_reject(approval_id: str, note: str = typer.Option("", "--note")) -> None:
+    """Bir onay isteğini REDDET."""
+    from app.agents.runtime import approvals
+
+    a = approvals.reject(approval_id, note=note or None)
+    if a is None:
+        console.print(f"[red]Onay bulunamadı:[/red] {approval_id}")
+        raise typer.Exit(1)
+    console.print(f"[yellow]Durum:[/yellow] {a.status.value} ({a.action})")
+
+
+@app.command("stop-all")
+def stop_all(reason: str = typer.Option("", "--reason", help="Durdurma nedeni")) -> None:
+    """KÜRESEL acil-durdurma: tüm tehlikeli aksiyonları blokla (storage/STOP_ALL)."""
+    from app.agents.runtime import supervisor
+
+    supervisor.create_stop_all(reason=reason or None)
+    console.print(
+        Panel.fit(
+            f"[bold red]STOP_ALL ETKİN[/bold red]\nNeden: {reason or '—'}\n"
+            "Tüm tehlikeli aksiyonlar (gerçek eğitim, terfi) bloklandı.\n"
+            "Kaldır: [cyan]uv run achilles clear-stop-all[/cyan]",
+            title="🛑 Acil durdurma",
+        )
+    )
+
+
+@app.command("clear-stop-all")
+def clear_stop_all_cmd() -> None:
+    """Küresel acil-durdurmayı (STOP_ALL) kaldır."""
+    from app.agents.runtime import supervisor
+
+    r = supervisor.clear_stop_all()
+    console.print(f"[green]STOP_ALL kaldırıldı[/green] (önceden aktifti={r['was_active']})")

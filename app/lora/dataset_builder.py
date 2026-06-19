@@ -27,8 +27,11 @@ class LoRAExample:
     metadata: dict = field(default_factory=dict)
 
     def to_jsonl_line(self) -> str:
-        """JSONL satırı olarak serileştir (messages alanını içerir)."""
-        return json.dumps({"messages": self.messages}, ensure_ascii=False)
+        """JSONL satırı olarak serileştir (messages + opsiyonel metadata)."""
+        data: dict = {"messages": self.messages}
+        if self.metadata:
+            data["metadata"] = self.metadata
+        return json.dumps(data, ensure_ascii=False)
 
 
 def _build_answer(card_json: dict) -> str:

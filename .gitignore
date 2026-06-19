@@ -39,6 +39,10 @@ reports/papers/mastery/*
 reports/training/*
 reports/backtests/*
 reports/evals/*
+# Sentez makaleleri makineye özel üretilir → commit edilmez (audit GAP fix)
+reports/synthesis/*
+# Agent runtime gözlemcisi (Phase 1) — koşu başına JSONL günlükleri (runtime)
+reports/agent_runs/*
 
 # But keep the .gitkeep placeholders
 !**/.gitkeep
@@ -75,6 +79,7 @@ storage/*.db-*
 
 # Runtime state (her makinede değişir → COMMIT EDİLMEZ; izlenirse git pull'u kilitler)
 storage/auto_lora_state.json
+storage/rag_learning_state.json
 storage/train_status.json
 storage/STOP_LEARNING
 storage/STOP_TRAINING

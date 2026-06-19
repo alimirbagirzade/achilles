@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from app.agents.runtime import log_step, tracked
+
 log = logging.getLogger(__name__)
 
 _STATE_PATH = Path("storage") / "rag_learning_state.json"
@@ -365,6 +367,7 @@ class RagLearningLoop:
 
     # ------------------------------------------------------------------ tur
 
+    @tracked("rag-learning-loop", trigger_type="background_loop")
     async def run_one_cycle(self) -> dict[str, Any]:
         """Tek bir öğrenme turunu yürüt. Eşzamanlı ikinci tur reddedilir."""
         async with self._lock:
@@ -387,6 +390,7 @@ class RagLearningLoop:
                 return {"ok": True, "skipped": "training_running", "mastery": mastery}
 
             fetched = ingested = cards = rebuilt = scored = 0
+            log_step("RAG turu başladı (çek→kart→skor→ustalık)")
 
             # 1) yeni makale çek (nazik kadans; yalnız çekim aralığı dolduysa)
             if self._state.fetch_enabled and self._fetch_due():

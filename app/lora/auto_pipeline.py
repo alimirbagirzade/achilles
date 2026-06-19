@@ -214,6 +214,32 @@ class AutoLoRAPipeline:
                     ),
                 }
 
+        # Phase 2: STOP_ALL + TAZE manuel onay (standing yetki yok — CLAUDE.md Kural 8).
+        from app.agents.runtime import approvals, supervisor
+
+        if supervisor.is_stop_all_active():
+            return {
+                "ok": False,
+                "reason": "STOP_ALL aktif — eğitim bloklandı.",
+                "blocked_by": "stop_all",
+            }
+        decision = approvals.require_fresh_approval(
+            "auto-lora-pipeline",
+            "auto_lora_start_training",
+            "critical",
+            f"Auto-LoRA gerçek eğitimi: {adapter_name} ({iters} adım)",
+        )
+        if not decision.authorized:
+            return {
+                "ok": False,
+                "needs_approval": True,
+                "approval_id": decision.approval_id,
+                "reason": (
+                    "Gerçek eğitim TAZE onay gerektirir. Onayla: "
+                    f"achilles approval-approve {decision.approval_id}, sonra tekrar başlat."
+                ),
+            }
+
         from app.training.detached_launch import launch
 
         res = await asyncio.to_thread(launch, adapter_name, iters)
@@ -320,8 +346,14 @@ class AutoLoRAPipeline:
                 await self._register_adapter(adapter_name)
                 return
 
-            # Terfi yalnız adapter base'den İYİ ise: hiç regresyon yok + en az bir gelişme.
-            passed = improved_any and not regression_any
+            # Terfi yalnız adapter base'den İYİ ise: hiç regresyon yok + en az bir gelişme
+            # + en iyi eval skoru kullanıcı eşiğini (eval_pass_threshold) geçiyor.
+            # BUG-M9 fix: eval_pass_threshold parametre tanımlı ama hiç kullanılmıyordu.
+            best_score = max(
+                (max(0.0, float(s.get("adapter_score", 0.0))) for s in scores.values()),
+                default=0.0,
+            )
+            passed = improved_any and not regression_any and best_score >= self.eval_pass_threshold
 
             # Eval sonuçlarını kalıcı DB'ye kaydet
             try:
@@ -343,6 +375,46 @@ class AutoLoRAPipeline:
                     )
             except Exception:
                 log.warning("Auto-LoRA: eval_history kaydedilemedi")
+
+            # Anlama-merdiveni kıyası (v5-savunması dikişi — adapter vs base L3/L4).
+            # PEFT bağımlılıkları yoksa veya adapter dizini yoksa sessizce atlanır.
+            try:
+                from app.lora.peft_llm_shim import PeftAdapterLLMShim
+                from app.memory.sqlite_store import SqliteStore as _Store
+                from app.verification.exams.understanding_score import score_full_ladder
+
+                shim = await asyncio.to_thread(PeftAdapterLLMShim.load, adapter_dir)
+                if shim is not None:
+                    _store = _Store()
+                    base_ladder = await asyncio.to_thread(
+                        score_full_ladder, 0, store=_store, use_sessions_l5=False
+                    )
+                    adapter_ladder = await asyncio.to_thread(
+                        score_full_ladder, 0, llm=shim, store=_store, use_sessions_l5=False
+                    )
+                    base_rate = base_ladder.pass_rate or 0.0
+                    adapter_rate = adapter_ladder.pass_rate or 0.0
+                    scores["_ladder"] = {
+                        "base_pass_rate": round(base_rate, 4),
+                        "adapter_pass_rate": round(adapter_rate, 4),
+                    }
+                    # Anlama regresyonu: adapter base'in %5'ten fazla altındaysa ek-red.
+                    if base_rate > 0 and adapter_rate < base_rate - 0.05:
+                        regression_any = True
+                        passed = False
+                        log.warning(
+                            "Auto-LoRA: anlama-merdiveni GERİLEMESİ — base %.0f%% > adapter %.0f%%",
+                            base_rate * 100,
+                            adapter_rate * 100,
+                        )
+                    else:
+                        log.info(
+                            "Auto-LoRA: anlama-merdiveni OK — base %.0f%% / adapter %.0f%%",
+                            base_rate * 100,
+                            adapter_rate * 100,
+                        )
+            except Exception as _ladder_exc:
+                log.debug("Auto-LoRA: anlama-merdiveni kıyası atlandı — %s", _ladder_exc)
 
             async with self._lock:
                 self._state.eval_scores = scores
@@ -424,6 +496,32 @@ class AutoLoRAPipeline:
 
         if not adapter_id:
             return {"ok": False, "reason": "Kayıtlı adapter ID bulunamadı"}
+
+        # Phase 2: STOP_ALL + TAZE manuel onay (her terfi ayrı onay — CLAUDE.md Kural 8).
+        from app.agents.runtime import approvals, supervisor
+
+        if supervisor.is_stop_all_active():
+            return {
+                "ok": False,
+                "reason": "STOP_ALL aktif — terfi bloklandı.",
+                "blocked_by": "stop_all",
+            }
+        decision = approvals.require_fresh_approval(
+            "auto-lora-pipeline",
+            "auto_lora_promote_adapter",
+            "high",
+            f"Adapter production terfisi: {adapter_id}",
+        )
+        if not decision.authorized:
+            return {
+                "ok": False,
+                "needs_approval": True,
+                "approval_id": decision.approval_id,
+                "reason": (
+                    "Terfi TAZE onay gerektirir. Onayla: "
+                    f"achilles approval-approve {decision.approval_id}, sonra tekrar dene."
+                ),
+            }
 
         try:
             from app.lora.adapter_registry import AdapterRegistry

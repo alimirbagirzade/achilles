@@ -217,6 +217,11 @@ class TrainingStartRequest(BaseModel):
 class TrainingStartResponse(BaseModel):
     ok: bool
     message: str
+    # Phase 4D-1: web eğitimi de CLI ile AYNI taze-onay kapısından geçer.
+    # status: started | needs_approval | blocked | error
+    status: str = "started"
+    approval_id: str | None = None
+    approve_command: str | None = None
 
 
 class TrainingProgressResponse(BaseModel):

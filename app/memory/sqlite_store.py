@@ -32,6 +32,7 @@ from sqlalchemy import (
     delete,
     select,
     text,
+    update,
 )
 from sqlalchemy.orm import (
     DeclarativeBase,
@@ -525,14 +526,116 @@ class UnderstandingSnapshot(Base):
     context_json: Mapped[str] = mapped_column(Text, default="{}")  # llm/adapter/with_rag meta
 
 
+class AgentRunRow(Base):
+    """Agent runtime gözlemcisi (Phase 1) — tek bir ajan koşusu.
+
+    Davranışı zorlamaz; yalnız KAYIT tutar (run_id, durum, tetik, zaman, özet).
+    Yeni tablo olduğundan ``Base.metadata.create_all`` ile idempotent oluşturulur.
+    """
+
+    __tablename__ = "agent_runs"
+
+    run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    agent_id: Mapped[str] = mapped_column(String(64), index=True)
+    task_id: Mapped[str | None] = mapped_column(String(64), default=None, index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    trigger_type: Mapped[str | None] = mapped_column(String(32), default=None)
+    trigger_payload_json: Mapped[str | None] = mapped_column(Text, default=None)
+    started_at: Mapped[str] = mapped_column(String(40), index=True)
+    finished_at: Mapped[str | None] = mapped_column(String(40), default=None)
+    error: Mapped[str | None] = mapped_column(Text, default=None)
+    summary_json: Mapped[str | None] = mapped_column(Text, default=None)
+    outputs_json: Mapped[str | None] = mapped_column(Text, default=None)
+
+
+class AgentEventRow(Base):
+    """Agent runtime gözlemcisi (Phase 1) — bir koşu içindeki tek bir olay.
+
+    Retention (kullanıcı kararı): 30 gün VEYA en çok 50.000 son olay
+    (``SqliteStore.prune_agent_events``).
+    """
+
+    __tablename__ = "agent_events"
+
+    event_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(64), index=True)
+    ts: Mapped[str] = mapped_column(String(40), index=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    level: Mapped[str] = mapped_column(String(16), default="info")
+    message: Mapped[str | None] = mapped_column(Text, default=None)
+    payload_json: Mapped[str | None] = mapped_column(Text, default=None)
+
+
+class AutomationTaskRow(Base):
+    """Agent runtime (Phase 2) — bir otomasyon görevi (task queue).
+
+    Zamanlama (schedule) bilgilendirici alandır; Windows Task Scheduler DIŞ cron
+    olarak kalır (Phase 2'de app içine taşınmaz) — yalnız izlenebilir kayıt tutulur.
+    """
+
+    __tablename__ = "automation_tasks"
+
+    task_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    agent_id: Mapped[str] = mapped_column(String(64), index=True)
+    title: Mapped[str] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(Text, default=None)
+    params_json: Mapped[str | None] = mapped_column(Text, default=None)
+    schedule: Mapped[str | None] = mapped_column(String(64), default=None)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    requires_approval: Mapped[int] = mapped_column(Integer, default=0)  # 0/1
+    created_at: Mapped[str] = mapped_column(String(40), index=True)
+    updated_at: Mapped[str | None] = mapped_column(String(40), default=None)
+    claimed_at: Mapped[str | None] = mapped_column(String(40), default=None)
+    completed_at: Mapped[str | None] = mapped_column(String(40), default=None)
+    error: Mapped[str | None] = mapped_column(Text, default=None)
+
+
+class ApprovalRequestRow(Base):
+    """Agent runtime (Phase 2) — bir onay isteği.
+
+    ``consumed_at``: taze-onay tek kullanımlıktır (standing/kalıcı yetki YOK) —
+    onaylanmış istek bir tehlikeli aksiyonda tüketilince damgalanır.
+    """
+
+    __tablename__ = "approval_requests"
+
+    approval_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str | None] = mapped_column(String(64), default=None, index=True)
+    task_id: Mapped[str | None] = mapped_column(String(64), default=None, index=True)
+    agent_id: Mapped[str] = mapped_column(String(64), index=True)
+    action: Mapped[str] = mapped_column(String(64), index=True)
+    summary: Mapped[str | None] = mapped_column(Text, default=None)
+    risk: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    requested_at: Mapped[str] = mapped_column(String(40), index=True)
+    decided_at: Mapped[str | None] = mapped_column(String(40), default=None)
+    decided_by: Mapped[str | None] = mapped_column(String(64), default=None)
+    decision_note: Mapped[str | None] = mapped_column(Text, default=None)
+    consumed_at: Mapped[str | None] = mapped_column(String(40), default=None)
+
+
+# Toplu budamada tek IN(...) ifadesinin SQLite değişken sınırını (~32766) aşmaması için
+# parça boyu. Küçük tutuldu (güvenli marj + her DELETE hızlı).
+_PRUNE_CHUNK = 500
+
+
 class SqliteStore:
     """Thin wrapper around a SQLAlchemy engine + session factory."""
 
-    def __init__(self, db_path: str | Path | None = None) -> None:
+    def __init__(
+        self, db_path: str | Path | None = None, *, check_same_thread: bool = True
+    ) -> None:
         settings = get_settings()
         self.db_path = Path(db_path) if db_path else settings.sqlite_file
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.engine = create_engine(f"sqlite:///{self.db_path}", future=True)
+        # check_same_thread=False yalnız çok-thread'li yazıcılar (agent tracker —
+        # asyncio.to_thread içinden de yazabilir) için gevşetilir. Varsayılan True →
+        # mevcut tüm çağıranlar için davranış BİREBİR korunur.
+        self.engine = create_engine(
+            f"sqlite:///{self.db_path}",
+            future=True,
+            connect_args={"check_same_thread": check_same_thread},
+        )
         self._Session = sessionmaker(bind=self.engine, expire_on_commit=False, future=True)
         self.create_all()
         self._migrate()
@@ -562,6 +665,395 @@ class SqliteStore:
                         )
                     )
             conn.commit()
+
+    # --- agent runtime gözlemcisi (Phase 1) ------------------------------
+    def create_agent_run(
+        self,
+        *,
+        run_id: str,
+        agent_id: str,
+        task_id: str | None = None,
+        status: str = "running",
+        trigger_type: str | None = None,
+        trigger_payload: dict[str, Any] | None = None,
+        started_at: str | None = None,
+    ) -> None:
+        """Yeni bir ajan koşusu kaydı oluştur (status='running')."""
+        with self.session() as s:
+            s.add(
+                AgentRunRow(
+                    run_id=run_id,
+                    agent_id=agent_id,
+                    task_id=task_id,
+                    status=status,
+                    trigger_type=trigger_type,
+                    trigger_payload_json=(
+                        json.dumps(trigger_payload, ensure_ascii=False)
+                        if trigger_payload is not None
+                        else None
+                    ),
+                    started_at=started_at or _utcnow(),
+                )
+            )
+
+    def finish_agent_run(
+        self,
+        *,
+        run_id: str,
+        status: str,
+        finished_at: str | None = None,
+        error: str | None = None,
+        summary: dict[str, Any] | None = None,
+        outputs: list[Any] | None = None,
+    ) -> None:
+        """Koşuyu sonlandır (status/finished_at/error/summary/outputs günceller)."""
+        with self.session() as s:
+            row = s.get(AgentRunRow, run_id)
+            if row is None:
+                return
+            row.status = status
+            row.finished_at = finished_at or _utcnow()
+            if error is not None:
+                row.error = error
+            if summary is not None:
+                row.summary_json = json.dumps(summary, ensure_ascii=False, default=str)
+            if outputs is not None:
+                row.outputs_json = json.dumps(outputs, ensure_ascii=False, default=str)
+
+    def add_agent_event(
+        self,
+        *,
+        event_id: str,
+        run_id: str,
+        kind: str,
+        ts: str | None = None,
+        level: str = "info",
+        message: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        """Bir koşuya olay ekle."""
+        with self.session() as s:
+            s.add(
+                AgentEventRow(
+                    event_id=event_id,
+                    run_id=run_id,
+                    ts=ts or _utcnow(),
+                    kind=kind,
+                    level=level,
+                    message=message,
+                    payload_json=(
+                        json.dumps(payload, ensure_ascii=False, default=str)
+                        if payload is not None
+                        else None
+                    ),
+                )
+            )
+
+    def list_agent_runs(
+        self, limit: int = 20, agent_id: str | None = None, status: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Son ajan koşularını (en yeni önce) döndür; agent_id/status ile filtrele."""
+        with self.session() as s:
+            stmt = select(AgentRunRow).order_by(AgentRunRow.started_at.desc())
+            if agent_id:
+                stmt = stmt.where(AgentRunRow.agent_id == agent_id)
+            if status:
+                stmt = stmt.where(AgentRunRow.status == status)
+            stmt = stmt.limit(limit)
+            return [self._agent_run_to_dict(r) for r in s.scalars(stmt)]
+
+    def get_agent_run(self, run_id: str) -> dict[str, Any] | None:
+        with self.session() as s:
+            row = s.get(AgentRunRow, run_id)
+            return self._agent_run_to_dict(row) if row else None
+
+    def list_agent_events(self, run_id: str) -> list[dict[str, Any]]:
+        """Bir koşunun olaylarını zaman sırasıyla döndür."""
+        with self.session() as s:
+            stmt = (
+                select(AgentEventRow)
+                .where(AgentEventRow.run_id == run_id)
+                # ts benzersiz değil (Windows saat çözünürlüğü ~15ms) → eşit-ts olaylarda
+                # deterministik sıra için ikincil anahtar. (CLAUDE.md Kural 6.)
+                .order_by(AgentEventRow.ts.asc(), AgentEventRow.event_id.asc())
+            )
+            return [self._agent_event_to_dict(r) for r in s.scalars(stmt)]
+
+    def prune_agent_events(self, max_events: int = 50_000, max_age_days: int = 30) -> int:
+        """Retention: max_age_days'ten eski VEYA en yeni max_events dışındaki olayları sil.
+
+        Silinen olay sayısını döndürür. (run kayıtları korunur; yalnız olaylar budanır.)
+        """
+        cutoff = (dt.datetime.now(dt.UTC) - dt.timedelta(days=max_age_days)).isoformat()
+        with self.session() as s:
+            old = set(s.scalars(select(AgentEventRow.event_id).where(AgentEventRow.ts < cutoff)))
+            # ts benzersiz değil → eşit-ts sınırında hangi olayın budanacağı belirsiz olmasın
+            # diye ikincil deterministik anahtar (event_id). (CLAUDE.md Kural 6.)
+            ids_newest_first = list(
+                s.scalars(
+                    select(AgentEventRow.event_id).order_by(
+                        AgentEventRow.ts.desc(), AgentEventRow.event_id.desc()
+                    )
+                )
+            )
+            overflow = set(ids_newest_first[max_events:])
+            to_delete = old | overflow
+            if not to_delete:
+                return 0
+            # SQLite SQLITE_MAX_VARIABLE_NUMBER (~32766) sınırı: tek IN(...) ile budama,
+            # retention'ın asıl tetiklendiği büyük backlog'da OperationalError fırlatır ve
+            # çağıran tarafça sessizce yutulur → retention kalıcı çalışmaz. Parçalı sil.
+            ids = list(to_delete)
+            for i in range(0, len(ids), _PRUNE_CHUNK):
+                batch = ids[i : i + _PRUNE_CHUNK]
+                s.execute(delete(AgentEventRow).where(AgentEventRow.event_id.in_(batch)))
+            return len(to_delete)
+
+    def _agent_run_to_dict(self, r: AgentRunRow) -> dict[str, Any]:
+        return {
+            "run_id": r.run_id,
+            "agent_id": r.agent_id,
+            "task_id": r.task_id,
+            "status": r.status,
+            "trigger_type": r.trigger_type,
+            "trigger_payload": (
+                json.loads(r.trigger_payload_json) if r.trigger_payload_json else None
+            ),
+            "started_at": r.started_at,
+            "finished_at": r.finished_at,
+            "error": r.error,
+            "summary": json.loads(r.summary_json) if r.summary_json else None,
+            "outputs": json.loads(r.outputs_json) if r.outputs_json else None,
+        }
+
+    def _agent_event_to_dict(self, r: AgentEventRow) -> dict[str, Any]:
+        return {
+            "event_id": r.event_id,
+            "run_id": r.run_id,
+            "ts": r.ts,
+            "kind": r.kind,
+            "level": r.level,
+            "message": r.message,
+            "payload": json.loads(r.payload_json) if r.payload_json else None,
+        }
+
+    def list_recent_agent_events(
+        self, limit: int = 100, run_id: str | None = None, level: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Tüm koşulardan son olaylar (genel akış — /api/events). En yeni önce."""
+        with self.session() as s:
+            stmt = select(AgentEventRow).order_by(
+                AgentEventRow.ts.desc(), AgentEventRow.event_id.desc()
+            )
+            if run_id:
+                stmt = stmt.where(AgentEventRow.run_id == run_id)
+            if level:
+                stmt = stmt.where(AgentEventRow.level == level)
+            stmt = stmt.limit(limit)
+            return [self._agent_event_to_dict(r) for r in s.scalars(stmt)]
+
+    def mark_running_agent_runs_cancelled(
+        self, reason: str, cutoff_iso: str | None = None
+    ) -> list[str]:
+        """status='running' kalan koşuları 'cancelled' yap (startup sweep).
+
+        cutoff_iso verilirse yalnız ondan ESKİ başlamış koşular süpürülür (canlı
+        eşzamanlı koşuları yanlışlıkla iptal etmemek için). Süpürülen run_id'leri döndürür.
+        """
+        now = _utcnow()
+        run_ids: list[str] = []
+        with self.session() as s:
+            stmt = select(AgentRunRow).where(AgentRunRow.status == "running")
+            if cutoff_iso:
+                stmt = stmt.where(AgentRunRow.started_at < cutoff_iso)
+            for row in s.scalars(stmt):
+                row.status = "cancelled"
+                row.finished_at = now
+                row.error = reason
+                if not row.summary_json:
+                    row.summary_json = json.dumps({"note": reason}, ensure_ascii=False)
+                run_ids.append(row.run_id)
+        return run_ids
+
+    # --- automation tasks (Phase 2) --------------------------------------
+    def create_automation_task(
+        self,
+        *,
+        task_id: str,
+        agent_id: str,
+        title: str,
+        description: str | None = None,
+        params: dict[str, Any] | None = None,
+        schedule: str | None = None,
+        status: str = "pending",
+        requires_approval: bool = False,
+        created_at: str | None = None,
+    ) -> None:
+        with self.session() as s:
+            s.add(
+                AutomationTaskRow(
+                    task_id=task_id,
+                    agent_id=agent_id,
+                    title=title,
+                    description=description,
+                    params_json=(
+                        json.dumps(params, ensure_ascii=False) if params is not None else None
+                    ),
+                    schedule=schedule,
+                    status=status,
+                    requires_approval=1 if requires_approval else 0,
+                    created_at=created_at or _utcnow(),
+                )
+            )
+
+    def get_automation_task(self, task_id: str) -> dict[str, Any] | None:
+        with self.session() as s:
+            row = s.get(AutomationTaskRow, task_id)
+            return self._automation_task_to_dict(row) if row else None
+
+    def list_automation_tasks(
+        self, limit: int = 50, status: str | None = None, agent_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        with self.session() as s:
+            stmt = select(AutomationTaskRow).order_by(AutomationTaskRow.created_at.desc())
+            if status:
+                stmt = stmt.where(AutomationTaskRow.status == status)
+            if agent_id:
+                stmt = stmt.where(AutomationTaskRow.agent_id == agent_id)
+            stmt = stmt.limit(limit)
+            return [self._automation_task_to_dict(r) for r in s.scalars(stmt)]
+
+    def update_automation_task(self, task_id: str, **fields: Any) -> dict[str, Any] | None:
+        """Görev alanlarını güncelle (status/error/zaman damgaları). updated_at otomatik."""
+        allowed = {
+            "status",
+            "error",
+            "claimed_at",
+            "completed_at",
+            "schedule",
+            "title",
+            "description",
+        }
+        with self.session() as s:
+            row = s.get(AutomationTaskRow, task_id)
+            if row is None:
+                return None
+            for k, v in fields.items():
+                if k in allowed:
+                    setattr(row, k, v)
+            row.updated_at = _utcnow()
+            return self._automation_task_to_dict(row)
+
+    def _automation_task_to_dict(self, r: AutomationTaskRow) -> dict[str, Any]:
+        return {
+            "task_id": r.task_id,
+            "agent_id": r.agent_id,
+            "title": r.title,
+            "description": r.description,
+            "params": json.loads(r.params_json) if r.params_json else None,
+            "schedule": r.schedule,
+            "status": r.status,
+            "requires_approval": bool(r.requires_approval),
+            "created_at": r.created_at,
+            "updated_at": r.updated_at,
+            "claimed_at": r.claimed_at,
+            "completed_at": r.completed_at,
+            "error": r.error,
+        }
+
+    # --- approval requests (Phase 2) -------------------------------------
+    def create_approval_request(
+        self,
+        *,
+        approval_id: str,
+        agent_id: str,
+        action: str,
+        summary: str | None = None,
+        risk: str = "medium",
+        status: str = "pending",
+        run_id: str | None = None,
+        task_id: str | None = None,
+        requested_at: str | None = None,
+    ) -> None:
+        with self.session() as s:
+            s.add(
+                ApprovalRequestRow(
+                    approval_id=approval_id,
+                    run_id=run_id,
+                    task_id=task_id,
+                    agent_id=agent_id,
+                    action=action,
+                    summary=summary,
+                    risk=risk,
+                    status=status,
+                    requested_at=requested_at or _utcnow(),
+                )
+            )
+
+    def get_approval_request(self, approval_id: str) -> dict[str, Any] | None:
+        with self.session() as s:
+            row = s.get(ApprovalRequestRow, approval_id)
+            return self._approval_to_dict(row) if row else None
+
+    def list_approval_requests(
+        self, status: str | None = None, limit: int = 50, agent_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        with self.session() as s:
+            stmt = select(ApprovalRequestRow).order_by(ApprovalRequestRow.requested_at.desc())
+            if status:
+                stmt = stmt.where(ApprovalRequestRow.status == status)
+            if agent_id:
+                stmt = stmt.where(ApprovalRequestRow.agent_id == agent_id)
+            stmt = stmt.limit(limit)
+            return [self._approval_to_dict(r) for r in s.scalars(stmt)]
+
+    def update_approval_request(self, approval_id: str, **fields: Any) -> dict[str, Any] | None:
+        allowed = {"status", "decided_at", "decided_by", "decision_note", "consumed_at"}
+        with self.session() as s:
+            row = s.get(ApprovalRequestRow, approval_id)
+            if row is None:
+                return None
+            for k, v in fields.items():
+                if k in allowed:
+                    setattr(row, k, v)
+            return self._approval_to_dict(row)
+
+    def find_fresh_approval(self, agent_id: str, action: str) -> dict[str, Any] | None:
+        """En son ONAYLANMIŞ + TÜKETİLMEMİŞ onay (taze onay). Yoksa None.
+
+        Tek kullanımlık: tüketim ``consumed_at`` ile damgalanır → standing yetki yok.
+        """
+        with self.session() as s:
+            stmt = (
+                select(ApprovalRequestRow)
+                .where(
+                    ApprovalRequestRow.agent_id == agent_id,
+                    ApprovalRequestRow.action == action,
+                    ApprovalRequestRow.status == "approved",
+                    ApprovalRequestRow.consumed_at.is_(None),
+                )
+                .order_by(ApprovalRequestRow.requested_at.desc())
+                .limit(1)
+            )
+            row = s.scalar(stmt)
+            return self._approval_to_dict(row) if row else None
+
+    def _approval_to_dict(self, r: ApprovalRequestRow) -> dict[str, Any]:
+        return {
+            "approval_id": r.approval_id,
+            "run_id": r.run_id,
+            "task_id": r.task_id,
+            "agent_id": r.agent_id,
+            "action": r.action,
+            "summary": r.summary,
+            "risk": r.risk,
+            "status": r.status,
+            "requested_at": r.requested_at,
+            "decided_at": r.decided_at,
+            "decided_by": r.decided_by,
+            "decision_note": r.decision_note,
+            "consumed_at": r.consumed_at,
+        }
 
     @contextmanager
     def session(self) -> Iterator[Session]:
@@ -612,6 +1104,18 @@ class SqliteStore:
             for c in chunks:
                 s.merge(Chunk(**c))
             return len(chunks)
+
+    def mark_chunks_embedded(self, chunk_ids: list[str]) -> int:
+        """Chroma'ya başarıyla eklenen chunk'ları embedded=1 olarak işaretle (BUG-M6 fix).
+
+        add_chunks embedded=0 ile çağrılır → Chroma.add() başarılı olunca bu metot
+        embedded=1 yazar. Chroma başarısız olursa embedded=0 kalır → sessiz kayıp önlenir.
+        """
+        if not chunk_ids:
+            return 0
+        with self.session() as s:
+            s.execute(update(Chunk).where(Chunk.chunk_id.in_(chunk_ids)).values(embedded=1))
+        return len(chunk_ids)
 
     def delete_chunks_for_paper(self, paper_id: str) -> int:
         """Bir makaleye ait tüm chunk'ları sil (force re-index'te bayat chunk bırakmamak için).

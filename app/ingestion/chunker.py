@@ -22,13 +22,19 @@ _HEADING_RE = re.compile(
 
 # Matematik/fizik formül kalıpları — bu bloklara chunk sınırı girmesin
 _MATH_BLOCK_RE = re.compile(
-    r"\$\$.+?\$\$"                                          # $$...$$
-    r"|\\\[.+?\\\]"                                         # \[...\]
-    r"|\\begin\{(?:equation|align|gather|multline)\*?\}"    # \begin{equation}
-    r"|\$[^$\n]{3,120}\$",                                  # $inline$
+    r"\$\$.+?\$\$"  # $$...$$
+    r"|\\\[.+?\\\]"  # \[...\]
+    r"|\\begin\{(?:equation|align|gather|multline)\*?\}"  # \begin{equation}
+    r"|\$[^$\n]{3,120}\$",  # $inline$
     re.DOTALL,
 )
 _MATH_CHARS_RE = re.compile(r"[$\\∂∑∏∫√≤≥≠±∞∈∉⊂⊃∪∩∀∃λσμπθαβγδ=]")
+
+# Math-heavy paragraflar formül bütünlüğü için chunk_size'ı aşabilir (bütün bırakılır);
+# ANCAK embedding modeli (~2048 token ≈ ~8K char) bunu aşan tek girdiyi SESSİZCE keser →
+# vektör chunk'ın kuyruğunu temsil etmez, retrieval bozulur (sessiz bozulma). Bu güvenli
+# tavanı aşan math-heavy paragraf yine de bölünür: kesik formül > sessizce kaybolan kuyruk.
+_MATH_WHOLE_MAX_CHARS = 6000
 
 
 def _is_math_heavy(text: str) -> bool:
@@ -103,9 +109,10 @@ def chunk_text(
         idx += 1
 
     def _emit_para(para: str) -> None:
-        # Tek paragraf: sığıyorsa ya da math-heavy ise (formül bütünlüğü) bütün bırak;
-        # aksi halde cümle sınırında (nokta/satırsonu) böl → chunk_size sözleşmesi korunur.
-        if len(para) + 2 <= size or _is_math_heavy(para):
+        # Tek paragraf: sığıyorsa ya da math-heavy + güvenli tavan içindeyse (formül
+        # bütünlüğü) bütün bırak; aksi halde cümle sınırında (nokta/satırsonu) böl →
+        # chunk_size sözleşmesi + embedding güvenliği korunur (bkz. _MATH_WHOLE_MAX_CHARS).
+        if len(para) + 2 <= size or (_is_math_heavy(para) and len(para) <= _MATH_WHOLE_MAX_CHARS):
             _emit(para)
             return
         start = 0

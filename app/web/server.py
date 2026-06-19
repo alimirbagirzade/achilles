@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Request, UploadFile
@@ -97,6 +97,13 @@ async def _lifespan(app: FastAPI):
     configure_logging()
     get_settings().ensure_dirs()
     logger.info("Achilles web başladı — host=%s port=%s", _settings.web_host, _settings.web_port)
+    # Phase 2 startup sweep: crash sonrası 'running' kalan bayat koşuları temizle.
+    with suppress(Exception):
+        from app.agents.runtime.tracker import cancel_stale_running_agent_runs
+
+        swept = cancel_stale_running_agent_runs()
+        if swept:
+            logger.info("Startup sweep: %d bayat 'running' koşu iptal edildi", len(swept))
     from app.lora.auto_pipeline import get_auto_pipeline
     from app.research.rag_learning_loop import get_rag_loop
 
@@ -1024,14 +1031,56 @@ def api_training_dry_run(req: TrainDryRunRequest) -> TrainDryRunResponse:
 
 @app.post("/api/training/run", response_model=TrainingStartResponse, dependencies=[api_auth])
 def api_training_run(req: TrainingStartRequest) -> TrainingStartResponse:
-    """Gerçek LoRA eğitimini DETACHED başlat (web/terminal kapansa da sürer).
+    """Gerçek LoRA eğitimini DETACHED başlat — CLI ile AYNI taze-onay kapısı (Phase 4D-1).
 
-    Eski yol eğitimi web süreci içinde çalıştırıyordu → web çökünce/yeniden
-    başlayınca eğitim de ölüyordu. Artık detached süreç; ilerleme
-    /api/training/live ile (log'dan) izlenir. Veri `lora_sft.jsonl`'den yeniden
-    bölünür (DatasetBuilder kaynaklı train.jsonl clobber'ı başlatmada onarılır).
-    iterations<=0 → 1 epoch (örnek sayısı kadar adım).
+    Güvenlik (CLAUDE.md Kural 8): web yolu da STOP_ALL + TEK KULLANIMLIK taze manuel
+    onay gerektirir; standing yetki yok. Onay yoksa eğitim BAŞLAMAZ — pending onay
+    isteği oluşturulur ve ``needs_approval`` + ``approval_id`` + onay komutu döner.
+    Onaylandıktan sonra istek TEKRAR çağrılınca taze onay TÜKETİLİR ve eğitim başlar.
+    CLI ``train --run`` ile aynı anahtar (agent_id='lora-trainer', action='train_run')
+    kullanılır → onaylar değiştirilebilir. ``launch()`` spawn edilen ``train --run``a
+    SUPERVISED verir (çift onay olmasın); STOP_ALL alt süreçte yine geçerlidir.
+
+    Detached süreç; ilerleme /api/training/live ile (log'dan) izlenir. Veri
+    `lora_sft.jsonl`'den yeniden bölünür. iterations<=0 → 1 epoch.
     """
+    from app.agents.runtime import approvals, supervisor
+
+    # 1) Küresel fren: STOP_ALL aktifse hiçbir tehlikeli aksiyon çalışmaz.
+    if supervisor.is_stop_all_active():
+        return TrainingStartResponse(
+            ok=False,
+            status="blocked",
+            message=(
+                "STOP_ALL aktif — gerçek eğitim bloklandı. Kaldır: Agents sekmesi → "
+                "'STOP_ALL Kaldır' veya `uv run achilles clear-stop-all`."
+            ),
+        )
+
+    # 2) TEK KULLANIMLIK taze manuel onay (standing yetki yok).
+    decision = approvals.require_fresh_approval(
+        agent_id="lora-trainer",
+        action="train_run",
+        risk="critical",
+        summary=(
+            f"Gerçek LoRA eğitimi (web): {req.adapter_name or 'achilles_lora'} "
+            f"({req.iterations} adım)"
+        ),
+    )
+    if not decision.authorized:
+        return TrainingStartResponse(
+            ok=False,
+            status="needs_approval",
+            approval_id=decision.approval_id,
+            approve_command=f"uv run achilles approval-approve {decision.approval_id}",
+            message=(
+                "Gerçek eğitim TAZE manuel onay gerektirir (standing yetki yok). "
+                f"Onay isteği oluşturuldu: {decision.approval_id}. Onayla, sonra eğitimi "
+                "yeniden başlat."
+            ),
+        )
+
+    # 3) Onay tüketildi → detached eğitimi başlat.
     from app.training.detached_launch import launch
 
     res = launch(
@@ -1039,15 +1088,27 @@ def api_training_run(req: TrainingStartRequest) -> TrainingStartResponse:
         iterations=req.iterations,
         base_model=req.base_model or None,
     )
-    return TrainingStartResponse(ok=res["ok"], message=res["message"])
+    return TrainingStartResponse(
+        ok=res["ok"],
+        status="started" if res["ok"] else "error",
+        message=res["message"],
+    )
 
 
 @app.post("/api/training/stop", dependencies=[api_auth])
 def api_training_stop() -> dict:
+    """In-process (training_manager) VE detached eğitimi durdur (Phase 2 fix).
+
+    Detached koşu pid ile sonlandırılır + storage/STOP_TRAINING bırakılır; süreç
+    bulunamazsa hata vermez, 'stop_requested' döner.
+    """
+    from app.training.detached_launch import request_stop_detached_training
     from app.web.training_manager import get_training_manager
 
-    get_training_manager().stop()
-    return {"ok": True}
+    with suppress(Exception):
+        get_training_manager().stop()
+    detached = request_stop_detached_training()
+    return {"ok": True, "detached": detached}
 
 
 @app.get("/api/training/colab-notebook", dependencies=[api_auth])
@@ -1384,7 +1445,11 @@ def api_backtest_risk(
     enriched = _compute_columns(df, ir)
     position = _position_series(enriched, ir)
     bar_ret = enriched["close"].pct_change().fillna(0.0)
-    net_ret = position.shift(1).fillna(0.0) * bar_ret
+    strat_ret = position.shift(1).fillna(0.0) * bar_ret
+    # BUG-H3 fix: komisyon + slippage maliyet düşüldü (backtester ile aynı mantık)
+    turnover = position.diff().abs().fillna(0.0)
+    cost = turnover * (ir.costs.commission + ir.costs.slippage)
+    net_ret = strat_ret - cost
     equity_curve = (1 + net_ret).cumprod()
 
     report = analyze_risk(
@@ -1490,6 +1555,156 @@ def api_learning_summary() -> dict:
         "n_approved_cards": len(approved),
         "n_pending_cards": n_pending,
     }
+
+
+# --- Agent runtime gözlemcisi (Phase 1) — salt-okuma; kontrol/onay Phase 2'de ---
+@app.get("/api/agents", dependencies=[api_auth])
+def api_agents() -> dict:
+    """Kayıtlı runtime agent'lar (automation_manifest.yaml). Salt-okuma."""
+    from app.agents.runtime import list_agents
+
+    try:
+        agents = list_agents()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Manifest okunamadı: {exc}") from exc
+    return {"agents": [a.model_dump(mode="json") for a in agents]}
+
+
+@app.get("/api/agents/runs", dependencies=[api_auth])
+def api_agent_runs(limit: int = 20, agent_id: str | None = None, status: str | None = None) -> dict:
+    """Son agent koşuları (en yeni önce). Salt-okuma."""
+    from app.memory.sqlite_store import SqliteStore
+
+    limit = max(1, min(limit, 200))
+    runs = SqliteStore().list_agent_runs(limit=limit, agent_id=agent_id, status=status)
+    return {"runs": runs}
+
+
+@app.get("/api/agents/runs/{run_id}", dependencies=[api_auth])
+def api_agent_run_detail(run_id: str) -> dict:
+    """Tek bir agent koşusu + olay günlüğü. Salt-okuma."""
+    from app.memory.sqlite_store import SqliteStore
+
+    store = SqliteStore()
+    run = store.get_agent_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Koşu bulunamadı")
+    return {"run": run, "events": store.list_agent_events(run_id)}
+
+
+# --- Phase 2: task queue + approvals + supervisor (hepsi api_auth korumalı) ---
+@app.get("/api/automation/tasks", dependencies=[api_auth])
+def api_list_tasks(limit: int = 50, status: str | None = None, agent_id: str | None = None) -> dict:
+    """Otomasyon görevleri (en yeni önce). Salt-okuma."""
+    from app.agents.runtime import task_queue
+
+    limit = max(1, min(limit, 500))
+    tasks = task_queue.list_tasks(limit=limit, status=status, agent_id=agent_id)
+    return {"tasks": [t.model_dump(mode="json") for t in tasks]}
+
+
+@app.post("/api/automation/tasks", dependencies=[api_auth])
+def api_create_task(
+    agent_id: str, title: str, description: str | None = None, requires_approval: bool = False
+) -> dict:
+    """Yeni otomasyon görevi oluştur (pending)."""
+    from app.agents.runtime import task_queue
+
+    t = task_queue.create_task(
+        agent_id=agent_id,
+        title=title,
+        description=description,
+        requires_approval=requires_approval,
+    )
+    return {"ok": True, "task": t.model_dump(mode="json")}
+
+
+@app.post("/api/automation/tasks/{task_id}/cancel", dependencies=[api_auth])
+def api_cancel_task(task_id: str, reason: str | None = None) -> dict:
+    from app.agents.runtime import task_queue
+
+    t = task_queue.cancel_task(task_id, reason=reason)
+    if t is None:
+        raise HTTPException(status_code=404, detail="Görev bulunamadı")
+    return {"ok": True, "task": t.model_dump(mode="json")}
+
+
+@app.get("/api/approvals", dependencies=[api_auth])
+def api_list_approvals(status: str | None = None, limit: int = 50) -> dict:
+    """Onay istekleri (en yeni önce). Salt-okuma."""
+    from app.agents.runtime import approvals
+
+    limit = max(1, min(limit, 500))
+    items = approvals.list_approvals(status=status, limit=limit)
+    return {"approvals": [a.model_dump(mode="json") for a in items]}
+
+
+@app.post("/api/approvals/{approval_id}/approve", dependencies=[api_auth])
+def api_approve(approval_id: str, note: str | None = None) -> dict:
+    """Bir onay isteğini ONAYLA (tek kullanımlık taze onay)."""
+    from app.agents.runtime import approvals
+
+    a = approvals.approve(approval_id, note=note)
+    if a is None:
+        raise HTTPException(status_code=404, detail="Onay bulunamadı")
+    return {"ok": True, "approval": a.model_dump(mode="json")}
+
+
+@app.post("/api/approvals/{approval_id}/reject", dependencies=[api_auth])
+def api_reject(approval_id: str, note: str | None = None) -> dict:
+    from app.agents.runtime import approvals
+
+    a = approvals.reject(approval_id, note=note)
+    if a is None:
+        raise HTTPException(status_code=404, detail="Onay bulunamadı")
+    return {"ok": True, "approval": a.model_dump(mode="json")}
+
+
+@app.get("/api/events", dependencies=[api_auth])
+def api_events(limit: int = 100, run_id: str | None = None, level: str | None = None) -> dict:
+    """Genel olay akışı (tüm koşular + sistem olayları). Salt-okuma."""
+    from app.memory.sqlite_store import SqliteStore
+
+    limit = max(1, min(limit, 1000))
+    events = SqliteStore().list_recent_agent_events(limit=limit, run_id=run_id, level=level)
+    return {"events": events}
+
+
+@app.get("/api/healthz", dependencies=[api_auth])
+def api_healthz() -> dict:
+    """Hafif sağlık probe'u (ağır LLM/Chroma init YOK — orkestrasyon için)."""
+    import datetime as _dt
+
+    from app.agents.runtime import supervisor
+
+    return {
+        "ok": True,
+        "status": "healthy",
+        "stop_all": supervisor.is_stop_all_active(),
+        "time": _dt.datetime.now(_dt.UTC).isoformat(),
+    }
+
+
+@app.post("/api/supervisor/stop-all", dependencies=[api_auth])
+def api_stop_all(reason: str | None = None) -> dict:
+    """KÜRESEL acil-durdurma: tüm tehlikeli aksiyonları blokla."""
+    from app.agents.runtime import supervisor
+
+    return supervisor.create_stop_all(reason=reason)
+
+
+@app.post("/api/supervisor/clear-stop-all", dependencies=[api_auth])
+def api_clear_stop_all() -> dict:
+    from app.agents.runtime import supervisor
+
+    return supervisor.clear_stop_all()
+
+
+@app.get("/api/supervisor/status", dependencies=[api_auth])
+def api_supervisor_status() -> dict:
+    from app.agents.runtime import supervisor
+
+    return {"stop_all_active": supervisor.is_stop_all_active()}
 
 
 @app.get("/api/learning/eval-history", dependencies=[api_auth])
