@@ -77,8 +77,10 @@ oluşturmaz**. (STOP_ALL ayrıca tüm gerçek tehlikeli aksiyonları zaten blokl
    adımda CLI **tüketir**) veya onaylı web `/api/training/run` (Phase 4D-1).
    Bu 5B akışı 2. ve 3. adımları **yapmaz**; yalnız 1. adımı (istek/öneri) üretir.
 
-## Phase 5C path
-- 5C (öneri): onaylı isteği **dry-run pipeline**'a bağlamak — `launch`/eğitim **mocked**,
-  pretrain-gate + adapter-eval kuru koşu; gerçek eğitim hâlâ insan elinde + taze onay.
+## Phase 5C (UYGULANDI) — dry-run pipeline
+- **5C dry-run pipeline:** [LOCAL_TRAINING_DRYRUN_PIPELINE.md](LOCAL_TRAINING_DRYRUN_PIPELINE.md)
+  — `local-training-dry-run` onaylı/pending isteği **READ-ONLY** okur, onayı **tüketmeden**
+  kontrol eder, pretrain-gate read-only + adapter-eval **mocked** çalıştırır ve bir
+  execution PLANI üretir (uygulamaz). Eğitim/onay-tüketimi YOK.
 - Web UI'de "eğitim isteği" kartı (approval_required durumunu Agents sekmesinde göster).
 - İstek→onay→(insan)→gerçek eğitim yaşam döngüsünün uçtan uca izlenmesi (tracker).

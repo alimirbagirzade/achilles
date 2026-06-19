@@ -2792,6 +2792,50 @@ def local_training_request_cmd(
     console.print(f"[bold]{REQUEST_BANNER}[/bold]")
 
 
+@app.command("local-training-dry-run")
+def local_training_dry_run_cmd(
+    approval_id: str = typer.Option(
+        "", "--approval-id", help="Onay durumunu READ-ONLY kontrol et (tüketmez)."
+    ),
+    request_json: str = typer.Option(
+        "", "--request-json", help="Okunacak 5B istek raporu (json). Boşsa en son istek."
+    ),
+    mock_adapter_eval: bool = typer.Option(
+        True,
+        "--mock-adapter-eval/--no-mock-adapter-eval",
+        help="Adapter-eval'i mockla (gerçek model çalıştırma bu fazda DESTEKLENMEZ).",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Makine-okunabilir JSON çıktı."),
+    out: Path = typer.Option(
+        Path("reports/local_training_orchestrator"), "--out", help="Rapor çıktı dizini."
+    ),
+    write: bool = typer.Option(True, "--write/--no-write", help="Dry-run raporunu diske yaz."),
+) -> None:
+    """Onaylı eğitim isteği DRY-RUN pipeline'ı — EĞİTİM/ONAY-TÜKETİMİ YOK (Phase 5C).
+
+    Audit + 5B isteği okur, (varsa) onayı READ-ONLY kontrol eder (tüketmez), pretrain-gate
+    read-only + adapter-eval MOCKED çalıştırır ve bir execution PLANI üretir (uygulamaz).
+    `launch`/`train --run`/`start_training`/`promote`/`require_fresh_approval`/
+    `request_approval` HİÇBİR ZAMAN çağrılmaz.
+    """
+    from app.agents.local_training_dryrun import DRYRUN_BANNER, build_dryrun, render_markdown
+
+    out_dir = out if out.is_absolute() else get_settings().root / out
+    result = build_dryrun(
+        approval_id=approval_id or None,
+        request_json=request_json or None,
+        mock_adapter_eval=mock_adapter_eval,
+        out_dir=out_dir,
+        write=write,
+    )
+
+    if as_json:
+        console.print_json(json.dumps(result, ensure_ascii=False))
+    else:
+        console.print(render_markdown(result))
+    console.print(f"[bold]{DRYRUN_BANNER}[/bold]")
+
+
 # --------------------------------------------------------------------------
 # Agent runtime — task queue + approvals + supervisor (Phase 2)
 # --------------------------------------------------------------------------

@@ -80,7 +80,8 @@ ayarlanabilir (yine eğitim başlatmaz).
   — `local-training-request` bu audit sonucundan **onay-kapılı bir eğitim İSTEĞİ** üretir
   (`--create-approval` ile PENDING onay oluşturur; onayı **TÜKETMEZ**, eğitim **BAŞLATMAZ**).
 - Yaşam döngüsü: **audit → request → human approval → (sonra) gerçek eğitim** (insan elinde).
-- 5C (öneri): onaylı isteği **dry-run pipeline**'a bağla — adapter-eval **mocked**, `launch`
-  stub; gerçek eğitim yalnız açık taze onayla.
+- **Phase 5C (UYGULANDI):** [LOCAL_TRAINING_DRYRUN_PIPELINE.md](LOCAL_TRAINING_DRYRUN_PIPELINE.md)
+  — `local-training-dry-run` onaylı isteği READ-ONLY okur + adapter-eval **mocked** simüle
+  eder; eğitim/onay-tüketimi YOK. Gerçek eğitim yalnız açık taze onayla (5D).
 - Web UI'de "eğitim hazırlık" kartı (bu raporu Agents/Otomasyon sekmesinde göster).
 - Readiness skoru eşiği geçtiğinde kullanıcıya **bildirim** (otomatik başlatma YOK).
