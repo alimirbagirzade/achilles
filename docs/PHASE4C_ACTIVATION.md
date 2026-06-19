@@ -31,14 +31,17 @@ Tüm canlı GitHub eylemleri **senin** kontrolündedir.
 - [ ] `ENABLE_CLAUDE_TASK` repo variable hâlâ **false / yok** (aktivasyon en sonda).
 - [ ] Protected-path guard testleri geçti: `uv run pytest tests/test_protected_paths_guard.py`.
 - [ ] GitHub Actions permissions gözden geçirildi (workflow minimum yetki ister).
-- [ ] **SHA-pin yapıldı** (supply-chain): aşağıdaki komutla v1 commit SHA'sını al ve
-      `claude-code-task.yml` içindeki `anthropics/claude-code-action@v1`'i o SHA ile değiştir:
+- [x] **SHA-pin UYGULANDI** (branch'te, supply-chain): `claude-code-task.yml` artık
+      `anthropics/claude-code-action@51705da45eecce209d4700538bf8377d5b5fc695`
+      (v1 @ 2026-06-19, Claude Code 2.1.183) kullanır. `v1` **hareketli** tag (o gün
+      taşındı) → pin sürüm sabitler. Action'ı **YÜKSELTMEK** istediğinde yeniden pinle:
       ```bash
       gh api repos/anthropics/claude-code-action/git/ref/tags/v1 --jq '.object.sha'
-      # Çıktı bir tag objesi SHA'sı ise commit'e deref et:
+      # Çıktı bir annotated tag SHA'sı ise commit'e deref et:
       gh api repos/anthropics/claude-code-action/git/tags/<TAG_SHA> --jq '.object.sha'
       # Sonra: uses: anthropics/claude-code-action@<COMMIT_SHA>   # v1 (tarih)
       ```
+      (`gh` yoksa: GitHub API'yi tarayıcıdan/`curl` ile aynı yollardan çağır.)
 - [ ] `needs-approval` ve `claude-task` / `safe-refactor` / `human-only` / `no-claude` /
       `dangerous-change` label'ları repo'da **oluşturuldu** (workflow etiket ekleyebilsin).
 

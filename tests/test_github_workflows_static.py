@@ -8,6 +8,7 @@ modelini içeriyor.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -123,7 +124,10 @@ def test_task_skips_dangerous_and_human_only_labels() -> None:
 
 def test_task_uses_verified_claude_action() -> None:
     c = _r(_TASK)
-    assert "anthropics/claude-code-action@v1" in c  # resmi README ile doğrulandı
+    # Resmi README ile doğrulandı. Referans @v1 VEYA 40-hex commit SHA (supply-chain pin).
+    assert re.search(r"anthropics/claude-code-action@([0-9a-f]{40}|v1)\b", c), (
+        "claude-code-action referansı yok / pin formatı geçersiz"
+    )
     assert "anthropic_api_key:" in c
     assert "claude_args:" in c or "allowed_tools:" in c
     assert "prompt:" in c

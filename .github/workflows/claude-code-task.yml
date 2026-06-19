@@ -11,9 +11,11 @@ name: Claude Code Task (guarded · verified-but-NOT-activated)
 # Aktivasyon adımları: docs/PHASE4C_ACTIVATION.md (tamamı KULLANICI tarafından).
 #   - ANTHROPIC_API_KEY secret (repoya YAZILMAZ/loglanmaz).
 #   - main branch protection + zorunlu review (workflow main'e PUSH ETMEZ).
-#   - SHA-pin: @v1 üretim için riskli (hareketli tag). Aktivasyondan önce:
+#   - SHA-pin UYGULANDI: @v1 yerine commit 51705da4... (v1 @ 2026-06-19, Claude Code
+#     2.1.183) ile pinlendi (supply-chain; v1 hareketli tag, bugün taşındı). Action'ı
+#     YÜKSELTİRKEN yeniden pinle (runbook §3):
 #       gh api repos/anthropics/claude-code-action/git/ref/tags/v1 --jq '.object.sha'
-#     ile commit SHA'yı al ve `@v1`'i o SHA ile DEĞİŞTİR (runbook'ta).
+#       # annotated tag → git/tags/<TAG_SHA> --jq '.object.sha' ile commit'e deref et.
 #   - TODO: tool-permission arg-joker (`:*`) Claude Code CLI sözdizimidir; action
 #     passthrough'unu ilk dry-run'da teyit et (allow-list zaten fail-safe).
 # Otomatik birleştirme YOKTUR; PR yalnız İNSAN onayıyla kapanır.
@@ -117,7 +119,8 @@ jobs:
       # vars.ENABLE_CLAUDE_TASK set edilmedikçe bu adım SKIP olur (inert template).
       - name: Claude Code (guarded)
         if: ${{ vars.ENABLE_CLAUDE_TASK == 'true' }}
-        uses: anthropics/claude-code-action@v1 # TODO: aktivasyonda SHA ile pinle
+        # SHA-pin (supply-chain): @v1 hareketli tag, bugün taşındı → commit'e sabitlendi.
+        uses: anthropics/claude-code-action@51705da45eecce209d4700538bf8377d5b5fc695 # v1 @ 2026-06-19 (Claude Code 2.1.183)
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |
