@@ -133,3 +133,19 @@ Dashboard yalnız **görünürlük + onay + STOP_ALL kontrol yüzeyidir**.
 
 **Bilinen sınır:** create form query-param tabanlı (`params_json` yok); `/healthz` kaba;
 approval `decision_note` UI'da yok. İleride küçük read-only zenginleştirme.
+
+## CI mypy parity note (Phase 3.5)
+
+`mypy app`, eğitim backend'i (`torch`/`peft`/`transformers` = opsiyonel `train-cpu`
+extra'sı) KURULU OLMASA BİLE temiz geçmelidir — CI `uv sync --extra dev` ile çalışır.
+
+Önceden `peft_lora_train.py` ve `adapter_eval.py` içindeki `# type: ignore` satırları
+yalnız torch KURULUYKEN "kullanılıyordu"; torch'suz ortamda mypy bunları
+`Unused "type: ignore"` (`warn_unused_ignores`) olarak işaretliyordu → CI mypy kırılırdı.
+
+**Çözüm (yalnız typing):** PEFT ile yeniden-atanan `model` değişkeni ilk bağlandığı yerde
+`model: Any` olarak işaretlendi (yerel anotasyon — runtime'da değerlendirilmez,
+`from __future__ import annotations`). Böylece `get_peft_model` / `print_trainable_parameters`
+/ `model=model` satırları torch'lu ve torch'suz ortamların İKİSİNDE de hata vermez ve
+hiçbir `# type: ignore` gerekmez. **Runtime davranışı ve eğitim mantığı DEĞİŞMEDİ;
+eğitim backend'i opsiyonel bağımlılık olarak kalır.** Phase 4 GitHub automation buna dayanır.

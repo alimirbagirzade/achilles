@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from app.config import get_settings
 from app.training.evaluate_model import check_flags, load_eval_set
@@ -87,11 +88,13 @@ def _load_model(base_model: str, adapter_dir: str | None):
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     tok = AutoTokenizer.from_pretrained(base_model)
-    model = AutoModelForCausalLM.from_pretrained(base_model, dtype=torch.bfloat16)
+    # model: Any → adapter (PeftModel) yeniden-atamasında torch'lu/torch'suz ortamların
+    # ikisinde de "unused type: ignore" / assignment hatası olmasın. Runtime davranışı aynı.
+    model: Any = AutoModelForCausalLM.from_pretrained(base_model, dtype=torch.bfloat16)
     if adapter_dir:
         from peft import PeftModel
 
-        model = PeftModel.from_pretrained(model, adapter_dir)  # type: ignore[assignment]
+        model = PeftModel.from_pretrained(model, adapter_dir)
     model.eval()
     return tok, model
 
