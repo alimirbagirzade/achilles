@@ -134,6 +134,26 @@ Dashboard yalnız **görünürlük + onay + STOP_ALL kontrol yüzeyidir**.
 **Bilinen sınır:** create form query-param tabanlı (`params_json` yok); `/healthz` kaba;
 approval `decision_note` UI'da yok. İleride küçük read-only zenginleştirme.
 
+## Phase 4D-1 — Web training gate fix
+
+**Web training start is now protected by the same fresh manual approval model as CLI training.**
+
+4D-0 denetimi bir bypass buldu: `POST /api/training/run` doğrudan `launch()` çağırıyor,
+`launch()` ise spawn ettiği `train --run`'a `ACHILLES_TRAIN_SUPERVISED=1` veriyordu →
+CLI'daki tek-kullanımlık taze onay kapısı atlanıyordu (STOP_ALL yine de geçerliydi ama
+fresh manual approval yoktu; EĞİTİM tabında confirm de yoktu).
+
+Düzeltme: endpoint artık CLI ile **aynı anahtarı** (`lora-trainer`/`train_run`, critical)
+kullanarak `require_fresh_approval` çağırır. Onay yoksa eğitim BAŞLAMAZ; `needs_approval`
++ `approval_id` + `uv run achilles approval-approve <id>` döner. Onaylanıp istek
+tekrarlanınca taze onay TÜKETİLİR ve `launch()` çağrılır. EĞİTİM tabındaki başlat butonu
+`confirm()` ister ve `needs_approval` yanıtında onay komutunu gösterir. STOP_ALL hâlâ
+hem endpoint'te hem spawn edilen alt süreçte geçerlidir.
+
+**Değişen dosyalar:** `app/web/server.py`, `app/web/schemas.py`,
+`app/web/static/assets/app.js`, `tests/test_web_training_gate.py`,
+`tests/test_agent_dashboard_static.py`.
+
 ## CI mypy parity note (Phase 3.5)
 
 `mypy app`, eğitim backend'i (`torch`/`peft`/`transformers` = opsiyonel `train-cpu`

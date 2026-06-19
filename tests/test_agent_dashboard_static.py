@@ -121,3 +121,27 @@ def test_stopall_button_styled_red() -> None:
     css = _APPCSS.read_text(encoding="utf-8")
     assert ".ag-stopall-btn" in css
     assert "#dc2626" in css  # kasıtlı kırmızı kill-switch
+
+
+# --- Phase 4D-1: EĞİTİM tabı eğitim-başlat onayı + needs_approval gösterimi ---
+def test_training_start_requires_confirmation() -> None:
+    """EĞİTİM tabındaki start butonu tek-tık değil; önce window.confirm() ister."""
+    js = _appjs()
+    # startTrainBtn handler'ı confirm metnini içerir (parçalar bitişik literal).
+    assert "gerçek LoRA training başlatabilir" in js
+    assert "Devam etmek istiyor musunuz?" in js
+    # confirm, start handler'ı içinde ve training POST'undan ÖNCE olmalı.
+    h = js.index("startTrainBtn.addEventListener")
+    post = js.index('api("/training/run"', h)
+    assert "window.confirm(" in js[h:post], (
+        "start handler training POST'undan önce confirm istemiyor"
+    )
+
+
+def test_training_start_shows_needs_approval() -> None:
+    """Backend needs_approval dönerse UI approval_id + onay komutunu gösterir."""
+    js = _appjs()
+    assert 'status === "needs_approval"' in js
+    assert "Approval ID:" in js
+    assert "approve_command" in js
+    assert "approval-approve" in js
