@@ -922,6 +922,18 @@
         num_layers: parseInt((document.getElementById("drLayers") || {}).value, 10) || 8,
         learning_rate: 1e-4,
       };
+      // GERÇEK eğitim onayı (tehlikeli aksiyon — agStopAll/agApprove ile aynı desen).
+      // Not: bu yalnız UX uyarısıdır; gerçek kapı sunucudadır (TAZE tek-kullanımlık
+      // onay — /api/training/run). İlk başlatma "onay gerekiyor" mesajı döndürür;
+      // ONAYLAR sekmesinden onaylayıp tekrar başlat (CLAUDE.md Kural 8).
+      if (!window.confirm(
+        "GERÇEK LoRA eğitimi başlatılacak:\n" +
+        "Adapter: " + payload.adapter_name + "\n" +
+        "İterasyon: " + payload.iterations + "\n\n" +
+        "Saatler sürebilir; bilgisayar açık kalmalı. Sunucu TAZE manuel onay ister " +
+        "(ilk tık onay isteği oluşturur → ONAYLAR sekmesinden onayla → tekrar başlat).\n\n" +
+        "Devam edilsin mi?"
+      )) return;
       var section = document.getElementById("trainProgressSection");
       if (section) section.style.display = "";
       var logEl = document.getElementById("trainLog");

@@ -1038,7 +1038,49 @@ def api_training_run(req: TrainingStartRequest) -> TrainingStartResponse:
     /api/training/live ile (log'dan) izlenir. Veri `lora_sft.jsonl`'den yeniden
     bölünür (DatasetBuilder kaynaklı train.jsonl clobber'ı başlatmada onarılır).
     iterations<=0 → 1 epoch (örnek sayısı kadar adım).
+
+    GÜVENLİK (CLAUDE.md Kural 8): `launch()` spawn ettiği `achilles train --run`
+    alt sürecine ``ACHILLES_TRAIN_SUPERVISED=1`` verir → alt süreç iç onay kapısını
+    atlar. Bu yüzden TAZE onay ÜST katmanda (burada) alınmalı — aksi halde web
+    butonu onaysız gerçek eğitim başlatırdı. CLI `train --run` ve auto_pipeline ile
+    aynı kapı: STOP_ALL + tek-kullanımlık taze onay (standing yetki YOK).
     """
+    from app.agents.runtime import approvals, supervisor
+
+    # 1) Küresel acil-durdurma — web başlatması da STOP_ALL'a tabidir (fail-fast;
+    #    alt süreç de kontrol eder ama burada hiç spawn etmeden net yanıt veririz).
+    if supervisor.is_stop_all_active():
+        return TrainingStartResponse(
+            ok=False,
+            message=(
+                "STOP_ALL aktif — gerçek eğitim bloklandı. "
+                "Kaldır: achilles clear-stop-all (veya ONAYLAR/Süpervizör panelinden)."
+            ),
+        )
+
+    # 2) Tek-kullanımlık taze onay. CLI ile aynı (agent_id/action) → bir onay yalnız
+    #    bir gerçek eğitimi yetkilendirir; tüketilince biter (auto-terfi/standing yok).
+    decision = approvals.require_fresh_approval(
+        agent_id="lora-trainer",
+        action="train_run",
+        risk="critical",
+        summary=(
+            f"Web'den gerçek LoRA eğitimi: {req.adapter_name or 'achilles_lora'} "
+            f"({req.iterations} adım)"
+        ),
+    )
+    if not decision.authorized:
+        return TrainingStartResponse(
+            ok=False,
+            message=(
+                "Gerçek eğitim TAZE manuel onay gerektirir (standing yetki yok). "
+                f"Onay isteği oluşturuldu: {decision.approval_id}. "
+                "ONAYLAR sekmesinden (veya: achilles approval-approve "
+                f"{decision.approval_id}) onayla, sonra eğitimi TEKRAR başlat."
+            ),
+        )
+
+    # 3) Onay tüketildi → eğitimi başlat (alt süreç çift onay istemez: supervised).
     from app.training.detached_launch import launch
 
     res = launch(
