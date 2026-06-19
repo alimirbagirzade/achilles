@@ -84,3 +84,5 @@ oluşturmaz**. (STOP_ALL ayrıca tüm gerçek tehlikeli aksiyonları zaten blokl
   execution PLANI üretir (uygulamaz). Eğitim/onay-tüketimi YOK.
 - Web UI'de "eğitim isteği" kartı (approval_required durumunu Agents sekmesinde göster).
 - İstek→onay→(insan)→gerçek eğitim yaşam döngüsünün uçtan uca izlenmesi (tracker).
+- Zincir devam etti: 5C dry-run + 5D handoff ([LOCAL_TRAINING_HANDOFF.md](LOCAL_TRAINING_HANDOFF.md))
+  — handoff gerçek eğitim komutunu YALNIZ METİN verir, çalıştırmaz/onay tüketmez.

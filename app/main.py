@@ -2836,6 +2836,48 @@ def local_training_dry_run_cmd(
     console.print(f"[bold]{DRYRUN_BANNER}[/bold]")
 
 
+@app.command("local-training-handoff")
+def local_training_handoff_cmd(
+    approval_id: str = typer.Option(
+        "", "--approval-id", help="Onay durumunu READ-ONLY kontrol et (tüketmez)."
+    ),
+    dryrun_json: str = typer.Option(
+        "", "--dryrun-json", help="Okunacak 5C dry-run raporu (json). Boşsa en son dry-run."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Makine-okunabilir JSON çıktı."),
+    out: Path = typer.Option(
+        Path("reports/local_training_orchestrator"), "--out", help="Rapor çıktı dizini."
+    ),
+    write: bool = typer.Option(True, "--write/--no-write", help="Handoff raporunu diske yaz."),
+) -> None:
+    """İnsan-kapılı gerçek eğitim HANDOFF'u — komutu YAZDIRIR, ÇALIŞTIRMAZ (Phase 5D).
+
+    5C dry-run raporunu + (varsa) onayı READ-ONLY okur. STOP_ALL + dry_run_passed +
+    approved_not_consumed ise `ready_for_human_execution` döner ve gerçek eğitim komutunu
+    YALNIZ METİN olarak + son checklist verir. `launch`/`train --run`/subprocess/
+    `start_training`/`promote`/`require_fresh_approval` HİÇBİR ZAMAN çağrılmaz; onay TÜKETİLMEZ.
+    """
+    from app.agents.local_training_handoff import build_handoff, render_markdown
+
+    out_dir = out if out.is_absolute() else get_settings().root / out
+    result = build_handoff(
+        approval_id=approval_id or None,
+        dryrun_json=dryrun_json or None,
+        out_dir=out_dir,
+        write=write,
+    )
+
+    if as_json:
+        console.print_json(json.dumps(result, ensure_ascii=False))
+    else:
+        console.print(render_markdown(result))
+    if result.get("status") == "ready_for_human_execution":
+        console.print(
+            "[bold yellow]READY FOR HUMAN EXECUTION[/bold yellow]\nRecommended command:\n"
+            f"[cyan]{result.get('recommended_command')}[/cyan]\nThis command was NOT executed."
+        )
+
+
 # --------------------------------------------------------------------------
 # Agent runtime — task queue + approvals + supervisor (Phase 2)
 # --------------------------------------------------------------------------

@@ -67,8 +67,11 @@ canlı trading. Korumalı yollara yazmaz.
 - JSON: `status`, `approval_id`, `approval_status`, `readiness_score/verdict`,
   `pretrain_gate`, `adapter_eval`, `execution_plan`, `risks`, `note`.
 
-## How to move to Phase 5D later
-- 5D (öneri): onaylı dry-run sonucunu **insan-onaylı gerçek eğitim** adımına bağlamak —
-  `train --run` (taze onayı CLI o adımda tüketir) ya da onaylı web `/api/training/run`.
+## Phase 5D (UYGULANDI) — human-gated handoff
+- **5D handoff:** [LOCAL_TRAINING_HANDOFF.md](LOCAL_TRAINING_HANDOFF.md) —
+  `local-training-handoff` bu dry-run sonucunu okur ve uygunsa gerçek eğitim komutunu
+  YALNIZ METİN olarak + son insan checklist'i verir. Komutu ÇALIŞTIRMAZ, onayı TÜKETMEZ.
+- Gerçek eğitim yalnız İNSAN tarafından elle: `train --run` (taze onayı CLI o adımda
+  tüketir) ya da onaylı web `/api/training/run`.
 - Yaşam döngüsü tracker'ı: audit → request → approval → **dry-run** → (insan) gerçek eğitim.
 - Web UI'de dry-run sonucu kartı (read-only).

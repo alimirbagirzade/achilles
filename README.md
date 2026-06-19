@@ -839,6 +839,7 @@ uv run achilles evaluate <eval.jsonl>   # modeli failure-mode eval setiyle test 
 uv run achilles local-training-audit    # eğitim-HAZIRLIK denetimi — SALT RAPOR (eğitim başlatmaz, 5A)
 uv run achilles local-training-request  # onay-kapılı eğitim İSTEĞİ — onay oluşturabilir, eğitim/onay-tüketimi YOK (5B)
 uv run achilles local-training-dry-run  # onaylı isteği READ-ONLY simüle et — eğitim/onay-tüketimi YOK (5C)
+uv run achilles local-training-handoff  # insan-kapılı handoff — gerçek eğitim komutunu YAZDIRIR, çalıştırmaz (5D)
 ```
 
 ### Anlama Doğrulama (L3/L4/L5 — objektif sınav)

@@ -82,6 +82,9 @@ ayarlanabilir (yine eğitim başlatmaz).
 - Yaşam döngüsü: **audit → request → human approval → (sonra) gerçek eğitim** (insan elinde).
 - **Phase 5C (UYGULANDI):** [LOCAL_TRAINING_DRYRUN_PIPELINE.md](LOCAL_TRAINING_DRYRUN_PIPELINE.md)
   — `local-training-dry-run` onaylı isteği READ-ONLY okur + adapter-eval **mocked** simüle
-  eder; eğitim/onay-tüketimi YOK. Gerçek eğitim yalnız açık taze onayla (5D).
+  eder; eğitim/onay-tüketimi YOK.
+- **Phase 5D (UYGULANDI):** [LOCAL_TRAINING_HANDOFF.md](LOCAL_TRAINING_HANDOFF.md) —
+  `local-training-handoff` son checklist + gerçek eğitim komutunu YALNIZ METİN verir;
+  ÇALIŞTIRMAZ. Gerçek eğitim yalnız İNSAN tarafından + açık taze onayla.
 - Web UI'de "eğitim hazırlık" kartı (bu raporu Agents/Otomasyon sekmesinde göster).
 - Readiness skoru eşiği geçtiğinde kullanıcıya **bildirim** (otomatik başlatma YOK).
