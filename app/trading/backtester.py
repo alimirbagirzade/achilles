@@ -57,6 +57,7 @@ class BacktestMetrics:
     max_drawdown_pct: float
     profit_factor: float
     win_rate_pct: float
+    sharpe_deflated: float = 0.0
     extra: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -64,6 +65,7 @@ class BacktestMetrics:
             "n_trades": self.n_trades,
             "total_return_pct": self.total_return_pct,
             "sharpe": self.sharpe,
+            "sharpe_deflated": self.sharpe_deflated,
             "sortino": self.sortino,
             "max_drawdown_pct": self.max_drawdown_pct,
             "profit_factor": self.profit_factor,
@@ -125,7 +127,14 @@ def _position_series(df: pd.DataFrame, ir: StrategyIR) -> pd.Series:
     return pd.Series(pos, index=df.index)
 
 
-def _metrics(returns: pd.Series, position: pd.Series, timeframe: str) -> BacktestMetrics:
+# Deflated Sharpe parametre cezası: her serbest kural ~bu kadar gözlemlik güveni "harcar"
+# (overfit haircut için etkin örneklemi düşürür). Muhafazakâr heuristik (1905.05023 ruhu).
+_DEFLATE_PARAM_COST = 5
+
+
+def _metrics(
+    returns: pd.Series, position: pd.Series, timeframe: str, n_params: int = 0
+) -> BacktestMetrics:
     equity = (1 + returns).cumprod()
     total_return = float(equity.iloc[-1] - 1) * 100 if len(equity) else 0.0
 
@@ -147,6 +156,16 @@ def _metrics(returns: pd.Series, position: pd.Series, timeframe: str) -> Backtes
         float((mean / downside) * np.sqrt(ann)) if downside and not np.isnan(downside) else 0.0
     )
 
+    # Deflated Sharpe — overfit haircut (1905.05023 ruhu; TAM DSR DEĞİL, muhafazakâr kırpma).
+    # Lo (2002): per-bar Sharpe tahmininin standart hatası ~ sqrt((1 + 0.5·SR²)/n). 1-sigma alt
+    # sınırı al; her serbest kural etkin örneklemi düşürür (parametre cezası). Daima ≤ ham Sharpe;
+    # az veri / çok kural → daha düşük. Pozitif Sharpe'ı kırpar, negatifi ŞİŞİRMEZ. Look-ahead yok.
+    sr_bar = float(mean / std) if std and not np.isnan(std) else 0.0
+    n_eff = max(2, len(returns) - _DEFLATE_PARAM_COST * max(0, n_params))
+    se_bar = float(np.sqrt((1.0 + 0.5 * sr_bar**2) / n_eff))
+    sr_bar_deflated = max(0.0, sr_bar - se_bar) if sr_bar > 0 else sr_bar
+    sharpe_deflated = sr_bar_deflated * np.sqrt(ann)
+
     running_max = equity.cummax()
     dd = equity / running_max - 1.0
     max_dd = float(dd.min()) * 100 if len(dd) else 0.0
@@ -166,6 +185,7 @@ def _metrics(returns: pd.Series, position: pd.Series, timeframe: str) -> Backtes
         n_trades=trades,
         total_return_pct=round(total_return, 4),
         sharpe=round(sharpe, 4),
+        sharpe_deflated=round(sharpe_deflated, 4),
         sortino=round(sortino, 4),
         max_drawdown_pct=round(max_dd, 4),
         profit_factor=round(profit_factor, 4) if np.isfinite(profit_factor) else 999.0,
@@ -198,7 +218,9 @@ def run_backtest(df: pd.DataFrame, ir: StrategyIR) -> BacktestResult:
     cost = turnover * (ir.costs.commission + ir.costs.slippage)
     net_ret = strat_ret - cost
 
-    metrics = _metrics(net_ret, position, ir.timeframe)
+    metrics = _metrics(
+        net_ret, position, ir.timeframe, n_params=len(ir.entry_rules) + len(ir.exit_rules)
+    )
     equity = (1 + net_ret).cumprod()
     return BacktestResult(ir=ir, metrics=metrics, equity_curve=equity)
 
