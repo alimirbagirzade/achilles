@@ -26,6 +26,14 @@ Donanım: i7-1165G7, **GPU yok**. Çevrimdışı, deterministik (Kural 2/6).
 | hybrid+rerank | 64.3% | 71.4% | 0.665 | 2216 ms |
 | rrf | 67.1% | 72.9% | 0.689 | 2286 ms |
 | dense + cross-encoder (bge-reranker-base) | — | — | — | **>15.000 ms** (CPU'da kullanılamaz) |
+| dense + FlashRank (ms-marco-MiniLM-L-12, ONNX-int8) | 67.5% | 70.0% | 0.688 | **12.388 ms** |
+
+> **FlashRank (Zincir 3, derin araştırma sonrası ölçüldü):** Web-araştırma FlashRank'i CPU'da
+> ~30-100ms olarak veriyordu (M-serisi Mac / kısa pasaj). Bu GPU'suz i7-1165G7'de 40 GERÇEK
+> akademik aday (≤1200 char) ile **TEMİZ koşulda bile ~12,4 s/sorgu** VE recall@1 dense'den
+> DÜŞÜK (67.5 < 70.0). Sonuç KESİN: **bu donanımda hiçbir cross-encoder reranking (bge >15s,
+> FlashRank ~12s) kullanılamaz** — dense-only kazanır. FlashRank opt-in olarak KODDA (GPU
+> gelirse / kısa chunk'larda işe yarayabilir) ama KAPALI. `ACHILLES_RAG_FLASHRANK`.
 
 ## 3. Sonuç ve karar
 
