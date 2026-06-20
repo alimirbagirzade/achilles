@@ -1,12 +1,34 @@
-param(
+﻿param(
     [int]$Target = 1300,
     [int]$Batch = 3,
     [string]$Output = "data/lora_sft",
     [int]$StartSeed = 100
 )
 
-$ProjectRoot = "C:\Users\sevinc\Development\achilles"
-$UvExe = "C:\Users\sevinc\.local\bin\uv.exe"
+# Tasinabilir kok cozumu (hardcoded yol YOK): script scripts/ altinda → kok bir ust.
+$ScriptDir   = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+$ProjectRoot = Split-Path -Parent $ScriptDir
+
+# uv'yi bul (start-server.ps1 / verify-install.ps1 ile ayni desen): PATH'te yoksa bilinen konumlar.
+function Find-Uv {
+    $fromPath = (Get-Command uv -ErrorAction SilentlyContinue).Source
+    if ($fromPath -and (Test-Path $fromPath)) { return $fromPath }
+    $candidates = @(
+        (Join-Path $env:USERPROFILE ".local\bin\uv.exe"),
+        (Join-Path $env:USERPROFILE ".cargo\bin\uv.exe"),
+        (Join-Path $env:LOCALAPPDATA "Programs\uv\uv.exe"),
+        (Join-Path $env:APPDATA "uv\uv.exe"),
+        (Join-Path $env:LOCALAPPDATA "uv\uv.exe"),
+        "C:\uv\uv.exe"
+    )
+    foreach ($p in $candidates) { if ($p -and (Test-Path $p)) { return $p } }
+    return $null
+}
+$UvExe = Find-Uv
+if (-not $UvExe) {
+    Write-Host "[HATA] uv bulunamadi. Kur: winget install astral-sh.uv" -ForegroundColor Red
+    exit 2
+}
 $LogDir = Join-Path $ProjectRoot "logs"
 New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 
