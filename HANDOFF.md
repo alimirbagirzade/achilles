@@ -36,7 +36,7 @@ LLM'i "trader gibi düşünen" bir araştırma motoru yapmak:
 - **PR #5** → `main` merge: github.com/alimirbagirzade/achilles/pull/5 (branch eşzamanlı oturum commit'leri `06e048b`/`3de5082`/`c420d3b`'yi de içeriyor — collision; main'e ayrı yoldan girerlerse düşer).
 - **`.claude/settings.json`** SessionStart hook'unda yabancı macOS yolu (`/Users/mirbagirzade`) → **self-modification guardrail** otomatik düzeltmeyi engelliyor. Kullanıcı AÇIKÇA "o hook'u düzelt" demeli. Fix: `cd "${CLAUDE_PROJECT_DIR:-.}"`.
 - Executor **per-agent handler**'ları kayıtlı değil (allow-list bilinçli boş) → `tasks-run`/`chain-status` altyapısı hazır ama henüz ajan çalıştırmaz; her ajan için handler eklemek doğal sonraki adım (tehlikeli zincir dikkatli).
-- `app/main.py` `__main__` bloğu line ~1327'de (komutların yarısından önce) → `python -m app.main <geç-komut>` "no such command" verir (görev chip'i açıldı); gerçek `achilles`/`uv run achilles` entry-point etkilenmiyor.
+- ✅ **ÇÖZÜLDÜ (`52d305c`, 2026-06-20):** `app/main.py` `__main__` bloğu (line ~1327, komutların yarısından önce) dosya SONUNA taşındı → `python -m app.main chain-status / tasks-list` artık çalışıyor (önce "no such command" veriyordu). Saf yer-değiştirme (4+/4-); ruff+mypy temiz, offline pytest yeşil. Console-script entry-point zaten etkilenmiyordu.
 - **gh ipucu:** `gh auth login` interaktif; ama GCM'deki `gho_` token `git credential fill` → `GH_TOKEN` ile `gh.exe`'ye verilerek PR açılabilir (token yazdırmadan).
 
 ---
