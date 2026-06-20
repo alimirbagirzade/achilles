@@ -92,7 +92,7 @@ def main() -> None:
 
     # BM25'i bir kez ısıt (build ~125s; sonraki retrieve'ler cache'li).
     t = time.perf_counter()
-    bm25, cm = get_corpus_bm25()
+    _bm25, cm = get_corpus_bm25()
     print(
         f"# bm25 warm: {time.perf_counter() - t:.1f}s, chunks={len(cm)}, "
         f"queries={len(items)}",
