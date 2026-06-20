@@ -113,7 +113,7 @@ class ApplicationExam:
         )
         try:
             raw = self.llm.generate(
-                prompt, fmt="json", temperature=0.0, max_tokens=512, timeout=60, seed=seed
+                prompt, fmt="json", temperature=0.0, max_tokens=512, timeout=240, seed=seed
             )
         except LLMUnavailable:
             return ExamResult("L3", spec.name, False, "skipped", seed, {"reason": "LLMUnavailable"})

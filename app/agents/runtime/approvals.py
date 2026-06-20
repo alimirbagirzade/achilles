@@ -175,9 +175,9 @@ def require_fresh_approval(
     aksiyonu başlatmamalı, kullanıcıya approval_id'yi göstermeli.
     """
     st = _store(store)
-    fresh = st.find_fresh_approval(agent_id, action)
+    # Atomik BUL+TÜKET (tek transaction; TOCTOU çift-tüketim yok — bkz. consume_fresh_approval).
+    fresh = st.consume_fresh_approval(agent_id, action)
     if fresh:
-        st.update_approval_request(fresh["approval_id"], consumed_at=_utcnow())
         _system_event(
             f"Taze onay TÜKETİLDİ: {action}", agent_id, action, fresh["approval_id"], "info"
         )

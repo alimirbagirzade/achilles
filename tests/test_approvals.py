@@ -82,3 +82,21 @@ def test_has_fresh_only_after_approve(st) -> None:
 def test_approve_missing_returns_none(st) -> None:
     assert approvals.approve("apr_yok", store=st) is None
     assert approvals.reject("apr_yok", store=st) is None
+
+
+def test_consume_fresh_approval_atomic_single_use(st) -> None:
+    """consume_fresh_approval (atomik CAS) bir onayı YALNIZ bir kez tüketir.
+
+    Eski find+update iki ayrı transaction'dı → eşzamanlı çift-tüketim (TOCTOU) mümkündü.
+    Yeni koşullu UPDATE + rowcount: ilk çağrı tüketir, ikinci çağrı None alır.
+    """
+    d = approvals.require_fresh_approval("ag-cas", "train_run", "critical", "s", store=st)
+    approvals.approve(d.approval_id, store=st)
+    assert st.find_fresh_approval("ag-cas", "train_run") is not None  # tüketilmeden taze
+    # 1) ilk tüketim → onay döner ve consumed_at damgalanır
+    first = st.consume_fresh_approval("ag-cas", "train_run")
+    assert first is not None and first["approval_id"] == d.approval_id
+    assert first["consumed_at"] is not None
+    # 2) ikinci tüketim → artık taze onay yok (tek kullanımlık)
+    assert st.consume_fresh_approval("ag-cas", "train_run") is None
+    assert st.find_fresh_approval("ag-cas", "train_run") is None

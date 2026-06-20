@@ -53,8 +53,12 @@ Write-Log "Durdurmak icin: New-Item '$StopFile'"
 $cycle = 0
 while (-not (Test-Path $StopFile) -and (Get-Date) -lt $EndTime) {
     $cycle++
-    Write-Log "=== Dongu ${cycle}: dataset tazeleniyor ==="
-    & $Uv run achilles lora-dataset *>> $Log
+    Write-Log "=== Dongu ${cycle}: dataset tazeleniyor (birlesik: synth-qa + kart + %25 disiplin) ==="
+    # ÖNEMLI: `lora-dataset` SADECE karttan uretir (synth-qa + disiplin DAHIL DEGIL) ve
+    # lora_sft.jsonl'i clobber eder -> v5 regresyonunun veri tarafi. Bunun yerine kanonik
+    # birlesik assembly (assemble_sft.py = lora-cloud-prep/pretrain-gate ile ayni yol) + split.
+    & $Uv run python scripts/assemble_sft.py *>> $Log
+    & $Uv run achilles lora-split *>> $Log
     Write-Log "=== Dongu ${cycle}: egitim ($Iterations iter) ==="
     & $Uv run achilles train --run --backend peft --adapter-name $Adapter --iterations $Iterations *>> $Log
     Write-Log "=== Dongu $cycle bitti -> ${CooldownSec}sn cooldown ==="

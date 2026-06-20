@@ -163,14 +163,22 @@ def _indicator_exam_results(seed: int = 0, *, llm: Any = None) -> list[ExamResul
     l3 = ApplicationExam(llm=llm)
     l4 = CounterfactualExam(llm=llm)
     results: list[ExamResult] = []
-    # LLM bir kez yanıt vermezse (zaman aşımı/unavailable) kalan çağrıları boşuna
-    # bekleme: hepsini hızlıca 'skipped' işaretle. Aksi halde yavaş CPU'da 5 spec ×
-    # 2 sınav × 60sn zaman aşımı = uç dakikalarca asılı kalır. Tek bir sınav HİÇBİR
-    # durumda /api/understanding-score'u 500 yapmamalı (CLAUDE.md Kural 2).
-    llm_down = False
+    # ÖN-KONTROL: LLM hiç erişilebilir değilse (gerçekten offline) boşuna timeout
+    # bekleme — hepsini hızlıca 'skipped'. (available() = hızlı /api/tags.)
+    from app.brain.local_llm import LocalLLM
+
+    if not (llm or LocalLLM()).available():
+        for spec in list_specs():
+            for level in ("L3", "L4"):
+                results.append(_mk_status(level, spec.name, "skipped"))
+        return results
+    # LLM ERİŞİLEBİLİR: tek bir zaman aşımı TÜM sınavları öldürmesin (eski cascade hatası:
+    # ilk timeout → llm_down → 10 sınav skip → pass_rate hep 0). Yalnız 2 ARDIŞIK
+    # başarısızlıkta (gerçekten asılı) bail. Yavaş CPU'da her sınava şans tanı.
+    consecutive_skips = 0
     for spec in list_specs():
         for level, exam in (("L3", l3), ("L4", l4)):
-            if llm_down:
+            if consecutive_skips >= 2:
                 results.append(
                     ExamResult(
                         level,
@@ -178,7 +186,7 @@ def _indicator_exam_results(seed: int = 0, *, llm: Any = None) -> list[ExamResul
                         False,
                         "skipped",
                         seed,
-                        {"reason": "LLM yanıt vermedi (önceki çağrı başarısız) — atlandı"},
+                        {"reason": "LLM ardışık 2 başarısızlık — kalan sınavlar atlandı"},
                     )
                 )
                 continue
@@ -198,10 +206,7 @@ def _indicator_exam_results(seed: int = 0, *, llm: Any = None) -> list[ExamResul
                     {"reason": f"beklenmedik hata: {type(exc).__name__}: {exc}"[:200]},
                 )
             results.append(res)
-            # 'skipped' YALNIZCA LLM kaynaklıdır (no_data/failed ayrı) → ilk skipped'ta
-            # fail-fast (yavaş CPU'da boşuna timeout beklemeyi önler).
-            if res.status == "skipped":
-                llm_down = True
+            consecutive_skips = consecutive_skips + 1 if res.status == "skipped" else 0
     return results
 
 
