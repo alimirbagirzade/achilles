@@ -864,6 +864,31 @@ uv run achilles mastery-score <paper_id>          # son skoru göster
 uv run achilles mastery-report <paper_id>         # JSON/MD raporu göster
 ```
 
+### Ajan Runtime & Otomasyon (Phase 2)
+
+Çalışan ajanların gözlemi + denetimli otomasyon. Tehlikeli işler (gerçek eğitim,
+adapter terfisi) **tek-kullanımlık taze onay** ister (CLAUDE.md Kural 8). Manifest:
+`automation_manifest.yaml`; tasarım: `docs/AGENT_RUNTIME_OBSERVER.md`.
+
+```bash
+uv run achilles runtime-init             # ön-uçuş: manifest + Phase-2 tabloları + STOP_ALL doğrula
+uv run achilles chain-status             # çalıştırma zinciri (topolojik sıra + onay kapıları)
+uv run achilles chain-status --live      #   + her adımın ŞU ANKİ supervisor kapı durumu
+uv run achilles agents-list              # manifest'teki runtime ajanları
+uv run achilles agents-runs              # son ajan koşuları
+uv run achilles agents-log <run_id>      # bir koşunun olay günlüğü
+uv run achilles task-create --agent <id> --title "..."   # otomasyon görevi oluştur (pending)
+uv run achilles tasks-list               # görevleri listele
+uv run achilles tasks-run                # bekleyen görevleri denetimli yürüt (executor)
+uv run achilles tasks-run --retry-blocked  #   önce blocked_* görevleri yeniden kuyruğa al
+uv run achilles task-cancel <task_id>    # görevi iptal et
+uv run achilles approvals-list           # onay isteklerini listele
+uv run achilles approval-approve <id>    # taze onay ver (tek kullanımlık — standing yetki yok)
+uv run achilles approval-reject <id>     # onayı reddet
+uv run achilles stop-all                 # KÜRESEL acil-durdurma (tüm tehlikeli aksiyonları blokla)
+uv run achilles clear-stop-all           # acil-durdurmayı kaldır
+```
+
 ---
 
 ## 🧪 Tipik Uçtan Uca Akış
