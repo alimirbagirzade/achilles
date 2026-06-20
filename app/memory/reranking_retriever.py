@@ -68,6 +68,12 @@ class RerankingRetriever:
         self.graph = graph if graph is not None else self.settings.rag_graph
 
     def _default_reranker(self) -> RerankerLike:
+        # FlashRank OPT-IN (CPU'da hızlı ONNX cross-encoder); cross_encoder'a göre öncelikli
+        # (bge-reranker CPU'da >15s iken FlashRank ~100ms). Yoksa kendi içinde heuristiğe düşer.
+        if self.settings.rag_flashrank:
+            from app.memory.flashrank_reranker import FlashRankReranker
+
+            return FlashRankReranker()
         # Cross-encoder OPT-IN (Faz A8); açıksa onu kullan (model yoksa kendi içinde
         # heuristiğe düşer). Kapalıysa doğrudan heuristik Reranker.
         if self.settings.rag_cross_encoder:
