@@ -2878,6 +2878,49 @@ def local_training_handoff_cmd(
         )
 
 
+@app.command("local-training-postcheck")
+def local_training_postcheck_cmd(
+    handoff_json: str = typer.Option("", "--handoff-json", help="Okunacak handoff raporu (json)."),
+    dryrun_json: str = typer.Option("", "--dryrun-json", help="Okunacak dry-run raporu (json)."),
+    training_report: str = typer.Option(
+        "", "--training-report", help="Okunacak training raporu (json)."
+    ),
+    adapter_path: str = typer.Option(
+        "", "--adapter-path", help="Adapter metadata (yalnız stat — model yüklenmez)."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Makine-okunabilir JSON çıktı."),
+    out: Path = typer.Option(
+        Path("reports/local_training_orchestrator"), "--out", help="Rapor çıktı dizini."
+    ),
+    write: bool = typer.Option(True, "--write/--no-write", help="Postcheck raporunu diske yaz."),
+) -> None:
+    """Eğitim-sonrası SALT-OKUMA doğrulama — terfi/eğitim YOK (Phase 5E).
+
+    Handoff/dry-run + training artefaktı + adapter metadata + adapter-eval + understanding-
+    score'u READ-ONLY okur. Sonuç yoksa `no_training_run_found`; varsa
+    `postcheck_ready_for_human_review` (promotion_recommendation=human_review_required).
+    `launch`/`train --run`/`start_training`/`promote`/`require_fresh_approval` çağrılmaz;
+    model YÜKLENMEZ, eval ÇALIŞTIRILMAZ, korumalı yollara YAZILMAZ.
+    """
+    from app.agents.local_training_postcheck import build_postcheck, render_markdown
+
+    out_dir = out if out.is_absolute() else get_settings().root / out
+    result = build_postcheck(
+        handoff_json=handoff_json or None,
+        dryrun_json=dryrun_json or None,
+        training_report=training_report or None,
+        adapter_path=adapter_path or None,
+        out_dir=out_dir,
+        write=write,
+    )
+
+    if as_json:
+        console.print_json(json.dumps(result, ensure_ascii=False))
+    else:
+        console.print(render_markdown(result))
+    console.print("[bold]No adapter was promoted. Human review required.[/bold]")
+
+
 # --------------------------------------------------------------------------
 # Agent runtime — task queue + approvals + supervisor (Phase 2)
 # --------------------------------------------------------------------------

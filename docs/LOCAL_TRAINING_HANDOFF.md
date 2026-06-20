@@ -79,9 +79,10 @@ live trading. Korumalı yollara yazmaz.
    adımda tüketir** ve gerçek eğitimi başlatır. (Ya da onaylı web `/api/training/run`.)
    Bu 5D handoff'u 3. adımı **yapmaz**; yalnız komutu önerir.
 
-## Phase 5E path
-- 5E (öneri): handoff sonrası **post-training doğrulama** akışı — eğitim İNSAN tarafından
-  çalıştırıldıktan SONRA adapter-eval / understanding-score sonucunu read-only raporlamak
-  (yine otomatik terfi YOK; promote insan + ayrı onay).
+## Phase 5E (UYGULANDI) — post-training postcheck
+- **5E postcheck:** [LOCAL_TRAINING_POSTCHECK.md](LOCAL_TRAINING_POSTCHECK.md) —
+  `local-training-postcheck` eğitim İNSAN tarafından çalıştırıldıktan SONRA adapter-eval /
+  understanding-score / training artefaktını **read-only** raporlar; terfi ÖNERMEZ
+  (`human_review_required`). Otomatik terfi YOK; promote insan + ayrı taze onay.
 - Tüm zincirin (audit→request→approval→dry-run→handoff→insan eğitim→eval) tracker'da izi.
 - Web UI'de "ready for human training" kartı (read-only).

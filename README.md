@@ -840,6 +840,7 @@ uv run achilles local-training-audit    # eğitim-HAZIRLIK denetimi — SALT RAP
 uv run achilles local-training-request  # onay-kapılı eğitim İSTEĞİ — onay oluşturabilir, eğitim/onay-tüketimi YOK (5B)
 uv run achilles local-training-dry-run  # onaylı isteği READ-ONLY simüle et — eğitim/onay-tüketimi YOK (5C)
 uv run achilles local-training-handoff  # insan-kapılı handoff — gerçek eğitim komutunu YAZDIRIR, çalıştırmaz (5D)
+uv run achilles local-training-postcheck # eğitim-SONRASI READ-ONLY denetim — terfi YOK, human_review_required (5E)
 ```
 
 ### Anlama Doğrulama (L3/L4/L5 — objektif sınav)

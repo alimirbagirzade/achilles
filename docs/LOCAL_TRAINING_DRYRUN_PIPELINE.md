@@ -74,4 +74,6 @@ canlı trading. Korumalı yollara yazmaz.
 - Gerçek eğitim yalnız İNSAN tarafından elle: `train --run` (taze onayı CLI o adımda
   tüketir) ya da onaylı web `/api/training/run`.
 - Yaşam döngüsü tracker'ı: audit → request → approval → **dry-run** → (insan) gerçek eğitim.
+- **Phase 5E (UYGULANDI):** [LOCAL_TRAINING_POSTCHECK.md](LOCAL_TRAINING_POSTCHECK.md) —
+  eğitimden SONRA `local-training-postcheck` artefakt/eval/score'u READ-ONLY denetler; terfi YOK.
 - Web UI'de dry-run sonucu kartı (read-only).

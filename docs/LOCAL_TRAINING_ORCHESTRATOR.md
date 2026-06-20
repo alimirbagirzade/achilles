@@ -86,5 +86,8 @@ ayarlanabilir (yine eğitim başlatmaz).
 - **Phase 5D (UYGULANDI):** [LOCAL_TRAINING_HANDOFF.md](LOCAL_TRAINING_HANDOFF.md) —
   `local-training-handoff` son checklist + gerçek eğitim komutunu YALNIZ METİN verir;
   ÇALIŞTIRMAZ. Gerçek eğitim yalnız İNSAN tarafından + açık taze onayla.
+- **Phase 5E (UYGULANDI):** [LOCAL_TRAINING_POSTCHECK.md](LOCAL_TRAINING_POSTCHECK.md) —
+  `local-training-postcheck` eğitim-sonrası artefakt/eval/score'u READ-ONLY denetler;
+  terfi ÖNERMEZ (`human_review_required`). Otomatik terfi/eğitim/model-yazma YOK.
 - Web UI'de "eğitim hazırlık" kartı (bu raporu Agents/Otomasyon sekmesinde göster).
 - Readiness skoru eşiği geçtiğinde kullanıcıya **bildirim** (otomatik başlatma YOK).
