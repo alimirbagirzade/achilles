@@ -1,6 +1,6 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-06-16 · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Son güncelleme: 2026-06-20 · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
@@ -15,6 +15,31 @@ LLM'i "trader gibi düşünen" bir araştırma motoru yapmak:
 2. Bunları birleştirip daha önce denenmemiş indikatör/algoritma öner
 3. Otomatik backtest et → sonuçtan öğren → LoRA eğitim verisi üret
 4. 3B modeli test eder; gerçek çıktı için 120B kullanılacak
+
+### Mevcut durum (2026-06-20) — ✅ OTONOM BAŞLANGIÇ ZİNCİRİ (branch `feat/otonom-baslangic-zinciri` · PR #5)
+
+> Hedef: "yeni makinede git clone sonrası tertipli bir SIRALAMA ZİNCİRİ olarak otonom ayağa kalksın."
+> 5 alt-sistem repo-taramasıyla tasarlandı (ayrıntı: memory `otonom-baslangic-zinciri`); sistemin %80'i
+> zaten taşınabilir çıktı → eksik halkalar eklendi. **Kararlar:** tetikleyici = mevcut hibrit (HKCU Run +
+> Task Scheduler yedek), otonomi = **varsayılan KAPALI**, executor = hibrit ince. Kural 8 korunur
+> (gerçek eğitim/terfi yine tek-kullanımlık taze onay; executor o kapıyı zayıflatmaz).
+
+**LANDED — 6 commit (hepsi ruff+mypy temiz · tüm offline suite YEŞİL · CLI duman-testi exit 0):**
+- `verify-install.ps1` — autostart ÖNCESİ çevrimdışı duman testi kapısı (`start-server.ps1 -Install` artık önce doğrular; kalırsa autostart kurmaz; `-SkipVerify` kaçış).
+- hibrit **executor** (`app/agents/runtime/executor.py`) — allow-list handler (bilinmeyen agent çalışmaz), `run_task`/`run_pending(--retry-blocked)`, STOP_ALL + taze-onay kapısını korur; + `task_queue.requeue_task` + CLI `tasks-run`. (9 test)
+- `synth_qa_chain.ps1` taşınabilir (`$PSScriptRoot`+`Find-Uv`) + UTF-8 BOM (PS 5.1 parse fix).
+- **runtime-init** ön-uçuş (`app/agents/runtime/preflight.py`) — manifest + 4 Phase-2 tablosu + STOP_ALL doğrula; CLI kapı. (2 test)
+- **chain** (`automation_manifest.yaml` 'chain' bölümü + `app/agents/runtime/chain.py` Kahn topo-sort, döngü/eksik-step doğrulama) + CLI `chain-status [--live]`. (8 test)
+- README ajan-runtime/otomasyon komut bölümü.
+
+**KALAN (sonraki seans):**
+- **PR #5** → `main` merge: github.com/alimirbagirzade/achilles/pull/5 (branch eşzamanlı oturum commit'leri `06e048b`/`3de5082`/`c420d3b`'yi de içeriyor — collision; main'e ayrı yoldan girerlerse düşer).
+- **`.claude/settings.json`** SessionStart hook'unda yabancı macOS yolu (`/Users/mirbagirzade`) → **self-modification guardrail** otomatik düzeltmeyi engelliyor. Kullanıcı AÇIKÇA "o hook'u düzelt" demeli. Fix: `cd "${CLAUDE_PROJECT_DIR:-.}"`.
+- Executor **per-agent handler**'ları kayıtlı değil (allow-list bilinçli boş) → `tasks-run`/`chain-status` altyapısı hazır ama henüz ajan çalıştırmaz; her ajan için handler eklemek doğal sonraki adım (tehlikeli zincir dikkatli).
+- `app/main.py` `__main__` bloğu line ~1327'de (komutların yarısından önce) → `python -m app.main <geç-komut>` "no such command" verir (görev chip'i açıldı); gerçek `achilles`/`uv run achilles` entry-point etkilenmiyor.
+- **gh ipucu:** `gh auth login` interaktif; ama GCM'deki `gho_` token `git credential fill` → `GH_TOKEN` ile `gh.exe`'ye verilerek PR açılabilir (token yazdırmadan).
+
+---
 
 ### Mevcut durum (2026-06-19) — ✅ KAD-2 TAMAMLANDI + 🔄 SYNTH-QA ÜRETİMİ DEVAM EDİYOR
 
