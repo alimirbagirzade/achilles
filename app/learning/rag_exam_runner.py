@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.brain.rag_answerer import RagAnswerer
+from app.evals.rag_ragas_offline import context_precision
 from app.learning.question_generator import MasteryQuestion
 from app.memory.sqlite_store import SqliteStore
 from app.verification.citation_verifier import CitationVerifier
@@ -31,6 +32,7 @@ class ExamAnswer:
     cited_paper_ids: list[str] = field(default_factory=list)
     citation_score: float = 0.0
     grounding_score: float = 0.0
+    context_precision: float = 0.0  # RAGAS gözlemsel sinyal — passed'i ETKİLEMEZ
     context_sufficient: bool = False
     abstention_correct: bool = False
     hallucination_detected: bool = False
@@ -46,6 +48,7 @@ class ExamAnswer:
             "cited_paper_ids": self.cited_paper_ids,
             "citation_score": self.citation_score,
             "grounding_score": self.grounding_score,
+            "context_precision": self.context_precision,
             "context_sufficient": self.context_sufficient,
             "abstention_correct": self.abstention_correct,
             "hallucination_detected": self.hallucination_detected,
@@ -72,6 +75,14 @@ class RagExamRunner:
         answer_text = rag.answer
         chunks = rag.sources
 
+        # RAGAS context_precision (gözlemsel): getirilen parçaların cevaba alaka oranı;
+        # düşük → retrieval gürültülü. SADECE gözlem/log — passed kararına KATILMAZ. Korele
+        # token-proxy'yi geçme-kapısına eklemek sınır cevapları haksız eler (Kural 2; v5-sınıfı).
+        try:
+            ctx_precision = round(context_precision(answer_text, [c.text for c in chunks]), 4)
+        except Exception:
+            ctx_precision = 0.0
+
         cited_ids = list({c.paper_id for c in chunks})
         # LLM çevrimdışıyken answerer placeholder döndürür (llm_used=False); bu GERÇEK
         # akıl yürütme değil → no_answer say ki regular soru sahte "geçti" almasın (Kural 2).
@@ -94,6 +105,7 @@ class RagExamRunner:
                 requires_abstention=True,
                 answer_text=answer_text,
                 cited_paper_ids=cited_ids,
+                context_precision=ctx_precision,
                 abstention_correct=abstention_correct,
                 passed=abstention_correct,
             )
@@ -150,6 +162,7 @@ class RagExamRunner:
             cited_paper_ids=cited_ids,
             citation_score=round(cit_score, 4),
             grounding_score=round(gnd_score, 4),
+            context_precision=ctx_precision,
             context_sufficient=context_ok,
             hallucination_detected=hallucination,
             passed=passed,

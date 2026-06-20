@@ -310,6 +310,22 @@ def train(
         else:
             console.print("[dim]Denetimli (supervised) eğitim — üst katman onayı kullanıldı.[/dim]")
 
+        # Eğitim verisi tazeliği (S1): lora_sft.jsonl → jsonl_dir/{train,valid}.jsonl SENKRONLA.
+        # CLI `train` doğrudan train.jsonl okur; lora-cloud-prep/assemble_sft lora_sft.jsonl yazar
+        # ama split'i güncellemez → bayat/boş veride saatlerce eğitim riski (CLI↔web drift).
+        # ensure_train_split kaynak doluysa yeniden böler (clobber onarımı), boşsa dokunmaz.
+        from app.training.detached_launch import ensure_train_split
+
+        n_train, _n_valid = ensure_train_split(settings)
+        if n_train <= 0:
+            console.print(
+                "[red]Eğitim verisi yok (train.jsonl boş).[/red] Önce veri kur: "
+                "[cyan]uv run python scripts/assemble_sft.py && uv run achilles lora-split[/cyan] "
+                "ya da [cyan]uv run achilles lora-cloud-prep[/cyan]."
+            )
+            raise typer.Exit(1)
+        console.print(f"[dim]Eğitim verisi tazelendi: train={n_train}, valid={_n_valid}.[/dim]")
+
     if resolved == "mlx":
         from app.training.mlx_lora_train import TrainConfig
         from app.training.mlx_lora_train import main as train_main
@@ -2770,6 +2786,41 @@ def task_cancel(
         console.print(f"[red]Görev bulunamadı:[/red] {run_id}")
         raise typer.Exit(1)
     console.print(f"[yellow]Görev durumu:[/yellow] {t.status.value}")
+
+
+@app.command("tasks-run")
+def tasks_run(
+    limit: int = typer.Option(10, help="En çok kaç bekleyen görev işlenir"),
+    retry_blocked: bool = typer.Option(
+        False, "--retry-blocked", help="blocked_* görevleri önce yeniden kuyruğa al"
+    ),
+) -> None:
+    """Bekleyen görevleri yürüt (hibrit executor: supervisor + taze-onay kapısından geçirir).
+
+    DAG/cron motoru DEĞİL — kuyruk→supervisor köprüsü. Tehlikeli işler (gerçek
+    eğitim, terfi) yine TAZE ONAY ister; STOP_ALL aktifse bloklanır. Yalnız
+    handler'ı kayıtlı agent_id'ler çalışır (bilinmeyen → başarısız).
+    """
+    from app.agents.runtime import executor
+
+    results = executor.run_pending(limit=limit, retry_blocked=retry_blocked)
+    if not results:
+        console.print("[yellow]İşlenecek bekleyen görev yok.[/yellow]")
+        return
+    ok = sum(1 for r in results if r.get("ok"))
+    blocked = sum(1 for r in results if r.get("blocked"))
+    failed = len(results) - ok - blocked
+    t = Table(title="Executor sonucu")
+    for c in ("task_id", "sonuç", "ayrıntı"):
+        t.add_column(c)
+    for r in results:
+        outcome = "✓ tamam" if r.get("ok") else ("⏸ blok" if r.get("blocked") else "✗ hata")
+        detail = r.get("reason") or r.get("blocked_by") or r.get("agent_id") or ""
+        t.add_row(r.get("task_id", "—"), outcome, str(detail)[:50])
+    console.print(t)
+    console.print(
+        f"[green]{ok} tamam[/green] · [yellow]{blocked} blok[/yellow] · [red]{failed} hata[/red]"
+    )
 
 
 @app.command("approvals-list")
