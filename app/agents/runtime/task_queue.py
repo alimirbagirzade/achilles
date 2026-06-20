@@ -178,3 +178,26 @@ def mark_blocked(
     row = st.update_automation_task(task_id, status=status)
     _event(f"Görev bloklandı: {blocked_by}", cur["agent_id"], task_id, level="warning")
     return AutomationTask(**row) if row else None
+
+
+_BLOCKED = {TaskStatus.blocked_approval.value, TaskStatus.blocked_stop_all.value}
+
+
+def requeue_task(task_id: str, store: SqliteStore | None = None) -> AutomationTask | None:
+    """Bloklanmış (``blocked_approval`` / ``blocked_stop_all``) bir görevi yeniden PENDING yap.
+
+    Yalnız ``blocked_*`` durumundakiler yeniden kuyruğa alınır (claim/error temizlenir);
+    diğer durumlar değişmeden döner. Onay verildikten/STOP_ALL kalktıktan sonra
+    executor'ın görevi tekrar denemesini sağlar.
+    """
+    st = _store(store)
+    cur = st.get_automation_task(task_id)
+    if cur is None:
+        return None
+    if cur["status"] not in _BLOCKED:
+        return AutomationTask(**cur)
+    row = st.update_automation_task(
+        task_id, status=TaskStatus.pending.value, claimed_at=None, error=None
+    )
+    _event("Görev yeniden kuyruğa alındı", cur["agent_id"], task_id)
+    return AutomationTask(**row) if row else None
