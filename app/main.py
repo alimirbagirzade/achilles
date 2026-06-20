@@ -2898,3 +2898,32 @@ def clear_stop_all_cmd() -> None:
 
     r = supervisor.clear_stop_all()
     console.print(f"[green]STOP_ALL kaldırıldı[/green] (önceden aktifti={r['was_active']})")
+
+
+@app.command("runtime-init")
+def runtime_init() -> None:
+    """Ajan-runtime ön-uçuş: manifest + Phase-2 tabloları + STOP_ALL doğrula (taze makine kapısı).
+
+    'achilles init' tabloları zaten oluşturur; bu komut bunu DOĞRULAR. Sorun varsa
+    sıfır-dışı çıkar → autostart/agent komutlarından önce kapı olarak kullanılabilir.
+    """
+    from app.agents.runtime.preflight import runtime_preflight
+
+    r = runtime_preflight()
+    tbl = ", ".join(f"{k}={'✓' if v else '✗'}" for k, v in r["tables"].items())
+    lines = [
+        f"Ajanlar (manifest) : {r['agents']}  "
+        f"(tehlikeli {r['dangerous']}, onay-gerektiren {r['approval_required']})",
+        f"STOP_ALL           : {'AKTİF' if r['stop_all'] else 'kapalı'}",
+        f"Tablolar           : {tbl}",
+    ]
+    if r["errors"]:
+        lines.append("[red]Hatalar:[/red]\n  " + "\n  ".join(r["errors"]))
+    console.print(
+        Panel.fit(
+            "\n".join(lines),
+            title=("[green]Runtime HAZIR[/green]" if r["ok"] else "[red]Runtime SORUNLU[/red]"),
+        )
+    )
+    if not r["ok"]:
+        raise typer.Exit(1)
