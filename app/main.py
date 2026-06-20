@@ -2927,3 +2927,35 @@ def runtime_init() -> None:
     )
     if not r["ok"]:
         raise typer.Exit(1)
+
+
+@app.command("chain-status")
+def chain_status(
+    live: bool = typer.Option(
+        False, "--live", help="Her adım için supervisor kapı durumunu da göster (salt-okuma)"
+    ),
+) -> None:
+    """Çalıştırma zincirini (topolojik sıra) göster — tasarım diyagramının tek kaynağı.
+
+    Sıra automation_manifest.yaml 'chain' bölümünden gelir; gate/otonomi AgentSpec'ten.
+    --live: her adım için supervisor.can_run_agent ile ŞU ANKİ kapı durumunu ekler
+    (hiçbir şey çalıştırmaz/onay tüketmez) → zincirin NEREDE duracağını gösterir.
+    """
+    from app.agents.runtime.chain import resolve_chain
+
+    steps = resolve_chain()
+    t = Table(title="Çalıştırma zinciri (otonom → onay kapısı)")
+    for c in ("#", "adım", "otonomi", "kapı"):
+        t.add_column(c)
+    if live:
+        t.add_column("şu an")
+    for s in steps:
+        gate = "🔒 ONAY" if s.requires_approval else ("⚠ tehlikeli" if s.dangerous else "—")
+        row = [str(s.order), s.step, s.autonomy, gate]
+        if live:
+            from app.agents.runtime import supervisor
+
+            dec = supervisor.can_run_agent(s.step)
+            row.append("izinli" if dec.allowed else f"blok:{dec.blocked_by}")
+        t.add_row(*row)
+    console.print(t)

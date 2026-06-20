@@ -364,3 +364,31 @@ agents:
     known_failure_modes:
       - "registry yaml yok/bozuk → yaml hatası"
       - "eksik alanlar .get default"
+
+# --------------------------------------------------------------------------
+# Çalıştırma zinciri (chain) — ajanların topolojik koşma SIRASI (tek kaynak).
+# `app/agents/runtime/chain.py` okur + doğrular (döngü/eksik step). Gate ve otonomi
+# bilgisi burada DEĞİL; AgentSpec'ten türetilir. İnsan-onay kapıları zincire gömülü
+# değildir: ilgili ajan (auto-lora-pipeline, rules-updater) requires_approval/dangerous
+# olduğundan supervisor tam orada durur (CLAUDE.md Kural 8). registry loader yalnız
+# 'agents' anahtarını okur → bu bölüm onu etkilemez.
+# --------------------------------------------------------------------------
+chain:
+  - step: arxiv-fetcher
+    after: []
+  - step: rag-learning-loop
+    after: [arxiv-fetcher]
+  - step: paper-mastery-agent
+    after: [rag-learning-loop]
+  - step: status-manager
+    after: [paper-mastery-agent]
+  - step: lora-control-plane
+    after: [paper-mastery-agent, status-manager]
+  - step: dataset-quality-gate
+    after: [lora-control-plane]
+  - step: auto-lora-pipeline
+    after: [dataset-quality-gate]
+  - step: adapter-eval
+    after: [auto-lora-pipeline]
+  - step: rules-updater
+    after: [adapter-eval]
