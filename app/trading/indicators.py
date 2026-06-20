@@ -142,6 +142,70 @@ def permutation_entropy(close: pd.Series, period: int = 14, order: int = 3) -> p
     return pe
 
 
+def _pattern_counts(
+    close: pd.Series, period: int, order: int
+) -> tuple[pd.DataFrame, pd.Series, int]:
+    """Rolling ordinal-desen sayımları (counts, total, n_patterns) — ortak yardımcı.
+
+    `permutation_entropy`/`forbidden_pattern_rate`/`complexity_entropy` aynı Bandt-Pompe
+    gömme + rolling one-hot mantığını paylaşır. Yalnız geçmiş pencere (look-ahead yok).
+    """
+    if order < 2:
+        raise ValueError("order >= 2 olmalı")
+    values = close.to_numpy(dtype=float)
+    codes = _ordinal_codes(values, order)
+    n_patterns = math.factorial(order)
+    onehot = np.zeros((values.shape[0], n_patterns), dtype=float)
+    valid = codes >= 0
+    onehot[np.where(valid)[0], codes[valid]] = 1.0
+    counts = pd.DataFrame(onehot, index=close.index).rolling(period).sum()
+    total = counts.sum(axis=1)
+    return counts, total, n_patterns
+
+
+def forbidden_pattern_rate(close: pd.Series, period: int = 14, order: int = 3) -> pd.Series:
+    """Yasak (hiç görülmeyen) ordinal desen oranı — determinizm sinyali (0711.0729).
+
+    Bir penceredeki olası ``order!`` ordinal desenin kaçının HİÇ görünmediği. Rastgele/
+    gürültülü seri tüm desenleri üretmeye yönelir (oran→0); deterministik/yapılı seride
+    bazı desenler 'yasak' kalır (oran→yüksek). Aralık [0,1], look-ahead yok.
+    """
+    counts, total, n_patterns = _pattern_counts(close, period, order)
+    seen = (counts > 0).sum(axis=1)  # pencerede görülen FARKLI desen sayısı
+    rate = 1.0 - seen / n_patterns
+    rate[total < period] = np.nan  # tam pencere yoksa tanımsız
+    return rate
+
+
+def complexity_entropy(close: pd.Series, period: int = 20, order: int = 3) -> pd.Series:
+    """Jensen-Shannon istatistiksel karmaşıklık (MPR; 1808.01926) — [0,1].
+
+    C = Q0 · JS(P, U) · H_norm(P); P ordinal-desen dağılımı, U düzgün dağılım, H_norm
+    normalize permütasyon entropisi, JS Jensen-Shannon ıraksaması, Q0 normalizasyon
+    (max JS = 1). Hem tam düzen (H≈0) hem tam rastgelelik (JS≈0) için ≈0; yapılı/karmaşık
+    rejimde tepe yapar — entropi-karmaşıklık düzleminin ikinci ekseni. Look-ahead yok.
+    """
+    counts, total, n_patterns = _pattern_counts(close, period, order)
+    probs = counts.div(total, axis=0)  # P (geçerli satırlarda toplam=1)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        logp = np.log2(probs.where(probs > 0))
+        h_bits = -(probs * logp).sum(axis=1)  # Shannon entropisi (bit)
+        h_norm = h_bits / np.log2(n_patterns)
+        # Jensen-Shannon: S((P+U)/2) − 0.5·S(P) − 0.5·S(U), U = 1/n_patterns
+        u = 1.0 / n_patterns
+        mix = (probs + u) / 2.0
+        logm = np.log2(mix.where(mix > 0))
+        s_mix = -(mix * logm).sum(axis=1)
+    s_u = math.log2(n_patterns)
+    js = s_mix - 0.5 * h_bits - 0.5 * s_u
+    # Q0: max JS (P = delta) ile 1'e normalize (Rosso 2007; base-tutarlı log2).
+    n = n_patterns
+    q0 = -2.0 / (((n + 1) / n) * math.log2(n + 1) - 2 * math.log2(2 * n) + math.log2(n))
+    comp = q0 * js * h_norm
+    comp[total < period] = np.nan
+    return comp
+
+
 # Registry used by the strategy engine to compute indicators by name.
 def compute_indicator(name: str, df: pd.DataFrame, period: int = 14) -> pd.Series:
     name = name.upper()
@@ -159,6 +223,10 @@ def compute_indicator(name: str, df: pd.DataFrame, period: int = 14) -> pd.Serie
         return entropy(df["close"], period)
     if name == "PERMENTROPY":
         return permutation_entropy(df["close"], period)
+    if name in ("FORBIDDEN", "FORBIDDENRATE"):
+        return forbidden_pattern_rate(df["close"], period)
+    if name in ("COMPLEXITY", "COMPLEXITYENTROPY"):
+        return complexity_entropy(df["close"], period)
     if name in ("BOLLINGER", "BB"):
         _, mid, _ = bollinger(df["close"], period)
         return mid
