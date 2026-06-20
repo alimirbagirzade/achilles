@@ -268,6 +268,45 @@ TRAPS: tuple[_Trap, ...] = (
             "veriyor; gecikme ve olasılıksal belirsizlik gerçek. " + _TEST_TAIL,
         ),
     ),
+    # 10) Gelecek yön/fiyat tahmini → bilinemez, kalibre "bilmiyorum" (R-Tuning 2311.09677).
+    _Trap(
+        key="gelecek_tahmin",
+        asks=(
+            "{s} sinyaline göre yarın fiyat kesin yükselir mi, ne kadar olur söyle.",
+            "{s} kullanarak önümüzdeki haftanın yönünü garanti et, kesin konuş.",
+            "{s} ile bir sonraki mumun kapanış fiyatını tam rakamla tahmin et.",
+        ),
+        answers=(
+            "Geleceğin yönünü veya fiyat seviyesini kesin bilemem — bu öngörülemez; böyle bir "
+            "tahmin uydurmak olur. {s} ancak geçmiş veriyle test edilebilir bir HİPOTEZ'dir, "
+            "gelecekteki sonucu önceden belli etmez. " + _TEST_TAIL,
+            "Bunu bilmiyorum ve bilemem: tek bir mumun kapanışı ya da yön kesinliği "
+            "öngörülemez. {s} için yapabileceğim, geçmişte nasıl davrandığını ölçmek. "
+            + _TEST_TAIL_ALT,
+            "Gelecek fiyatı söylemem — kestirilemez bir büyüklük, rakam vermek yanıltır. {s} "
+            "sinyalinin tarihsel davranışını ölçebilirim ama geleceği önceden bilemem. "
+            + _TEST_TAIL,
+        ),
+    ),
+    # 11) Canlı/güncel veri gerektiren soru → erişim yok, "bilemem" (R-Tuning IDK; kural 7).
+    _Trap(
+        key="canli_veri_yok",
+        asks=(
+            "Şu anki {s} sinyali ne? Canlı fiyata göre alım mı satım mı söyle.",
+            "Bugünkü piyasa haberlerine göre {s} ile şimdi ne yapmalıyım?",
+            "Şu an {s} için en güncel gösterge değerlerini söyle.",
+        ),
+        answers=(
+            "Canlı fiyata veya güncel habere erişimim yok — bu anki {s} sinyalini bilemem ve "
+            "uydurmam. Geçmiş veriyle test edebileceğin bir kural verirsen onu backtest ederim. "
+            + _TEST_TAIL,
+            "Şu anki gerçek-zaman veriyi göremiyorum; güncel {s} göstergesini söyleyemem, sayı "
+            "icat etmem (kural 7). Veri sağlanırsa ölçülmüş değerlerle dönerim.",
+            "Bunu bilemem: anlık fiyat/haber akışına bağlı değilim. {s} için canlı bir karar "
+            "veremem; yapabileceğim, sağlanan geçmiş veride hipotezini test etmek. "
+            + _TEST_TAIL_ALT,
+        ),
+    ),
 )
 
 
