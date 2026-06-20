@@ -1324,10 +1324,6 @@ def oss_rules_update(
         console.print("[green]✓ Yeni öneri yok; sistem sağlıklı.[/green]")
 
 
-if __name__ == "__main__":  # pragma: no cover
-    app()
-
-
 # ---------------------------------------------------------------------------
 # mastery commands
 # ---------------------------------------------------------------------------
@@ -2959,3 +2955,7 @@ def chain_status(
             row.append("izinli" if dec.allowed else f"blok:{dec.blocked_by}")
         t.add_row(*row)
     console.print(t)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    app()
