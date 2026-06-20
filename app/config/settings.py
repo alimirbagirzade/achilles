@@ -91,6 +91,12 @@ class Settings(BaseSettings):
     # 100+ dil) için `BAAI/bge-reranker-v2-m3` önerilir (daha ağır ~2GB; modest CPU'da
     # latency artar). Modeli ACHILLES_RAG_CROSS_ENCODER_MODEL ile değiştir.
     rag_cross_encoder_model: str = "BAAI/bge-reranker-base"
+    # FlashRank reranker (ONNX-int8 cross-encoder, torch GEREKMEZ): bge-reranker CPU'da
+    # >15s/sorgu (kullanılamaz) iken FlashRank ~30-100ms (web-araştırma; bkz. roadmap Zincir 3).
+    # OPT-IN, cross_encoder'a göre ÖNCELİKLİ. Açmak için ACHILLES_RAG_FLASHRANK=true +
+    # `uv pip install flashrank`. Model yoksa heuristiğe düşer. A/B ile doğrulanmalı.
+    rag_flashrank: bool = False
+    rag_flashrank_model: str = "ms-marco-MiniLM-L-12-v2"
     # Reciprocal Rank Fusion (RRF) füzyon modu (opt-in): dense + BM25 sıralı listelerini
     # skor normalize etmeden sıra-tabanlı birleştirir (heuristik rerank yerine). Skor
     # kalibrasyonu gerektirmez → karşılaştırılamaz skorlu kaynaklarda sağlam. LLM-free,
