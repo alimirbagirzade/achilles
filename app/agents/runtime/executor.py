@@ -18,6 +18,7 @@ kuyruğa düşen rastgele bir ``agent_id`` otomatik kod çalıştıramaz.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -75,7 +76,25 @@ def run_task(
 
     Asla fırlatmaz; her zaman sonucu özetleyen bir sözlük döner:
       ``{"ok": True, ...}`` | ``{"ok": False, "blocked": True, ...}`` | ``{"ok": False, ...}``
+
+    Bu sarmalayıcı "asla fırlatmaz" sözleşmesini GARANTİ eder: claim/fail/complete
+    sırasında beklenmedik bir DB hatası olsa bile görev (mümkünse) failed işaretlenir
+    ve hata sözlüğü döner — görev 'claimed' durumda öksüz kalmaz.
     """
+    try:
+        return _run_task(task, store=store, root=root)
+    except Exception as exc:  # beklenmedik (claim/fail/complete DB) hatası → öksüz bırakma
+        log.error("run_task kritik hata: %s", task.task_id, exc_info=True)
+        with contextlib.suppress(Exception):
+            task_queue.fail_task(task.task_id, f"sistem hatası: {exc!r}", store=store)
+        return {"ok": False, "task_id": task.task_id, "reason": f"sistem hatası: {exc!r}"}
+
+
+def _run_task(
+    task: AutomationTask, store: SqliteStore | None = None, root: str | Path | None = None
+) -> dict[str, Any]:
+    """``run_task`` iç gövdesi. Beklenen yollarda fırlatmaz; beklenmedik DB hataları
+    dış sarmalayıcı (``run_task``) tarafından yakalanır."""
     handler = _HANDLERS.get(task.agent_id)
     if handler is None:
         # Bilinmeyen agent_id ASLA sessizce çalışmaz (güvenlik allow-list'i).

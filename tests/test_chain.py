@@ -80,3 +80,34 @@ def test_missing_chain_section_raises(tmp_path) -> None:
     p.write_text(yaml.safe_dump({"version": 1, "agents": [_agent("a")]}), encoding="utf-8")
     with pytest.raises(ChainError):
         resolve_chain(p)
+
+
+def test_self_loop_raises(tmp_path) -> None:
+    """Kendine bağımlılık (a→a) refleksif döngü olarak yakalanmalı."""
+    p = _manifest(tmp_path, [_agent("a")], [{"step": "a", "after": ["a"]}])
+    with pytest.raises(ChainError):
+        resolve_chain(p)
+
+
+def test_empty_chain_raises(tmp_path) -> None:
+    """Boş 'chain' listesi reddedilmeli."""
+    p = _manifest(tmp_path, [_agent("a")], [])
+    with pytest.raises(ChainError):
+        resolve_chain(p)
+
+
+def test_diamond_topology_resolves(tmp_path) -> None:
+    """Çoklu-ebeveyn (diamond): c hem a hem b'den SONRA; d, c'den sonra."""
+    p = _manifest(
+        tmp_path,
+        [_agent("a"), _agent("b"), _agent("c"), _agent("d")],
+        [
+            {"step": "a", "after": []},
+            {"step": "b", "after": []},
+            {"step": "c", "after": ["a", "b"]},
+            {"step": "d", "after": ["c"]},
+        ],
+    )
+    order = {s.step: s.order for s in resolve_chain(p)}
+    assert order["c"] > order["a"] and order["c"] > order["b"]
+    assert order["d"] > order["c"]

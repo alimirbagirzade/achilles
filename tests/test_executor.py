@@ -143,3 +143,28 @@ def test_stop_all_blocks_dangerous_via_executor(st, tmp_path) -> None:
     assert out.get("blocked") is True
     assert out["blocked_by"] == "stop_all"
     assert task_queue.get_task(t.task_id, store=st).status.value == "blocked_stop_all"
+
+
+def test_handler_non_dict_return_completes(st) -> None:
+    """dict-olmayan dönüş (None/str) başarı sayılır → tamamlanır (yalnız {'ok': False} hata)."""
+    executor.register_handler("model-advisor", lambda task: None)
+    t = task_queue.create_task("model-advisor", "non-dict", store=st)
+    out = executor.run_task(t, store=st)
+    assert out["ok"] is True
+    assert task_queue.get_task(t.task_id, store=st).status.value == "completed"
+
+
+def test_retry_blocked_recovers_stop_all_task(st, tmp_path) -> None:
+    """retry_blocked, blocked_stop_all görevi de requeue eder (yalnız blocked_approval değil)."""
+    executor.register_handler("auto-lora-pipeline", lambda task: {"ok": True})
+    supervisor.create_stop_all("dur", root=tmp_path)
+    t = task_queue.create_task("auto-lora-pipeline", "iş", store=st)
+    executor.run_task(t, store=st, root=tmp_path)  # → blocked_stop_all
+    assert task_queue.get_task(t.task_id, store=st).status.value == "blocked_stop_all"
+
+    # STOP_ALL kalk + taze onay → retry tamamlamalı (onay tüketilir, sızıntı yok)
+    supervisor.clear_stop_all(root=tmp_path)
+    d = approvals.require_fresh_approval("auto-lora-pipeline", "run", "high", "s", store=st)
+    approvals.approve(d.approval_id, store=st)
+    executor.run_pending(limit=50, retry_blocked=True, store=st, root=tmp_path)
+    assert task_queue.get_task(t.task_id, store=st).status.value == "completed"

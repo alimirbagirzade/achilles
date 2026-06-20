@@ -33,7 +33,8 @@ $LogDir = Join-Path $ProjectRoot "logs"
 New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 
 function Get-CurrentCount {
-    $jsonlPath = Join-Path $ProjectRoot $Output "synthetic_qa.jsonl"
+    # PS 5.1 Join-Path yalnız 2 yol argümanı alır (3. pozisyonel → hata); iç içe çağır.
+    $jsonlPath = Join-Path (Join-Path $ProjectRoot $Output) "synthetic_qa.jsonl"
     if (-not (Test-Path $jsonlPath)) { return 0 }
     return (Get-Content $jsonlPath -Encoding utf8 | Where-Object { $_ -ne "" }).Count
 }
