@@ -106,15 +106,14 @@ def _run_task(
             "reason": "handler yok",
         }
 
-    # Yalnız PENDING claim edilir; aksi halde dokunma (başka biri almış / terminal).
-    claimed = task_queue.claim_task(task.task_id, store=store)
+    # ATOMİK claim (CAS): yalnız pending'i bu çağrı claim ederse devam; aksi halde
+    # (yok / pending değil / eşzamanlı başka işçi aldı) None → çift-çalıştırma önlenir.
+    claimed = task_queue.try_claim_task(task.task_id, store=store)
     if claimed is None:
-        return {"ok": False, "task_id": task.task_id, "reason": "görev yok"}
-    if claimed.status != TaskStatus.claimed:
         return {
             "ok": False,
             "task_id": task.task_id,
-            "reason": f"claim edilemedi (durum={claimed.status.value})",
+            "reason": "claim edilemedi (yok / pending değil / başka işçi aldı)",
         }
 
     action = _action_for(task)

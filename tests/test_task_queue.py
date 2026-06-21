@@ -77,3 +77,16 @@ def test_list_filter_by_agent_and_status(st) -> None:
 
 def test_get_missing_returns_none(st) -> None:
     assert task_queue.get_task("atask_yok", store=st) is None
+
+
+def test_try_claim_atomic_only_once(st) -> None:
+    """Atomik CAS: aynı pending görevde yalnız İLK try_claim kazanır; ikinci None döner."""
+    t = task_queue.create_task("agentA", "iş", store=st)
+    first = task_queue.try_claim_task(t.task_id, store=st)
+    second = task_queue.try_claim_task(t.task_id, store=st)
+    assert first is not None and first.status.value == "claimed"
+    assert second is None  # ikinci çağrı yarışı kaybetti (çift-çalıştırma önlendi)
+
+
+def test_try_claim_missing_returns_none(st) -> None:
+    assert task_queue.try_claim_task("atask_yok", store=st) is None

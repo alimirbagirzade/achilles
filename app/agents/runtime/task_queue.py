@@ -99,7 +99,12 @@ def get_task(task_id: str, store: SqliteStore | None = None) -> AutomationTask |
 
 
 def claim_task(task_id: str, store: SqliteStore | None = None) -> AutomationTask | None:
-    """pending → claimed. Yalnız pending claim edilebilir (aksi halde değişmeden döner)."""
+    """pending → claimed. Yalnız pending claim edilebilir (aksi halde değişmeden döner).
+
+    NOT: Bu fonksiyon get+update (iki transaction) yapar — geriye-dönük uyumlu ama
+    eşzamanlı yarışta atomik DEĞİLDİR. Yürütücü (executor) çift-çalıştırmayı önlemek
+    için ``try_claim_task`` (atomik CAS) kullanır.
+    """
     st = _store(store)
     cur = st.get_automation_task(task_id)
     if cur is None:
@@ -107,6 +112,18 @@ def claim_task(task_id: str, store: SqliteStore | None = None) -> AutomationTask
     if cur["status"] != TaskStatus.pending.value:
         return AutomationTask(**cur)
     row = st.update_automation_task(task_id, status=TaskStatus.claimed.value, claimed_at=_utcnow())
+    return AutomationTask(**row) if row else None
+
+
+def try_claim_task(task_id: str, store: SqliteStore | None = None) -> AutomationTask | None:
+    """ATOMİK claim (CAS): yalnız ``pending`` ise ``claimed`` yapar — TEK transaction.
+
+    Görevi YALNIZ bu çağrı claim ettiyse (yarışı kazandıysa) döndürür; aksi halde
+    (yok / pending değil / eşzamanlı başka çağrı aldı) ``None`` döner. Böylece iki
+    eşzamanlı yürütücü aynı görevi iki kez ÇALIŞTIRAMAZ.
+    """
+    st = _store(store)
+    row = st.claim_automation_task_atomic(task_id)
     return AutomationTask(**row) if row else None
 
 
