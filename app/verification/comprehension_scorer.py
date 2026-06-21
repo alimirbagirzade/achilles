@@ -15,6 +15,10 @@ from datetime import UTC, datetime
 
 WEIGHTS = {"extraction": 0.30, "retrieval": 0.40, "llm_verify": 0.30}
 
+# Determinizm (CLAUDE.md kural 6): LLM doğrulama çağrısı sabit seed ile yapılır →
+# aynı kart içeriği → aynı skor (yeniden skorlama gürültüsüz, önbelleğe uygun).
+_LLM_VERIFY_SEED = 7
+
 _CARD_FIELDS = [
     "title",
     "summary",
@@ -124,7 +128,7 @@ class ComprehensionScorer:
                 return 0.5
 
             prompt = f"Aşağıdaki araştırma iddiası hakkında tek cümlelik özet yaz:\n\n{main_claim}"
-            answer = llm.generate(prompt, max_tokens=120, temperature=0.0)
+            answer = llm.generate(prompt, max_tokens=120, temperature=0.0, seed=_LLM_VERIFY_SEED)
             if not answer:
                 return 0.5
 

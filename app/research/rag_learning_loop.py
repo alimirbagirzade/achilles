@@ -96,7 +96,8 @@ class RagLoopState:
     # boş kart rebuild edilmeye ÇALIŞILMIŞ makaleler (başarılı olsa da içerik gelmese de —
     # aynı makaleyi sonsuz tekrar denememek için; bkz. _rebuild_empty_cards).
     rebuilt_paper_ids: list[str] = field(default_factory=list)
-    # bayat comprehension skoru BİR kez yeniden hesaplanmış makaleler (sonsuz re-score yok).
+    # (legacy) eski bayat-skor defteri — artık _score_missing içerik-değişimiyle (kart
+    # created_at > skor computed_at) tetikler; alan geriye dönük uyumluluk için tutulur.
     rescored_paper_ids: list[str] = field(default_factory=list)
 
     mastery_percent: int | None = None
@@ -178,6 +179,23 @@ class RagLearningLoop:
         if then.tzinfo is None:
             then = then.replace(tzinfo=dt.UTC)
         return (dt.datetime.now(dt.UTC) - then).total_seconds() / 60.0
+
+    @staticmethod
+    def _is_newer(card_iso: str, score_iso: str) -> bool:
+        """``card_iso`` zaman damgası ``score_iso``'dan SONRA mı (kart skordan yeni mi).
+
+        Boş/bozuk damga → False (güvenli: gereksiz yeniden skorlama yok).
+        """
+        try:
+            ca = dt.datetime.fromisoformat(card_iso)
+            sa = dt.datetime.fromisoformat(score_iso)
+        except (TypeError, ValueError):
+            return False
+        if ca.tzinfo is None:
+            ca = ca.replace(tzinfo=dt.UTC)
+        if sa.tzinfo is None:
+            sa = sa.replace(tzinfo=dt.UTC)
+        return ca > sa
 
     def _fetch_due(self) -> bool:
         return (
@@ -334,27 +352,34 @@ class RagLearningLoop:
         return done
 
     def _score_missing(self, limit: int) -> int:
-        """Skorsuz VEYA bayat (içerik kartı düzeldi ama skor düşük kaldı) makaleleri skorla.
+        """Skorsuz VEYA kartı skordan SONRA değişmiş makaleleri yeniden skorla.
 
-        Comprehension skoru bir kez hesaplanıp kalıcı; kart boşken 15 alıp sonra içerik
-        kazanan makale 15'te DONUYORDU (hiçbir döngü yeniden hesaplamıyordu — kök sorun).
-        Artık: skoru hiç olmayanları VE içerik kartı olup skoru ≤20 olan BAYAT makaleleri
-        (her birini BİR kez — rescored_paper_ids defteri ile sonsuz döngü yok) yeniden skorla.
+        Comprehension skoru bir kez hesaplanıp kalıcı kalıyordu; kart boşken düşük skor
+        alıp sonra içerik kazanan makale o düşük skorda DONUYORDU (kök sorun). Eski çözüm
+        yalnız ``total_score ≤ 20`` makaleyi BİR kez yeniden skorluyordu → ortalama ~59
+        iken 21-99 arasındaki tüm makaleler sonsuza donuyordu.
+
+        Artık ölçüt İÇERİK DEĞİŞİMİ: en güncel onaylı kartın ``created_at``'i skorun
+        ``computed_at``'inden yeni ise (kart skordan sonra yeniden üretildi) yeniden
+        skorla. Bu kendini sınırlar — skor güncellenince ``computed_at`` kartı geçer,
+        kart tekrar değişene dek tetiklenmez (sonsuz döngü yok, defter gerekmez). Skoru
+        hiç olmayanlar da skorlanır. Determinizm: skorlama LLM çağrısı sabit seed'li.
         """
         if limit <= 0:
             return 0
-        from app.lora.dataset_builder import build_dataset
         from app.memory.sqlite_store import SqliteStore
         from app.verification.comprehension_scorer import ComprehensionScorer
 
         store = SqliteStore()
         scorer = ComprehensionScorer()
-        content_pids = {
-            str(e.metadata.get("paper_id", ""))
-            for e in build_dataset(store.list_approved_cards())
-            if e.metadata.get("paper_id")
-        }
-        rescored = set(self._state.rescored_paper_ids)
+        # paper_id → en güncel onaylı kart zaman damgası (içerik değişimi tespiti için).
+        latest_card_at: dict[str, str] = {}
+        for card in store.list_approved_cards():
+            pid = str(card.get("paper_id") or "")
+            created = str(card.get("created_at") or "")
+            if pid and created > latest_card_at.get(pid, ""):
+                latest_card_at[pid] = created
+
         scored = 0
         for p in store.list_papers():
             if scored >= limit:
@@ -362,23 +387,17 @@ class RagLearningLoop:
             if not store.has_knowledge_card(p.paper_id):
                 continue
             row = store.get_comprehension_score(p.paper_id)
-            stale = (
-                row is not None
-                and p.paper_id in content_pids
-                and row.total_score <= 20
-                and p.paper_id not in rescored
+            card_changed = row is not None and self._is_newer(
+                latest_card_at.get(p.paper_id, ""), getattr(row, "computed_at", "") or ""
             )
-            if row is not None and not stale:
+            if row is not None and not card_changed:
                 continue
             try:
                 result = scorer.score(p.paper_id, use_llm=self._state.score_use_llm)
                 store.save_comprehension_score(result)
                 scored += 1
-                if stale:
-                    rescored.add(p.paper_id)  # bayat → bir kez yeniden skorlandı
             except Exception as exc:
                 log.warning("RAG loop: skor hesaplanamadı (%s): %s", p.paper_id, exc)
-        self._state.rescored_paper_ids = sorted(rescored)
         return scored
 
     @staticmethod
