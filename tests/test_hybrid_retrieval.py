@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from app.memory.bm25_corpus import get_corpus_bm25, reset_cache
 from app.memory.bm25_index import BM25Index
 from app.memory.reranker import Reranker
@@ -24,15 +26,25 @@ def _chunk(cid: str, text: str, distance: float | None) -> RetrievedChunk:
     )
 
 
-class _FakeChroma:
-    def __init__(self, rows: list[dict]) -> None:
-        self._rows = rows
+def _dbchunk(cid: str, text: str, pid: str = "p"):
+    """SQLite Chunk-benzeri (BM25 korpusu artık SQLite'tan kurulur)."""
+    return SimpleNamespace(
+        chunk_id=cid, paper_id=pid, chunk_index=0, section_name="results", page_number=1, text=text
+    )
 
-    def count(self) -> int:
-        return len(self._rows)
 
-    def get_all(self) -> list[dict]:
-        return self._rows
+class _FakeStore:
+    """get_corpus_bm25'in SQLite kaynağını taklit eden stub (list_all_chunks + list_papers)."""
+
+    def __init__(self, chunks: list) -> None:
+        self._chunks = chunks
+
+    def list_all_chunks(self) -> list:
+        return self._chunks
+
+    def list_papers(self) -> list:
+        pids = {c.paper_id for c in self._chunks}
+        return [SimpleNamespace(paper_id=p, title="T") for p in pids]
 
 
 class _StubBase:
@@ -46,24 +58,19 @@ class _StubBase:
 # --------------------------------------------------------------- bm25_corpus
 def test_get_corpus_bm25_builds_and_searches() -> None:
     reset_cache()
-    rows = [
-        {
-            "chunk_id": "p_c0",
-            "document": "ATR average true range volatility",
-            "metadata": {"paper_id": "p"},
-        },
-        {
-            "chunk_id": "p_c1",
-            "document": "Sharpe ratio risk adjusted return",
-            "metadata": {"paper_id": "p"},
-        },
-    ]
-    bm25, chunks = get_corpus_bm25(chroma=_FakeChroma(rows))
+    store = _FakeStore(
+        [
+            _dbchunk("p_c0", "ATR average true range volatility"),
+            _dbchunk("p_c1", "Sharpe ratio risk adjusted return"),
+        ]
+    )
+    bm25, chunks = get_corpus_bm25(store=store)
     assert bm25 is not None
     assert len(chunks) == 2
     hits = bm25.search("Sharpe ratio", top_k=2)
     assert hits and hits[0][0] == "p_c1"
     assert chunks["p_c1"].text.startswith("Sharpe")
+    assert chunks["p_c1"].title == "T"  # paper başlığı SQLite'tan join'lendi
     reset_cache()
 
 
@@ -96,7 +103,7 @@ def test_hybrid_retriever_zero_distance_ranks_first() -> None:
 
 def test_get_corpus_bm25_empty_returns_none() -> None:
     reset_cache()
-    bm25, chunks = get_corpus_bm25(chroma=_FakeChroma([]))
+    bm25, chunks = get_corpus_bm25(store=_FakeStore([]))
     assert bm25 is None
     assert chunks == {}
 
