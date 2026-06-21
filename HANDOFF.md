@@ -1,6 +1,6 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-06-20 · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Son güncelleme: 2026-06-21 · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
@@ -15,6 +15,53 @@ LLM'i "trader gibi düşünen" bir araştırma motoru yapmak:
 2. Bunları birleştirip daha önce denenmemiş indikatör/algoritma öner
 3. Otomatik backtest et → sonuçtan öğren → LoRA eğitim verisi üret
 4. 3B modeli test eder; gerçek çıktı için 120B kullanılacak
+
+### Mevcut durum (2026-06-21) — ✅ TOPARLAMA + TAŞINABİLİRLİK + OTOMATİK PR + YEŞİL CI
+
+> Seans hedefi (kullanıcı): repoyu topla, pull/push çöz, kullanım kılavuzu yaz, sistemi
+> **kiralık CPU / daha güçlü makineye taşımaya hazırla** ("kur-çalıştır, orada geliştirme YOK"),
+> PR'ları **otomatikleştir**. Hepsi LANDED + doğrulandı. **main YEŞİL + senkron** (`dd46378`).
+
+**1) Git toparlama (pull/push çözüldü):** 15→2 worktree, 18→5 branch (main + korunan 4:
+`fix/rag-scoring-approval-cas`, `feat/web-training-gate-fix`, `feat/local-claude-operator-dry-run`,
+`salvage/system32-cpu-lora`), ~780MB çöp silindi + `.gitignore` sertleşti (`.pytest_tmp_*`/`*.pid`/
+`logs/`/`*.bak`/`vector_db/chroma.corrupt-*`/`storage/_*.py`/`scripts/*-autostart.vbs`). Commit `d940bdb`.
+İş kaybı YOK (her dal/worktree önce denetlendi). Memory: `git-repo-durumu`.
+
+**2) Taşınabilirlik katmanı (commit `72f4de4`):** çekirdek zaten CPU-first/taşınabilirdi; otomasyon
+katmanı eklendi: `scripts/verify-install.sh` (offline kurulum kapısı, ps1'in bash portu, GECTI doğrulandı),
+`scripts/install-autostart.sh` (Linux systemd/cron autostart), `setup.sh` +yerel/uzaktan erişim sorusu
+(uzaktan→`0.0.0.0`+otomatik API token)+verify kapısı+opsiyonel autostart, `continuous-learning.sh` HIGH
+blocker fix (gömülü powershell→`pgrep`). **KARAR:** RAG+LoRA her makinede SIFIRDAN (vector_db/sqlite/
+adapter KOPYALANMAZ; sadece PDF→`ingest`→Kaggle). Memory: `bulut-tasima-protokolu`.
+
+**3) Kullanım kılavuzu (kullanıcı için, Desktop):** `Desktop\RAG Kaynak\Kulanım talimatı\` →
+`00_GENEL_BAKIS` / `01_KURULUM_ve_CALISTIRMA` / `02_PUSH_PULL_GIT` / `03_BULUT_TASIMA_PROTOKOLU`.
+`README.md` eskimiş bilgileri yenilendi (`d4338b7`: bulut/9-sekme/vektör-yolu/eğitim-süresi/uzaktan-mod).
+
+**4) OTOMATİK PR akışı CANLI + UÇTAN UCA KANITLANDI:** `gh auth login` (kullanıcı yaptı) →
+`scripts/setup-pr-automation.sh` çalıştırıldı (repo PUBLIC+ADMIN → `allow_auto_merge` + main branch
+koruması, required ctx=`lint · types · tests (offline)`, `enforce_admins=false` → **owner doğrudan
+`git push origin main` yapabilir**, loop'lar kırılmaz). `scripts/open-pr.{sh,ps1}` = push+PR+CI-yeşilse
+oto squash-merge (varsayılan; `--no-merge`/`-NoMerge` ile kapat). **PR #9 PowerShell'den oto-merge oldu
+(kanıt).** `.github/pull_request_template.md` eklendi. Commit'ler `5603c74`,`dd46378`.
+
+**5) main CI RED→YEŞİL:** seans öncesinden kırmızıydı (kimse fark etmemişti). İki arıza: format drift
+(`72f4de4`'te `ruff format .`) + `test_flashrank_reranker` opsiyonel `flashrank` paketsiz FAIL (`5d3eee4`
+SimpleNamespace shim). + `open-pr.ps1` PS 5.1 native-stderr bug (`dd46378`, sadece ÇALIŞTIRINCA çıktı).
+
+**KALAN (sonraki seans — hiçbiri bloke değil):**
+- **Node.js 20 deprecation** CI uyarısı (`actions/checkout@v4`, `setup-uv@v5` Node24'e zorlanıyor) →
+  ileride aksiyon sürümlerini bump et. CI'ı bozmuyor.
+- **GOTCHA:** açık PR'a yeni commit push'u (synchronize) CI'ı tetiklemeyebilir (PR BLOCKED kalır);
+  TAZE PR sorunsuz. Tekrarsa: PR'ı close/reopen.
+- **Eşzamanlı oturum `rag-chains-work`** worktree'si AKTİF (RAG "Zincir" işi: keyword-eval/router/
+  CRAG-lite/FlashRank) — DOKUNMA. Not: ben `scripts/rag_keyword_eval.py`'yi main'e (eski kopya)
+  commit'ledim; o oturum merge ederken küçük çakışma çıkabilir (onların çözeceği).
+- Proje backlog'u (bu toparlamanın DIŞINDA): RAG turları sonrası backtest/eval ölçümü, sıradaki RAG
+  adayları — bkz. memory `session-devir-2026-06-21`, `hiz-kalite-makale-uygulama`.
+
+---
 
 ### Mevcut durum (2026-06-20) — ✅ OTONOM BAŞLANGIÇ ZİNCİRİ (branch `feat/otonom-baslangic-zinciri` · PR #5)
 
