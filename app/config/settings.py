@@ -152,7 +152,10 @@ class Settings(BaseSettings):
     # Basit hız sınırı: IP başına dakikadaki istek.
     rate_limit_per_min: int = 120
     # Yükleme uçlarına (PDF/CSV) ek, daha sıkı limit — ağ DoS / disk doldurma.
-    upload_rate_limit_per_min: int = 20
+    # Toplu kütüphane içe-aktarımı için 60/dk (eski 20/dk normal sürükle-bırak'ta
+    # bir kısım dosyayı 429'a düşürüyordu). Üst sınır aşılırsa frontend bekleyip
+    # yeniden dener; gerekirse ACHILLES_UPLOAD_RATE_LIMIT_PER_MIN ile değiştir.
+    upload_rate_limit_per_min: int = 60
     # Host-header saldırısı: boş = kısıt yok (lokal). Ağa açarken "alanadi.com,1.2.3.4" ver.
     trusted_hosts: str = ""
     # TLS (reverse proxy/HTTPS) arkasındaysan true → Strict-Transport-Security başlığı.

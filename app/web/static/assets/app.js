@@ -1197,22 +1197,27 @@
       toast("Yalnız .pdf kabul edilir.", true);
       return;
     }
-    var i = 0,
-      ok = 0,
+    var ok = 0,
       fail = 0,
       dup = 0;
-    function next() {
-      if (i >= files.length) {
+    // Hız sınırına (429) takılan dosyayı SESSİZCE düşürme — bekle ve aynı dosyayı yeniden
+    // dene. Sunucu üst sınırı kayan 60sn pencerede çalıştığı için birkaç saniye beklemek
+    // pencereyi boşaltır. (Eski davranış: 429 → "hata" sayılıp dosya kayboluyordu; toplu
+    // yüklemede "bir kısım gelmedi" sorununun kök nedeni buydu.)
+    var MAX_RETRY = 40; // tek dosya için yeniden deneme üst sınırı (sonsuz döngü koruması)
+    var RETRY_WAIT_MS = 3500;
+    function sendOne(index, attempt) {
+      if (index >= files.length) {
         done();
         return;
       }
-      var f = files[i++];
+      var f = files[index];
       if (f.size > MAX_UPLOAD_MB * 1024 * 1024) {
         fail++;
         toast(f.name + " > " + MAX_UPLOAD_MB + " MB, atlandı.", true);
-        return next();
+        return sendOne(index + 1, 0);
       }
-      toast("Yükleniyor (" + i + "/" + files.length + "): " + f.name + " …");
+      toast("Yükleniyor (" + (index + 1) + "/" + files.length + "): " + f.name + " …");
       var fd = new FormData();
       fd.append("file", f);
       api("/papers/upload", { method: "POST", body: fd })
@@ -1220,11 +1225,23 @@
           // skipped=1 → sunucu birebir aynı dosyayı zaten var diye atladı (dedup).
           if (resp && resp.skipped) dup++;
           else ok++;
+          sendOne(index + 1, 0);
         })
-        .catch(function () {
-          fail++;
-        })
-        .finally(next);
+        .catch(function (err) {
+          if (err && err.message === "rate-limited" && attempt < MAX_RETRY) {
+            toast(
+              "Hız sınırı — bekleniyor, yeniden denenecek (" +
+                (index + 1) + "/" + files.length + "): " + f.name,
+              true
+            );
+            setTimeout(function () {
+              sendOne(index, attempt + 1);
+            }, RETRY_WAIT_MS);
+          } else {
+            fail++;
+            sendOne(index + 1, 0);
+          }
+        });
     }
 
     function done() {
@@ -1261,7 +1278,7 @@
       }, 4000);
     }
 
-    next();
+    sendOne(0, 0);
   }
 
   // ---------- backtest ----------
