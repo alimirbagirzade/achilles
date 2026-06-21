@@ -49,3 +49,23 @@ BM25 sayfalama fix'i kodda kalıcı (hibrit ileride açılırsa veya başka kull
 sorularında BM25 hibrit teorik olarak yardımcı olabilir → ileride keyword golden-set ile
 yeniden değerlendirilebilir. Cevap-üretimi (LLM, qwen3:4b) gecikmesi retrieval'dan AYRI ve
 CPU/model-bağlı (mimari kısıt; bu çalışmanın kapsamı dışı).
+
+## 4. Keyword golden-eval — ROUTER VALIDATED (2026-06-21, SQLite-BM25 ile ölçüldü)
+
+`scripts/rag_keyword_eval.py` (korpustan ayırt edici nadir terim → kısa keyword sorgu;
+golden = makale). 40 sorgu, BM25 korpusu SQLite'tan (94.104 chunk), öğrenme döngüsü dönerken.
+
+| config | recall@1 | recall@5 | recall@10 | MRR | gecikme p50 |
+|---|---|---|---|---|---|
+| dense_only | 30.0 | 50.0 | 57.5 | 0.386 | **368 ms** |
+| **router (lexical→konveks-hibrit)** | **37.5** | 50.0 | **77.5** | **0.454** | **12.577 ms** |
+
+**Sonuç:** Keyword/exact-term sorgularda router hibridi BELIRGIN kazanıyor (recall@10 **+20 puan**,
+recall@1 +7.5, MRR +18%). "Sorgu-tipine göre yönlendir" (BEIR/Bruch) gerçek veriyle DOĞRULANDI —
+bu, semantik metrikte dense'in kazandığı bulgunun TERSİ DEĞİL, tamamlayıcısı (rejim farkı).
+
+**AMA router ~34× yavaş** (özel BM25Index.search 94k chunk'ta O(korpus)). Bu, araştırmanın işaret
+ettiği yavaş-BM25 → **BM25S** (eager sparse scoring, ~ms) ile çözülür → router hem daha doğru hem
+hızlı olur. KARAR: BM25S uygulanana kadar router opt-in/KAPALI; BM25S sonrası hız ölçülüp enable.
+Ayrıca BU ÖLÇÜM mümkün oldu çünkü BM25 korpusu artık SQLite'tan kuruluyor (eşzamanlı döngüyle
+çakışmadan; bkz commit "BM25 korpusu SQLite'tan kur").
