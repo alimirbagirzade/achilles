@@ -50,6 +50,7 @@ class RerankingRetriever:
         hybrid: bool | None = None,
         rrf: bool | None = None,
         graph: bool | None = None,
+        router: bool | None = None,
     ) -> None:
         self.settings = get_settings()
         self.base = base or RetrievalService()
@@ -66,6 +67,10 @@ class RerankingRetriever:
         # Graf modu (SPRIG-lite, opt-in): dense-hit'lerden tohumlanmış PPR + RRF füzyonu
         # (çok-hop recall). Açıksa rrf/rerank yerine graf yolu çalışır. Varsayılan kapalı.
         self.graph = graph if graph is not None else self.settings.rag_graph
+        # Sorgu yönlendirici (opt-in, Zincir 2): sorgu-tipine göre yol seç — KISA keyword/
+        # entity → konveks-füzyon hibrit (BM25 yardımcı); UZUN semantik → saf dense (ölçülen
+        # en iyi). Diğer modlardan önce gelir. Varsayılan kapalı (davranış değişmez).
+        self.router = router if router is not None else self.settings.rag_router
 
     def _default_reranker(self) -> RerankerLike:
         # FlashRank OPT-IN (CPU'da hızlı ONNX cross-encoder); cross_encoder'a göre öncelikli
@@ -86,6 +91,15 @@ class RerankingRetriever:
         k = top_k or self.settings.rag_top_k
 
         if not self.enabled:
+            return self.base.retrieve(query, top_k=k)
+
+        # Sorgu yönlendirici (opt-in): tip'e göre yol. KISA keyword/entity → konveks-füzyon
+        # hibrit; UZUN semantik → saf dense (ölçülen en iyi + en hızlı). Diğer modlardan önce.
+        if self.router:
+            from app.memory.query_router import classify_query
+
+            if classify_query(query) == "lexical":
+                return self._convex_hybrid_retrieve(query, k)
             return self.base.retrieve(query, top_k=k)
 
         # Graf modu (opt-in): dense tohum → PPR → RRF füzyonu (çok-hop recall).
@@ -183,6 +197,36 @@ class RerankingRetriever:
 
         ranked_lists = [lst for lst in (dense_ids, graph_ids) if lst]
         fused = fuse_ranked(ranked_lists, k=self.settings.rag_rrf_k)
+        out = [chunk_by_id[cid] for cid in fused if cid in chunk_by_id]
+        return out[:k]
+
+    def _convex_hybrid_retrieve(self, query: str, k: int) -> list[RetrievedChunk]:
+        """Dense + BM25 skorlarını min-max normalize edip KONVEKS birleştir (router lexical yolu).
+
+        "union + sezgisel rerank" anti-deseni yerine principled füzyon (Bruch et al.):
+        skor = α·norm(dense_benzerlik) + (1−α)·norm(bm25); α dense-ağırlıklı. BM25 yoksa/
+        boşsa dense-only'e düşer (güvenli, Kural 7 — boş kaynak uydurmaz).
+        """
+        from app.memory.bm25_corpus import get_corpus_bm25
+        from app.memory.query_router import convex_fuse
+
+        candidate_k = max(k, k * max(1, self.overfetch))
+        dense = self.base.retrieve(query, top_k=candidate_k)
+        chunk_by_id: dict[str, RetrievedChunk] = {c.chunk_id: c for c in dense}
+        dense_scores = {
+            c.chunk_id: max(0.0, 1.0 - (c.distance if c.distance is not None else 1.0))
+            for c in dense
+        }
+        bm25_scores: dict[str, float] = {}
+        bm25, chunk_map = get_corpus_bm25(self.base.chroma)  # sıcak chroma'yı paylaş
+        if bm25 is not None:
+            for cid, score in bm25.search(query, candidate_k):
+                bm25_scores[cid] = float(score)
+                if cid not in chunk_by_id and cid in chunk_map:
+                    chunk_by_id[cid] = chunk_map[cid]
+        if not bm25_scores:
+            return dense[:k]  # BM25 yok → dense-only
+        fused = convex_fuse(dense_scores, bm25_scores, alpha=self.settings.rag_router_alpha)
         out = [chunk_by_id[cid] for cid in fused if cid in chunk_by_id]
         return out[:k]
 
