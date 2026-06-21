@@ -117,6 +117,23 @@ async def _lifespan(app: FastAPI):
     # RAG öğrenme döngüsü (sunucu-taraflı; varsayılan KAPALI — yalnız web'den açılınca çalışır).
     _rag_task = _asyncio.create_task(get_rag_loop().background_loop())
     _rag_task.add_done_callback(lambda _t: None)
+    # BM25 warm-up: hibrit/router/rrf AÇIKSA korpus indeksini ARKA PLAN thread'inde önceden
+    # kur (~170s, tek-seferlik) → ilk lexical sorgu 170s soğuk-başlatmaya takılmaz. build-lock
+    # ile thundering-herd yok. Dense-only'de gereksiz → atlanır. Sunucu açılışını bloklamaz.
+    with suppress(Exception):
+        from app.config import get_settings as _gs
+
+        _s = _gs()
+        if _s.rag_router or _s.rag_hybrid or _s.rag_rrf or _s.rag_graph:
+            import threading as _threading
+
+            def _warm_bm25() -> None:
+                with suppress(Exception):
+                    from app.memory.bm25_corpus import get_corpus_bm25
+
+                    get_corpus_bm25()  # SQLite'tan kurar + cache'ler (build-lock korumalı)
+
+            _threading.Thread(target=_warm_bm25, name="bm25-warmup", daemon=True).start()
     yield
 
 
