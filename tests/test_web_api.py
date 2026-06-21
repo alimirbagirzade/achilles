@@ -169,6 +169,81 @@ def test_training_dry_run_empty_base_uses_brain_not_1p5b(client: TestClient) -> 
     assert "Qwen2.5-Coder-1.5B" not in command
 
 
+# ---- /api/training/run GÜVENLİK kapısı (CLAUDE.md Kural 8) ----
+# Bağlam: web `/api/training/run` → detached_launch.launch() spawn ettiği alt sürece
+# ACHILLES_TRAIN_SUPERVISED=1 verir → alt süreç iç onay kapısını ATLAR. Bu yüzden
+# TAZE tek-kullanımlık onay ÜST katmanda (endpoint) alınmalı. Bu testler endpoint'in
+# onaysız / STOP_ALL'da GERÇEK eğitim BAŞLATMADIĞINI kanıtlar. Hepsi çevrimdışı:
+# detached_launch.launch sahte ile değiştirilir → asla gerçek eğitim başlamaz.
+def test_training_run_blocked_by_stop_all(client: TestClient, monkeypatch) -> None:
+    """STOP_ALL aktifken /api/training/run gerçek eğitim BAŞLATMAZ (launch çağrılmaz)."""
+    calls: list = []
+    monkeypatch.setattr(
+        "app.agents.runtime.supervisor.is_stop_all_active", lambda *a, **k: True
+    )
+    monkeypatch.setattr(
+        "app.training.detached_launch.launch", lambda *a, **k: calls.append((a, k)) or {}
+    )
+    r = client.post("/api/training/run", json={"adapter_name": "stop_all_smoke", "iterations": 10})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is False
+    assert "STOP_ALL" in body["message"]
+    assert calls == []  # eğitim ASLA başlatılmadı
+
+
+def test_training_run_requires_fresh_approval(client: TestClient, monkeypatch) -> None:
+    """Taze onay YOKKEN /api/training/run reddeder + onay isteği üretir (launch yok)."""
+    calls: list = []
+    # STOP_ALL etkisini ayır → bu test yalnız onay kapısını sınar (CLI testiyle aynı desen).
+    monkeypatch.setattr(
+        "app.agents.runtime.supervisor.is_stop_all_active", lambda *a, **k: False
+    )
+    monkeypatch.setattr(
+        "app.training.detached_launch.launch", lambda *a, **k: calls.append((a, k)) or {}
+    )
+    r = client.post("/api/training/run", json={"adapter_name": "needs_approval", "iterations": 10})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is False
+    assert "onay" in body["message"].lower()
+    assert "apr_" in body["message"]  # oluşturulan PENDING onay isteğinin id'si
+    assert calls == []  # onaysız: eğitim başlatılmadı
+
+
+def test_training_run_with_fresh_approval_consumes_and_launches(
+    client: TestClient, monkeypatch
+) -> None:
+    """TAZE onay tüketilince eğitim başlatılır; onay tek-kullanımlık (sonra biter)."""
+    from app.agents.runtime import approvals
+    from app.memory.sqlite_store import SqliteStore
+
+    monkeypatch.setattr(
+        "app.agents.runtime.supervisor.is_stop_all_active", lambda *a, **k: False
+    )
+    calls: list = []
+
+    def _fake_launch(*a, **k):
+        calls.append((a, k))
+        return {"ok": True, "message": "Eğitim başlatıldı (test mock)", "adapter": "ok"}
+
+    monkeypatch.setattr("app.training.detached_launch.launch", _fake_launch)
+
+    # CLI/endpoint ile aynı (agent_id, action) → bir onay yalnız bir gerçek eğitimi yetkiler.
+    st = SqliteStore()
+    req = approvals.require_fresh_approval("lora-trainer", "train_run", "critical", "s", store=st)
+    approvals.approve(req.approval_id, store=st)
+    assert approvals.has_fresh_approval("lora-trainer", "train_run", store=st) is True
+
+    r = client.post("/api/training/run", json={"adapter_name": "approved_run", "iterations": 10})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert len(calls) == 1  # onay tüketildi → eğitim TAM 1 kez başlatıldı
+    # Tek-kullanımlık: onay tüketildi → artık taze onay yok (standing yetki yok).
+    assert approvals.has_fresh_approval("lora-trainer", "train_run", store=st) is False
+
+
 # ---- backtest geçmişi ----
 def test_backtest_history_empty(client: TestClient) -> None:
     r = client.get("/api/backtests")

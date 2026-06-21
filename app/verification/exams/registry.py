@@ -151,6 +151,36 @@ _SPECS: dict[str, ExamSpec] = {
         # order=3 + period=8 → ilk tanımlı bar ~10. konumda; L3 yeterli pencere ister.
         min_points=16,
     ),
+    "FORBIDDEN": ExamSpec(
+        name="FORBIDDEN",
+        definition=(
+            "FORBIDDEN(p): yasak ordinal desen oranı (gömme order=3). Son p bar üzerinde "
+            "ardışık 3'lü kapanış pencerelerinin SIRALAMA (ordinal) desenleri sayılır; olası "
+            "3!=6 desenden pencerede HİÇ görülmeyenlerin oranı = 1 - (görülen farklı desen)/6. "
+            "Aralık [0,1]; monoton seri → tek desen → 5/6≈0.833; tüm desenler görülürse → 0. "
+            "Yalnız geçmiş pencere (look-ahead yok)."
+        ),
+        default_period=8,
+        rtol=1e-3,
+        atol=1e-3,
+        monotonic={"period": "periyot artarsa daha çok desen görülür → yasak oranı azalır"},
+        min_points=16,
+    ),
+    "COMPLEXITY": ExamSpec(
+        name="COMPLEXITY",
+        definition=(
+            "COMPLEXITY(p): Jensen-Shannon istatistiksel karmaşıklık (MPR), gömme order=3, "
+            "[0,1]. Son p bar üzerinde 3'lü ordinal desen dağılımı P; C = Q0·JS(P,U)·H_norm(P) "
+            "— H_norm normalize permütasyon entropisi, U düzgün dağılım (1/6), JS Jensen-Shannon "
+            "ıraksaması, Q0 max-1 normalizasyonu. Tam düzen (H=0) ve tam rastgelelik (JS=0) → 0; "
+            "yapılı rejimde tepe. Yalnız geçmiş pencere (look-ahead yok)."
+        ),
+        default_period=12,
+        rtol=1e-3,
+        atol=1e-3,
+        # değer-periyot ilişkisi tek-yön monoton DEĞİL → L4 monotonik iddiası yok (Kural 2).
+        min_points=20,
+    ),
 }
 
 

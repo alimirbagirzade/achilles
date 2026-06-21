@@ -10,7 +10,8 @@ param(
     [switch]$Install,
     [switch]$Uninstall,
     [switch]$Status,
-    [switch]$Stop
+    [switch]$Stop,
+    [switch]$SkipVerify   # -Install'da cevrimdisi dogrulama kapisini atla (acil kacis)
 )
 
 $ErrorActionPreference = "Continue"
@@ -165,6 +166,26 @@ function Stop-AchillesServer {
 # Registry Run anahtari WScript ile calisir, uv tam yolu VBS icinde gomerek
 # PATH'e bagimliligi tamamen ortadan kaldirir.
 function Install-Autostart {
+    # DOGRULAMA KAPISI: autostart kurmadan ONCE cevrimdisi duman testi calistir.
+    # "Test edilmeden calisiyor deme" (CLAUDE.md Kural 2): kanitlanmamis kurulumu
+    # Windows acilisina bagdamak, sessizce bozuk bir sistemi her loginde ayaga
+    # kaldirmaya calisir. Dogrulama kalirsa kurulumu DURDUR (-SkipVerify ile atlanir).
+    if (-not $SkipVerify) {
+        $verifyScript = Join-Path $ScriptDir "verify-install.ps1"
+        if (Test-Path $verifyScript) {
+            Write-Host "  [..] Kurulum dogrulamasi calisiyor (verify-install.ps1)..." -ForegroundColor Gray
+            & powershell.exe -ExecutionPolicy Bypass -NonInteractive -File "$verifyScript"
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "  [HATA] Dogrulama KALDI (cikis $LASTEXITCODE) -- autostart KURULMADI." -ForegroundColor Red
+                Write-Host "         Duzeltip tekrar deneyin, ya da: start-server.ps1 -Install -SkipVerify" -ForegroundColor Yellow
+                exit 1
+            }
+            Write-Host "  [OK] Dogrulama GECTI -- autostart kuruluyor" -ForegroundColor Green
+        } else {
+            Write-Host "  [!] verify-install.ps1 yok -- dogrulama atlandi" -ForegroundColor Yellow
+        }
+    }
+
     # VBS olustur: uv tam yolunu icerir, PATH'e bagimli degil
     $thisScript = Join-Path $ScriptDir "start-server.ps1"
     $vbsContent = @"

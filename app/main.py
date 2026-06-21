@@ -310,6 +310,22 @@ def train(
         else:
             console.print("[dim]Denetimli (supervised) eğitim — üst katman onayı kullanıldı.[/dim]")
 
+        # Eğitim verisi tazeliği (S1): lora_sft.jsonl → jsonl_dir/{train,valid}.jsonl SENKRONLA.
+        # CLI `train` doğrudan train.jsonl okur; lora-cloud-prep/assemble_sft lora_sft.jsonl yazar
+        # ama split'i güncellemez → bayat/boş veride saatlerce eğitim riski (CLI↔web drift).
+        # ensure_train_split kaynak doluysa yeniden böler (clobber onarımı), boşsa dokunmaz.
+        from app.training.detached_launch import ensure_train_split
+
+        n_train, _n_valid = ensure_train_split(settings)
+        if n_train <= 0:
+            console.print(
+                "[red]Eğitim verisi yok (train.jsonl boş).[/red] Önce veri kur: "
+                "[cyan]uv run python scripts/assemble_sft.py && uv run achilles lora-split[/cyan] "
+                "ya da [cyan]uv run achilles lora-cloud-prep[/cyan]."
+            )
+            raise typer.Exit(1)
+        console.print(f"[dim]Eğitim verisi tazelendi: train={n_train}, valid={_n_valid}.[/dim]")
+
     if resolved == "mlx":
         from app.training.mlx_lora_train import TrainConfig
         from app.training.mlx_lora_train import main as train_main
@@ -1306,10 +1322,6 @@ def oss_rules_update(
         console.print("\n[dim]Onaylamak: achilles rules-update --approve <id>[/dim]")
     elif not new:
         console.print("[green]✓ Yeni öneri yok; sistem sağlıklı.[/green]")
-
-
-if __name__ == "__main__":  # pragma: no cover
-    app()
 
 
 # ---------------------------------------------------------------------------
@@ -2986,6 +2998,41 @@ def task_cancel(
     console.print(f"[yellow]Görev durumu:[/yellow] {t.status.value}")
 
 
+@app.command("tasks-run")
+def tasks_run(
+    limit: int = typer.Option(10, help="En çok kaç bekleyen görev işlenir"),
+    retry_blocked: bool = typer.Option(
+        False, "--retry-blocked", help="blocked_* görevleri önce yeniden kuyruğa al"
+    ),
+) -> None:
+    """Bekleyen görevleri yürüt (hibrit executor: supervisor + taze-onay kapısından geçirir).
+
+    DAG/cron motoru DEĞİL — kuyruk→supervisor köprüsü. Tehlikeli işler (gerçek
+    eğitim, terfi) yine TAZE ONAY ister; STOP_ALL aktifse bloklanır. Yalnız
+    handler'ı kayıtlı agent_id'ler çalışır (bilinmeyen → başarısız).
+    """
+    from app.agents.runtime import executor
+
+    results = executor.run_pending(limit=limit, retry_blocked=retry_blocked)
+    if not results:
+        console.print("[yellow]İşlenecek bekleyen görev yok.[/yellow]")
+        return
+    ok = sum(1 for r in results if r.get("ok"))
+    blocked = sum(1 for r in results if r.get("blocked"))
+    failed = len(results) - ok - blocked
+    t = Table(title="Executor sonucu")
+    for c in ("task_id", "sonuç", "ayrıntı"):
+        t.add_column(c)
+    for r in results:
+        outcome = "✓ tamam" if r.get("ok") else ("⏸ blok" if r.get("blocked") else "✗ hata")
+        detail = r.get("reason") or r.get("blocked_by") or r.get("agent_id") or ""
+        t.add_row(r.get("task_id", "—"), outcome, str(detail)[:50])
+    console.print(t)
+    console.print(
+        f"[green]{ok} tamam[/green] · [yellow]{blocked} blok[/yellow] · [red]{failed} hata[/red]"
+    )
+
+
 @app.command("approvals-list")
 def approvals_list(
     status: str = typer.Option(None, "--status", help="status ile filtrele"),
@@ -3061,3 +3108,68 @@ def clear_stop_all_cmd() -> None:
 
     r = supervisor.clear_stop_all()
     console.print(f"[green]STOP_ALL kaldırıldı[/green] (önceden aktifti={r['was_active']})")
+
+
+@app.command("runtime-init")
+def runtime_init() -> None:
+    """Ajan-runtime ön-uçuş: manifest + Phase-2 tabloları + STOP_ALL doğrula (taze makine kapısı).
+
+    'achilles init' tabloları zaten oluşturur; bu komut bunu DOĞRULAR. Sorun varsa
+    sıfır-dışı çıkar → autostart/agent komutlarından önce kapı olarak kullanılabilir.
+    """
+    from app.agents.runtime.preflight import runtime_preflight
+
+    r = runtime_preflight()
+    tbl = ", ".join(f"{k}={'✓' if v else '✗'}" for k, v in r["tables"].items())
+    lines = [
+        f"Ajanlar (manifest) : {r['agents']}  "
+        f"(tehlikeli {r['dangerous']}, onay-gerektiren {r['approval_required']})",
+        f"STOP_ALL           : {'AKTİF' if r['stop_all'] else 'kapalı'}",
+        f"Tablolar           : {tbl}",
+    ]
+    if r["errors"]:
+        lines.append("[red]Hatalar:[/red]\n  " + "\n  ".join(r["errors"]))
+    console.print(
+        Panel.fit(
+            "\n".join(lines),
+            title=("[green]Runtime HAZIR[/green]" if r["ok"] else "[red]Runtime SORUNLU[/red]"),
+        )
+    )
+    if not r["ok"]:
+        raise typer.Exit(1)
+
+
+@app.command("chain-status")
+def chain_status(
+    live: bool = typer.Option(
+        False, "--live", help="Her adım için supervisor kapı durumunu da göster (salt-okuma)"
+    ),
+) -> None:
+    """Çalıştırma zincirini (topolojik sıra) göster — tasarım diyagramının tek kaynağı.
+
+    Sıra automation_manifest.yaml 'chain' bölümünden gelir; gate/otonomi AgentSpec'ten.
+    --live: her adım için supervisor.can_run_agent ile ŞU ANKİ kapı durumunu ekler
+    (hiçbir şey çalıştırmaz/onay tüketmez) → zincirin NEREDE duracağını gösterir.
+    """
+    from app.agents.runtime.chain import resolve_chain
+
+    steps = resolve_chain()
+    t = Table(title="Çalıştırma zinciri (otonom → onay kapısı)")
+    for c in ("#", "adım", "otonomi", "kapı"):
+        t.add_column(c)
+    if live:
+        t.add_column("şu an")
+    for s in steps:
+        gate = "🔒 ONAY" if s.requires_approval else ("⚠ tehlikeli" if s.dangerous else "—")
+        row = [str(s.order), s.step, s.autonomy, gate]
+        if live:
+            from app.agents.runtime import supervisor
+
+            dec = supervisor.can_run_agent(s.step)
+            row.append("izinli" if dec.allowed else f"blok:{dec.blocked_by}")
+        t.add_row(*row)
+    console.print(t)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    app()

@@ -37,9 +37,21 @@ _FORBIDDEN = [
 
 def test_count_matches_combinatorics() -> None:
     ex = build_discipline_examples(seed=0, variants_per_combo=3)
-    # 9 tuzak × 16 strateji × 3 varyant.
+    # TRAPS × STRATEGIES × varyant (parametrik — yeni tuzak eklenince otomatik uyarlanır).
     assert len(ex) == len(TRAPS) * len(STRATEGIES) * 3
     assert len(ex) >= 200  # "yüzlerce" eşiği
+
+
+def test_rtuning_abstain_traps_present() -> None:
+    # R-Tuning (2311.09677): bilinemeyene kalibre "bilmiyorum". Gelecek-tahmin + canlı-veri
+    # abstention'ı eklendi; mevcut kaynak-yok/bağlam-uyumsuz tuzaklarını tamamlar.
+    keys = {t.key for t in TRAPS}
+    assert {"gelecek_tahmin", "canli_veri_yok"} <= keys
+    abstain = ("bilemem", "bilmiyorum", "uydurmam", "söylemem", "söyleyemem", "veremem")
+    for t in TRAPS:
+        if t.key in {"gelecek_tahmin", "canli_veri_yok"}:
+            for ans in t.answers:
+                assert any(p in ans.lower() for p in abstain), f"abstention eksik: {t.key}"
 
 
 def test_determinism_same_seed() -> None:
