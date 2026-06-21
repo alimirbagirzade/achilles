@@ -118,6 +118,20 @@ class Settings(BaseSettings):
     # Varsayılan kapalı (yarı-prefix'li korpus tutarsızlık yaratırdı).
     rag_contextual_embed: bool = False
 
+    # --- Cevap-kalitesi (deterministik, LLM'siz; derin araştırma yol haritası) ---
+    # "Lost in the middle" (arXiv 2307.03172): LLM'ler bağlamın ortasını unutur → en
+    # alakalı chunk'ları başa/sona koy. Bedava, chunk EKLEMEZ/ÇIKARMAZ → varsayılan AÇIK.
+    rag_reorder_context: bool = True
+    # CRAG-lite güven kapısı: retrieval ZAYIFSA (alakasız/belirsiz) cevap üretmeden ABSTAIN
+    # (Kural 7 — uydurma yok). Eşikler korpusa göre KALİBRE edilmeli → varsayılan KAPALI
+    # (over-abstain riskini önlemek için opt-in; aç: ACHILLES_RAG_ABSTAIN=true).
+    rag_abstain: bool = False
+    # cosine benzerlik tabanı (1−distance); en iyi chunk bunun altındaysa alakasız sayılır.
+    # Muhafazakâr varsayılan: alakalı chunk'lar genelde ≥0.4 benzerlik; 0.18 yalnız belirgin
+    # alakasızlıkta tetiklenir. Kalibrasyon: golden-set'te abstain-oranı vs hata-oranı.
+    rag_abstain_min_similarity: float = 0.18
+    rag_abstain_min_margin: float = 0.02  # top-1↔top-2 marjı bunun altında → belirsiz
+
     # --- Trading ---
     default_market: str = "XAUUSD"
     default_timeframe: str = "15m"
