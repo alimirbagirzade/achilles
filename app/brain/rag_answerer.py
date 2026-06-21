@@ -19,8 +19,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.brain.answer_quality import (
+    assess_confidence,
+    is_weak_retrieval,
+    reorder_lost_in_middle,
+)
 from app.brain.local_llm import LLMUnavailable, LocalLLM
 from app.brain.prompt_loader import load_prompt
+from app.config import get_settings
 from app.memory.reranking_retriever import RerankingRetriever
 from app.memory.retrieval_service import RetrievedChunk, Retriever
 
@@ -65,6 +71,7 @@ class RagAnswerer:
         # retriever enjekte edilirse aynen kullanılır (test izolasyonu korunur).
         self.retriever = retriever or RerankingRetriever()
         self.llm = llm or LocalLLM()
+        self.settings = get_settings()
 
     def answer(self, question: str, top_k: int | None = None) -> RagAnswer:
         chunks = self.retriever.retrieve(question, top_k=top_k)
@@ -83,7 +90,39 @@ class RagAnswerer:
                 llm_used=False,
             )
 
-        context = _format_context(chunks)
+        # CRAG-lite güven kapısı (opt-in): retrieval ZAYIFSA LLM'i çağırmadan ABSTAIN
+        # (Kural 7 — zayıf dayanakla uydurma yok). Deterministik, mesafe-tabanlı.
+        if self.settings.rag_abstain:
+            conf = assess_confidence(chunks)
+            if is_weak_retrieval(
+                conf,
+                min_similarity=self.settings.rag_abstain_min_similarity,
+                min_margin=self.settings.rag_abstain_min_margin,
+            ):
+                cites = "\n".join(f"- {c.citation} {c.title or ''}".strip() for c in chunks)
+                return RagAnswer(
+                    question=question,
+                    answer=(
+                        "Insufficient grounding — retrieved sources are weakly related to the "
+                        "question (best similarity "
+                        f"{conf.best_similarity:.2f}). Not answering to avoid speculation.\n\n"
+                        "---\n\n"
+                        "Yetersiz dayanak — getirilen kaynaklar soruyla zayıf ilişkili "
+                        f"(en iyi benzerlik {conf.best_similarity:.2f}). Uydurmamak için "
+                        "cevap verilmiyor. Soruyu daraltın veya ilgili makaleleri ingest edin.\n\n"
+                        "Weak matches / Zayıf eşleşmeler:\n" + cites
+                    ),
+                    sources=chunks,
+                    llm_used=False,
+                )
+
+        # "Lost in the middle" (opt, varsayılan açık): en alakalı chunk'ları LLM bağlamının
+        # başına/sonuna koy (kaynak listesi sıralı kalır; yalnız LLM'e giden bağlam yeniden
+        # dizilir — chunk eklenmez/çıkarılmaz).
+        context_chunks = (
+            reorder_lost_in_middle(chunks) if self.settings.rag_reorder_context else chunks
+        )
+        context = _format_context(context_chunks)
         try:
             system = load_prompt("rag_answer")  # tek kaynak format + grounding kuralları
         except FileNotFoundError:
