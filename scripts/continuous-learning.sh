@@ -30,16 +30,28 @@ log(){ echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG"; }
 log "=== SÜREKLİ ÖĞRENME BAŞLADI (max ${MAX_HOURS}sa) ==="
 
 # --- Devralma: eski eğitim döngüsünü nazikçe durdur -------------------------
+# TAŞINABİLİR süreç kontrolü (eski sürüm gömülü `powershell Win32_Process`
+# çağırıyordu → Linux/bulutta `powershell` yok, komut hep başarısız olup döngü
+# her zaman ~90dk boş bekliyor, çakışma koruması bozuluyordu). Sıra:
+#   1) pgrep  (Linux/macOS + Git Bash procps-ng)  2) powershell/WMI (yalnız Windows)
+#   3) ikisi de yoksa "çalışmıyor" varsay (güvenli ilerle).
+is_training_running() {
+  if command -v pgrep >/dev/null 2>&1; then
+    pgrep -f 'peft_lora_train' >/dev/null 2>&1 && return 0
+    pgrep -f 'achilles.*train.*--run' >/dev/null 2>&1 && return 0
+    return 1
+  elif command -v powershell >/dev/null 2>&1; then
+    powershell -NoProfile -Command \
+      "if (Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { \$_.CommandLine -like '*peft_lora_train*' -or (\$_.CommandLine -like '*achilles*' -and \$_.CommandLine -like '*train*--run*') }) { exit 0 } else { exit 1 }" \
+      >/dev/null 2>&1 && return 0
+    return 1
+  fi
+  return 1
+}
 touch storage/STOP_TRAINING
 log "Devralma: STOP_TRAINING bırakıldı; mevcut eğitim koşusunun bitmesi bekleniyor"
 for i in $(seq 1 360); do  # max ~90 dk (uzun eğitim koşusunu da kapsar)
-  if ! powershell -NoProfile -Command \
-      "if (Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { \$_.CommandLine -like '*peft_lora_train*' -or (\$_.CommandLine -like '*achilles*' -and \$_.CommandLine -like '*train*--run*') }) { exit 1 } else { exit 0 }" \
-      >/dev/null 2>&1; then
-    sleep 15
-  else
-    break
-  fi
+  if is_training_running; then sleep 15; else break; fi
 done
 # Eski döngünün cooldown'da STOP'u görüp temiz çıkması için ek bekleme
 sleep 150

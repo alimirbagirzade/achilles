@@ -378,7 +378,7 @@ fi
 # ==========================================================================
 # [3/3] .ENV + VERITABANI
 # ==========================================================================
-echo "[3/3] .env ve veritabani..."
+echo "[3/5] .env ve veritabani..."
 cp -n .env.example .env 2>/dev/null || true
 
 set_env() {
@@ -399,29 +399,97 @@ uv run achilles init
 ok "Veritabani hazir"
 
 # ==========================================================================
+# [4/5] ERISIM MODU + GUVENLIK  (yerel mi, uzaktan/kiralik sunucu mu?)
+# ==========================================================================
+echo ""
+echo "  ======================================================"
+echo "    BU MAKINEYE NASIL ERISECEKSINIZ?"
+echo "  ======================================================"
+echo ""
+echo "    [1] Bu bilgisayardan (yerel)        [ONERILEN, en guvenli]"
+echo "        -> Web UI yalniz 127.0.0.1; sifre gerekmez."
+echo ""
+echo "    [2] Uzaktan (kiralik / bulut sunucu)"
+echo "        -> Tarayicidan sunucu IP'si ile baglanirsiniz."
+echo "        -> Web 0.0.0.0'a acilir + otomatik API TOKEN (sifre) uretilir."
+echo ""
+read -r -p "  Seciminiz [1-2] (Enter = 1 / yerel): " ACCESS
+ACCESS="${ACCESS:-1}"
+
+API_TOKEN=""
+if [ "$ACCESS" = "2" ]; then
+    API_TOKEN="$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    set_env "ACHILLES_WEB_HOST" "0.0.0.0"
+    set_env "ACHILLES_API_TOKEN" "$API_TOKEN"
+    ok "Uzaktan erisim: WEB_HOST=0.0.0.0 + API token uretildi (.env'e yazildi)"
+    warn "Token olmadan aga acmak TEHLIKELIDIR — token uretildi, sakli tutun."
+else
+    set_env "ACHILLES_WEB_HOST" "127.0.0.1"
+    ok "Yerel erisim: yalniz 127.0.0.1 (guvenli varsayilan)"
+fi
+
+# ==========================================================================
+# [5/5] DOGRULAMA  (kullanima/autostart'tan ONCE 'gercekten kalkiyor mu')
+# ==========================================================================
+echo ""
+echo "[5/5] Kurulum dogrulaniyor (offline duman testi: init->status->gen-data->backtest->pytest)..."
+VERIFY_OK=false
+if bash scripts/verify-install.sh --skip-sync; then
+    VERIFY_OK=true
+else
+    warn "Dogrulama KALDI — yukaridaki hatayi inceleyin. Sistem 'hazir' degil."
+fi
+
+# ==========================================================================
+# OPSIYONEL: ACILISTA OTOMATIK BASLATMA (autostart)
+# ==========================================================================
+if [ "$VERIFY_OK" = true ]; then
+    echo ""
+    read -r -p "  Sunucu acilista kendiliginden kalksin mi? [e/h] (Enter = h): " AS
+    if [ "$AS" = "e" ] || [ "$AS" = "E" ]; then
+        bash scripts/install-autostart.sh || warn "Autostart kurulamadi (elle baslatabilirsiniz)."
+    fi
+fi
+
+# ==========================================================================
 # TAMAMLANDI
 # ==========================================================================
 echo ""
 echo "  ======================================================"
-echo "    KURULUM TAMAMLANDI!"
+if [ "$VERIFY_OK" = true ]; then
+    echo "    KURULUM TAMAMLANDI ve DOGRULANDI!"
+else
+    echo "    KURULUM BITTI (dogrulama KALDI — once onu cozun)"
+fi
 echo "  ======================================================"
 echo ""
 echo "  Uygulamayi baslatmak icin:"
-echo ""
 echo "    uv run achilles-web"
 echo ""
-echo "  Tarayicinizda acin:"
-echo "    http://127.0.0.1:8765"
+if [ "$ACCESS" = "2" ]; then
+    SRV_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    [ -z "$SRV_IP" ] && SRV_IP="<SUNUCU-IP>"
+    echo "  Tarayicidan acin (baska bilgisayardan):"
+    echo "    http://$SRV_IP:8765"
+    echo ""
+    echo "  Giris icin API token (sifre) — guvenli sakla:"
+    echo "    $API_TOKEN"
+    echo ""
+    warn "Bulut saglayicinizda 8765 portunu (guvenlik grubu/firewall) acin;"
+    warn "mumkunse yalniz kendi IP'nize izin verin. Detay: SECURITY.md"
+else
+    echo "  Tarayicinizda acin:"
+    echo "    http://127.0.0.1:8765"
+fi
 echo ""
-echo "  Baglanti testi (opsiyonel):"
-echo "    uv run achilles status"
+echo "  Baglanti testi (opsiyonel):  uv run achilles status"
 echo ""
 
 if [ "$OS" = "Darwin" ] && [ "$ARCH" = "arm64" ]; then
     info "LoRA egitimi: Apple Silicon MLX ile destekleniyor (hizli)"
 else
-    info "LoRA egitimi: PEFT/CPU ile destekleniyor (macOS MLX'e gore yavas)"
-    info "LoRA icin: uv pip install torch transformers peft datasets accelerate"
+    info "LoRA egitimi: PEFT/CPU ile destekleniyor (yavas; bulut-GPU onerilir)"
+    info "LoRA icin:  uv pip install -e \".[train-cpu]\""
     info "RAG, backtest ve formul cikarma tam olarak calisir."
 fi
 echo ""

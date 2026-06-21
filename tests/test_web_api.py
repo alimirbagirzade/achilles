@@ -178,9 +178,7 @@ def test_training_dry_run_empty_base_uses_brain_not_1p5b(client: TestClient) -> 
 def test_training_run_blocked_by_stop_all(client: TestClient, monkeypatch) -> None:
     """STOP_ALL aktifken /api/training/run gerçek eğitim BAŞLATMAZ (launch çağrılmaz)."""
     calls: list = []
-    monkeypatch.setattr(
-        "app.agents.runtime.supervisor.is_stop_all_active", lambda *a, **k: True
-    )
+    monkeypatch.setattr("app.agents.runtime.supervisor.is_stop_all_active", lambda *a, **k: True)
     monkeypatch.setattr(
         "app.training.detached_launch.launch", lambda *a, **k: calls.append((a, k)) or {}
     )
@@ -196,9 +194,7 @@ def test_training_run_requires_fresh_approval(client: TestClient, monkeypatch) -
     """Taze onay YOKKEN /api/training/run reddeder + onay isteği üretir (launch yok)."""
     calls: list = []
     # STOP_ALL etkisini ayır → bu test yalnız onay kapısını sınar (CLI testiyle aynı desen).
-    monkeypatch.setattr(
-        "app.agents.runtime.supervisor.is_stop_all_active", lambda *a, **k: False
-    )
+    monkeypatch.setattr("app.agents.runtime.supervisor.is_stop_all_active", lambda *a, **k: False)
     monkeypatch.setattr(
         "app.training.detached_launch.launch", lambda *a, **k: calls.append((a, k)) or {}
     )
@@ -218,9 +214,7 @@ def test_training_run_with_fresh_approval_consumes_and_launches(
     from app.agents.runtime import approvals
     from app.memory.sqlite_store import SqliteStore
 
-    monkeypatch.setattr(
-        "app.agents.runtime.supervisor.is_stop_all_active", lambda *a, **k: False
-    )
+    monkeypatch.setattr("app.agents.runtime.supervisor.is_stop_all_active", lambda *a, **k: False)
     calls: list = []
 
     def _fake_launch(*a, **k):

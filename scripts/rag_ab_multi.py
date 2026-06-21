@@ -94,8 +94,7 @@ def main() -> None:
     t = time.perf_counter()
     _bm25, cm = get_corpus_bm25()
     print(
-        f"# bm25 warm: {time.perf_counter() - t:.1f}s, chunks={len(cm)}, "
-        f"queries={len(items)}",
+        f"# bm25 warm: {time.perf_counter() - t:.1f}s, chunks={len(cm)}, queries={len(items)}",
         flush=True,
     )
 
