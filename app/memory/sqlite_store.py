@@ -944,6 +944,30 @@ class SqliteStore:
             row.updated_at = _utcnow()
             return self._automation_task_to_dict(row)
 
+    def claim_automation_task_atomic(self, task_id: str) -> dict[str, Any] | None:
+        """Atomik claim: ``pending`` → ``claimed`` TEK transaction (koşullu UPDATE + rowcount).
+
+        İki ayrı transaction (get + update) yerine CAS (consume_fresh_approval ile aynı
+        desen): yalnız ``status='pending'`` iken günceller. Eşzamanlı iki çağrıdan yalnız
+        BİRİ rowcount=1 alır (claim eder); diğeri None alır (yarışı kaybetti / yok / zaten
+        claimed) → aynı görevin çift-çalıştırılması önlenir.
+        """
+        now = _utcnow()
+        with self.session() as s:
+            res = s.execute(
+                update(AutomationTaskRow)
+                .where(
+                    AutomationTaskRow.task_id == task_id,
+                    AutomationTaskRow.status == "pending",
+                )
+                .values(status="claimed", claimed_at=now, updated_at=now)
+                .execution_options(synchronize_session=False)
+            )
+            if cast("Any", res).rowcount != 1:
+                return None  # claim edilemedi: yok / pending değil / eşzamanlı çağrı aldı
+            row = s.get(AutomationTaskRow, task_id)
+            return self._automation_task_to_dict(row) if row else None
+
     def _automation_task_to_dict(self, r: AutomationTaskRow) -> dict[str, Any]:
         return {
             "task_id": r.task_id,

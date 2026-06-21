@@ -8,7 +8,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd /Users/mirbagirzade/Development/Achilles && head -60 HANDOFF.md 2>/dev/null && echo '---' && echo 'Proje: Achilles Trader AI | Komut: uv run achilles status'"
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\" && head -60 HANDOFF.md 2>/dev/null && echo '---' && echo 'Proje: Achilles Trader AI | Komut: uv run achilles status'"
           }
         ]
       }

@@ -3012,7 +3012,9 @@ def tasks_run(
     handler'ı kayıtlı agent_id'ler çalışır (bilinmeyen → başarısız).
     """
     from app.agents.runtime import executor
+    from app.agents.runtime.handlers import register_default_handlers
 
+    register_default_handlers()  # güvenli salt-okuma handler'ları (idempotent; tehlikeli HARİÇ)
     results = executor.run_pending(limit=limit, retry_blocked=retry_blocked)
     if not results:
         console.print("[yellow]İşlenecek bekleyen görev yok.[/yellow]")
