@@ -2707,6 +2707,220 @@ def pretrain_gate_cmd(
     )
 
 
+@app.command("local-training-audit")
+def local_training_audit_cmd(
+    out: Path = typer.Option(
+        Path("reports/local_training_orchestrator"),
+        "--out",
+        help="Rapor çıktısı dizini (markdown + json).",
+    ),
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--no-dry-run",
+        help="Bu komut DAİMA salt-rapordur; eğitim başlatmaz.",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Makine-okunabilir JSON çıktı."),
+    write: bool = typer.Option(True, "--write/--no-write", help="Raporu diske yaz (md+json)."),
+) -> None:
+    """Lokal eğitim-hazırlık DENETİMİ — SALT RAPOR (Phase 5A).
+
+    Sistem durumunu OKUR (STOP_ALL, bekleyen onaylar, veri, ön-eğitim kalite kapısı,
+    AutoLoRA durumu) ve eğitim-hazırlık skoru + riskler üretip reports/ altına yazar.
+    GERÇEK EĞİTİM BAŞLATMAZ; onay TÜKETMEZ; `train --run`/`launch`/terfi çağırmaz.
+    `--run` gibi bir mod bu fazda DESTEKLENMEZ.
+    """
+    from app.agents.local_training_orchestrator import (
+        REPORT_ONLY_BANNER,
+        render_markdown,
+        run_audit,
+    )
+
+    if not dry_run:
+        console.print(
+            "[yellow]Not:[/yellow] Bu komut yalnız salt-rapor modunda çalışır; "
+            "gerçek eğitim başlatmaz (Phase 5A)."
+        )
+    out_dir = out if out.is_absolute() else get_settings().root / out
+    report = run_audit(out_dir=out_dir, write=write)
+
+    if as_json:
+        console.print_json(json.dumps(report.to_dict(), ensure_ascii=False))
+    else:
+        console.print(render_markdown(report))
+    console.print(f"[bold]{REPORT_ONLY_BANNER}[/bold]")
+
+
+@app.command("local-training-request")
+def local_training_request_cmd(
+    create_approval: bool = typer.Option(
+        False,
+        "--create-approval",
+        help="Readiness READY ise PENDING onay isteği oluştur (onay TÜKETMEZ).",
+    ),
+    preview: bool = typer.Option(
+        False, "--preview", help="Her zaman yalnız ön izleme; onay oluşturmaz."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Makine-okunabilir JSON çıktı."),
+    out: Path = typer.Option(
+        Path("reports/local_training_orchestrator"),
+        "--out",
+        help="İstek raporu çıktı dizini.",
+    ),
+    write: bool = typer.Option(True, "--write/--no-write", help="İstek raporunu diske yaz."),
+) -> None:
+    """Onay-kapılı lokal eğitim İSTEĞİ — eğitim BAŞLATMAZ, onay TÜKETMEZ (Phase 5B).
+
+    Varsayılan: audit + ön izleme (onay oluşturmaz). `--create-approval`: readiness
+    READY ise PENDING onay isteği oluşturur ve onay komutunu gösterir. STOP_ALL/risk/
+    READY-değil → blocked. Hiçbir durumda `launch`/`train --run`/`start_training`/
+    `promote`/`require_fresh_approval` çağırmaz.
+    """
+    from app.agents.local_training_request import REQUEST_BANNER, build_request, render_markdown
+
+    out_dir = out if out.is_absolute() else get_settings().root / out
+    result = build_request(
+        create_approval=create_approval and not preview,
+        preview=preview,
+        out_dir=out_dir,
+        write=write,
+    )
+
+    if as_json:
+        console.print_json(json.dumps(result, ensure_ascii=False))
+    else:
+        console.print(render_markdown(result))
+    console.print(f"[bold]{REQUEST_BANNER}[/bold]")
+
+
+@app.command("local-training-dry-run")
+def local_training_dry_run_cmd(
+    approval_id: str = typer.Option(
+        "", "--approval-id", help="Onay durumunu READ-ONLY kontrol et (tüketmez)."
+    ),
+    request_json: str = typer.Option(
+        "", "--request-json", help="Okunacak 5B istek raporu (json). Boşsa en son istek."
+    ),
+    mock_adapter_eval: bool = typer.Option(
+        True,
+        "--mock-adapter-eval/--no-mock-adapter-eval",
+        help="Adapter-eval'i mockla (gerçek model çalıştırma bu fazda DESTEKLENMEZ).",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Makine-okunabilir JSON çıktı."),
+    out: Path = typer.Option(
+        Path("reports/local_training_orchestrator"), "--out", help="Rapor çıktı dizini."
+    ),
+    write: bool = typer.Option(True, "--write/--no-write", help="Dry-run raporunu diske yaz."),
+) -> None:
+    """Onaylı eğitim isteği DRY-RUN pipeline'ı — EĞİTİM/ONAY-TÜKETİMİ YOK (Phase 5C).
+
+    Audit + 5B isteği okur, (varsa) onayı READ-ONLY kontrol eder (tüketmez), pretrain-gate
+    read-only + adapter-eval MOCKED çalıştırır ve bir execution PLANI üretir (uygulamaz).
+    `launch`/`train --run`/`start_training`/`promote`/`require_fresh_approval`/
+    `request_approval` HİÇBİR ZAMAN çağrılmaz.
+    """
+    from app.agents.local_training_dryrun import DRYRUN_BANNER, build_dryrun, render_markdown
+
+    out_dir = out if out.is_absolute() else get_settings().root / out
+    result = build_dryrun(
+        approval_id=approval_id or None,
+        request_json=request_json or None,
+        mock_adapter_eval=mock_adapter_eval,
+        out_dir=out_dir,
+        write=write,
+    )
+
+    if as_json:
+        console.print_json(json.dumps(result, ensure_ascii=False))
+    else:
+        console.print(render_markdown(result))
+    console.print(f"[bold]{DRYRUN_BANNER}[/bold]")
+
+
+@app.command("local-training-handoff")
+def local_training_handoff_cmd(
+    approval_id: str = typer.Option(
+        "", "--approval-id", help="Onay durumunu READ-ONLY kontrol et (tüketmez)."
+    ),
+    dryrun_json: str = typer.Option(
+        "", "--dryrun-json", help="Okunacak 5C dry-run raporu (json). Boşsa en son dry-run."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Makine-okunabilir JSON çıktı."),
+    out: Path = typer.Option(
+        Path("reports/local_training_orchestrator"), "--out", help="Rapor çıktı dizini."
+    ),
+    write: bool = typer.Option(True, "--write/--no-write", help="Handoff raporunu diske yaz."),
+) -> None:
+    """İnsan-kapılı gerçek eğitim HANDOFF'u — komutu YAZDIRIR, ÇALIŞTIRMAZ (Phase 5D).
+
+    5C dry-run raporunu + (varsa) onayı READ-ONLY okur. STOP_ALL + dry_run_passed +
+    approved_not_consumed ise `ready_for_human_execution` döner ve gerçek eğitim komutunu
+    YALNIZ METİN olarak + son checklist verir. `launch`/`train --run`/subprocess/
+    `start_training`/`promote`/`require_fresh_approval` HİÇBİR ZAMAN çağrılmaz; onay TÜKETİLMEZ.
+    """
+    from app.agents.local_training_handoff import build_handoff, render_markdown
+
+    out_dir = out if out.is_absolute() else get_settings().root / out
+    result = build_handoff(
+        approval_id=approval_id or None,
+        dryrun_json=dryrun_json or None,
+        out_dir=out_dir,
+        write=write,
+    )
+
+    if as_json:
+        console.print_json(json.dumps(result, ensure_ascii=False))
+    else:
+        console.print(render_markdown(result))
+    if result.get("status") == "ready_for_human_execution":
+        console.print(
+            "[bold yellow]READY FOR HUMAN EXECUTION[/bold yellow]\nRecommended command:\n"
+            f"[cyan]{result.get('recommended_command')}[/cyan]\nThis command was NOT executed."
+        )
+
+
+@app.command("local-training-postcheck")
+def local_training_postcheck_cmd(
+    handoff_json: str = typer.Option("", "--handoff-json", help="Okunacak handoff raporu (json)."),
+    dryrun_json: str = typer.Option("", "--dryrun-json", help="Okunacak dry-run raporu (json)."),
+    training_report: str = typer.Option(
+        "", "--training-report", help="Okunacak training raporu (json)."
+    ),
+    adapter_path: str = typer.Option(
+        "", "--adapter-path", help="Adapter metadata (yalnız stat — model yüklenmez)."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Makine-okunabilir JSON çıktı."),
+    out: Path = typer.Option(
+        Path("reports/local_training_orchestrator"), "--out", help="Rapor çıktı dizini."
+    ),
+    write: bool = typer.Option(True, "--write/--no-write", help="Postcheck raporunu diske yaz."),
+) -> None:
+    """Eğitim-sonrası SALT-OKUMA doğrulama — terfi/eğitim YOK (Phase 5E).
+
+    Handoff/dry-run + training artefaktı + adapter metadata + adapter-eval + understanding-
+    score'u READ-ONLY okur. Sonuç yoksa `no_training_run_found`; varsa
+    `postcheck_ready_for_human_review` (promotion_recommendation=human_review_required).
+    `launch`/`train --run`/`start_training`/`promote`/`require_fresh_approval` çağrılmaz;
+    model YÜKLENMEZ, eval ÇALIŞTIRILMAZ, korumalı yollara YAZILMAZ.
+    """
+    from app.agents.local_training_postcheck import build_postcheck, render_markdown
+
+    out_dir = out if out.is_absolute() else get_settings().root / out
+    result = build_postcheck(
+        handoff_json=handoff_json or None,
+        dryrun_json=dryrun_json or None,
+        training_report=training_report or None,
+        adapter_path=adapter_path or None,
+        out_dir=out_dir,
+        write=write,
+    )
+
+    if as_json:
+        console.print_json(json.dumps(result, ensure_ascii=False))
+    else:
+        console.print(render_markdown(result))
+    console.print("[bold]No adapter was promoted. Human review required.[/bold]")
+
+
 # --------------------------------------------------------------------------
 # Agent runtime — task queue + approvals + supervisor (Phase 2)
 # --------------------------------------------------------------------------

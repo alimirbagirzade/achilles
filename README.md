@@ -836,6 +836,11 @@ uv run achilles rag-mastery             # RAG "ne kadar öğrendi" ustalık pano
 uv run achilles train                   # LoRA — SADECE ÖNIZLEME (çalıştırmaz)
 uv run achilles train --run             # LoRA — yerel (smoke; ağır 4B için bulut tercih et)
 uv run achilles evaluate <eval.jsonl>   # modeli failure-mode eval setiyle test et
+uv run achilles local-training-audit    # eğitim-HAZIRLIK denetimi — SALT RAPOR (eğitim başlatmaz, 5A)
+uv run achilles local-training-request  # onay-kapılı eğitim İSTEĞİ — onay oluşturabilir, eğitim/onay-tüketimi YOK (5B)
+uv run achilles local-training-dry-run  # onaylı isteği READ-ONLY simüle et — eğitim/onay-tüketimi YOK (5C)
+uv run achilles local-training-handoff  # insan-kapılı handoff — gerçek eğitim komutunu YAZDIRIR, çalıştırmaz (5D)
+uv run achilles local-training-postcheck # eğitim-SONRASI READ-ONLY denetim — terfi YOK, human_review_required (5E)
 ```
 
 ### Anlama Doğrulama (L3/L4/L5 — objektif sınav)

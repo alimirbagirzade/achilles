@@ -43,6 +43,8 @@ reports/evals/*
 reports/synthesis/*
 # Agent runtime gözlemcisi (Phase 1) — koşu başına JSONL günlükleri (runtime)
 reports/agent_runs/*
+# Lokal eğitim-denetim raporları (Phase 5A) — report-only çıktılar (runtime)
+reports/local_training_orchestrator/*
 
 # But keep the .gitkeep placeholders
 !**/.gitkeep
