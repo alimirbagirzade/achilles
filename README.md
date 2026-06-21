@@ -2,7 +2,7 @@
 
 > **Yerel-öncelikli AI araştırma sistemi** — macOS · Windows · Linux.
 > Akademik finans makalelerini okur, trade hipotezleri üretir, backtest eder, sonuçtan öğrenir.
-> **Yerel Ollama** ile çalışır — API key, bulut bağlantısı, ücret yok.
+> **Yerel Ollama** (ücretsiz, internetsiz) **veya bulut** (OpenAI · Anthropic · Google) ile çalışır — kurulumda seçersin.
 
 > ⚠️ **Bu bir araştırma aracıdır — canlı bot DEĞİLDİR ve yatırım tavsiyesi VERMEZ.**
 > Tüm çıktılar test edilmesi gereken _hipotezlerdir_. Gerçek parayla kullanımın sorumluluğu tamamen size aittir.
@@ -81,7 +81,9 @@ uv run achilles-web # → http://127.0.0.1:8765
 
 Kurulum başında 18 model seçeneği çıkar — bulut model seçersen Ollama adımı atlanır, yerel model seçersen RAM/disk kontrolü yapılır ve Ollama + model otomatik indirilir (kurulum `sudo` gerektirebilir, systemd servisi oluşturur).
 
-> Linux'ta LoRA eğitimi **PEFT/CPU ile desteklenir**. Kurulumda "LoRA paketleri kurulsun mu?" sorusuna E de. Hız macOS MLX'e göre yavaş olur ama çalışır.
+> Linux'ta LoRA eğitimi **PEFT/CPU ile desteklenir** ama yavaştır → pratikte **bulut-GPU (Kaggle)** önerilir. LoRA paketleri gerekirse: `uv pip install -e ".[train-cpu]"`.
+>
+> 🌐 **Uzaktan / kiralık sunucu mu?** `setup.sh` sana **"yerel mi, uzaktan mı erişeceksin?"** diye sorar. **Uzaktan** seçersen web `0.0.0.0`'a açılır + otomatik **API token** (şifre) üretir; kurulum sonunda **doğrulama** (`scripts/verify-install.sh`) ve isteğe bağlı **açılışta otomatik başlatma** (systemd) da yapılır. 8765 portunu sağlayıcının firewall'ında açmayı unutma.
 
 **🔄 Sonradan güncelleme** (kurduğun klasörde): `bash update.sh` (takılırsa
 `bash update.sh --force`). `update.sh` yoksa: `git fetch origin main && git reset --hard origin/main && bash update.sh`. Detay: aşağıdaki **Güncelleme** bölümü.
@@ -349,7 +351,7 @@ Arka planda çalışan, sistemi sürekli geliştiren döngü. **Her turda sıray
 | 🎓 LoRA Eğitimi | ✅ | Web UI'dan tek tık · macOS MLX + Windows PEFT · SSE stream |
 | 📊 Paper Mastery | ✅ | 0-100 RAG kalite skoru · deterministik · LLM gerektirmez |
 | 🧪 Makale Anlama Skoru | ✅ | A+B+C üç katman · kart kalitesini anında gösterir |
-| 🖥️ Web Arayüzü | ✅ | 8 sekme · PDF yükle · soru sor · backtest · eğitim |
+| 🖥️ Web Arayüzü | ✅ | 9 sekme · PDF yükle · soru sor · backtest · eğitim · öğrenme |
 
 ---
 
@@ -409,7 +411,7 @@ Cevap + kaynak (hangi makalenin kaçıncı parçası)
 
 | Çıktı | Dosya/Tablo |
 |-------|-------------|
-| Makale vektörleri | `storage/vector_db/` (ChromaDB) |
+| Makale vektörleri | `vector_db/chroma/` (ChromaDB) |
 | Makale metadata | `storage/sqlite/achilles_trader_ai.db` → `papers` tablosu |
 | RAG sorgu geçmişi | `storage/sqlite/...` → `rag_queries` tablosu |
 
@@ -421,7 +423,9 @@ Cevap + kaynak (hangi makalenin kaçıncı parçası)
 
 > "Kütüphaneciye trading kitapları okutuyorsun. Artık sormadan kendisi biliyor."
 
-**Ne zaman çalışır:** Sadece `achilles train --run` yazınca — bir kez, ~10 dakika sürer.
+**Ne zaman çalışır:** Sadece açık `--run` ile (varsayılan kuru-çalışma — güvenli).
+CPU'da çok yavaştır → **bulut-GPU önerilir** (Kaggle T4×2, ~15-20 dk); bkz.
+`notebooks/KAGGLE_EGITIM_ADIM_ADIM.md`. RAG, backtest ve web her makinede tam çalışır.
 
 ```
 Onaylı bilgi kartları (06 ONAY sekmesi)
@@ -475,7 +479,7 @@ models/adapters/achilles_lora_v3.meta.json  ← versiyon + hash
 
 ## 🖥️ Web Arayüzü
 
-> Terminale tek komut yaz, tarayıcıda 8 sekmeli araştırma terminali açılır.
+> Terminale tek komut yaz, tarayıcıda 9 sekmeli araştırma terminali açılır.
 > Komut satırı bilmene gerek yok.
 
 ```bash
@@ -493,10 +497,12 @@ Tarayıcında `http://127.0.0.1:8765` aç. Sağ üstte 🟢 **"ollama bağlı"**
 │ 01 ARAŞTIRMA│ 02 MAKALELER │ 03 TRADER BEYİN │ 04 BACKTEST │
 ├─────────────┼──────────────┼─────────────────┼─────────────┤
 │  05 EĞİTİM  │   06 ONAY    │ 07 DEĞERLENDİRME│  08 SİSTEM  │
+├─────────────┼──────────────┼─────────────────┼─────────────┤
+│ 09 ÖĞRENME  │              │                 │             │
 └─────────────┴──────────────┴─────────────────┴─────────────┘
 ```
 
-**İlk kez kullanıyorsan önerilen sıra: 08 → 02 → 01 → 03 → 04 → 05 → 06 → 07**
+**İlk kez kullanıyorsan önerilen sıra: 08 → 02 → 01 → 03 → 04 → 05 → 06 → 07 → 09**
 
 > 💡 **İlk açılışta otomatik bir pencere çıkar:** Bilgisayarının RAM ve GPU'suna bakıp "Senin için en uygun model şu" der. "Anladım, gösterme" butonuna basarak kapatabilirsin. Aynı bilgiyi istediğin zaman **08 SİSTEM** sekmesinde de görebilirsin.
 
