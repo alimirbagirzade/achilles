@@ -156,10 +156,18 @@ Claude PR otomasyonu KAPALI (Phase 4). Yalnız backend + CLI + API + test.
 | auto-lora `start_training` | STOP_ALL + taze onay (`auto-lora-pipeline`/`auto_lora_start_training`, critical) | Onay yoksa `needs_approval` döner |
 | auto-lora `promote_to_production` | STOP_ALL + taze onay (`.../auto_lora_promote_adapter`, high) | Onay yoksa `needs_approval` döner |
 | `rules-update --approve` | STOP_ALL + taze onay (`rules-updater`/`rules_apply`, medium) | Onay yoksa uygulanmaz, exit 3 |
+| **`POST /api/training/run` (web)** | STOP_ALL + taze onay (`lora-trainer`/`train_run`, critical) | **[Phase 4D-1]** Onay yoksa `needs_approval` + `approval_id` + onay komutu döner; eğitim BAŞLAMAZ |
 
-`launch()` (auto_pipeline/web buton) onayı ÜST katmanda alır ve spawn ettiği iç
-`achilles train --run`'a `ACHILLES_TRAIN_SUPERVISED=1` geçer → **çift onay olmaz**; ama
+`launch()`'ın taze onayı **ÜST katmanda** alınır: CLI manuel yol kendi kapısından,
+auto-lora `start_training` kendi onayından **ve web `/api/training/run` (Phase 4D-1) artık
+`require_fresh_approval` ile** geçer. Onaylı çağrı `launch()`'a girer; spawn edilen iç
+`achilles train --run`'a `ACHILLES_TRAIN_SUPERVISED=1` verilir → **çift onay olmaz**; ama
 STOP_ALL iç komutta da geçerlidir. Manuel `achilles train --run` bu env'i ALMAZ → onay ister.
+
+> **Web training start is now protected by the same fresh manual approval model as CLI training.**
+> (Phase 4D-1) Eskiden `/api/training/run` doğrudan `launch()` çağırıp onayı atlıyordu;
+> artık STOP_ALL + tek-kullanımlık taze onay zorunlu. EĞİTİM tabındaki başlat butonu da
+> `confirm()` ister ve `needs_approval` yanıtında CLI onay komutunu gösterir.
 
 ### 7.8 Net durum (Phase 2 sonrası)
 - **Tam otomasyon HÂLÂ aktif değil.** Her gerçek eğitim AYRI manuel onay ister.
@@ -168,3 +176,43 @@ STOP_ALL iç komutta da geçerlidir. Manuel `achilles train --run` bu env'i ALMA
 - **Web dashboard Phase 3'te** yapılacak (bu fazda yalnız backend + CLI + API).
 - Eğitim kabuk döngüleri (`train-loop.ps1`, `auto-chain.sh`, `mac-loop.sh`) artık iç
   `train --run` onay kapısına takılır → gözetimsiz tekrar eğitim KENDİLİĞİNDEN olmaz.
+
+---
+
+## 8. Phase 3 — Agent/Otomasyon Dashboard
+
+Mevcut Achilles Web UI'na yeni bir sekme (**10 · AGENTS / OTOMASYON**) eklendi —
+ayrı uygulama DEĞİL, mevcut `app/web/static/` (vanilla JS) içine. **Yeni backend yetenek
+EKLENMEDİ**; yalnız Phase 1/2 endpoint'leri tüketilir.
+
+**Dashboard ne gösterir:**
+- **Supervisor/Sağlık** — STOP_ALL durumu, danger gate (her zaman aktif), bekleyen onay
+  sayısı, çalışan koşu sayısı, son olay zamanı, `/healthz` durumu + büyük kırmızı STOP_ALL
+  kill-switch.
+- **Onay İstekleri** — pending önce; Approve/Reject (confirm zorunlu).
+- **Agents** — 15 ajan; tehlikeli olanlar uyarı rozetli; tıkla → koşu filtrele.
+- **Agent Koşuları** — run listesi; run_id → metadata + outputs + error + **olay zaman
+  çizelgesi**.
+- **Otomasyon Görevleri** — liste + iptal (confirm) + basit görev oluşturma.
+- **Genel Olay Akışı** — son 100 olay; error/warning görsel ayrışır.
+
+**Kullandığı endpoint'ler:** `GET /api/agents`, `/api/agents/runs`,
+`/api/agents/runs/{id}`, `/api/automation/tasks` (GET/POST) + `/cancel`,
+`/api/approvals` (GET) + `/approve` + `/reject`, `/api/events`, `/api/healthz`,
+`/api/supervisor/status` + `/stop-all` + `/clear-stop-all`.
+
+**Dashboard NE YAPMAZ:**
+- Eğitim/terfi başlatmaz; yalnız görünürlük + onay + STOP_ALL kontrol yüzeyidir.
+- Yeni tehlikeli backend yeteneği eklemez.
+- **GitHub Claude PR otomasyonu Phase 4'e kadar KAPALI.**
+- training/promotion HÂLÂ manuel TAZE onay ister (dashboard'dan approve dahi tek
+  kullanımlıktır; standing yetki yok).
+
+**Güvenlik:** mevcut `api_auth` token akışı korunur; tüm dinamik içerik `esc()` ile
+kaçırılır (XSS); STOP_ALL/approve/reject/cancel `confirm()` olmadan çalışmaz; satır
+butonları CSP-safe olay-delegasyonuyla bağlanır (inline `onclick` yok).
+
+**Bilinen sınır (raporlandı, backend EKLENMEDİ):** `POST /api/automation/tasks`
+query-param tabanlı → create formunda `params_json` yok; `/healthz` kaba (granüler
+sqlite/runtime bayrağı yok); approval `decision_note` UI'da girilmiyor. İleride istenirse
+küçük read-only zenginleştirme — bu fazda backend büyütülmedi.

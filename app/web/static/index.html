@@ -59,6 +59,7 @@
       <button class="tab" data-tab="eval">07 · DEĞERLENDİRME</button>
       <button class="tab" data-tab="about">08 · SİSTEM</button>
       <button class="tab" data-tab="learning">09 · ÖĞRENME</button>
+      <button class="tab" data-tab="agents">10 · AGENTS / OTOMASYON</button>
     </nav>
 
     <main>
@@ -695,6 +696,79 @@
           <svg id="lrnUndSvg" viewBox="0 0 700 160"
                style="width:100%;height:160px;background:var(--bg2);border-radius:6px;display:block"></svg>
           <div id="lrnUndTable" style="margin-top:.75rem"><span class="muted small">Yükleniyor…</span></div>
+        </div>
+      </section>
+
+      <!-- 10 · AGENTS / OTOMASYON — Phase 3 dashboard (yalnız Phase 1/2 endpointleri) -->
+      <section class="panel" id="panel-agents">
+        <div class="ag-toolbar">
+          <h2 style="margin:0">Agents / Otomasyon</h2>
+          <button class="btn" id="agRefreshBtn">↻ Yenile</button>
+          <span class="muted small">Görünürlük + onay + STOP_ALL kontrol yüzeyi. Yeni
+            tehlikeli yetenek YOK; yalnız mevcut backend.</span>
+        </div>
+
+        <!-- A) Supervisor / Health status -->
+        <div class="card">
+          <h3 style="margin:0 0 .5rem">Supervisor / Sağlık</h3>
+          <div id="agStatusGrid" class="ag-status-grid">
+            <span class="muted small">Yükleniyor…</span>
+          </div>
+          <div class="ag-stopall-row">
+            <button class="btn ag-stopall-btn" id="agStopAllBtn">🛑 STOP_ALL OLUŞTUR</button>
+            <button class="btn" id="agClearStopAllBtn">STOP_ALL Kaldır</button>
+            <span class="muted small">STOP_ALL tüm tehlikeli aksiyonları bloklar
+              (eğitim, terfi). Salt-okuma ajanlar etkilenmez.</span>
+          </div>
+        </div>
+
+        <!-- D) Approvals (pending önce) -->
+        <div class="card">
+          <h3 style="margin:0 0 .5rem">Onay İstekleri</h3>
+          <p class="muted small" style="margin:0 0 .5rem">Onaylar TEK KULLANIMLIKTIR; her
+            gerçek eğitim/terfi ayrı taze onay ister (standing yetki yok).</p>
+          <div id="agApprovalsTable"><span class="muted small">Yükleniyor…</span></div>
+        </div>
+
+        <!-- B) Agents -->
+        <div class="card">
+          <h3 style="margin:0 0 .5rem">Agents</h3>
+          <p class="muted small" id="agAgentFilterHint" style="margin:0 0 .5rem">Bir ajana
+            tıkla → koşularını filtrele.</p>
+          <div id="agAgentsTable"><span class="muted small">Yükleniyor…</span></div>
+        </div>
+
+        <!-- C) Runs + detail -->
+        <div class="card">
+          <h3 style="margin:0 0 .5rem">Agent Koşuları</h3>
+          <div id="agRunsTable"><span class="muted small">Yükleniyor…</span></div>
+          <div id="agRunDetail" class="ag-run-detail hidden"></div>
+        </div>
+
+        <!-- E) Tasks + create -->
+        <div class="card">
+          <h3 style="margin:0 0 .5rem">Otomasyon Görevleri</h3>
+          <div id="agTasksTable"><span class="muted small">Yükleniyor…</span></div>
+          <details class="ag-create">
+            <summary>+ Yeni görev oluştur</summary>
+            <div class="ag-create-form">
+              <input id="agTaskAgent" placeholder="agent_id" autocomplete="off" />
+              <input id="agTaskTitle" placeholder="başlık" autocomplete="off" />
+              <input id="agTaskDesc" placeholder="açıklama (opsiyonel)" autocomplete="off" />
+              <label class="ag-check">
+                <input type="checkbox" id="agTaskApproval" /> requires_approval
+              </label>
+              <button class="btn" id="agTaskCreateBtn">Oluştur</button>
+              <span class="muted small">Not: create endpoint query-param tabanlı;
+                params_json şimdilik backend'de yok (Phase 2 şeması).</span>
+            </div>
+          </details>
+        </div>
+
+        <!-- F) Global events -->
+        <div class="card">
+          <h3 style="margin:0 0 .5rem">Genel Olay Akışı (son 100)</h3>
+          <div id="agEventsTable"><span class="muted small">Yükleniyor…</span></div>
         </div>
       </section>
     </main>

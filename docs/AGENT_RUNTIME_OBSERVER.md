@@ -93,7 +93,7 @@ etiketli issue → Claude Code branch → CI kapısı → PR (asla `main`'e push
 | startup sweep (bayat running → cancelled) | ✅ yapıldı (Phase 2) |
 | tehlikeli aksiyon entegrasyonu (train/promote/rules) | ✅ yapıldı (Phase 2) |
 | CLI task/approval/stop-all + web /automation,/approvals,/events,/healthz,/supervisor | ✅ yapıldı (Phase 2) |
-| dashboard sekmesi (mevcut Web UI içinde) | ❌ Phase 3 |
+| dashboard sekmesi (mevcut Web UI içinde) | ✅ yapıldı (Phase 3) |
 | GitHub Claude Code PR automation | ❌ Phase 4 |
 
 ## Phase 2 API yüzeyi (özet)
@@ -111,4 +111,61 @@ etiketli issue → Claude Code branch → CI kapısı → PR (asla `main`'e push
 
 **Politika:** her gerçek eğitim ve her adapter terfisi AYRI manuel onay ister
 (tek kullanımlık taze onay; standing yetki yok). STOP_ALL tüm tehlikeli aksiyonları bloklar.
-Tam otomasyon hâlâ kapalı; GitHub PR otomasyonu Phase 4'e kadar kapalı; dashboard Phase 3'te.
+Tam otomasyon hâlâ kapalı; GitHub PR otomasyonu Phase 4'e kadar kapalı.
+
+## Phase 3 — Agent/Otomasyon Dashboard (özet)
+
+Mevcut Web UI'ye **10 · AGENTS / OTOMASYON** sekmesi eklendi (vanilla JS; ayrı uygulama
+değil). Paneller: Supervisor/Sağlık (+ büyük kırmızı STOP_ALL), Onay İstekleri
+(Approve/Reject), Agents (tehlikeli rozet + filtre), Agent Koşuları (+ olay zaman çizelgesi),
+Otomasyon Görevleri (+ iptal/oluştur), Genel Olay Akışı.
+
+**Yalnız Phase 1/2 endpoint'lerini tüketir; yeni backend yetenek EKLENMEDİ.** Mevcut
+`api_auth` token akışı korunur; tüm dinamik içerik `esc()` ile kaçırılır; tehlikeli
+butonlar `confirm()` ister; satır butonları CSP-safe olay-delegasyonuyla bağlanır.
+
+**Değişen dosyalar:** `app/web/static/index.html`, `app/web/static/assets/app.js`,
+`app/web/static/assets/app.css`, `tests/test_agent_dashboard_static.py`.
+
+**Dashboard NE YAPMAZ:** eğitim/terfi başlatmaz; yeni tehlikeli yetenek eklemez;
+GitHub PR otomasyonu (Phase 4) kapalı; training/promotion hâlâ manuel taze onay ister.
+Dashboard yalnız **görünürlük + onay + STOP_ALL kontrol yüzeyidir**.
+
+**Bilinen sınır:** create form query-param tabanlı (`params_json` yok); `/healthz` kaba;
+approval `decision_note` UI'da yok. İleride küçük read-only zenginleştirme.
+
+## Phase 4D-1 — Web training gate fix
+
+**Web training start is now protected by the same fresh manual approval model as CLI training.**
+
+4D-0 denetimi bir bypass buldu: `POST /api/training/run` doğrudan `launch()` çağırıyor,
+`launch()` ise spawn ettiği `train --run`'a `ACHILLES_TRAIN_SUPERVISED=1` veriyordu →
+CLI'daki tek-kullanımlık taze onay kapısı atlanıyordu (STOP_ALL yine de geçerliydi ama
+fresh manual approval yoktu; EĞİTİM tabında confirm de yoktu).
+
+Düzeltme: endpoint artık CLI ile **aynı anahtarı** (`lora-trainer`/`train_run`, critical)
+kullanarak `require_fresh_approval` çağırır. Onay yoksa eğitim BAŞLAMAZ; `needs_approval`
++ `approval_id` + `uv run achilles approval-approve <id>` döner. Onaylanıp istek
+tekrarlanınca taze onay TÜKETİLİR ve `launch()` çağrılır. EĞİTİM tabındaki başlat butonu
+`confirm()` ister ve `needs_approval` yanıtında onay komutunu gösterir. STOP_ALL hâlâ
+hem endpoint'te hem spawn edilen alt süreçte geçerlidir.
+
+**Değişen dosyalar:** `app/web/server.py`, `app/web/schemas.py`,
+`app/web/static/assets/app.js`, `tests/test_web_training_gate.py`,
+`tests/test_agent_dashboard_static.py`.
+
+## CI mypy parity note (Phase 3.5)
+
+`mypy app`, eğitim backend'i (`torch`/`peft`/`transformers` = opsiyonel `train-cpu`
+extra'sı) KURULU OLMASA BİLE temiz geçmelidir — CI `uv sync --extra dev` ile çalışır.
+
+Önceden `peft_lora_train.py` ve `adapter_eval.py` içindeki `# type: ignore` satırları
+yalnız torch KURULUYKEN "kullanılıyordu"; torch'suz ortamda mypy bunları
+`Unused "type: ignore"` (`warn_unused_ignores`) olarak işaretliyordu → CI mypy kırılırdı.
+
+**Çözüm (yalnız typing):** PEFT ile yeniden-atanan `model` değişkeni ilk bağlandığı yerde
+`model: Any` olarak işaretlendi (yerel anotasyon — runtime'da değerlendirilmez,
+`from __future__ import annotations`). Böylece `get_peft_model` / `print_trainable_parameters`
+/ `model=model` satırları torch'lu ve torch'suz ortamların İKİSİNDE de hata vermez ve
+hiçbir `# type: ignore` gerekmez. **Runtime davranışı ve eğitim mantığı DEĞİŞMEDİ;
+eğitim backend'i opsiyonel bağımlılık olarak kalır.** Phase 4 GitHub automation buna dayanır.

@@ -1036,56 +1036,56 @@ def api_training_dry_run(req: TrainDryRunRequest) -> TrainDryRunResponse:
 
 @app.post("/api/training/run", response_model=TrainingStartResponse, dependencies=[api_auth])
 def api_training_run(req: TrainingStartRequest) -> TrainingStartResponse:
-    """Gerçek LoRA eğitimini DETACHED başlat (web/terminal kapansa da sürer).
+    """Gerçek LoRA eğitimini DETACHED başlat — CLI ile AYNI taze-onay kapısı (Phase 4D-1).
 
-    Eski yol eğitimi web süreci içinde çalıştırıyordu → web çökünce/yeniden
-    başlayınca eğitim de ölüyordu. Artık detached süreç; ilerleme
-    /api/training/live ile (log'dan) izlenir. Veri `lora_sft.jsonl`'den yeniden
-    bölünür (DatasetBuilder kaynaklı train.jsonl clobber'ı başlatmada onarılır).
-    iterations<=0 → 1 epoch (örnek sayısı kadar adım).
+    Güvenlik (CLAUDE.md Kural 8): web yolu da STOP_ALL + TEK KULLANIMLIK taze manuel
+    onay gerektirir; standing yetki yok. Onay yoksa eğitim BAŞLAMAZ — pending onay
+    isteği oluşturulur ve ``needs_approval`` + ``approval_id`` + onay komutu döner.
+    Onaylandıktan sonra istek TEKRAR çağrılınca taze onay TÜKETİLİR ve eğitim başlar.
+    CLI ``train --run`` ile aynı anahtar (agent_id='lora-trainer', action='train_run')
+    kullanılır → onaylar değiştirilebilir. ``launch()`` spawn edilen ``train --run``a
+    SUPERVISED verir (çift onay olmasın); STOP_ALL alt süreçte yine geçerlidir.
 
-    GÜVENLİK (CLAUDE.md Kural 8): `launch()` spawn ettiği `achilles train --run`
-    alt sürecine ``ACHILLES_TRAIN_SUPERVISED=1`` verir → alt süreç iç onay kapısını
-    atlar. Bu yüzden TAZE onay ÜST katmanda (burada) alınmalı — aksi halde web
-    butonu onaysız gerçek eğitim başlatırdı. CLI `train --run` ve auto_pipeline ile
-    aynı kapı: STOP_ALL + tek-kullanımlık taze onay (standing yetki YOK).
+    Detached süreç; ilerleme /api/training/live ile (log'dan) izlenir. Veri
+    `lora_sft.jsonl`'den yeniden bölünür. iterations<=0 → 1 epoch.
     """
     from app.agents.runtime import approvals, supervisor
 
-    # 1) Küresel acil-durdurma — web başlatması da STOP_ALL'a tabidir (fail-fast;
-    #    alt süreç de kontrol eder ama burada hiç spawn etmeden net yanıt veririz).
+    # 1) Küresel fren: STOP_ALL aktifse hiçbir tehlikeli aksiyon çalışmaz.
     if supervisor.is_stop_all_active():
         return TrainingStartResponse(
             ok=False,
+            status="blocked",
             message=(
-                "STOP_ALL aktif — gerçek eğitim bloklandı. "
-                "Kaldır: achilles clear-stop-all (veya ONAYLAR/Süpervizör panelinden)."
+                "STOP_ALL aktif — gerçek eğitim bloklandı. Kaldır: Agents sekmesi → "
+                "'STOP_ALL Kaldır' veya `uv run achilles clear-stop-all`."
             ),
         )
 
-    # 2) Tek-kullanımlık taze onay. CLI ile aynı (agent_id/action) → bir onay yalnız
-    #    bir gerçek eğitimi yetkilendirir; tüketilince biter (auto-terfi/standing yok).
+    # 2) TEK KULLANIMLIK taze manuel onay (standing yetki yok).
     decision = approvals.require_fresh_approval(
         agent_id="lora-trainer",
         action="train_run",
         risk="critical",
         summary=(
-            f"Web'den gerçek LoRA eğitimi: {req.adapter_name or 'achilles_lora'} "
+            f"Gerçek LoRA eğitimi (web): {req.adapter_name or 'achilles_lora'} "
             f"({req.iterations} adım)"
         ),
     )
     if not decision.authorized:
         return TrainingStartResponse(
             ok=False,
+            status="needs_approval",
+            approval_id=decision.approval_id,
+            approve_command=f"uv run achilles approval-approve {decision.approval_id}",
             message=(
                 "Gerçek eğitim TAZE manuel onay gerektirir (standing yetki yok). "
-                f"Onay isteği oluşturuldu: {decision.approval_id}. "
-                "ONAYLAR sekmesinden (veya: achilles approval-approve "
-                f"{decision.approval_id}) onayla, sonra eğitimi TEKRAR başlat."
+                f"Onay isteği oluşturuldu: {decision.approval_id}. Onayla, sonra eğitimi "
+                "yeniden başlat."
             ),
         )
 
-    # 3) Onay tüketildi → eğitimi başlat (alt süreç çift onay istemez: supervised).
+    # 3) Onay tüketildi → detached eğitimi başlat.
     from app.training.detached_launch import launch
 
     res = launch(
@@ -1093,7 +1093,11 @@ def api_training_run(req: TrainingStartRequest) -> TrainingStartResponse:
         iterations=req.iterations,
         base_model=req.base_model or None,
     )
-    return TrainingStartResponse(ok=res["ok"], message=res["message"])
+    return TrainingStartResponse(
+        ok=res["ok"],
+        status="started" if res["ok"] else "error",
+        message=res["message"],
+    )
 
 
 @app.post("/api/training/stop", dependencies=[api_auth])

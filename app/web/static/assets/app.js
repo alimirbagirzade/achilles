@@ -93,6 +93,7 @@
       if (name === "review") loadPendingCards();
       if (name === "eval") loadEvalSets();
       if (name === "about") loadSystemStatus();
+      if (name === "agents") loadAgentsDashboard();
     });
   });
 
@@ -914,6 +915,9 @@
   var startTrainBtn = document.getElementById("startTrainBtn");
   if (startTrainBtn) {
     startTrainBtn.addEventListener("click", function () {
+      // Phase 4D-1: gerçek eğitim tehlikeli → tek-tık yok, önce confirm.
+      if (!window.confirm("Bu işlem gerçek LoRA training başlatabilir. Fresh manual "
+          + "approval olmadan başlamamalıdır. Devam etmek istiyor musunuz?")) return;
       var payload = {
         base_model: (document.getElementById("drBaseModel") || {}).value || "",
         adapter_name: (document.getElementById("trAdapterName") || {}).value || "achilles_lora",
@@ -940,6 +944,17 @@
       if (logEl) logEl.textContent = "";
       api("/training/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
         .then(function (data) {
+          // Phase 4D-1: backend taze manuel onay isteyebilir (needs_approval).
+          if (data && data.status === "needs_approval") {
+            var cmd = data.approve_command || ("uv run achilles approval-approve " + (data.approval_id || ""));
+            if (logEl) {
+              logEl.textContent = "Onay gerekli. Approval ID: " + (data.approval_id || "")
+                + "\nCLI ile onayla: " + cmd
+                + "\nOnayladıktan sonra eğitimi yeniden başlat.";
+            }
+            toast(data.message || "Onay gerekli — fresh manual approval şart.", true);
+            return;
+          }
           toast(data.message, !data.ok);
           // Detached eğitim: SSE yerine /api/training/live poll'u (mirrorTrainTab) besler.
           if (data.ok) refreshTrain();
@@ -2789,6 +2804,354 @@
         el.textContent = "eğitim: —";
       });
   }
+
+  // ---------- AGENTS / OTOMASYON dashboard (Phase 3) ----------
+  // Yalnız Phase 1/2 endpointlerini kullanır (yeni tehlikeli backend YOK). Tüm dinamik
+  // metin esc() ile kaçırılır; innerHTML yalnız escape edilmiş veriyle kullanılır.
+  // Tehlikeli aksiyonlar (STOP_ALL, approve, reject, cancel) confirm() ister — tek tık yok.
+  var AG_RISK_CLS = { low: "ag-r-low", medium: "ag-r-med", high: "ag-r-high", critical: "ag-r-crit" };
+  var _agState = { agentFilter: null };
+
+  function agStatusBadge(status) {
+    var s = String(status || "");
+    var cls = "ag-gray";
+    if (s === "completed" || s === "approved" || s === "ok" || s === "healthy") cls = "ag-green";
+    else if (s === "running" || s === "pending" || s === "claimed" || s === "blocked_approval")
+      cls = "ag-yellow";
+    else if (s === "failed" || s === "rejected" || s === "blocked_stop_all") cls = "ag-red";
+    return '<span class="ag-badge ' + cls + '">' + esc(s || "—") + "</span>";
+  }
+  function agShort(id) {
+    return id ? esc(String(id).slice(0, 18)) : "—";
+  }
+  function agTime(t) {
+    return t ? esc(String(t).slice(0, 19).replace("T", " ")) : "—";
+  }
+
+  function loadAgentsDashboard() {
+    loadAgSupervisorStatus();
+    loadAgApprovals();
+    loadAgAgents();
+    loadAgRuns();
+    loadAgTasks();
+    loadAgEvents();
+    updateAgFilterHint();
+  }
+
+  // A) Supervisor / health
+  function loadAgSupervisorStatus() {
+    var grid = document.getElementById("agStatusGrid");
+    if (!grid) return;
+    Promise.all([
+      api("/supervisor/status").catch(function () { return {}; }),
+      api("/healthz").catch(function () { return {}; }),
+      api("/approvals?status=pending&limit=200").catch(function () { return { approvals: [] }; }),
+      api("/agents/runs?status=running&limit=200").catch(function () { return { runs: [] }; }),
+      api("/events?limit=1").catch(function () { return { events: [] }; }),
+    ]).then(function (res) {
+      var sup = res[0] || {}, hz = res[1] || {}, apr = res[2] || {}, runs = res[3] || {}, ev = res[4] || {};
+      var stopAll = !!sup.stop_all_active;
+      var pending = (apr.approvals || []).length;
+      var running = (runs.runs || []).length;
+      var lastEv = ev.events && ev.events[0] ? ev.events[0].ts : null;
+      var rows = [
+        ["STOP_ALL", stopAll ? '<span class="ag-badge ag-red">AKTİF</span>'
+          : '<span class="ag-badge ag-green">kapalı</span>'],
+        ["Danger gate", '<span class="ag-badge ag-yellow">her zaman aktif (taze onay)</span>'],
+        ["Bekleyen onay", '<span class="ag-badge ' + (pending ? "ag-yellow" : "ag-green") + '">'
+          + pending + "</span>"],
+        ["Çalışan koşu", '<span class="ag-badge ' + (running ? "ag-yellow" : "ag-gray") + '">'
+          + running + "</span>"],
+        ["Son olay", agTime(lastEv)],
+        ["Sağlık", agStatusBadge(hz.status || (hz.ok ? "healthy" : "?"))
+          + ' <span class="muted small">' + agTime(hz.time) + "</span>"],
+      ];
+      var html = "";
+      rows.forEach(function (it) {
+        html += '<div class="ag-stat"><span class="ag-stat-k">' + esc(it[0])
+          + '</span><span class="ag-stat-v">' + it[1] + "</span></div>";
+      });
+      grid.innerHTML = html;
+      var card = grid.closest(".card");
+      if (card) card.classList.toggle("ag-stopall-active", stopAll);
+    }).catch(function (e) {
+      grid.innerHTML = '<span class="ag-red">Durum yüklenemedi: ' + esc(e.message) + "</span>";
+    });
+  }
+
+  // B) Agents
+  function loadAgAgents() {
+    var el = document.getElementById("agAgentsTable");
+    if (!el) return;
+    api("/agents").then(function (d) {
+      var agents = d.agents || [];
+      if (!agents.length) { el.innerHTML = '<span class="muted small">Ajan yok.</span>'; return; }
+      var rows = "";
+      agents.forEach(function (a) {
+        var danger = a.dangerous ? '<span class="ag-badge ag-red">⚠ tehlikeli</span>'
+          : '<span class="muted small">—</span>';
+        rows += "<tr" + (a.dangerous ? ' class="ag-danger-row"' : "") + ">"
+          + '<td><button class="ag-link" data-ag-agent="' + esc(a.agent_id) + '">'
+          + esc(a.agent_id) + "</button></td>"
+          + "<td>" + esc(a.autonomy) + "</td>"
+          + "<td>" + danger + "</td>"
+          + "<td>" + (a.approval_required ? "✓" : "—") + "</td>"
+          + "<td>" + (a.default_enabled ? "✓" : "—") + "</td>"
+          + '<td class="muted small">' + esc(a.status_location || "—") + "</td></tr>";
+      });
+      el.innerHTML = '<button class="ag-link" data-ag-agent="" style="margin-bottom:.4rem">'
+        + "↺ filtreyi temizle</button>"
+        + '<table class="ag-table"><thead><tr><th>Agent</th><th>Autonomy</th><th>Tehlikeli</th>'
+        + "<th>Onay</th><th>Vars. açık</th><th>Status Location</th></tr></thead><tbody>"
+        + rows + "</tbody></table>";
+    }).catch(function (e) {
+      el.innerHTML = '<span class="ag-red">Yüklenemedi: ' + esc(e.message) + "</span>";
+    });
+  }
+
+  // C) Runs + detail
+  function loadAgRuns() {
+    var el = document.getElementById("agRunsTable");
+    if (!el) return;
+    var path = "/agents/runs?limit=50";
+    if (_agState.agentFilter) path += "&agent_id=" + encodeURIComponent(_agState.agentFilter);
+    api(path).then(function (d) {
+      var runs = d.runs || [];
+      if (!runs.length) { el.innerHTML = '<span class="muted small">Koşu yok.</span>'; return; }
+      var rows = "";
+      runs.forEach(function (r) {
+        rows += "<tr>"
+          + '<td><button class="ag-link" data-ag-run="' + esc(r.run_id) + '">'
+          + agShort(r.run_id) + "</button></td>"
+          + "<td>" + esc(r.agent_id) + "</td>"
+          + "<td>" + agStatusBadge(r.status) + "</td>"
+          + "<td>" + agTime(r.started_at) + "</td>"
+          + "<td>" + agTime(r.finished_at) + "</td>"
+          + '<td class="ag-red small">' + esc(r.error || "") + "</td></tr>";
+      });
+      el.innerHTML = '<table class="ag-table"><thead><tr><th>Run ID</th><th>Agent</th><th>Durum</th>'
+        + "<th>Başladı</th><th>Bitti</th><th>Hata</th></tr></thead><tbody>" + rows + "</tbody></table>";
+    }).catch(function (e) {
+      el.innerHTML = '<span class="ag-red">Yüklenemedi: ' + esc(e.message) + "</span>";
+    });
+  }
+
+  function loadAgRunDetail(runId) {
+    var el = document.getElementById("agRunDetail");
+    if (!el) return;
+    el.classList.remove("hidden");
+    el.innerHTML = '<span class="muted small">Yükleniyor…</span>';
+    api("/agents/runs/" + encodeURIComponent(runId)).then(function (d) {
+      var r = d.run || {}, evs = d.events || [];
+      var meta = '<div class="ag-detail-head"><strong>' + esc(r.run_id) + "</strong> "
+        + agStatusBadge(r.status)
+        + ' <button class="ag-link" id="agRunDetailClose">kapat ✕</button></div>'
+        + '<div class="muted small">agent: ' + esc(r.agent_id) + " · tetik: "
+        + esc(r.trigger_type || "—") + " · başladı: " + agTime(r.started_at)
+        + " · bitti: " + agTime(r.finished_at) + "</div>";
+      if (r.error) meta += '<div class="ag-red small">hata: ' + esc(r.error) + "</div>";
+      if (r.summary) meta += '<div class="muted small">özet: ' + esc(JSON.stringify(r.summary)) + "</div>";
+      if (r.outputs) meta += '<div class="muted small">çıktı: ' + esc(JSON.stringify(r.outputs)) + "</div>";
+      var tl = "";
+      evs.forEach(function (ev) {
+        var lvl = ev.level || "info";
+        tl += '<li class="ag-tl ag-lvl-' + esc(lvl) + '"><span class="ag-tl-ts">'
+          + agTime(ev.ts) + '</span> <span class="ag-badge ag-gray">' + esc(ev.kind) + "</span> "
+          + esc(ev.message || "") + "</li>";
+      });
+      el.innerHTML = meta + '<ul class="ag-timeline">'
+        + (tl || '<li class="muted small">olay yok</li>') + "</ul>";
+      var cl = document.getElementById("agRunDetailClose");
+      if (cl) cl.addEventListener("click", function () {
+        el.classList.add("hidden");
+        el.innerHTML = "";
+      });
+    }).catch(function (e) {
+      el.innerHTML = '<span class="ag-red">Detay yüklenemedi: ' + esc(e.message) + "</span>";
+    });
+  }
+
+  // D) Approvals (pending önce)
+  function loadAgApprovals() {
+    var el = document.getElementById("agApprovalsTable");
+    if (!el) return;
+    api("/approvals?limit=100").then(function (d) {
+      var items = (d.approvals || []).slice();
+      items.sort(function (a, b) {
+        return (a.status === "pending" ? 0 : 1) - (b.status === "pending" ? 0 : 1);
+      });
+      if (!items.length) { el.innerHTML = '<span class="muted small">Onay isteği yok.</span>'; return; }
+      var rows = "";
+      items.forEach(function (a) {
+        var riskCls = AG_RISK_CLS[a.risk] || "ag-r-med";
+        var actions = a.status === "pending"
+          ? ('<button class="btn-sm ag-approve" data-ag-action="approve" data-ag-id="'
+              + esc(a.approval_id) + '">Onayla</button> '
+            + '<button class="btn-sm ag-reject" data-ag-action="reject" data-ag-id="'
+              + esc(a.approval_id) + '">Reddet</button>')
+          : '<span class="muted small">—</span>';
+        rows += "<tr>"
+          + "<td>" + agShort(a.approval_id) + "</td>"
+          + "<td>" + esc(a.agent_id) + "</td>"
+          + "<td>" + esc(a.action) + "</td>"
+          + '<td><span class="ag-badge ' + riskCls + '">' + esc(a.risk) + "</span></td>"
+          + "<td>" + agStatusBadge(a.status) + "</td>"
+          + "<td>" + agTime(a.requested_at) + "</td>"
+          + "<td>" + actions + "</td></tr>";
+      });
+      el.innerHTML = '<table class="ag-table"><thead><tr><th>Approval</th><th>Agent</th><th>Action</th>'
+        + "<th>Risk</th><th>Durum</th><th>İstendi</th><th>Aksiyon</th></tr></thead><tbody>"
+        + rows + "</tbody></table>";
+    }).catch(function (e) {
+      el.innerHTML = '<span class="ag-red">Yüklenemedi: ' + esc(e.message) + "</span>";
+    });
+  }
+
+  // E) Tasks
+  function loadAgTasks() {
+    var el = document.getElementById("agTasksTable");
+    if (!el) return;
+    api("/automation/tasks?limit=50").then(function (d) {
+      var items = d.tasks || [];
+      if (!items.length) { el.innerHTML = '<span class="muted small">Görev yok.</span>'; return; }
+      var rows = "";
+      items.forEach(function (t) {
+        var terminal = t.status === "completed" || t.status === "failed" || t.status === "cancelled";
+        var actions = terminal ? '<span class="muted small">—</span>'
+          : '<button class="btn-sm ag-reject" data-ag-action="cancel" data-ag-id="'
+            + esc(t.task_id) + '">İptal</button>';
+        rows += "<tr>"
+          + "<td>" + agShort(t.task_id) + "</td>"
+          + "<td>" + esc(t.agent_id) + "</td>"
+          + "<td>" + esc(t.title || "") + "</td>"
+          + "<td>" + agStatusBadge(t.status) + "</td>"
+          + "<td>" + (t.requires_approval ? "✓" : "—") + "</td>"
+          + "<td>" + agTime(t.created_at) + "</td>"
+          + "<td>" + actions + "</td></tr>";
+      });
+      el.innerHTML = '<table class="ag-table"><thead><tr><th>Task</th><th>Agent</th><th>Başlık</th>'
+        + "<th>Durum</th><th>Onay</th><th>Oluşturuldu</th><th>Aksiyon</th></tr></thead><tbody>"
+        + rows + "</tbody></table>";
+    }).catch(function (e) {
+      el.innerHTML = '<span class="ag-red">Yüklenemedi: ' + esc(e.message) + "</span>";
+    });
+  }
+
+  // F) Global events
+  function loadAgEvents() {
+    var el = document.getElementById("agEventsTable");
+    if (!el) return;
+    api("/events?limit=100").then(function (d) {
+      var items = d.events || [];
+      if (!items.length) { el.innerHTML = '<span class="muted small">Olay yok.</span>'; return; }
+      var rows = "";
+      items.forEach(function (ev) {
+        var lvl = ev.level || "info";
+        var who = ev.run_id || "";
+        if (ev.payload && ev.payload.agent_id) who = ev.payload.agent_id;
+        var lvlCls = lvl === "error" ? "ag-red" : lvl === "warning" ? "ag-yellow" : "ag-gray";
+        rows += '<tr class="ag-lvl-' + esc(lvl) + '">'
+          + "<td>" + agTime(ev.ts) + "</td>"
+          + '<td><span class="ag-badge ' + lvlCls + '">' + esc(lvl) + "</span></td>"
+          + "<td>" + esc(ev.kind) + "</td>"
+          + '<td class="small">' + esc(String(who).slice(0, 24)) + "</td>"
+          + "<td>" + esc(ev.message || "") + "</td></tr>";
+      });
+      el.innerHTML = '<table class="ag-table"><thead><tr><th>Zaman</th><th>Level</th><th>Kind</th>'
+        + "<th>Agent/Run</th><th>Mesaj</th></tr></thead><tbody>" + rows + "</tbody></table>";
+    }).catch(function (e) {
+      el.innerHTML = '<span class="ag-red">Yüklenemedi: ' + esc(e.message) + "</span>";
+    });
+  }
+
+  function updateAgFilterHint() {
+    var h = document.getElementById("agAgentFilterHint");
+    if (!h) return;
+    h.textContent = _agState.agentFilter
+      ? "Filtre: " + _agState.agentFilter + " — temizlemek için ajan tablosunda 'filtreyi temizle'."
+      : "Bir ajana tıkla → koşularını filtrele.";
+  }
+
+  // ---- dangerous actions (her biri confirm() ister — tek tık yok) ----
+  function agStopAll() {
+    if (!window.confirm("Bu işlem tüm dangerous agent action'larını durdurur. Emin misiniz?")) return;
+    api("/supervisor/stop-all", { method: "POST" })
+      .then(function () { toast("STOP_ALL etkin."); loadAgSupervisorStatus(); })
+      .catch(function (e) { toast("Hata: " + e.message, true); });
+  }
+  function agClearStopAll() {
+    if (!window.confirm("STOP_ALL kaldırılacak; tehlikeli aksiyonlar yeniden (onaya tabi) "
+        + "çalışabilir. Emin misiniz?")) return;
+    api("/supervisor/clear-stop-all", { method: "POST" })
+      .then(function () { toast("STOP_ALL kaldırıldı."); loadAgSupervisorStatus(); })
+      .catch(function (e) { toast("Hata: " + e.message, true); });
+  }
+  function agApprove(id) {
+    if (!id) return;
+    if (!window.confirm("Bu onay tek kullanımlıktır ve dangerous action çalıştırabilir. "
+        + "Emin misiniz?")) return;
+    api("/approvals/" + encodeURIComponent(id) + "/approve", { method: "POST" })
+      .then(function () { toast("Onaylandı."); loadAgApprovals(); loadAgSupervisorStatus(); })
+      .catch(function (e) { toast("Hata: " + e.message, true); });
+  }
+  function agReject(id) {
+    if (!id) return;
+    if (!window.confirm("Bu approval request reddedilecek. Emin misiniz?")) return;
+    api("/approvals/" + encodeURIComponent(id) + "/reject", { method: "POST" })
+      .then(function () { toast("Reddedildi."); loadAgApprovals(); loadAgSupervisorStatus(); })
+      .catch(function (e) { toast("Hata: " + e.message, true); });
+  }
+  function agCancelTask(id) {
+    if (!id) return;
+    if (!window.confirm("Bu görev iptal edilecek. Emin misiniz?")) return;
+    api("/automation/tasks/" + encodeURIComponent(id) + "/cancel", { method: "POST" })
+      .then(function () { toast("Görev iptal edildi."); loadAgTasks(); })
+      .catch(function (e) { toast("Hata: " + e.message, true); });
+  }
+  function agCreateTask() {
+    var agent = (document.getElementById("agTaskAgent").value || "").trim();
+    var title = (document.getElementById("agTaskTitle").value || "").trim();
+    var desc = (document.getElementById("agTaskDesc").value || "").trim();
+    var appr = document.getElementById("agTaskApproval").checked;
+    if (!agent || !title) { toast("agent_id ve başlık gerekli.", true); return; }
+    var qs = "?agent_id=" + encodeURIComponent(agent) + "&title=" + encodeURIComponent(title)
+      + "&requires_approval=" + (appr ? "true" : "false");
+    if (desc) qs += "&description=" + encodeURIComponent(desc);
+    api("/automation/tasks" + qs, { method: "POST" }).then(function () {
+      toast("Görev oluşturuldu.");
+      document.getElementById("agTaskAgent").value = "";
+      document.getElementById("agTaskTitle").value = "";
+      document.getElementById("agTaskDesc").value = "";
+      loadAgTasks();
+    }).catch(function (e) { toast("Hata: " + e.message, true); });
+  }
+
+  // ---- wiring (script body sonunda; panel DOM'u zaten parse edilmiş) ----
+  (function wireAgents() {
+    var panel = document.getElementById("panel-agents");
+    if (!panel) return;
+    var byId = function (id) { return document.getElementById(id); };
+    if (byId("agRefreshBtn")) byId("agRefreshBtn").addEventListener("click", loadAgentsDashboard);
+    if (byId("agStopAllBtn")) byId("agStopAllBtn").addEventListener("click", agStopAll);
+    if (byId("agClearStopAllBtn")) byId("agClearStopAllBtn").addEventListener("click", agClearStopAll);
+    if (byId("agTaskCreateBtn")) byId("agTaskCreateBtn").addEventListener("click", agCreateTask);
+    // delegated: dinamik satır butonları (CSP-safe; inline onclick yok)
+    panel.addEventListener("click", function (e) {
+      var t = e.target;
+      if (!t || t.nodeType !== 1) return;
+      var act = t.getAttribute("data-ag-action");
+      if (act === "approve") return agApprove(t.getAttribute("data-ag-id"));
+      if (act === "reject") return agReject(t.getAttribute("data-ag-id"));
+      if (act === "cancel") return agCancelTask(t.getAttribute("data-ag-id"));
+      var runId = t.getAttribute("data-ag-run");
+      if (runId) return loadAgRunDetail(runId);
+      if (t.hasAttribute("data-ag-agent")) {
+        _agState.agentFilter = t.getAttribute("data-ag-agent") || null;
+        loadAgRuns();
+        updateAgFilterHint();
+      }
+    });
+  })();
 
   // ---------- init ----------
   refreshStatus();
