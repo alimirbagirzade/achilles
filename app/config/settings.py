@@ -112,6 +112,12 @@ class Settings(BaseSettings):
     rag_graph: bool = False
     rag_graph_damping: float = 0.85  # PageRank yayılma katsayısı (1-damping = restart)
     rag_graph_iters: int = 20  # sabit iterasyon (determinizm)
+    # Sorgu yönlendirici (opt-in, Zincir 2 — derin araştırma): sorgu-tipine göre yol.
+    # KISA keyword/entity (ticker/kısaltma/sayı/tırnak) → konveks-füzyon hibrit (BM25 katkısı);
+    # UZUN semantik → saf dense (ölçülen en iyi+hızlı). Hibridin yalnız işe yaradığı yerde
+    # kullanılmasını sağlar (literatür: BM25 exact-match'te kazanır). Varsayılan kapalı.
+    rag_router: bool = False
+    rag_router_alpha: float = 0.7  # konveks füzyon dense ağırlığı (0.7-0.9 dense-favori önerilir)
     # Contextual Retrieval (Faz P2): chunk'ı embed etmeden önce "başlık / bölüm:" ön-eki
     # ekler (orijinal metin Chroma document'ında korunur). Tutarlılık için TÜM korpus
     # aynı ayarla embed edilmeli → açmadan önce `achilles reindex-contextual` çalıştır.
@@ -127,9 +133,11 @@ class Settings(BaseSettings):
     # (over-abstain riskini önlemek için opt-in; aç: ACHILLES_RAG_ABSTAIN=true).
     rag_abstain: bool = False
     # cosine benzerlik tabanı (1−distance); en iyi chunk bunun altındaysa alakasız sayılır.
-    # Muhafazakâr varsayılan: alakalı chunk'lar genelde ≥0.4 benzerlik; 0.18 yalnız belirgin
-    # alakasızlıkta tetiklenir. Kalibrasyon: golden-set'te abstain-oranı vs hata-oranı.
-    rag_abstain_min_similarity: float = 0.18
+    # KALİBRE EDİLDİ (2026-06-20, temiz ortam, 2 örnek): nomic benzerlikleri sıkışık —
+    # alakalı sorgu en-iyi ~0.80, ALAKASIZ sorgu en-iyi ~0.51. Ayırıcı eşik ~0.55-0.6.
+    # 0.55 → belirgin alakasızı yakalar, meşruyu geçirir. NOT: 2-örnek tahmini, golden-set
+    # ile rafine et (abstain-oranı vs hata-oranı). Kapı zaten opt-in (rag_abstain=False).
+    rag_abstain_min_similarity: float = 0.55
     rag_abstain_min_margin: float = 0.02  # top-1↔top-2 marjı bunun altında → belirsiz
 
     # --- Trading ---
