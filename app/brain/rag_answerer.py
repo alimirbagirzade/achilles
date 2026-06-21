@@ -21,8 +21,10 @@ from dataclasses import dataclass
 
 from app.brain.answer_quality import (
     assess_confidence,
+    citation_warning,
     is_weak_retrieval,
     reorder_lost_in_middle,
+    verify_citations,
 )
 from app.brain.local_llm import LLMUnavailable, LocalLLM
 from app.brain.prompt_loader import load_prompt
@@ -133,6 +135,12 @@ class RagAnswerer:
 
         try:
             text = self.llm.generate(prompt, system=system, temperature=0.2, seed=42)
+            # Citation-id doğrulama (opt, varsayılan açık): UYDURMA atıfları yakala —
+            # citation-forcing prompt yine de getirilmeyen kaynağa atıf verebilir
+            # (correctness≠faithfulness). Deterministik son-kontrol, LLM'siz (Kural 7).
+            if self.settings.rag_verify_citations:
+                check = verify_citations(text, chunks)
+                text += citation_warning(check)
             return RagAnswer(question=question, answer=text, sources=chunks, llm_used=True)
         except LLMUnavailable:
             # Graceful degradation: still return retrieved sources.

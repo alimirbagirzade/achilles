@@ -167,6 +167,10 @@ class Settings(BaseSettings):
     # "Lost in the middle" (arXiv 2307.03172): LLM'ler bağlamın ortasını unutur → en
     # alakalı chunk'ları başa/sona koy. Bedava, chunk EKLEMEZ/ÇIKARMAZ → varsayılan AÇIK.
     rag_reorder_context: bool = True
+    # Citation-id doğrulama: cevaptaki [paper_id:chunk_id] atıfları getirilen kaynaklarda
+    # yoksa UYDURMA uyarısı ekle (deterministik, LLM'siz; citation-forcing yine uydurabilir).
+    # Yalnız dayanaksız atıf VARKEN uyarı ekler → düşük risk, varsayılan AÇIK (Kural 7).
+    rag_verify_citations: bool = True
     # CRAG-lite güven kapısı: retrieval ZAYIFSA (alakasız/belirsiz) cevap üretmeden ABSTAIN
     # (Kural 7 — uydurma yok). Eşikler korpusa göre KALİBRE edilmeli → varsayılan KAPALI
     # (over-abstain riskini önlemek için opt-in; aç: ACHILLES_RAG_ABSTAIN=true).

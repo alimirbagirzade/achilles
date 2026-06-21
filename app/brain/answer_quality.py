@@ -14,9 +14,13 @@ HyDE / multi-query / Self-RAG BİLİNÇLİ ATLANDI (4B'de net-zararlı/çok paha
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 
 from app.memory.retrieval_service import RetrievedChunk
+
+# Satır-içi atıf deseni: [paper_id:chunk_id] veya [paper_id:chunk_id, s.3]
+_CITE_RE = re.compile(r"\[([A-Za-z0-9_\-]+):([A-Za-z0-9_\-]+)(?:,[^\]]*)?\]")
 
 
 def similarity(distance: float | None) -> float:
@@ -80,3 +84,55 @@ def reorder_lost_in_middle(chunks: list[RetrievedChunk]) -> list[RetrievedChunk]
         (head if i % 2 == 0 else tail).append(c)
     # head: rank0,2,4… (en güçlü başta); tail tersine → rank1,3,5 sona doğru güçlenir
     return head + tail[::-1]
+
+
+@dataclass
+class CitationCheck:
+    """Satır-içi atıf doğrulama sonucu (deterministik, LLM'siz)."""
+
+    n_cited: int  # cevapta toplam atıf sayısı
+    unsupported: list[str] = field(default_factory=list)  # retrieve edilmeyene atıflar
+
+    @property
+    def has_unsupported(self) -> bool:
+        return bool(self.unsupported)
+
+
+def verify_citations(answer: str, chunks: list[RetrievedChunk]) -> CitationCheck:
+    """Cevaptaki [paper_id:chunk_id] atıflarını retrieve edilen kaynaklarla doğrula.
+
+    Citation-forcing prompt yine de UYDURMA atıf üretebilir ("correctness ≠ faithfulness",
+    araştırma) → deterministik son-kontrol: chunk_id'si VEYA paper_id'si getirilen kaynak
+    kümesinde OLMAYAN atıflar 'unsupported' (dayanaksız). LLM çağrısı yok. (Kural 7)
+    """
+    if not answer or not chunks:
+        return CitationCheck(n_cited=0)
+    chunk_ids = {c.chunk_id for c in chunks}
+    paper_ids = {c.paper_id for c in chunks}
+    seen: set[str] = set()
+    unsupported: list[str] = []
+    n = 0
+    for m in _CITE_RE.finditer(answer):
+        pid, cid = m.group(1), m.group(2)
+        n += 1
+        key = f"{pid}:{cid}"
+        if key in seen:
+            continue
+        seen.add(key)
+        # chunk_id getirilenlerde varsa desteklenir; değilse paper_id eşleşmesi de kabul
+        # (LLM bazen sayfa/parça id'sini yaklaşık verir ama doğru makaleyi gösterir).
+        if cid not in chunk_ids and pid not in paper_ids:
+            unsupported.append(key)
+    return CitationCheck(n_cited=n, unsupported=unsupported)
+
+
+def citation_warning(check: CitationCheck) -> str:
+    """Dayanaksız atıf varsa eklenecek deterministik uyarı metni (yoksa boş)."""
+    if not check.has_unsupported:
+        return ""
+    ids = ", ".join(check.unsupported[:8])
+    return (
+        "\n\n---\n⚠ DİKKAT (otomatik doğrulama): aşağıdaki atıf(lar) getirilen kaynaklarda "
+        f"YOK — dayanaksız olabilir, doğrulayın: {ids}\n"
+        "(Auto-check: the cited source(s) above were not in the retrieved set — verify.)"
+    )
