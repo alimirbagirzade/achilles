@@ -106,3 +106,21 @@ reports/*.ipynb
 
 # pytest yerel basetemp (Temp izin sorunu workaround)
 .pytest_tmp/
+# pytest basetemp varyantları (suffixli; kök dizinde birikmesin)
+.pytest_tmp_*/
+
+# Runtime PID / log / yedek çöpü (her makinede üretilir → commit edilmez)
+*.pid
+logs/
+*.bak
+*.proje-yedek
+perf.txt
+
+# Bozuk/yedek vektör DB kopyaları
+vector_db/chroma.corrupt-*/
+
+# Yerel scratch / kurtarma scriptleri (storage/ altında _ önekli)
+storage/_*.py
+
+# Editör/araç yerel ayarları
+.claude/launch.json
