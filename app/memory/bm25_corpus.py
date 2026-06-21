@@ -10,64 +10,72 @@ Chroma boş/erişilemezse `(None, {})` döner → çağıran dense-only'e geçer
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from app.memory.bm25_index import BM25Index
-from app.memory.chroma_store import ChromaStore
 from app.memory.retrieval_service import RetrievedChunk
+
+if TYPE_CHECKING:
+    from app.memory.chroma_store import ChromaStore
+    from app.memory.sqlite_store import SqliteStore
 
 # Modül düzeyi cache (process ömrü). Anahtar: chunk sayısı.
 _cache: dict[str, object] = {"count": -1, "bm25": None, "chunks": {}}
 
-# Modül düzeyi paylaşılan ChromaStore: get_corpus_bm25 her çağrıda YENİ ChromaStore()
-# yaratıyordu → her çağrı SOĞUK koleksiyon yüklemesi (~10s count()) ödüyordu; BM25
-# cache dolu olsa bile count() kontrolü her sorguda bu maliyeti tekrarlıyordu (canlı
-# RAG ~18s/sorgu). Paylaşılan örnek ile count() ilk çağrıdan sonra ISINIR (~50ms).
-_shared_chroma: ChromaStore | None = None
+# Modül düzeyi paylaşılan SqliteStore (cache; her çağrıda yeni store yaratma).
+_shared_store: SqliteStore | None = None
 
 
-def _corpus_chroma() -> ChromaStore:
-    global _shared_chroma
-    if _shared_chroma is None:
-        _shared_chroma = ChromaStore()
-    return _shared_chroma
+def _corpus_store() -> SqliteStore:
+    global _shared_store
+    if _shared_store is None:
+        from app.memory.sqlite_store import SqliteStore
+
+        _shared_store = SqliteStore()
+    return _shared_store
 
 
 def get_corpus_bm25(
     chroma: ChromaStore | None = None,
+    store: SqliteStore | None = None,
 ) -> tuple[BM25Index | None, dict[str, RetrievedChunk]]:
     """Korpus BM25 indeksi + chunk_id→RetrievedChunk haritası döndür (cache'li).
+
+    KAYNAK = SQLite (Chunk tablosu), Chroma DEĞİL. Önceki Chroma `get_all()` 91k id'yi
+    bulk okur, eşzamanlı erişimde (öğrenme döngüsü/MCP/serving) SQLite-kilidine takılır ve
+    BM25'i SESSİZCE öldürürdü (chunks=0 → hibrit dense-only'e düşer; Kural 7'ye aykırı sessiz
+    çökme). SQLite WAL eşzamanlı-okumayı sorunsuz kaldırır → BM25 buradan kurulur (dayanıklı).
+    `chroma` parametresi geriye-uyum için KORUNUR ama YOK SAYILIR. `store` test enjeksiyonu.
 
     Returns:
         (bm25, chunks). Korpus boş/erişilemezse (None, {}).
     """
-    chroma = chroma or _corpus_chroma()
+    del chroma  # geriye-uyum imzası; kaynak artık SQLite
+    st = store or _corpus_store()
     try:
-        count = chroma.count()
+        rows = st.list_all_chunks()
     except Exception:
         return None, {}
+    count = len(rows)
     if count == 0:
         return None, {}
 
     if _cache["count"] != count:
+        titles = {p.paper_id: p.title for p in st.list_papers()}
         bm25 = BM25Index()
         chunks: dict[str, RetrievedChunk] = {}
-        try:
-            rows = chroma.get_all()
-        except Exception:
-            return None, {}
-        for row in rows:
-            cid = row["chunk_id"]
-            doc = row.get("document", "") or ""
-            meta = row.get("metadata", {}) or {}
+        for ch in rows:
+            doc = ch.text or ""
             if not doc:
                 continue
-            bm25.add_document(cid, doc)
-            chunks[cid] = RetrievedChunk(
-                chunk_id=cid,
-                paper_id=meta.get("paper_id", "?"),
+            bm25.add_document(ch.chunk_id, doc)
+            chunks[ch.chunk_id] = RetrievedChunk(
+                chunk_id=ch.chunk_id,
+                paper_id=ch.paper_id,
                 text=doc,
-                page_number=meta.get("page_number"),
-                section_name=meta.get("section_name") or None,
-                title=meta.get("title") or None,
+                page_number=ch.page_number,
+                section_name=ch.section_name or None,
+                title=titles.get(ch.paper_id),
                 distance=None,  # BM25 kaynaklı; reranker semantiği nötr (0.5) sayar
             )
         _cache.update(count=count, bm25=bm25, chunks=chunks)
@@ -77,6 +85,6 @@ def get_corpus_bm25(
 
 def reset_cache() -> None:
     """Cache'i sıfırla (test izolasyonu / yeniden ingest sonrası)."""
-    global _shared_chroma
+    global _shared_store
     _cache.update(count=-1, bm25=None, chunks={})
-    _shared_chroma = None
+    _shared_store = None
