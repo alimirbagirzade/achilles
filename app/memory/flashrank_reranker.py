@@ -15,6 +15,7 @@ flashrank kurulu değilse veya model yüklenemezse sessizce heuristik `Reranker`
 from __future__ import annotations
 
 import logging
+from types import SimpleNamespace
 from typing import Any
 
 from app.config import get_settings
@@ -79,10 +80,18 @@ class FlashRankReranker:
             return self.fallback.rerank(query, chunks)
 
         try:
-            from flashrank import RerankRequest
-
             passages = [{"id": i, "text": c.text or ""} for i, c in enumerate(chunks)]
-            ranked = ranker.rerank(RerankRequest(query=query, passages=passages))
+            # RerankRequest yalnız flashrank ile gelir. Enjekte edilen ranker (test/offline)
+            # için flashrank KURULU OLMAYABİLİR → aynı arayüzü (query/passages) taşıyan hafif
+            # bir shim kullan; böylece enjekte ranker flashrank'sız da çalışır. Gerçek
+            # flashrank kuruluysa onun tipi kullanılır (davranış birebir aynı).
+            try:
+                from flashrank import RerankRequest
+
+                req: Any = RerankRequest(query=query, passages=passages)
+            except ImportError:
+                req = SimpleNamespace(query=query, passages=passages)
+            ranked = ranker.rerank(req)
             # ranked: skora göre azalan {id,text,score}. id → orijinal index.
             order = [int(r["id"]) for r in ranked if 0 <= int(r["id"]) < len(chunks)]
         except Exception as exc:  # çıkarım/şema hatası → heuristik
