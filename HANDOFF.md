@@ -1,6 +1,7 @@
 # HANDOFF — Achilles Trader AI
 
 _Son güncelleme: 2026-06-21 · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Açık PR: [#10](https://github.com/alimirbagirzade/achilles/pull/10) — upload 429 retry (oto-merge bekliyor)_
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
@@ -8,6 +9,25 @@ Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple S
 ---
 
 ## 🚨 YENİ SEANS BAŞLANGICI — BUNU OKU
+
+### 🆕 EN SON İŞ (2026-06-21) — Web upload "bir kısım gelmedi" düzeltildi
+**Şikâyet:** Başka bilgisayarda çok sayıda PDF yüklenince web arayüzünde ~10 dosya görünmemiş.
+**Kök neden:** Upload uçunda kayan-60sn hız sınırı (`upload_rate_limit_per_min`) **20/dk** idi;
+sürükle-bırak ile >20 dosya gelince fazlası **429** yiyor, frontend bunu sessizce "hata" sayıp
+dosyayı **diske bile kaydetmeden** düşürüyordu (429 middleware'de handler'dan ÖNCE).
+**Fix (PR [#10](https://github.com/alimirbagirzade/achilles/pull/10), branch `fix/upload-rate-limit-retry`, oto-merge):**
+- `app/web/static/assets/app.js` → toplu yükleme artık 429'da dosyayı düşürmüyor; bekleyip aynı
+  dosyayı yeniden deniyor (≤40 deneme, 3.5sn ara). Kök çözüm.
+- `app/config/settings.py` → `upload_rate_limit_per_min` 20→**60** (env: `ACHILLES_UPLOAD_RATE_LIMIT_PER_MIN`).
+- Doğrulama: format+lint+typecheck+test **yeşil**.
+**Not (kullanıcıya söylenenler):** (a) JS değişikliği için web **yeniden başlatılmalı**/sayfa yenilenmeli;
+(b) zaten diske inmiş ama indekslenememiş dosyalar için **"⟳ TÜMÜNÜ İNDEKSLE"** / `uv run achilles ingest`
+(idempotent kurtarma); (c) makineler arası senkron YOK — A'da yükleyip B'ye bakmak boş gelir.
+**Henüz YAPILMADI (aday):** arka-plan indeksleme sessiz hatası hâlâ kullanıcıya yüzeye çıkmıyor
+(Ollama kapalı/parse hatası → log'a yazılır, UI'da "alındı, indeksleniyor…" der). İleride bir
+indeksleme-durumu/hata rozeti eklenebilir. Memory: yok (bu işten yeni).
+**Gotcha (test):** Bash tool alt-kabuğu `PYTEST_DEBUG_TEMPROOT` user env var'ını miras almıyor →
+pytest `PermissionError` verir. Çözüm: `PYTEST_DEBUG_TEMPROOT="C:/Users/sevinc/pytest-tmp" uv run pytest -q`.
 
 ### Proje amacı
 LLM'i "trader gibi düşünen" bir araştırma motoru yapmak:
