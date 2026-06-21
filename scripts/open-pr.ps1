@@ -15,10 +15,13 @@ param(
     [string]$Title = "",
     [switch]$NoMerge
 )
-$ErrorActionPreference = "Stop"
+# NOT: $ErrorActionPreference "Stop" DEGIL -- PS 5.1'de native komutun (git/gh)
+# stderr'i + non-zero cikis, Stop ile NativeCommandError firlatir (PR henuz yokken
+# 'gh pr view' patlar). Native basari DAIMA $LASTEXITCODE ile kontrol edilir.
+$ErrorActionPreference = "Continue"
 Set-Location (Split-Path -Parent $PSScriptRoot)
 
-# gh giris yapilmis mi?
+# --- gh giris yapilmis mi? ---
 gh auth status *> $null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[HATA] gh giris yapilmamis. Once bir kerelik:  gh auth login" -ForegroundColor Red
@@ -38,20 +41,29 @@ if (git status --porcelain) {
 
 Write-Host ">> '$Branch' dali push ediliyor..." -ForegroundColor Cyan
 git push -u origin $Branch
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[HATA] push basarisiz." -ForegroundColor Red
+    exit 1
+}
 
-gh pr view $Branch *> $null
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "[i] Bu dal icin PR zaten var (guncellendi)." -ForegroundColor Gray
-} else {
+# PR zaten var mi?  'gh pr list' yoksa exit 0 + bos doner (gh pr view gibi PATLAMAZ).
+$existing = (gh pr list --head $Branch --base $Base --state open --json url --jq '.[0].url' 2>$null)
+if ([string]::IsNullOrWhiteSpace($existing)) {
     Write-Host ">> PR olusturuluyor (hedef: $Base)..." -ForegroundColor Cyan
     if ($Title) {
         gh pr create --base $Base --head $Branch --title $Title --body "Otomatik PR (scripts/open-pr.ps1) -- degisiklikler '$Branch' dalinda."
     } else {
         gh pr create --base $Base --head $Branch --fill
     }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[HATA] PR olusturulamadi." -ForegroundColor Red
+        exit 1
+    }
+} else {
+    Write-Host "[i] Bu dal icin PR zaten var (guncellendi)." -ForegroundColor Gray
 }
 
-$Url = gh pr view $Branch --json url -q .url
+$Url = (gh pr view $Branch --json url --jq .url 2>$null)
 Write-Host "[OK] PR: $Url" -ForegroundColor Green
 
 if (-not $NoMerge) {
