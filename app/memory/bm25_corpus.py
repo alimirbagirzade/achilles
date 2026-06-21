@@ -10,6 +10,7 @@ Chroma boş/erişilemezse `(None, {})` döner → çağıran dense-only'e geçer
 
 from __future__ import annotations
 
+import threading
 from typing import TYPE_CHECKING
 
 from app.memory.bm25_index import BM25Index
@@ -21,6 +22,10 @@ if TYPE_CHECKING:
 
 # Modül düzeyi cache (process ömrü). Anahtar: chunk sayısı.
 _cache: dict[str, object] = {"count": -1, "bm25": None, "chunks": {}}
+# Build kilidi: 94k chunk tokenizasyonu ~170s sürer. Eşzamanlı ilk-sorgular (warm-up +
+# kullanıcı) kilitsiz HER BİRİ ayrı build başlatırdı (thundering herd → CPU boğulması).
+# Kilit + çift-kontrol → yalnız BİR build, diğerleri bekleyip cache'i kullanır.
+_build_lock = threading.Lock()
 
 # Modül düzeyi paylaşılan SqliteStore (cache; her çağrıda yeni store yaratma).
 _shared_store: SqliteStore | None = None
@@ -61,24 +66,26 @@ def get_corpus_bm25(
         return None, {}
 
     if _cache["count"] != count:
-        titles = {p.paper_id: p.title for p in st.list_papers()}
-        bm25 = BM25Index()
-        chunks: dict[str, RetrievedChunk] = {}
-        for ch in rows:
-            doc = ch.text or ""
-            if not doc:
-                continue
-            bm25.add_document(ch.chunk_id, doc)
-            chunks[ch.chunk_id] = RetrievedChunk(
-                chunk_id=ch.chunk_id,
-                paper_id=ch.paper_id,
-                text=doc,
-                page_number=ch.page_number,
-                section_name=ch.section_name or None,
-                title=titles.get(ch.paper_id),
-                distance=None,  # BM25 kaynaklı; reranker semantiği nötr (0.5) sayar
-            )
-        _cache.update(count=count, bm25=bm25, chunks=chunks)
+        with _build_lock:
+            if _cache["count"] != count:  # çift-kontrol: başka thread bu arada kurmuş olabilir
+                titles = {p.paper_id: p.title for p in st.list_papers()}
+                bm25 = BM25Index()
+                chunks: dict[str, RetrievedChunk] = {}
+                for ch in rows:
+                    doc = ch.text or ""
+                    if not doc:
+                        continue
+                    bm25.add_document(ch.chunk_id, doc)
+                    chunks[ch.chunk_id] = RetrievedChunk(
+                        chunk_id=ch.chunk_id,
+                        paper_id=ch.paper_id,
+                        text=doc,
+                        page_number=ch.page_number,
+                        section_name=ch.section_name or None,
+                        title=titles.get(ch.paper_id),
+                        distance=None,  # BM25 kaynaklı; reranker semantiği nötr (0.5) sayar
+                    )
+                _cache.update(count=count, bm25=bm25, chunks=chunks)
 
     return _cache["bm25"], _cache["chunks"]  # type: ignore[return-value]
 
