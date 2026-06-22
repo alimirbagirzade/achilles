@@ -10,6 +10,28 @@ Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple S
 
 ## 🚨 YENİ SEANS BAŞLANGICI — BUNU OKU
 
+### 🆕 EN SON İŞ (2026-06-22) — İki-hat train.jsonl drifti kökten kapatıldı (Kademe-2)
+**Bulgu:** İki ayrı veri hattı aynı `data/training/jsonl/train.jsonl`'i yarışıp habersiz
+ezerdi. **A (zengin):** `assemble_sft`/`lora-cloud-prep` → `lora_sft.jsonl` (~2020, `{messages}`)
+→ `ensure_train_split` → ~1919/101. **B (cılız):** web uçları `DatasetBuilder.build()` →
+`training_examples` SQLite → ~29/4 satır, `{prompt,completion}`. `train --run`/`launch()`
+eğitimden hemen önce `ensure_train_split` çağırıp onarıyordu; AMA çağırmayan bir yol (doğrudan
+backend/harici) 29 satırlık bayat/yanlış-formatlı veriyle eğitebilirdi.
+**Fix (bu seans):**
+- `app/training/detached_launch.py` → yeni KANONİK yardımcı `build_training_split()`
+  (lora_sft.jsonl → ensure_train_split; kaynak yok/boşsa `assemble_sft_lines` ile bir kez
+  üret, boşsa dokunma=clobber guard). `DatasetResult`-uyumlu `TrainingSplit` döner.
+- `app/web/server.py` → 3 uç (`/api/training/dataset`, `/dry-run`, `/colab-notebook`) artık
+  `DatasetBuilder` yerine `build_training_split()` çağırıyor → format `{messages}`, sayı kanonik
+  kaynakla AYNI. `DatasetBuilder` yalnız manuel `achilles dataset` (SQLite inceleme) için kaldı.
+- Regresyon testi: `tests/test_web_api.py::test_dataset_endpoint_uses_canonical_lora_sft`
+  (hermetik, monkeypatch settings → SQLite'a dokunmaz; train+valid sayı=kaynak, format={messages},
+  valid⊥train).
+- Doğrulama: format+lint+typecheck (179 dosya)+test (tümü yeşil).
+**Not:** CLI `achilles dataset` ve `/api/training/run`→`launch()` zaten kanonik yolu kullanıyordu;
+yalnız 3 web "veri oluştur/dry-run/colab" ucu cılız hatta düşüyordu. Branch/commit: bekliyor
+(insan onayı ile). Memory: `training-data-pipeline` + `kademe2-pretrain-hunt-2026-06-22` güncellendi.
+
 ### 🆕 EN SON İŞ (2026-06-21) — Web upload "bir kısım gelmedi" düzeltildi
 **Şikâyet:** Başka bilgisayarda çok sayıda PDF yüklenince web arayüzünde ~10 dosya görünmemiş.
 **Kök neden:** Upload uçunda kayan-60sn hız sınırı (`upload_rate_limit_per_min`) **20/dk** idi;
@@ -638,3 +660,5 @@ make format && make lint && make typecheck && make test
 | `configs/lora/lora_profiles.yaml` | 3 LoRA eğitim profili |
 | `configs/eval/lora_eval_questions.yaml` | 50 eval sorusu |
 | `.env.example` | Tüm ayar değişkenleri |
+
+> [bug-scan 2026-06-22_0900] Weekly Tier-1 scan done -> reports/bug-scan/scan-2026-06-22_0900.md

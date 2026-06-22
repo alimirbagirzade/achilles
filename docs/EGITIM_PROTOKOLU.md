@@ -86,10 +86,12 @@ data/lora_sft/lora_sft.jsonl   (synth-qa + kart birleşik, ~1266 örnek; lora-cl
         ▼
 data/training/jsonl/{train,valid}.jsonl   ← "achilles train --run" BUNU okur
 ```
-- ⚠️ **CLOBBER tuzağı:** `DatasetBuilder.build()` (kart-DB tabanlı) aynı `train.jsonl`'e
-  yazar; DB'de uygun (`lora_eligible+approved`) örnek yoksa **0 satıra ezer**. Sentetik
-  veri yolunda KULLANMA. (Eski `/api/training/run` + loop'taki `lora-dataset` bu yüzden
-  veriyi boşaltıyordu — ikisi de kaldırıldı.)
+- ⚠️ **CLOBBER tuzağı (kapatıldı):** `DatasetBuilder.build()` (kart-DB tabanlı, cılız
+  `{prompt,completion}`) aynı `train.jsonl`'e yazıp zengin birleşik veriyi ezerdi
+  (DB'de uygun örnek yoksa **0/cılız satıra**). Web uçları (`/api/training/dataset`,
+  `dry-run`, `colab-notebook`) artık `detached_launch.build_training_split()` ile
+  KANONİK `lora_sft.jsonl`'den böler → CLI ile aynı format/sayı (iki-hat drifti yok).
+  `DatasetBuilder` yalnız manuel `achilles dataset` (SQLite inceleme) için kaldı.
 - **Clobber-proof:** hem `launch()` hem `start-train.ps1`, başlatmadan ÖNCE `lora-split`
   çalıştırır → boş/eski `train.jsonl` otomatik onarılır.
 

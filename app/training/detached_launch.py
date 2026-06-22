@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime as dt
+import hashlib
 import json
 import logging
 import os
@@ -25,6 +26,7 @@ import signal
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from app.config import get_settings
@@ -120,6 +122,68 @@ def ensure_train_split(settings=None) -> tuple[int, int]:
     (jd / "valid.jsonl").write_text("\n".join(valid) + ("\n" if valid else ""), encoding="utf-8")
     log.info("Eğitim verisi bölündü: train=%d valid=%d → %s", len(train), len(valid), jd)
     return len(train), len(valid)
+
+
+@dataclass
+class TrainingSplit:
+    """Kanonik eğitim verisi bölme sonucu (eski `DatasetResult` ile alan-uyumlu)."""
+
+    train_path: Path
+    valid_path: Path
+    n_train: int
+    n_valid: int
+    content_hash: str
+
+
+def _hash_jsonl_lines(lines: list[str]) -> str:
+    """Train satırlarından kısa içerik hash'i (adapter provenance; 16 hex)."""
+    h = hashlib.sha256()
+    for ln in lines:
+        h.update(ln.encode("utf-8"))
+    return h.hexdigest()[:16]
+
+
+def build_training_split(settings=None) -> TrainingSplit:
+    """TEK KANONİK eğitim verisi: `lora_sft.jsonl` → `jsonl_dir/{train,valid}.jsonl`.
+
+    Web uçları (`/api/training/dataset|dry-run|colab-notebook`) artık `DatasetBuilder`
+    (SQLite tabanlı, cılız `{prompt,completion}`) yerine BUNU çağırır → üretilen train.jsonl
+    daima kanonik `lora_sft.jsonl` ile AYNI format (`{messages}`) ve sayıda olur; iki-hat
+    drifti (CLI zengin / web cılız, aynı dosyayı karşılıklı ezme) kökten kalkar. CLI
+    `train`/`launch()` ile AYNI `ensure_train_split` yolu kullanılır (tek doğruluk kaynağı).
+
+    Kanonik kaynak yok/boşsa `assemble_sft_lines` (synth + onaylı kart + ~%25 disiplin;
+    determinist seed=0) ile BİR KEZ üretilir; üretilen de boşsa dosyaya DOKUNULMAZ
+    (clobber guard). Kaynak doluysa olduğu gibi bölünür — CLI'nin kurduğu zengin seti
+    web'den ezme riski yok. Eğitim BAŞLATMAZ (CLAUDE.md kural 8).
+    """
+    s = settings or get_settings()
+    src = _combined_source(s)
+    if _count_lines(src) == 0:
+        # Kanonik kaynak yok → bir kez birleştir (scripts/assemble_sft.py ile aynı yol).
+        with contextlib.suppress(Exception):
+            from app.training.sft_assembly import assemble_sft_lines
+
+            res = assemble_sft_lines(s, seed=0)
+            if res.lines:  # boşsa yazma → mevcut kaynağı/eğitimi bozma
+                src.parent.mkdir(parents=True, exist_ok=True)
+                src.write_text("\n".join(res.lines) + "\n", encoding="utf-8")
+
+    n_train, n_valid = ensure_train_split(s)
+    train_path = s.jsonl_dir / "train.jsonl"
+    valid_path = s.jsonl_dir / "valid.jsonl"
+    train_lines = (
+        [ln for ln in train_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        if train_path.exists()
+        else []
+    )
+    return TrainingSplit(
+        train_path=train_path,
+        valid_path=valid_path,
+        n_train=n_train,
+        n_valid=n_valid,
+        content_hash=_hash_jsonl_lines(train_lines) if train_lines else "",
+    )
 
 
 def readiness(settings=None) -> dict:

@@ -9,6 +9,8 @@ Hem işlevsellik hem güvenlik davranışlarını kapsar:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 fastapi = pytest.importorskip("fastapi")
@@ -143,6 +145,67 @@ def test_training_dataset_build(client: TestClient) -> None:
     body = r.json()
     assert "n_train" in body
     assert "content_hash" in body
+
+
+def test_dataset_endpoint_uses_canonical_lora_sft(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regresyon (Kademe-2, 2026-06-22): web dataset ucu train.jsonl'i KANONİK
+    `lora_sft.jsonl` ile TUTARLI üretmeli — format `{messages}`, toplam sayı = kaynak
+    satır sayısı. Eski yol SQLite tabanlı `DatasetBuilder` ile cılız `{prompt,completion}`
+    üretip CLI'nin kurduğu zengin train.jsonl'i ezerdi (iki-hat drifti); bu test o
+    regresyonu kapatır. Çevrimdışı: kaynak dolu → SQLite'a hiç dokunulmaz.
+    """
+    import json
+
+    root = tmp_path
+    lora_dir = root / "data" / "lora_sft"
+    lora_dir.mkdir(parents=True)
+    jsonl_dir = root / "data" / "training" / "jsonl"
+
+    n = 30
+    src_lines = [
+        json.dumps(
+            {
+                "messages": [
+                    {"role": "user", "content": f"Soru {i}?"},
+                    {"role": "assistant", "content": f"Cevap {i} (benzersiz içerik)."},
+                ]
+            },
+            ensure_ascii=False,
+        )
+        for i in range(n)
+    ]
+    (lora_dir / "lora_sft.jsonl").write_text("\n".join(src_lines) + "\n", encoding="utf-8")
+
+    fake = type("S", (), {"root": root, "jsonl_dir": jsonl_dir})()
+    monkeypatch.setattr("app.training.detached_launch.get_settings", lambda: fake)
+
+    r = client.post("/api/training/dataset")
+    assert r.status_code == 200
+    body = r.json()
+
+    # 1) Sayı tutarlı: train + valid = kanonik kaynak satır sayısı.
+    assert body["n_train"] + body["n_valid"] == n
+    assert body["n_train"] > 0
+    assert body["content_hash"]  # boş değil
+
+    def _read(name: str) -> list[dict]:
+        return [
+            json.loads(ln)
+            for ln in (jsonl_dir / name).read_text(encoding="utf-8").splitlines()
+            if ln.strip()
+        ]
+
+    train_recs, valid_recs = _read("train.jsonl"), _read("valid.jsonl")
+    # 2) Format: kanonik {messages} — cılız {prompt,completion} DEĞİL.
+    assert train_recs and all("messages" in rec for rec in train_recs)
+    assert all("prompt" not in rec and "completion" not in rec for rec in train_recs)
+    # 3) OOS: valid train'den AYRIK (sahte OOS sızıntısı yok) + toplam korunur.
+    train_set = {json.dumps(rec, sort_keys=True) for rec in train_recs}
+    valid_set = {json.dumps(rec, sort_keys=True) for rec in valid_recs}
+    assert train_set.isdisjoint(valid_set)
+    assert len(train_recs) + len(valid_recs) == n
 
 
 def test_training_dry_run_ok(client: TestClient) -> None:

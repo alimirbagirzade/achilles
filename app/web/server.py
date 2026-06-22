@@ -936,15 +936,30 @@ def api_training_status() -> TrainingStatusResponse:
 
 @app.post("/api/training/dataset", response_model=DatasetBuildResponse, dependencies=[api_auth])
 def api_training_dataset() -> DatasetBuildResponse:
-    """DatasetBuilder ile train/valid JSONL oluştur."""
-    from app.training.dataset_builder import DatasetBuilder
+    """Kanonik `lora_sft.jsonl` → train/valid JSONL böl (tek kaynak; SQLite cılız hattı DEĞİL).
 
-    r = DatasetBuilder().build()
+    Eski `DatasetBuilder` (SQLite) cılız `{prompt,completion}` üretip CLI'nin kurduğu zengin
+    train.jsonl'i ezerdi (iki-hat drifti). Artık CLI `train`/`launch()` ile aynı kanonik
+    kaynaktan bölünür → format/sayı tutarlı.
+    """
+    from app.training.detached_launch import build_training_split
+
+    r = build_training_split()
+    if r.n_train == 0:
+        return DatasetBuildResponse(
+            n_train=0,
+            n_valid=0,
+            content_hash="",
+            message=(
+                "Kanonik eğitim verisi yok (lora_sft.jsonl boş). Önce üret: "
+                "`uv run achilles synth-qa` veya `uv run achilles lora-cloud-prep`."
+            ),
+        )
     return DatasetBuildResponse(
         n_train=r.n_train,
         n_valid=r.n_valid,
         content_hash=r.content_hash,
-        message=f"{r.n_train} eğitim + {r.n_valid} doğrulama kaydı yazıldı.",
+        message=f"{r.n_train} eğitim + {r.n_valid} doğrulama kaydı (kanonik lora_sft.jsonl).",
     )
 
 
@@ -991,9 +1006,9 @@ def api_training_dry_run(req: TrainDryRunRequest) -> TrainDryRunResponse:
 
     from app.config import get_settings
     from app.training.backend import detect_lora_backend
-    from app.training.dataset_builder import DatasetBuilder
+    from app.training.detached_launch import build_training_split
 
-    r = DatasetBuilder().build()
+    r = build_training_split()
     s = get_settings()
     ts = dt.datetime.now(dt.UTC).strftime("%Y%m%d_%H%M%S")
     backend = detect_lora_backend()
@@ -1124,12 +1139,12 @@ def api_training_colab_notebook() -> Response:
     from fastapi.responses import Response as FR
 
     from app.config import get_settings
-    from app.training.dataset_builder import DatasetBuilder
+    from app.training.detached_launch import build_training_split
     from app.training.peft_lora_train import PeftTrainConfig, generate_colab_notebook
 
     s = get_settings()
     try:
-        r = DatasetBuilder().build()
+        r = build_training_split()
         train_path = r.train_path
         valid_path = r.valid_path
     except Exception:
