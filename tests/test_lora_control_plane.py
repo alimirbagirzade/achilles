@@ -51,6 +51,30 @@ def test_run_full_includes_split() -> None:
     assert 8 in gate_ids
 
 
+def test_gate_7_safety_scans_quality_rejected_cards(tmp_path: Path) -> None:
+    """B1: Gate 4'te (kısa cevap) elenen ama sır taşıyan kart Gate 7'de YAKALANMALI.
+
+    Safety BLOCKER, Gate 4 elemesinden BAĞIMSIZ tüm içerikli kartları tarar. Eski kodda
+    gate_7 yalnız clean_cards'ı (Gate 4 geçenler) tarıyordu → kısa+sırlı kart kaçıyordu.
+    """
+    store = SqliteStore(db_path=tmp_path / "b1.db")
+    store.save_knowledge_card(
+        card_id="leak1",
+        paper_id="paper_leak1",
+        model="test",
+        # summary <50 karakter → Gate 4 'cevap çok kısa' diye eler; ama sır içerir.
+        card={"title": "Not", "summary": "password=hunter2xy"},
+        review_status="approved",
+        lora_eligible=1,
+        difficulty=0.3,
+    )
+    plane = LoRAControlPlane(store=store)
+    report = plane.run_audit()
+
+    gate7 = next(s for s in report.stages if s.gate_id == 7)
+    assert gate7.passed is False  # sır yakalandı (eski kodda kaçardı)
+
+
 def test_generate_report_writes_markdown(tmp_path: Path) -> None:
     """generate_report Markdown üretip dosyaya yazmalı."""
     store = SqliteStore()

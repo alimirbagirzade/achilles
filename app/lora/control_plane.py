@@ -143,7 +143,10 @@ class LoRAControlPlane:
         stages.append(gate4)
         stages.append(gate_5_math(clean_cards))
         stages.append(gate_6_philosophy(clean_cards))
-        stages.append(gate_7_safety(clean_cards))
+        # Gate 7 (safety) BLOCKER → Gate 4 elemesinden BAĞIMSIZ, içerikli kartların
+        # TAMAMINI tara. Aksi halde kısa/duplicate diye Gate 4'te elenen ama sır/PII
+        # taşıyan bir kart (örn. implementation_notes'ta) güvenlik taramasını atlardı.
+        stages.append(gate_7_safety(nonempty))
 
         examples = build_dataset(clean_cards)
         return stages, clean_cards, examples

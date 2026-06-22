@@ -119,3 +119,17 @@ def test_gate_8_split_no_leakage_for_distinct_sources() -> None:
     result, split = gate_8_split(examples)
     assert result.passed is True
     assert len(split.train) + len(split.valid) + len(split.test) == 12
+
+
+def test_gate_8_fails_on_empty_valid_or_test_small_n() -> None:
+    """Az benzersiz kaynakta (n_groups≤5) valid/test boş kalır → Gate 8 BLOKLAMALI.
+
+    Eski hâlde boş valid/test 'sızıntı yok' diye PASS verip sahte OOS garantisi üretiyordu
+    (READY_TO_TRAIN). Artık boş valid/test FAIL (CLAUDE.md kural 2).
+    """
+    # 2 benzersiz kaynak → split: train=2, valid=0, test=0
+    examples = [_example("src_a"), _example("src_b")]
+    result, split = gate_8_split(examples)
+    assert result.passed is False
+    assert not split.valid and not split.test
+    assert result.rejected_count >= 1

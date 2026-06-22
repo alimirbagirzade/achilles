@@ -264,16 +264,27 @@ def gate_7_safety(cards: list[dict]) -> GateResult:
 
 
 def gate_8_split(examples: list[dict]) -> tuple[GateResult, DatasetSplit]:
-    """Dataset bölme ve sızıntı denetimi."""
+    """Dataset bölme ve sızıntı denetimi.
+
+    Sızıntı (aynı source_id birden çok bölmede) YOK + valid/test BOŞ DEĞİL şartı.
+    Boş valid/test, az sayıda benzersiz kaynakta (n_groups≤5) oluşur ve OOS garantisini
+    yok eder; eski hâlde Gate 8 bunu PASS verip 'eğitime hazır + sahte OOS' raporluyordu
+    (CLAUDE.md kural 2). Artık boş valid/test BLOKLAR.
+    """
     split = split_dataset(examples)
     leaks = check_leakage(split)
-    details = list(leaks)
+    empty_issues: list[str] = []
+    if not split.valid:
+        empty_issues.append("boş valid kümesi — OOS doğrulanamaz (yetersiz benzersiz kaynak)")
+    if not split.test:
+        empty_issues.append("boş test kümesi — out-of-sample garantisi yok")
+    details = empty_issues + list(leaks)
     details.append(f"train={len(split.train)} valid={len(split.valid)} test={len(split.test)}")
     result = GateResult(
         gate_id=8,
         name="split",
-        passed=len(leaks) == 0,
-        rejected_count=len(leaks),
+        passed=len(leaks) == 0 and not empty_issues,
+        rejected_count=len(leaks) + len(empty_issues),
         details=details[:20],
     )
     return result, split
