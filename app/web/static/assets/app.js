@@ -87,7 +87,10 @@
       });
       document.getElementById("panel-" + name).classList.add("active");
       if (name === "papers") loadPapers();
-      if (name === "trader") loadTraderBrain();
+      if (name === "trader") {
+        loadTraderBrain();
+        loadLoraAdapters();
+      }
       if (name === "backtest") loadBacktestHistory();
       if (name === "training") loadTrainingStatus();
       if (name === "review") loadPendingCards();
@@ -222,6 +225,72 @@
         btn.textContent = "SORGULA →";
       });
   });
+
+  // ---------- LoRA sohbet (eğitilen adapter ile lokal, PEFT) ----------
+  function loadLoraAdapters() {
+    var sel = document.getElementById("loraChatAdapter");
+    if (!sel) return;
+    api("/lora-adapters")
+      .then(function (data) {
+        var cur = sel.value;
+        var opts = '<option value="">(base — adapter yok)</option>';
+        (data.adapters || []).forEach(function (a) {
+          opts += '<option value="' + esc(a) + '">' + esc(a) + "</option>";
+        });
+        sel.innerHTML = opts;
+        if (cur) sel.value = cur;
+      })
+      .catch(function () {});
+  }
+
+  var loraChatForm = document.getElementById("loraChatForm");
+  if (loraChatForm) {
+    loraChatForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var q = document.getElementById("loraChatQuestion").value.trim();
+      if (q.length < 2) {
+        toast("Soru çok kısa.", true);
+        return;
+      }
+      var adapter = document.getElementById("loraChatAdapter").value || null;
+      var maxTokens =
+        parseInt(document.getElementById("loraChatMaxTokens").value, 10) || 256;
+      var btn = document.getElementById("loraChatBtn");
+      var res = document.getElementById("loraChatResult");
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>ÜRETİLİYOR';
+      res.className = "result";
+      res.innerHTML =
+        '<div class="result-section"><span class="spinner"></span> model çalışıyor (CPU\'da dakikalar sürebilir)…</div>';
+      api("/lora-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: q, adapter: adapter, max_tokens: maxTokens }),
+      })
+        .then(function (data) {
+          var badge =
+            '<span class="badge badge-adapter">' +
+            esc(data.adapter) +
+            '</span> <span class="muted small">base: ' +
+            esc(data.base_model) +
+            "</span>";
+          res.innerHTML =
+            '<div class="result-section">' +
+            badge +
+            '</div><div class="result-section result-body">' +
+            esc(data.answer).replace(/\n/g, "<br>") +
+            "</div>";
+        })
+        .catch(function (err) {
+          res.innerHTML =
+            '<div class="result-section result-body">Hata: ' + esc(err.message) + "</div>";
+        })
+        .finally(function () {
+          btn.disabled = false;
+          btn.textContent = "💬 SOR →";
+        });
+    });
+  }
 
   function renderAsk(res, data) {
     var badge = data.adapter_used

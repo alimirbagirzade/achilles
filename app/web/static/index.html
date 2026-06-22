@@ -243,6 +243,39 @@
           <div id="synthPaperResult" class="result hidden"></div>
           <div id="synthPapersList" class="sessions-list"></div>
         </div>
+
+        <!-- Eğitilen Modelle Sohbet -->
+        <div class="training-section">
+          <h3>6 · Eğitilen Modelle Sohbet (LoRA)</h3>
+          <p class="muted small">
+            Eğitilen LoRA adapter'ı (veya base model) ile <strong>LOKAL</strong> sohbet —
+            Ollama gerektirmez. CPU'da yavaştır (cevap dakikalar sürebilir). Liste boşsa
+            önce EĞİTİM sekmesinden bir adapter eğit. Kaynaklı cevap istiyorsan
+            "01 · ARAŞTIRMA" sekmesindeki RAG kutusunu kullan.
+          </p>
+          <form id="loraChatForm" class="ask-form">
+            <textarea
+              id="loraChatQuestion"
+              rows="3"
+              maxlength="4000"
+              placeholder="örn: Merhaba, ne öğrendin? Trend takip stratejisinde look-ahead bias nasıl önlenir?"
+            ></textarea>
+            <div class="ask-row">
+              <label class="adapter-select-label">
+                model
+                <select id="loraChatAdapter">
+                  <option value="">(base — adapter yok)</option>
+                </select>
+              </label>
+              <label class="topk">
+                max token
+                <input type="number" id="loraChatMaxTokens" min="16" max="1024" value="256" />
+              </label>
+              <button type="submit" class="btn btn-primary" id="loraChatBtn">💬 SOR →</button>
+            </div>
+          </form>
+          <div id="loraChatResult" class="result hidden"></div>
+        </div>
       </section>
 
       <!-- BACKTEST -->
