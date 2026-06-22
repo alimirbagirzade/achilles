@@ -43,6 +43,48 @@ OVERCONFIDENT_PHRASES: list[str] = [
 # "%<sayı>" desenini yakalar.
 _PERCENT_RE = re.compile(r"%\s*(\d+(?:[.,]\d+)?)|(\d+(?:[.,]\d+)?)\s*%")
 
+# --------------------------------------------------------------------------- #
+# Doğrulanmamış / aşırı-kesin performans iddiaları (Gate 5 — requires_review)
+# --------------------------------------------------------------------------- #
+# v5 disiplin-gerilemesini besleyen kart sınıfı: "92% accuracy",
+# "outperforming ... by 15%", "Sharpe ratio of at least 1.5" gibi sayısal
+# performans iddiaları — hangi veri seti/dönem/OOS belirtmeden. Eski Gate 5
+# bunları geçiriyordu ('accuracy' OVERCONFIDENT_PHRASES'te değil + sayı %1000
+# eşiğinin altında). BLOK DEĞİL; insan incelemesine yönlendirilir (bağlam önemli).
+#
+# Desenler tr_fold'lanmış metne (küçük harf + aksansız) karşı çalışır.
+_PERFORMANCE_CLAIM_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    (
+        "doğruluk/isabet yüzdesi iddiası",
+        re.compile(r"\d+(?:[.,]\d+)?\s*%\s*(?:accuracy|dogruluk|isabet|basari)"),
+    ),
+    (
+        "doğruluk/isabet yüzdesi iddiası",
+        re.compile(r"(?:accuracy|dogruluk|isabet|basari)\w*[^.\n]{0,20}?\d+(?:[.,]\d+)?\s*%"),
+    ),
+    (
+        "'%X üstünlük' (outperform by) iddiası",
+        re.compile(r"outperform\w*[^.\n]{0,40}?\bby\s*\d+(?:[.,]\d+)?\s*%"),
+    ),
+    (
+        "'en az X Sharpe' iddiası",
+        re.compile(r"sharpe[^.\n]{0,30}?(?:of at least|at least|en az)\s*\d"),
+    ),
+]
+
+# Kanıt bağlamı işaretleri — iddianın YANINDA (pencere içinde) varsa iddia
+# doğrulanmış/falsifiye-edilebilir sayılır ve işaretlenmez. Bu, meşru
+# "backtest sonucu %60 isabet (2010-2020, OOS)" gibi bağlamlı ölçümleri
+# yanlış-pozitiften korur (yalnız ÇIPLAK pazarlama iddiası işaretlenir).
+_EVIDENCE_MARKER_RE = re.compile(
+    r"backtest|geriye don[uü]k test|out[- ]of[- ]sample|\boos\b|in[- ]sample|"
+    r"walk[- ]forward|holdout|hold[- ]out|dogrulama set|validation set|test set|"
+    r"test seti|cross[- ]valid|capraz dogrulama|k-fold|"
+    r"\b(?:19|20)\d{2}\s*[-–—]\s*(?:19|20)?\d{2}\b"
+)
+# İddianın çevresinde kanıt aradığımız karakter penceresi (her iki yana).
+_EVIDENCE_WINDOW: int = 70
+
 
 @dataclass
 class MathVerifyResult:
@@ -96,6 +138,26 @@ def _check_percentage_sanity(text: str) -> list[str]:
     return issues
 
 
+def _check_performance_claims(folded: str) -> list[str]:
+    """Doğrulanmamış sayısal performans iddialarını kanıt-kapısıyla işaretle.
+
+    `folded`: tr_fold'lanmış metin. Her iddia için, çevresindeki
+    `_EVIDENCE_WINDOW` karakter içinde kanıt işareti (backtest/OOS/dönem…)
+    yoksa uyarı eklenir. Aynı örüntüden tek uyarı yeter.
+    """
+    issues: list[str] = []
+    for label, pattern in _PERFORMANCE_CLAIM_PATTERNS:
+        for match in pattern.finditer(folded):
+            window_start = max(0, match.start() - _EVIDENCE_WINDOW)
+            window_end = min(len(folded), match.end() + _EVIDENCE_WINDOW)
+            if _EVIDENCE_MARKER_RE.search(folded[window_start:window_end]):
+                continue  # kanıt bağlamı bitişik → meşru ölçüm, işaretleme
+            snippet = match.group(0).strip()[:50]
+            issues.append(f"doğrulanmamış performans iddiası: {label} ('{snippet}')")
+            break  # aynı örüntü için bir uyarı yeterli
+    return issues
+
+
 def verify_math_content(text: str) -> MathVerifyResult:
     """Bir metni matematik/istatistik açısından doğrula.
 
@@ -123,6 +185,8 @@ def verify_math_content(text: str) -> MathVerifyResult:
             overconfident_found = True
 
     issues.extend(_check_percentage_sanity(text))
+    # Doğrulanmamış sayısal performans iddiaları (requires_review, BLOK DEĞİL).
+    issues.extend(_check_performance_claims(folded))
 
     requires_review = bool(issues)
 

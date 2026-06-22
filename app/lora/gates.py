@@ -7,6 +7,7 @@ veri reddeder veya inceleme işaretler; ağır eğitim başlatmaz.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from app.lora.dataset_splitter import DatasetSplit, check_leakage, split_dataset
@@ -30,6 +31,39 @@ CAUSALITY_MARKERS: list[str] = [
     "correlation implies causation",
     "korelasyon = nedensellik",
 ]
+
+# Tavsiye / yönlendirme dili ve falsifiye-edilemez üstünlük iddiaları (Gate 6).
+# CLAUDE.md kural 1: çıktı _hipotez_ + _test noktası_ olmalı, tavsiye değil.
+# "can be directly applied", "Traders should…", "superior performance" gibi
+# ifadeler v5 disiplin-gerilemesini besleyen kart sınıfıdır. BLOK DEĞİL; insan
+# incelemesine yönlendirilir (bağlam önemli). Desenler tr_fold'lanmış metne
+# (küçük harf + aksansız) karşı çalışır ve olumsuzlama-bilinçlidir
+# ("not directly applicable" / "doğrudan uygulanabilir değildir" işaretlenMEZ).
+ADVICE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    (
+        "doğrudan-uygulama tavsiyesi",
+        re.compile(r"can be directly applied|directly applicable|dogrudan uygulan\w*"),
+    ),
+    (
+        "yönlendirme dili (… should)",
+        re.compile(r"\b(?:traders?|investors?|you)\s+should\b"),
+    ),
+    (
+        "falsifiye-edilemez üstünlük iddiası",
+        re.compile(r"superior performance|demonstrated superior|ustun performans"),
+    ),
+]
+# Eşleşmeden hemen ÖNCE/SONRA olumsuzlama → meşru (alçakgönüllü) ifade, atla.
+_NEG_BEFORE_RE = re.compile(r"\b(?:not|non|cannot|can't|isn't|aren't|hardly|never)\b[\s\-]*$")
+_NEG_AFTER_RE = re.compile(r"^\s*\w*\s*(?:degil|olmaz|olmad)")
+_NEG_WINDOW: int = 14
+
+# Gate 6 yumuşak-blok: incelemeli kart oranı bu eşiği aşarsa eğitim-öncesi kapı
+# BAŞARISIZ olur (disiplin dili yaygınsa eğitimi durdur). 0.25 = kartların dörtte
+# birinden fazlası tavsiye/aşırı-iddia dili taşıyorsa pervasif kabul edilir.
+DEFAULT_PHIL_REVIEW_RATIO: float = 0.25
+# Bu sayıdan az kartlı küçük batch'lerde oran gürültülü → yumuşak-blok uygulanmaz.
+DEFAULT_PHIL_MIN_CARDS: int = 20
 
 
 @dataclass
@@ -222,8 +256,39 @@ def gate_5_math(cards: list[dict]) -> GateResult:
     )
 
 
-def gate_6_philosophy(cards: list[dict]) -> GateResult:
-    """Mantık/felsefe: çelişki ve korelasyon-nedensellik karışımı işaretle."""
+def _scan_advice_language(folded: str) -> list[str]:
+    """Tavsiye/yönlendirme + üstünlük iddialarını olumsuzlama-bilinçli işaretle.
+
+    `folded`: tr_fold'lanmış metin. Her örüntü için eşleşmenin hemen öncesinde
+    ya da sonrasında olumsuzlama varsa (örn. "not directly applicable") atlanır.
+    Aynı örüntüden tek etiket yeter.
+    """
+    flags: list[str] = []
+    for label, pattern in ADVICE_PATTERNS:
+        for match in pattern.finditer(folded):
+            before = folded[max(0, match.start() - _NEG_WINDOW) : match.start()]
+            after = folded[match.end() : match.end() + _NEG_WINDOW]
+            if _NEG_BEFORE_RE.search(before) or _NEG_AFTER_RE.search(after):
+                continue  # olumsuzlanmış → meşru (alçakgönüllü) ifade
+            flags.append(label)
+            break
+    return flags
+
+
+def gate_6_philosophy(
+    cards: list[dict],
+    *,
+    review_ratio_threshold: float = DEFAULT_PHIL_REVIEW_RATIO,
+    min_cards_for_block: int = DEFAULT_PHIL_MIN_CARDS,
+) -> GateResult:
+    """Mantık/felsefe + disiplin dili: çelişki, korelasyon-nedensellik karışımı,
+    tavsiye/yönlendirme ve doğrulanmamış üstünlük iddialarını işaretle.
+
+    Bireysel kartlar BLOKLANMAZ (işaretler insan incelemesine yönlendirir).
+    Ancak eğitim-öncesi YUMUŞAK-BLOK olarak: incelemeli kart oranı eşiği aşar VE
+    yeterli kart varsa (`min_cards_for_block`) kapı BAŞARISIZ olur — disiplin dili
+    yaygın bir korpus eğitime girmemelidir (v5 disiplin-gerilemesi dersi).
+    """
     from app.lora.safety_scanner import tr_fold
 
     review = 0
@@ -233,13 +298,24 @@ def gate_6_philosophy(cards: list[dict]) -> GateResult:
         # ile (İ→i+nokta) kaçıyordu — safety_scanner/math_verifier ile aynı desen.
         folded = tr_fold(_card_text(card))
         flags = [m for m in CONTRADICTION_MARKERS + CAUSALITY_MARKERS if tr_fold(m) in folded]
+        flags.extend(_scan_advice_language(folded))
         if flags:
             review += 1
             details.append(f"{card.get('card_id', '?')}: {', '.join(flags)}")
+
+    total = len(cards)
+    # Küçük batch (< min_cards) → oran gürültülü, yumuşak-blok uygulanmaz (passed=True).
+    passed = (review / total <= review_ratio_threshold) if total >= min_cards_for_block else True
+    if not passed:
+        details.insert(
+            0,
+            f"YUMUŞAK-BLOK: incelemeli oran {review}/{total}={review / total:.2f} > "
+            f"{review_ratio_threshold:.2f} — disiplin dili yaygın, eğitim-öncesi kapı kapalı",
+        )
     return GateResult(
         gate_id=6,
         name="philosophy",
-        passed=True,  # işaretler bloklamaz; insan incelemesine yönlendirir
+        passed=passed,
         review_count=review,
         details=details[:20],
     )

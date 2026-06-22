@@ -67,6 +67,113 @@ def test_gate_6_uppercase_turkish_markers_flagged() -> None:
     assert result.review_count >= 1
 
 
+# --------------------------------------------------------------------------- #
+# Gate 6 disiplin dili (tavsiye/yönlendirme/üstünlük) — adversarial
+# --------------------------------------------------------------------------- #
+# Gerçek-pozitif: tavsiye/yönlendirme dili işaretlenmeli. Yanlış-pozitif:
+# olumsuzlanmış (alçakgönüllü) ifade işaretlenMEMELİ.
+
+
+def test_gate_6_directly_applied_advice_flagged() -> None:
+    """'can be directly applied' tavsiye dili inceleme işaretlemeli."""
+    from app.lora.gates import gate_6_philosophy
+
+    card = _approved_card("c1", "This model can be directly applied to short-term trading.")
+    result = gate_6_philosophy([card])
+    assert result.review_count >= 1
+
+
+def test_gate_6_traders_should_directive_flagged() -> None:
+    """'Traders should…' yönlendirme dili inceleme işaretlemeli (kural 1 ihlali)."""
+    from app.lora.gates import gate_6_philosophy
+
+    card = _approved_card("c1", "Traders should combine technical and fundamental analysis.")
+    result = gate_6_philosophy([card])
+    assert result.review_count >= 1
+
+
+def test_gate_6_superior_performance_flagged() -> None:
+    """Falsifiye-edilemez 'superior performance' iddiası inceleme işaretlemeli."""
+    from app.lora.gates import gate_6_philosophy
+
+    card = _approved_card(
+        "c1", "Transformers have demonstrated superior performance in forecasting."
+    )
+    result = gate_6_philosophy([card])
+    assert result.review_count >= 1
+
+
+def test_gate_6_negated_directly_applicable_not_flagged_en() -> None:
+    """'not directly applicable' (olumsuzlanmış, alçakgönüllü) işaretlenMEMELİ (FP)."""
+    from app.lora.gates import gate_6_philosophy
+
+    card = _approved_card(
+        "c1", "The method is not directly applicable to continuous action spaces."
+    )
+    result = gate_6_philosophy([card])
+    assert result.review_count == 0
+
+
+def test_gate_6_negated_directly_applicable_not_flagged_tr() -> None:
+    """'doğrudan uygulanabilir değildir' Türkçe olumsuzlama işaretlenMEMELİ (FP)."""
+    from app.lora.gates import gate_6_philosophy
+
+    card = _approved_card(
+        "c1", "Bu yöntem sürekli aksiyon uzayına doğrudan uygulanabilir değildir."
+    )
+    result = gate_6_philosophy([card])
+    assert result.review_count == 0
+
+
+def test_gate_6_soft_block_fails_when_discipline_pervasive() -> None:
+    """İncelemeli oran eşiği aşarsa (yeterli kartla) Gate 6 yumuşak-blok BAŞARISIZ olmalı."""
+    from app.lora.gates import gate_6_philosophy
+
+    advice = [
+        _approved_card(f"a{i}", "This approach can be directly applied to live trading.")
+        for i in range(12)
+    ]
+    clean = [
+        _approved_card(f"c{i}", "RSI fiyatın momentumunu ölçen bir osilatördür ve sınırlıdır.")
+        for i in range(13)
+    ]
+    result = gate_6_philosophy(advice + clean)  # 12/25 = 0.48 > 0.25
+    assert result.passed is False
+    assert result.review_count == 12
+
+
+def test_gate_6_soft_block_passes_when_discipline_rare() -> None:
+    """Disiplin dili seyrekse (oran eşik altı) Gate 6 geçmeli."""
+    from app.lora.gates import gate_6_philosophy
+
+    advice = [_approved_card("a0", "This can be directly applied to trading.")]
+    clean = [
+        _approved_card(f"c{i}", "RSI fiyatın momentumunu ölçen bir osilatördür ve sınırlıdır.")
+        for i in range(24)
+    ]
+    result = gate_6_philosophy(advice + clean)  # 1/25 = 0.04 < 0.25
+    assert result.passed is True
+    assert result.review_count == 1
+
+
+def test_gate_6_small_batch_never_soft_blocks() -> None:
+    """min_cards altı küçük batch'te oran yüksek olsa da yumuşak-blok uygulanmaz."""
+    from app.lora.gates import gate_6_philosophy
+
+    cards = [_approved_card("a0", "This can be directly applied to trading.")]
+    result = gate_6_philosophy(cards)  # 1 kart < 20 → passed True
+    assert result.passed is True
+    assert result.review_count == 1
+
+
+def test_gate_5_flags_bare_performance_claim_without_blocking() -> None:
+    """Gate 5 çıplak '92% accuracy' iddiasını inceleme işaretlemeli, reddetmemeli."""
+    card = _approved_card("c1", "This model predicts price movements with 92% accuracy.")
+    result = gate_5_math([card])
+    assert result.passed is True  # blok değil
+    assert result.review_count >= 1
+
+
 def test_gate_1_schema_validates_message_order() -> None:
     """Doğru rol sıralı örnek Gate 1'i geçmeli."""
     result = gate_1_schema([_example("s1")])
