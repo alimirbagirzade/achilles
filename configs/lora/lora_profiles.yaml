@@ -13,8 +13,10 @@
 #   neftune_noise_alpha  : NEFTune embedding gürültüsü (0=kapalı, tipik 5) — overfit azaltır.
 #   weight_decay/warmup_ratio/lr_scheduler_type/max_grad_norm — regularizasyon.
 #   assistant_only_loss  : kaybı yalnız asistan yanıt token'larından hesapla (TRL SFTConfig).
-#                          v5 disiplin-regresyon adayı. OPT-IN; yalnız conversational veri +
-#                          bulut SFTTrainer ile ETKİN (yerel TrainingArguments yolunda etkisiz).
+#                          v5 disiplin-regresyon adayı. OPT-IN. NOT: bulut notebook (Hücre 10)
+#                          bunu ZATEN unsloth train_on_responses_only ile uyguluyor → bayrak
+#                          TRL-native alternatif; reçetede niyet/izlenebilirlik içindir, tek
+#                          başına eğitim davranışını değiştirmez (yerel yolda etkisiz).
 
 small_smoke_test:
   r: 8
@@ -70,8 +72,9 @@ discipline_safe:
   warmup_ratio: 0.05
   lr_scheduler_type: cosine
   max_grad_norm: 1.0
-  # v5 disiplin-onarımı adayı (araştırma 2026-06-22). false=davranış değişmez; bulut
-  # notebook SFTTrainer + conversational veri formatı wiring'i tamamlanınca true yapılır.
+  # v5 disiplin-onarımı (araştırma 2026-06-22). false bırakılır: bulut notebook (Hücre 10)
+  # asistan-only loss'u ZATEN train_on_responses_only ile uyguluyor → bu TRL-native bayrağı
+  # true yapmak çift-maskeleme olur. Niyet/izlenebilirlik için tutulur.
   assistant_only_loss: false
   target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
-  note: "v5 regresyonuna karşı; düşük lr + az epoch + NEFTune + grad-clip. Önce OFFLINE sınav, sonra bulut eğit, sonra adapter_eval gate. assistant_only_loss: notebook wiring sonrası açılacak."
+  note: "v5 regresyonuna karşı; düşük lr + az epoch + NEFTune + grad-clip. Önce OFFLINE sınav, sonra bulut eğit, sonra adapter_eval gate. Asistan-only loss bulut notebook'ta train_on_responses_only ile zaten canlı."

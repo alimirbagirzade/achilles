@@ -109,13 +109,16 @@ class PeftTrainConfig:
     # >0 açar (tipik 5). Yalnız eğitim-zamanı; mimariyi değiştirmez → GGUF-güvenli.
     neftune_noise_alpha: float = 0.0
     # assistant_only_loss: kaybı YALNIZ asistan yanıt token'larından hesaplar; sistem/
-    # kullanıcı turları maskelenir (TRL SFTConfig özelliği). v5 disiplin-regresyonunun
-    # doğrudan adayı: refusal/abstain davranışı sistem-turu gradyanlarıyla bozuluyordu.
-    # OPT-IN, varsayılan KAPALI. DİKKAT: yalnız conversational (messages) veri + TRL
-    # SFTTrainer ile ETKİN olur; mevcut yerel trainer TrainingArguments kullandığından
-    # bağlanması bulut notebook tarafına bırakıldı (araştırma: LORA_ARASTIRMA_LOG.md
-    # 2026-06-22). Şu an reçeteye TAŞINIR + dry-run özetinde görünür, ama eğitim
-    # davranışını henüz değiştirmez — yarım bağlama notebook'u kırmasın diye bilinçli.
+    # kullanıcı turları maskelenir (TRL SFTConfig'in native bayrağı). v5 disiplin-
+    # regresyonunun doğrudan adayı: refusal/abstain davranışı sistem-turu gradyanlarıyla
+    # bozuluyordu. OPT-IN, varsayılan KAPALI.
+    # ÖNEMLİ: Bulut eğitim yolu (templates/stage2_lora_colab.ipynb, Hücre 10) bu maskelemeyi
+    # ZATEN unsloth `train_on_responses_only` ile uyguluyor (instruction/response part +
+    # `assert n_loss > 0` guard'ı). Yani GERÇEK eğitim yolunda asistan-only loss zaten CANLI;
+    # bu bayrak TRL-native ALTERNATİFTİR ve notebook'a EKLENMEMELİDİR (çift-maskeleme olur).
+    # Yerel trainer (TrainingArguments) maskeleme yapmaz; orada etkisiz. Bayrak reçeteye
+    # taşınır + dry-run özetinde görünür (niyet/izlenebilirlik), eğitim davranışını TEK
+    # BAŞINA değiştirmez. Bkz docs/egitim/LORA_ARASTIRMA_LOG.md 2026-06-22.
     assistant_only_loss: bool = False
     seed: int = 42
 

@@ -248,3 +248,9 @@ def test_discipline_safe_drives_cloud_notebook(tmp_path) -> None:
     assert "LORA_R          = 16" in src
     assert "USE_RSLORA      = False" in src
     assert "neftune_noise_alpha = (NEFTUNE_ALPHA or None)" in src
+    # v5 disiplin-onarımı REGRESYON GUARD'ı: bulut notebook asistan-only loss'u
+    # train_on_responses_only ile uygular + maskeleme doğrulaması (loss token > 0).
+    # Bu hücreler silinirse/bozulursa v5-tipi regresyon riski geri gelir → test korur.
+    assert "train_on_responses_only" in src
+    assert '"<|im_start|>assistant\\n"' in src  # response_part — yalnız asistana loss
+    assert "n_loss > 0" in src  # maskeleme boş kalmasın guard'ı
