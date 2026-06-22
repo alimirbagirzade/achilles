@@ -201,6 +201,26 @@ class BacktestResult:
     equity_curve: pd.Series
 
 
+def _net_returns(position: pd.Series, bar_ret: pd.Series, cost_per_turn: float) -> pd.Series:
+    """Gecikmeli pozisyondan net bar getirisi — look-ahead'siz + cost-timing hizalı.
+
+    Getiri VE işlem maliyeti AYNI gecikmeli pozisyon serisinden (``eff_pos =
+    position.shift(1)``) türetilir. Eski hâl turnover'ı kaydırılmamış ``position.diff()``'ten
+    alıyordu; o yüzden giriş maliyeti, pozisyon getiri kazanmaya başlamadan bir bar ÖNCE
+    düşüyordu (cost-timing kayması). Look-ahead DEĞİL — ``eff_pos[t]`` yalnız ``position[t-1]``e
+    bağlı — ama per-bar Sharpe'ı (kapı metriği) kısa-tutuşlu/yüksek-turnover stratejilerde
+    bozuyordu. Tek-seri tutarlılık giriş+çıkış maliyetini getiriyle hizalar.
+
+    Not: seri sonunda hâlâ açık pozisyonun çıkış maliyeti (geçiş bir sonraki bara düşeceği
+    için) yakalanmaz — bu, açık-pozisyon-kapanışı kararıyla ilgili ayrı, bilinen bir köşe
+    durumudur; eski davranışta da çıkış zamanlaması benzer şekilde belirsizdi.
+    """
+    eff_pos = position.shift(1).fillna(0.0)
+    strat_ret = eff_pos * bar_ret
+    turnover = eff_pos.diff().abs().fillna(0.0)
+    return strat_ret - turnover * cost_per_turn
+
+
 def run_backtest(df: pd.DataFrame, ir: StrategyIR) -> BacktestResult:
     required = {"open", "high", "low", "close"}
     missing = required - set(df.columns)
@@ -210,13 +230,7 @@ def run_backtest(df: pd.DataFrame, ir: StrategyIR) -> BacktestResult:
     position = _position_series(enriched, ir)
 
     bar_ret = enriched["close"].pct_change().fillna(0.0)
-    # no look-ahead: yesterday's position earns today's return
-    strat_ret = position.shift(1).fillna(0.0) * bar_ret
-
-    # transaction costs on position changes
-    turnover = position.diff().abs().fillna(0.0)
-    cost = turnover * (ir.costs.commission + ir.costs.slippage)
-    net_ret = strat_ret - cost
+    net_ret = _net_returns(position, bar_ret, ir.costs.commission + ir.costs.slippage)
 
     metrics = _metrics(
         net_ret, position, ir.timeframe, n_params=len(ir.entry_rules) + len(ir.exit_rules)

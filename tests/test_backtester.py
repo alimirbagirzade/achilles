@@ -75,6 +75,29 @@ def test_no_lookahead_costs_reduce_return(synthetic_df: pd.DataFrame) -> None:
         assert without_costs.metrics.total_return_pct >= with_costs.metrics.total_return_pct
 
 
+def test_net_returns_cost_aligned_with_earning_bar() -> None:
+    """Cost-timing fix: giriş maliyeti, pozisyonun getiri kazanmaya başladığı barla hizalı.
+
+    Eski hâlde maliyet kaydırılmamış position.diff()'ten geliyordu → giriş sinyalinden
+    sonraki ilk barda (henüz getiri yok) düşülüyordu. Artık getiri+maliyet aynı gecikmeli
+    pozisyondan türer.
+    """
+    from app.trading.backtester import _net_returns
+
+    # pozisyon: bar1'de gir (0→1), bar3'te çık (1→0)
+    position = pd.Series([0, 1, 1, 0, 0])
+    bar_ret = pd.Series([0.0, 0.02, 0.03, 0.04, 0.05])
+    net = _net_returns(position, bar_ret, cost_per_turn=0.01)
+
+    # eff_pos=[0,0,1,1,0]; getiri bar2-3'te; giriş maliyeti bar2'de (ilk getiri barı), bar1'de DEĞİL
+    assert net.iloc[1] == 0.0  # giriş sinyali sonrası ilk bar: maliyet YOK (eski hata buradaydı)
+    assert abs(net.iloc[2] - (0.03 - 0.01)) < 1e-9  # getiri başladığı bar + giriş maliyeti hizalı
+    assert abs(net.iloc[3] - 0.04) < 1e-9  # tutuş barı: maliyet yok
+    # giriş + çıkış olmak üzere iki turnover maliyeti uygulanmış olmalı
+    total_cost = (position.shift(1).fillna(0.0).diff().abs().fillna(0.0) * 0.01).sum()
+    assert abs(total_cost - 0.02) < 1e-9
+
+
 def test_static_checks_flags_few_trades() -> None:
     m = BacktestMetrics(
         n_trades=5,
