@@ -22,7 +22,8 @@ Bu dosya **iki işlevi** birden görür:
 
 `rsLoRA` · `DoRA` · `LoRA+` · `PiSSA` · `OLoRA` · `EVA` · `LoftQ` · `CorDA` ·
 `NEFTune` · `gaussian-init` · `QLoRA` · `train_on_responses_only` · `cosine-warmup` ·
-`weight-decay` · `gradient-clipping` · `replay/rehearsal` · `n-gram-repetition-detection`
+`weight-decay` · `gradient-clipping` · `replay/rehearsal` · `n-gram-repetition-detection` ·
+`assistant_only_loss`
 
 ## Kapsanan kaynaklar (arXiv ID / URL)
 
@@ -31,8 +32,66 @@ Bu dosya **iki işlevi** birden görür:
 - unsloth.ai/docs/get-started/fine-tuning-llms-guide/lora-hyperparameters-guide
 - unsloth.ai/docs/models/tutorials/qwen3-how-to-run-and-fine-tune
 - huggingface.co/docs/peft/main/en/developer_guides/lora (rsLoRA/DoRA/init/LoRA+)
-- huggingface.co/docs/trl/sft_trainer (NEFTune/response-only/packing)
+- huggingface.co/docs/trl/sft_trainer (NEFTune/response-only/packing/assistant_only_loss)
 - github.com/NVlabs/DoRA · github.com/neelsjain/NEFTune · github.com/yxli2123/LoftQ
+
+---
+
+## Günlük tarama — 2026-06-22 (yönlü tarama, kullanıcı isteği)
+
+**Tetikleyici:** Kullanıcı isteği — "v5 disiplin gerilemesine yönelik güncel SFT/LoRA tekniği
+ara; kodu değiştirme, yalnız öner."
+
+**Yöntem:** Çok açılı WebSearch (catastrophic forgetting / küçük model / disiplin koruma /
+eval-aware / TRL/PEFT yeni özellikler) + adversarial doğrulama.
+
+**Taranan ve elenen adaylar:**
+
+| Aday | Eleme gerekçesi |
+|------|-----------------|
+| OPLoRA (arXiv 2510.13003) | PEFT native desteği yok; custom trainer gerekir |
+| SC-LoRA (arXiv 2505.23724) | PEFT native desteği yok; research prototype |
+| EWCLoRA / Hierarchical Layer-wise (arXiv 2501.13669) | Kod henüz yayımlanmadı |
+| DFT `loss_type="dft"` (arXiv 2508.05629) | Yalnız math/reasoning'de test edilmiş; disiplin etkisi belirsiz; 4B doğrulanmamış |
+
+**Onaylanan aday: `assistant_only_loss=True` (TRL SFTConfig)**
+
+- **Kaynak:** TRL v1.6.0 resmi docs + sft_config.py main branch
+  (https://huggingface.co/docs/trl/sft_trainer)
+- **Ne yapar:** SFTConfig'e `assistant_only_loss=True` eklendiğinde kayıp yalnız asistan
+  yanıtı tokenlarından hesaplanır; sistem mesajı ve kullanıcı turları maskelenir. Qwen3
+  için TRL otomatik chat template patch uygular (jinja `{% generation %}` ekleme gerektirmez).
+- **v5 bağlantısı:** v5 gerilemesinin kök sebebi sentetik-QA reçetesinin disiplin
+  refusal tokenlerini bozuk loss hesabıyla (sistem turu dahil) ezmesiydi. `assistant_only_loss`
+  sistem/kullanıcı turlarını maskeler → refusal/abstain davranışını öğrenirken gereksiz
+  sistem-token sinyali karışmaz.
+- **GGUF-güvenli:** Evet — yalnız eğitim-zamanı loss maskeleme; mimariyi/ağırlıkları değiştirmez.
+- **PEFT uyumlu:** Evet — TRL SFTTrainer + SFTConfig; bulut notebook zaten SFTConfig kullanıyor.
+- **Kısıt:** Bulut notebook'ta veri formatı `"text"` alan kullanıyor (dil modelleme modu);
+  `assistant_only_loss` yalnız conversational (mesaj listesi) formatında çalışır. Veri
+  dönüşümü veya `dataset_text_field` kaldırılması gerekir. Bu yüzden **OPT-IN** olarak
+  bırakılmalı; varsayılan bozulmamalı.
+
+**Entegrasyon önerisi (kod değiştirilmedi — PR gerektirir):**
+
+- `app/training/peft_lora_train.py` → `PeftTrainConfig`'e `assistant_only_loss: bool = False`
+  alanı ekle; `build_training_kwargs` içinde `SFTConfig`'e (veya `TrainingArguments` yerine
+  geçirilecek `SFTConfig`'e) bu bayrağı geç.
+- `app/training/cloud_notebook.py` + şablon → `build_stage2_notebook` parametresine
+  `assistant_only_loss: bool = False` ekle; notebook şablonunda SFTConfig'e enjekte et;
+  veri formatını conversational moda çevir (messages listesi).
+- `configs/lora/lora_profiles.yaml` → `discipline_safe` profiline `assistant_only_loss: true`
+  satırını ekle (v5 reçetesiyle doğrudan uyumlu).
+
+**NOT (Kural 2):** Reçete hipotezdir. Bulut eğitim koşusu + `adapter_eval` gate'i ile
+doğrulanana kadar "daha iyi" denmez.
+
+### Kaynaklar (Günlük tarama 2026-06-22)
+
+| Teknik / Konu | Kaynak |
+|---------------|--------|
+| assistant_only_loss / TRL SFTConfig | <https://huggingface.co/docs/trl/sft_trainer> |
+| TRL sft_config.py (parametre doğrulama) | <https://github.com/huggingface/trl/blob/main/trl/trainer/sft_config.py> |
 
 ---
 
