@@ -472,6 +472,61 @@ def lora_eval(
     )
 
 
+@app.command("lora-chat")
+def lora_chat(
+    adapter: str = typer.Argument("", help="Adapter adı/yolu (boş=YALNIZ base model)"),
+    q: str = typer.Option("", "--q", help="Tek soru (boşsa interaktif sohbet döngüsü)."),
+    base_model: str = typer.Option(
+        "", "--base-model", help="Base override (boş=adapter_config'ten, yoksa settings)."
+    ),
+    max_tokens: int = typer.Option(256, "--max-tokens", help="Üretilecek maksimum token."),
+) -> None:
+    """Eğitilen LoRA adapter'ı (veya base) ile LOKAL sohbet — PEFT, Ollama gerektirmez.
+
+    Base, adapter'ın kendi config'inden çözülür (küçük-model adapter'ı için ŞART). Üretim
+    greedy/deterministtir (Kural 6). AĞIR: CPU'da model yükleme + üretim dakikalar sürer.
+    """
+    from app.config import get_settings
+    from app.training.adapter_eval import _generate, _load_model, _resolve_base_model
+
+    s = get_settings()
+    adapter_dir: str | None = None
+    if adapter:
+        adir = adapter if Path(adapter).exists() else str(s.adapters_dir / adapter)
+        if not Path(adir).exists():
+            console.print(f"[red]Adapter bulunamadı:[/red] {adir}")
+            raise typer.Exit(code=1)
+        adapter_dir = adir
+
+    base = (
+        base_model
+        or (_resolve_base_model(adapter_dir) if adapter_dir else None)
+        or s.peft_base_model
+    )
+    console.print(
+        f"[cyan]Yükleniyor (CPU, ağır):[/cyan] base={base} | adapter={adapter_dir or '(yok)'}"
+    )
+    tok, model = _load_model(base, adapter_dir)
+
+    def _answer(question: str) -> str:
+        return _generate(tok, model, question, max_new_tokens=max_tokens)
+
+    if q:
+        console.print(Panel(_answer(q), title=f"cevap ({'adapter' if adapter_dir else 'base'})"))
+        return
+
+    console.print("[dim]İnteraktif sohbet. Çıkış için boş satır veya Ctrl-C.[/dim]")
+    while True:
+        try:
+            question = console.input("[bold green]Sen> [/bold green]").strip()
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n[dim]Sohbet bitti.[/dim]")
+            break
+        if not question:
+            break
+        console.print(Panel(_answer(question), title="model"))
+
+
 # --------------------------------------------------------------------------
 # trading / backtest
 # --------------------------------------------------------------------------
