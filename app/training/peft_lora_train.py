@@ -108,6 +108,15 @@ class PeftTrainConfig:
     # NEFTune: embedding'e eğitimde gürültü → overfit/ezber azalır, yönerge takibi korunur.
     # >0 açar (tipik 5). Yalnız eğitim-zamanı; mimariyi değiştirmez → GGUF-güvenli.
     neftune_noise_alpha: float = 0.0
+    # assistant_only_loss: kaybı YALNIZ asistan yanıt token'larından hesaplar; sistem/
+    # kullanıcı turları maskelenir (TRL SFTConfig özelliği). v5 disiplin-regresyonunun
+    # doğrudan adayı: refusal/abstain davranışı sistem-turu gradyanlarıyla bozuluyordu.
+    # OPT-IN, varsayılan KAPALI. DİKKAT: yalnız conversational (messages) veri + TRL
+    # SFTTrainer ile ETKİN olur; mevcut yerel trainer TrainingArguments kullandığından
+    # bağlanması bulut notebook tarafına bırakıldı (araştırma: LORA_ARASTIRMA_LOG.md
+    # 2026-06-22). Şu an reçeteye TAŞINIR + dry-run özetinde görünür, ama eğitim
+    # davranışını henüz değiştirmez — yarım bağlama notebook'u kırmasın diye bilinçli.
+    assistant_only_loss: bool = False
     seed: int = 42
 
 
@@ -185,6 +194,8 @@ def recipe_summary(cfg: PeftTrainConfig) -> dict:
         techniques.append(f"LoRA+ (lr_ratio={cfg.loraplus_lr_ratio})")
     if cfg.neftune_noise_alpha and cfg.neftune_noise_alpha > 0:
         techniques.append(f"NEFTune (alpha={cfg.neftune_noise_alpha})")
+    if cfg.assistant_only_loss:
+        techniques.append("assistant_only_loss (yalnız asistan token kaybı — notebook'ta etkin)")
     return {
         "r": cfg.lora_r,
         "alpha": cfg.lora_alpha,
@@ -231,6 +242,7 @@ def load_lora_profile(name: str, profiles_path: Path | None = None) -> dict:
         "lr_scheduler_type": "lr_scheduler_type",
         "max_grad_norm": "max_grad_norm",
         "neftune_noise_alpha": "neftune_noise_alpha",
+        "assistant_only_loss": "assistant_only_loss",
     }
     out: dict = {}
     for yaml_key, cfg_field in field_map.items():

@@ -148,6 +148,21 @@ def test_recipe_summary_lists_techniques() -> None:
     assert rs["gguf_unsafe_init"] is True
 
 
+def test_assistant_only_loss_opt_in() -> None:
+    """assistant_only_loss: varsayılan kapalı (özette yok); açıkken özette görünür.
+
+    v5 disiplin-onarımı adayı; config-seviyesi opt-in olarak taşınır (bulut notebook
+    wiring'i ayrı adım). Varsayılan False → eğitim davranışı/regresyon yok.
+    """
+    assert _cfg().assistant_only_loss is False
+    assert all(
+        "assistant_only_loss" not in t for t in recipe_summary(_cfg())["advanced_techniques"]
+    )
+
+    joined = " ".join(recipe_summary(_cfg(assistant_only_loss=True))["advanced_techniques"])
+    assert "assistant_only_loss" in joined
+
+
 # --- load_lora_profile (gerçek YAML) ---
 
 
@@ -159,6 +174,8 @@ def test_load_profile_discipline_safe() -> None:
     assert prof["neftune_noise_alpha"] == 5
     assert prof["lr_scheduler_type"] == "cosine"
     assert prof["epochs"] == 1  # config alanı değil ama bilgi olarak taşınır
+    # assistant_only_loss profil→config alanına taşınır (şu an false: davranış değişmez)
+    assert prof["assistant_only_loss"] is False
 
 
 def test_load_profile_applies_to_config() -> None:
