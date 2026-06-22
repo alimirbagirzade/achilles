@@ -115,7 +115,10 @@ def test_extract_json_repairs_smart_quotes_and_trailing_commas():
 
 
 def test_build_parses_card_and_persists(tmp_path):
-    store = _FakeStore(["chunk metni bir", "chunk metni iki"])
+    # Builder kaynak metni <1500 karakterse LLM'e göndermez (commit 79619ea,
+    # _MIN_SOURCE_CHARS) → parse/persist davranışını sınamak için yeterince uzun kaynak ver.
+    long_chunk = "Volatilite kümelenmesi ve momentum kalıcılığı üzerine analiz cümlesi. " * 30
+    store = _FakeStore([long_chunk, "chunk metni iki"])
     builder = _builder(tmp_path, store, _StubLLM(_VALID_CARD_JSON))
 
     card = builder.build("paper_abc")
