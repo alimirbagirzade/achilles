@@ -112,14 +112,44 @@ def _generate(tok, model, question: str, max_new_tokens: int = 220) -> str:
     return tok.decode(out[0][ids["input_ids"].shape[1] :], skip_special_tokens=True).strip()
 
 
+_MIN_EVAL_N = 5  # bu sayının altında 'accept' YASAK (v5 dersi: n=1 ile sahte accept)
+
+
+def _decide_verdict(
+    base_score: float, adapter_score: float, *, n: int, min_n: int = _MIN_EVAL_N
+) -> str:
+    """Eval verdict'i — küçük-n'de 'accept'i bloklar (v5 disiplin-regresyon dersi).
+
+    v5'te eval n=1 örnekle 'accept' demişti; tek soruda base bir bayrak alıp adapter almayınca
+    istatistiksel temeli olmayan bir 'kabul' üretiliyordu. Kurallar:
+      * adapter < base  → 'reject' (regresyon, HER n'de — güvenli yön).
+      * n < min_n        → 'inconclusive' (az örnek; accept'e güvenme).
+      * adapter > base  → 'accept'.
+      * eşitlik          → 'inconclusive'.
+    """
+    if adapter_score < base_score:
+        return "reject"
+    if n < min_n:
+        return "inconclusive"
+    if adapter_score > base_score:
+        return "accept"
+    return "inconclusive"
+
+
 def evaluate_adapter(
     adapter_dir: str | Path,
     eval_set: str | Path,
     *,
     base_model: str | None = None,
     n: int | None = None,
+    min_n: int = _MIN_EVAL_N,
 ) -> AdapterEvalResult:
-    """Base vs adapter karşılaştırmalı eval. (Kural 6: greedy determinist üretim.)"""
+    """Base vs adapter karşılaştırmalı eval. (Kural 6: greedy determinist üretim.)
+
+    `min_n`: bu sayının altında örnekle 'accept' verilmez ('inconclusive'). v5 regresyonunun
+    (n=1 ile sahte accept) doğrudan koruması; CLI `--n 1` veya küçük eval set artık terfi
+    sinyali üretemez (regresyon yine her n'de raporlanır).
+    """
     s = get_settings()
     base_model = base_model or s.peft_base_model
     items = load_eval_set(eval_set)
@@ -152,12 +182,7 @@ def evaluate_adapter(
     base_score = round(1.0 - base_flag_total / denom, 4)
     adapter_score = round(1.0 - adapt_flag_total / denom, 4)
     regression = adapter_score < base_score
-    if regression:
-        verdict = "reject"
-    elif adapter_score > base_score:
-        verdict = "accept"
-    else:
-        verdict = "inconclusive"
+    verdict = _decide_verdict(base_score, adapter_score, n=len(items), min_n=min_n)
 
     result = AdapterEvalResult(
         eval_set=Path(eval_set).stem,
