@@ -125,6 +125,15 @@ def test_build_training_kwargs_neftune_and_cuda() -> None:
     assert kw["fp16"] is True
 
 
+def test_build_training_kwargs_max_steps_caps() -> None:
+    # max_steps verilmezse anahtar HİÇ olmamalı (eski davranış: epoch yönetir).
+    kw0 = build_training_kwargs(_cfg(), num_epochs=2, output_dir="out", on_cuda=False)
+    assert "max_steps" not in kw0
+    # max_steps>0 → adım sayısı TAM kapanır (kök bug fix: iterations artık epoch'a kaçmaz).
+    kw = build_training_kwargs(_cfg(), num_epochs=1, output_dir="out", on_cuda=False, max_steps=200)
+    assert kw["max_steps"] == 200
+
+
 # --- recipe_summary ---
 
 

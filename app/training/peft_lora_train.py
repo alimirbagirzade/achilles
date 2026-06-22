@@ -154,12 +154,16 @@ def build_lora_kwargs(cfg: PeftTrainConfig) -> dict:
 
 
 def build_training_kwargs(
-    cfg: PeftTrainConfig, *, num_epochs: int, output_dir: str, on_cuda: bool
+    cfg: PeftTrainConfig, *, num_epochs: int, output_dir: str, on_cuda: bool, max_steps: int = 0
 ) -> dict:
     """transformers ``TrainingArguments`` için kwargs sözlüğü kur (saf → offline test).
 
     Regularizasyon (warmup + cosine + weight_decay + grad-clip) ve NEFTune burada
     bağlanır; bunlar v5 catastrophic-forgetting/degenerasyon dersinin doğrudan yanıtı.
+
+    ``max_steps>0`` ise adım sayısını TAM kapar (HF Trainer bunu ``num_train_epochs``'un
+    önüne alır). ``cfg.iterations`` gerçekte ADIM sayısıdır; epoch'a çevirmek küçük
+    değerlerde (iterations<steps_per_epoch) tüm-epoch'a kaçırıyordu (kök bug).
     """
     kwargs: dict = {
         "output_dir": output_dir,
@@ -181,6 +185,8 @@ def build_training_kwargs(
     }
     if cfg.neftune_noise_alpha and cfg.neftune_noise_alpha > 0:
         kwargs["neftune_noise_alpha"] = cfg.neftune_noise_alpha
+    if max_steps and max_steps > 0:
+        kwargs["max_steps"] = max_steps
     return kwargs
 
 
@@ -532,14 +538,23 @@ def train(cfg: PeftTrainConfig) -> dict:
         return {"ok": False, "error": "Eğitim verisi boş (tokenize sonrası 0 örnek)."}
 
     steps_per_epoch = max(1, len(train_ds) // cfg.batch_size)
-    num_epochs = max(1, cfg.iterations // steps_per_epoch)
+    # cfg.iterations = TOPLAM ADIM hedefi (epoch DEĞİL). Eski kod `iterations // steps_per_epoch`
+    # ile epoch'a çeviriyordu → iterations < steps_per_epoch olunca 0→1 epoch (TÜM veri) kaçağı:
+    # "iterations=200" gerçekte 1 tam epoch (ör. 1919 adım) koşuyor, eğitim hiç bitmiyordu.
+    # Artık max_steps adım sayısını TAM kapar; num_epochs yalnız tavan (max_steps onu keser).
+    max_steps = cfg.iterations if cfg.iterations > 0 else steps_per_epoch
+    num_epochs = max(1, -(-max_steps // steps_per_epoch))  # ceil(max_steps/steps_per_epoch)
 
     output_dir = str(cfg.adapter_output_path)
     # HIZ ayarları (CPU): eval kapalı, tek checkpoint, pin_memory kapalı, dinamik padding.
     # Regularizasyon (warmup/cosine/weight_decay/grad-clip/NEFTune) build_training_kwargs'ta.
     args = TrainingArguments(
         **build_training_kwargs(
-            cfg, num_epochs=num_epochs, output_dir=output_dir, on_cuda=(device == "cuda")
+            cfg,
+            num_epochs=num_epochs,
+            output_dir=output_dir,
+            on_cuda=(device == "cuda"),
+            max_steps=max_steps,
         )
     )
 
