@@ -54,6 +54,19 @@ class AskResponse(BaseModel):
     adapter_used: str | None = None  # kullanılan adapter versiyonu
 
 
+# ---------- LoRA sohbet (eğitilen adapter ile lokal, PEFT — Ollama'sız) ----------
+class LoraChatRequest(BaseModel):
+    question: str = Field(min_length=2, max_length=4000)
+    adapter: str | None = None  # boş/None → yalnız base model
+    max_tokens: int = Field(default=256, ge=16, le=1024)
+
+
+class LoraChatResponse(BaseModel):
+    answer: str
+    adapter: str
+    base_model: str
+
+
 # ---------- Model değerlendirme ----------
 class EvalSetOut(BaseModel):
     name: str

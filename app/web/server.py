@@ -61,6 +61,8 @@ from app.web.schemas import (
     HypothesisResult,
     IngestResponse,
     KellyOut,
+    LoraChatRequest,
+    LoraChatResponse,
     PackageCodeOut,
     PackageExportResponse,
     PaperOut,
@@ -382,6 +384,37 @@ def api_ask(req: AskRequest) -> AskResponse:
         llm_used=ans.llm_used,
         embedding_mode=EmbeddingService().mode,
     )
+
+
+@app.get("/api/lora-adapters", dependencies=[api_auth])
+def api_lora_adapters() -> dict:
+    """Sohbet için kullanılabilir (tam) LoRA adapter'larını listele."""
+    from app.web.lora_chat_service import list_adapters
+
+    return {"adapters": list_adapters()}
+
+
+@app.post("/api/lora-chat", response_model=LoraChatResponse, dependencies=[api_auth])
+def api_lora_chat(req: LoraChatRequest) -> LoraChatResponse:
+    """Eğitilen LoRA adapter'ı (veya base) ile LOKAL sohbet — PEFT, Ollama'sız.
+
+    AĞIR: CPU'da model yükleme (ilk istek) + üretim dakikalar sürebilir. Senkron `def` →
+    FastAPI bunu threadpool'da koşturur, event loop bloklanmaz.
+    """
+    from app.web.lora_chat_service import chat
+
+    try:
+        out = chat(req.question, req.adapter, max_tokens=req.max_tokens)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"PEFT/transformers eksik: {exc}. Kur: uv pip install torch transformers peft",
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"LoRA sohbet hatası: {exc}") from exc
+    return LoraChatResponse(**out)
 
 
 @app.get("/api/card/{paper_id}", response_model=CardResponse, dependencies=[api_auth])
