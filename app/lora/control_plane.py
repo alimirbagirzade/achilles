@@ -135,7 +135,10 @@ class LoRAControlPlane:
 
         nonempty = [c for c in cards if _card_text(c)]
 
-        stages: list[GateResult] = [gate_0_source(nonempty)]
+        # Gate 0 kaynak-varlık denetimi: papers tablosundaki gerçek paper_id seti.
+        # Bir kartın paper_id'si bu sette yoksa 'orphan'dır (kaynak yok → kural 7).
+        valid_paper_ids = self.store.list_paper_ids()
+        stages: list[GateResult] = [gate_0_source(nonempty, valid_paper_ids=valid_paper_ids)]
         stages.append(gate_2_curriculum(nonempty))
         stages.append(gate_3_domain(nonempty))
 

@@ -58,6 +58,30 @@ def test_gate_0_rejects_unapproved() -> None:
     assert result.rejected_count == 1
 
 
+def test_gate_0_rejects_orphan_paper_id() -> None:
+    """paper_id papers tablosunda (valid set) YOKSA kart orphan → reddedilmeli (kural 7)."""
+    card = _approved_card("c1", "RSI momentum göstergesi ve formül içerir.")
+    # card.paper_id = 'paper_c1'; geçerli sette yok → orphan.
+    result = gate_0_source([card], valid_paper_ids={"paper_other"})
+    assert result.passed is False
+    assert result.rejected_count == 1
+    assert any("orphan" in d for d in result.details)
+
+
+def test_gate_0_passes_when_paper_id_present() -> None:
+    """paper_id geçerli sette varsa (kaynak gerçek) Gate 0 geçmeli."""
+    card = _approved_card("c1", "RSI momentum göstergesi ve formül içerir.")
+    result = gate_0_source([card], valid_paper_ids={"paper_c1"})
+    assert result.passed is True
+
+
+def test_gate_0_existence_check_is_opt_in() -> None:
+    """valid_paper_ids verilmezse varlık denetimi atlanır (geriye-dönük uyum)."""
+    card = _approved_card("c1", "RSI momentum göstergesi ve formül içerir.")
+    # Aynı kart, set verilmeden → eski davranış (orphan denetimi yok) → geçer.
+    assert gate_0_source([card]).passed is True
+
+
 def test_gate_6_uppercase_turkish_markers_flagged() -> None:
     """BÜYÜK harf 'ÇELİŞKİ'/'TUTARSIZ' işaretleri tr_fold ile insan incelemesine düşmeli."""
     from app.lora.gates import gate_6_philosophy

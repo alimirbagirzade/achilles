@@ -1655,6 +1655,55 @@ def lora_audit(
     console.print(f"[dim]Rapor:[/dim] {report_path}")
 
 
+@app.command("lora-curate")
+def lora_curate(
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--run",
+        help="Yalnız raporla (varsayılan); --run ile lora_eligible=0 uygula.",
+    ),
+) -> None:
+    """Orphan + çok-versiyon kartları LoRA eğitiminden çıkar (lora_eligible=0).
+
+    Orphan = paper_id papers tablosunda yok (kaynak yok → kural 7). Çok-versiyon =
+    aynı paper'dan birden çok çelişkili kart (v5 disiplin kökü); paper başına en zengin
+    tek kart tutulur. Mutasyon GERİ ALINABİLİR (review_status korunur, kart silinmez).
+    Eğitim BAŞLATMAZ.
+    """
+    from app.lora.card_curation import apply_curation, curation_markdown
+    from app.memory.sqlite_store import SqliteStore
+
+    store = SqliteStore()
+    report = apply_curation(store, dry_run=dry_run)
+
+    table = Table(title="LoRA Kart Kürasyon")
+    table.add_column("Ölçü")
+    table.add_column("Değer", justify="right")
+    table.add_row("Uygun kart (approved+eligible)", str(report.total_eligible))
+    table.add_row(
+        "Orphan düşürülen",
+        f"{report.orphan_demoted} ({report.distinct_orphan_papers} paper)",
+    )
+    table.add_row(
+        "Çok-versiyon düşürülen",
+        f"{report.redundant_demoted} ({report.distinct_collapsed_papers} paper)",
+    )
+    table.add_row("Tutulan (kanonik)", str(report.kept))
+    table.add_row("Toplam düşürülen", str(report.total_demoted))
+    console.print(table)
+
+    mode = "[yellow]DRY-RUN[/yellow] (DB'ye yazılmadı)" if dry_run else "[green]UYGULANDI[/green]"
+    console.print(f"Mod: {mode}")
+    if dry_run and report.total_demoted:
+        console.print("[dim]Uygulamak için:[/dim] uv run achilles lora-curate --run")
+
+    settings = get_settings()
+    report_path = settings.root / "reports" / "lora" / "curation_report.md"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(curation_markdown(report), encoding="utf-8")
+    console.print(f"[dim]Rapor:[/dim] {report_path}")
+
+
 @app.command("lora-dataset")
 def lora_dataset(
     output: Path = typer.Option(

@@ -1399,6 +1399,31 @@ class SqliteStore:
             row.lora_eligible = 0
             return True
 
+    def set_card_lora_eligible(self, card_id: str, eligible: bool) -> bool:
+        """Kartın ``lora_eligible`` bayrağını ayarla (``review_status``'a DOKUNMAZ).
+
+        Kart kürasyonu için: orphan / fazla-versiyon kartı EĞİTİMDEN çıkar ama
+        'approved' içeriğini ve coverage/mastery semantiğini koru. ``reject_card``'dan
+        farkı: kartı reddetmez, yalnız eğitim uygunluğunu düşürür → GERİ ALINABİLİR
+        (yeniden True yapılabilir). Kart yoksa False döner.
+        """
+        with self.session() as s:
+            row = s.get(KnowledgeCard, card_id)
+            if row is None:
+                return False
+            row.lora_eligible = 1 if eligible else 0
+            return True
+
+    def list_paper_ids(self) -> set[str]:
+        """``papers`` tablosundaki TÜM geçerli paper_id'leri döndür (Gate 0 kaynak denetimi).
+
+        Onaylı bir kartın paper_id'si bu sette YOKSA kart 'orphan'dır: dayandığı makale
+        papers tablosunda yok (sıfırlama/temizlik artığı ya da uydurma kaynak) → iddiası
+        hiçbir kaynağa bağlanamaz (CLAUDE.md kural 7), eğitime girmemeli.
+        """
+        with self.session() as s:
+            return set(s.scalars(select(Paper.paper_id)))
+
     def list_pending_cards(self) -> list[dict]:
         """review_status=pending olan kartları döndür.
 

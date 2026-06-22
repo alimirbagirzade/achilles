@@ -108,15 +108,33 @@ def _card_text(card: dict) -> str:
     return ""
 
 
-def gate_0_source(cards: list[dict]) -> GateResult:
-    """Kaynak bütünlüğü: approved + domain + created_at var mı?"""
+def gate_0_source(cards: list[dict], valid_paper_ids: set[str] | None = None) -> GateResult:
+    """Kaynak bütünlüğü: approved + paper_id papers'ta VAR + domain + created_at.
+
+    ``valid_paper_ids`` verilirse (control_plane'den ``papers`` tablosundaki gerçek
+    id'ler), ``paper_id`` bu sette OLMAYAN kart 'orphan' sayılıp reddedilir: dayandığı
+    makale tabloda yok → iddiası (ör. '%92 doğruluk') hiçbir kaynağa bağlanamaz
+    (CLAUDE.md kural 7 — kaynak uydurma yasak). Denetim DETERMİNİSTİK (küme üyeliği,
+    fuzzy değil). Set ``None`` ise (geriye-dönük uyum) varlık denetimi atlanır —
+    yalnız review_status/domain/created_at bakılır.
+    """
     rejected = 0
+    orphan = 0
     details: list[str] = []
     for card in cards:
         if card.get("review_status") != "approved":
             rejected += 1
             details.append(f"{card.get('card_id', '?')}: review_status != approved")
             continue
+        if valid_paper_ids is not None:
+            pid = str(card.get("paper_id") or "")
+            if pid not in valid_paper_ids:
+                rejected += 1
+                orphan += 1
+                details.append(
+                    f"{card.get('card_id', '?')}: paper_id '{pid}' papers tablosunda yok (orphan)"
+                )
+                continue
         text = _card_text(card)
         if not classify_domains(text):
             rejected += 1
@@ -125,6 +143,8 @@ def gate_0_source(cards: list[dict]) -> GateResult:
         if not card.get("created_at"):
             rejected += 1
             details.append(f"{card.get('card_id', '?')}: created_at yok")
+    if orphan:
+        details.insert(0, f"ÖZET: {orphan} orphan kart (paper_id papers tablosunda yok)")
     return GateResult(
         gate_id=0,
         name="source",
