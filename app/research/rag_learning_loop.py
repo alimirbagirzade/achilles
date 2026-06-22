@@ -35,6 +35,10 @@ log = logging.getLogger(__name__)
 
 _STATE_PATH = Path("storage") / "rag_learning_state.json"
 
+# Boş kart rebuild deneme tavanı: builder içerik üretemeyen makaleyi (ör. kaynak metni
+# bozuk/0KB) sonsuza dek denemesin → bu kadar denemeden sonra bırakılır (boşa LLM yok).
+_MAX_REBUILD_ATTEMPTS = 3
+
 
 def _utcnow() -> str:
     return dt.datetime.now(dt.UTC).isoformat()
@@ -99,6 +103,10 @@ class RagLoopState:
     # (legacy) eski bayat-skor defteri — artık _score_missing içerik-değişimiyle (kart
     # created_at > skor computed_at) tetikler; alan geriye dönük uyumluluk için tutulur.
     rescored_paper_ids: list[str] = field(default_factory=list)
+    # paper_id → boş-kart rebuild deneme sayısı; _MAX_REBUILD_ATTEMPTS'e ulaşınca bırakılır
+    # (builder düzelince eski boş kartlar yeniden denensin ama bozuk-kaynak sonsuz dönmesin).
+    # (legacy `rebuilt_paper_ids` yerine geçer.)
+    rebuild_attempts: dict[str, int] = field(default_factory=dict)
 
     mastery_percent: int | None = None
     history: list[dict[str, Any]] = field(default_factory=list)  # son ~20 tur özeti
@@ -311,10 +319,15 @@ class RagLearningLoop:
 
         `_build_missing_cards` bir makaleyi 'kartı var' diye atlar; ama o kart İÇERİKSİZ
         olabilir (build_dataset örnek üretmez → coverage düşük, LoRA darboğazı). Burada
-        içerik üretmeyen makaleleri saptayıp YENİDEN kartlarız. Bir makale başarıyla
-        yeniden üretildikten sonra (içerik hâlâ boş olsa bile) `rebuilt_paper_ids`'e
-        eklenir → sonsuz tekrar denenmez. Başarısızlıkta (örn. Ollama kapalı) eklenmez,
-        sonraki turda tekrar denenir.
+        içerik üretmeyen makaleleri saptayıp YENİDEN kartlarız.
+
+        Önceki sürüm makaleyi BİR denemeden sonra (başarılı olsun olmasın) kalıcı atlıyordu;
+        bu, builder düzeldikten sonra bile eski boş kartların donmasına yol açtı (kök sorun:
+        eski builder büyük belgelerde boş kart üretmiş, yeni builder üretiyor ama defter
+        yeniden denemeyi engelliyordu). Artık deneme SAYISI tutulur (`rebuild_attempts`):
+        bir makale içerik üretene kadar en çok `_MAX_REBUILD_ATTEMPTS` kez denenir. Başaran
+        makale `with_real`'e girip doğal elenir; üretemeyen (ör. kaynak metni bozuk/0KB)
+        tavana ulaşınca bırakılır → boşa/sonsuz LLM çağrısı yok.
         """
         if limit <= 0 or not self._state.rebuild_empty:
             return 0
@@ -331,8 +344,9 @@ class RagLearningLoop:
             str(e.metadata.get("paper_id", "")) for e in examples if e.metadata.get("paper_id")
         }
         carded = {str(c["paper_id"]) for c in cards if c.get("paper_id")}
-        attempted = set(self._state.rebuilt_paper_ids)
-        empty = [pid for pid in carded if pid not in with_real and pid not in attempted]
+        attempts = dict(self._state.rebuild_attempts)
+        gave_up = {pid for pid, n in attempts.items() if n >= _MAX_REBUILD_ATTEMPTS}
+        empty = [pid for pid in carded if pid not in with_real and pid not in gave_up]
         if not empty:
             return 0
 
@@ -341,14 +355,14 @@ class RagLearningLoop:
         for pid in empty:
             if done >= limit:
                 break
+            attempts[pid] = attempts.get(pid, 0) + 1  # denemeyi say (tavan için)
             try:
                 builder.build(pid)
                 self._approve_if_content(store, pid)  # içerikliyse onayla → coverage'a girsin
-                attempted.add(pid)  # başarıyla yeniden üretildi → bir daha deneme
                 done += 1
             except Exception as exc:
                 log.warning("RAG loop: boş kart rebuild başarısız (%s): %s", pid, exc)
-        self._state.rebuilt_paper_ids = sorted(attempted)
+        self._state.rebuild_attempts = attempts
         return done
 
     def _score_missing(self, limit: int) -> int:

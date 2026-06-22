@@ -164,3 +164,69 @@ def test_rebuild_runs_only_when_enabled(tmp_path: Path, monkeypatch: pytest.Monk
     st = loop.get_status()
     assert st["last_rebuilt"] == 4
     assert st["total_rebuilt"] == 4
+
+
+def test_rebuild_caps_attempts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """İçerik üretemeyen makale (ör. bozuk kaynak) en çok _MAX_REBUILD_ATTEMPTS kez denenir."""
+    from app.research.rag_learning_loop import _MAX_REBUILD_ATTEMPTS
+
+    loop = _make(tmp_path, monkeypatch)
+    loop.set_config(rebuild_empty=True)
+    calls = {"n": 0}
+
+    class FakeStore:
+        def list_approved_cards(self) -> list[dict]:
+            return [{"paper_id": "p1", "card_json": {"title": "", "main_claim": ""}}]
+
+        def list_pending_cards(self) -> list[dict]:
+            return []
+
+        def approve_card(self, card_id: str) -> bool:
+            return False
+
+    class FakeBuilder:
+        def build(self, pid: str) -> None:
+            calls["n"] += 1  # hep boş üretir (içerik gelmez)
+
+    monkeypatch.setattr("app.memory.sqlite_store.SqliteStore", FakeStore)
+    monkeypatch.setattr("app.brain.knowledge_card_builder.KnowledgeCardBuilder", FakeBuilder)
+    monkeypatch.setattr("app.lora.dataset_builder.build_dataset", lambda cards: [])
+
+    for _ in range(6):  # 6 tur dene; tavan 3'te durmalı
+        loop._rebuild_empty_cards(limit=5)
+
+    assert calls["n"] == _MAX_REBUILD_ATTEMPTS  # tavandan fazla denenmez
+    assert loop._state.rebuild_attempts["p1"] == _MAX_REBUILD_ATTEMPTS
+
+
+def test_rebuild_skips_papers_with_content(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Zaten içerik üreten (with_real) makale rebuild edilmez."""
+    loop = _make(tmp_path, monkeypatch)
+    loop.set_config(rebuild_empty=True)
+    calls = {"n": 0}
+
+    class _Ex:
+        def __init__(self, pid: str) -> None:
+            self.metadata = {"paper_id": pid}
+
+    class FakeStore:
+        def list_approved_cards(self) -> list[dict]:
+            return [{"paper_id": "p1", "card_json": {"title": "x", "main_claim": "y"}}]
+
+        def list_pending_cards(self) -> list[dict]:
+            return []
+
+        def approve_card(self, card_id: str) -> bool:
+            return False
+
+    class FakeBuilder:
+        def build(self, pid: str) -> None:
+            calls["n"] += 1
+
+    monkeypatch.setattr("app.memory.sqlite_store.SqliteStore", FakeStore)
+    monkeypatch.setattr("app.brain.knowledge_card_builder.KnowledgeCardBuilder", FakeBuilder)
+    monkeypatch.setattr("app.lora.dataset_builder.build_dataset", lambda cards: [_Ex("p1")])
+
+    n = loop._rebuild_empty_cards(limit=5)
+    assert n == 0
+    assert calls["n"] == 0  # p1 zaten içerikli → denenmez
