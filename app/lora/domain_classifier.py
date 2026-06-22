@@ -43,6 +43,10 @@ DOMAIN_KEYWORDS: dict[Domain, list[str]] = {
         "fonksiyon",
         "olasılık",
         "probability",
+        # Kademe-2 domain-verifier kör noktası (2026-06-22): stokastik süreç kartları.
+        "markov",
+        "stochastic",
+        "stokastik",
     ],
     Domain.PHYSICS: [
         "force",
@@ -145,6 +149,15 @@ DOMAIN_KEYWORDS: dict[Domain, list[str]] = {
         "transformer",
         "prompt",
         "retrieval",
+        # Kademe-2 domain-verifier kör noktası (2026-06-22): olasılıksal-ML kartları
+        # ("machine/deep learning", "neural network") hiçbir domain'e eşlenmiyordu.
+        "machine learning",
+        "deep learning",
+        "neural network",
+        "lstm",
+        "makine öğrenmesi",
+        "derin öğrenme",
+        "sinir ağı",
         "gömme",
         "ince ayar",
         "vektör",

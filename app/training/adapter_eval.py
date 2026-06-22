@@ -134,17 +134,27 @@ _MIN_EVAL_N = 5  # bu sayının altında 'accept' YASAK (v5 dersi: n=1 ile sahte
 
 
 def _decide_verdict(
-    base_score: float, adapter_score: float, *, n: int, min_n: int = _MIN_EVAL_N
+    base_score: float,
+    adapter_score: float,
+    *,
+    n: int,
+    min_n: int = _MIN_EVAL_N,
+    adapter_degenerate: bool = False,
 ) -> str:
     """Eval verdict'i — küçük-n'de 'accept'i bloklar (v5 disiplin-regresyon dersi).
 
     v5'te eval n=1 örnekle 'accept' demişti; tek soruda base bir bayrak alıp adapter almayınca
     istatistiksel temeli olmayan bir 'kabul' üretiliyordu. Kurallar:
+      * adapter_degenerate → 'reject' (tekrar döngüsü/çöküş KATEGORİK başarısızlık; v5 adapter
+        dejenere tekrar yapmıştı ama eski kod bunu yalnız skora ekliyordu → base de kötüyse
+        'accept' kaçabiliyordu. Degenerasyon skordan BAĞIMSIZ veto).
       * adapter < base  → 'reject' (regresyon, HER n'de — güvenli yön).
       * n < min_n        → 'inconclusive' (az örnek; accept'e güvenme).
       * adapter > base  → 'accept'.
       * eşitlik          → 'inconclusive'.
     """
+    if adapter_degenerate:
+        return "reject"
     if adapter_score < base_score:
         return "reject"
     if n < min_n:
@@ -202,7 +212,17 @@ def evaluate_adapter(
     base_score = round(1.0 - base_flag_total / denom, 4)
     adapter_score = round(1.0 - adapt_flag_total / denom, 4)
     regression = adapter_score < base_score
-    verdict = _decide_verdict(base_score, adapter_score, n=len(items), min_n=min_n)
+    # Degenerasyon (tekrar döngüsü/çöküş) skordan BAĞIMSIZ veto — v5 adapter dejenere
+    # tekrar yaptı ama eski kod bunu yalnız flag/skora ekliyordu, base de kötüyse 'accept'
+    # kaçabiliyordu. Adapter herhangi bir soruda dejenere olduysa kategorik reddet.
+    adapter_degenerate = any("degenerate_repetition" in r["adapter_flags"] for r in rows)
+    verdict = _decide_verdict(
+        base_score,
+        adapter_score,
+        n=len(items),
+        min_n=min_n,
+        adapter_degenerate=adapter_degenerate,
+    )
 
     result = AdapterEvalResult(
         eval_set=Path(eval_set).stem,

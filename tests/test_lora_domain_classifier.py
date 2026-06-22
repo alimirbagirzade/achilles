@@ -38,6 +38,22 @@ def test_statistics_detected() -> None:
     assert Domain.STATISTICS in classify_domains("regresyon ve korelasyon analizi")
 
 
+def test_machine_learning_detected() -> None:
+    """Kademe-2 kör noktası: 'machine/deep learning', 'neural network' AI_SYSTEM_DESIGN.
+
+    Önceden bu kartlar (olasılıksal-ML) hiçbir domain'e eşlenmiyordu → Gate 0/3 FAIL.
+    """
+    assert Domain.AI_SYSTEM_DESIGN in classify_domains("machine learning for forecasting")
+    assert Domain.AI_SYSTEM_DESIGN in classify_domains("a deep neural network model")
+    assert Domain.AI_SYSTEM_DESIGN in classify_domains("LSTM tabanlı tahmin")
+
+
+def test_markov_stochastic_detected_mathematics() -> None:
+    """Kademe-2 kör noktası: 'markov'/'stochastic' MATHEMATICS döndürmeli."""
+    assert Domain.MATHEMATICS in classify_domains("Markov chain analysis")
+    assert Domain.MATHEMATICS in classify_domains("stokastik süreç")
+
+
 def test_empty_text_returns_empty_list() -> None:
     """Boş metin için boş liste dönmeli."""
     assert classify_domains("") == []

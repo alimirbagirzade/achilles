@@ -33,6 +33,17 @@ def test_equality_is_inconclusive() -> None:
     assert _decide_verdict(0.7, 0.7, n=50) == "inconclusive"
 
 
+def test_degenerate_adapter_always_rejected() -> None:
+    """Degenerasyon (tekrar döngüsü) KATEGORİK başarısızlık — v5 dersi: skordan bağımsız veto.
+
+    Adapter base'den daha iyi skor alsa ve n büyük olsa bile, dejenere çıktı reddedilir.
+    """
+    assert _decide_verdict(0.5, 0.9, n=50, adapter_degenerate=True) == "reject"
+    assert _decide_verdict(0.0, 1.0, n=100, adapter_degenerate=True) == "reject"
+    # degenerate False iken normal akış korunur
+    assert _decide_verdict(0.5, 0.9, n=50, adapter_degenerate=False) == "accept"
+
+
 def test_custom_min_n_threshold() -> None:
     assert _decide_verdict(0.5, 0.9, n=8, min_n=10) == "inconclusive"
     assert _decide_verdict(0.5, 0.9, n=10, min_n=10) == "accept"
