@@ -223,6 +223,44 @@ def test_approve_card_nonexistent(tmp_path: Path) -> None:
     assert ok is False
 
 
+def test_approve_card_rejects_empty_content(tmp_path: Path) -> None:
+    """İçeriksiz kart (title=None, main_claim='') onaylanmamalı — pending kalmalı.
+
+    198 'approved-ama-boş' kart sorununun guard'ı (_card_has_content): üretim başarısız
+    olduğunda kart coverage'ı/denetimi çöple şişiremez.
+    """
+    store = _tmp_store(tmp_path)
+    _add_paper(store, "paper_empty_1")
+    store.save_knowledge_card(
+        card_id="card_empty_1",
+        paper_id="paper_empty_1",
+        model="test-model",
+        card={"paper_id": "paper_empty_1", "title": None, "main_claim": ""},
+    )
+
+    ok = store.approve_card("card_empty_1")
+    assert ok is False
+
+    result = store.get_card_by_id("card_empty_1")
+    assert result is not None
+    assert result["review_status"] == "pending"
+    assert result["lora_eligible"] == 0
+
+
+def test_approve_card_rejects_placeholder_dots(tmp_path: Path) -> None:
+    """'...' placeholder kart (alfanümerik içerik yok) onaylanmamalı."""
+    store = _tmp_store(tmp_path)
+    _add_paper(store, "paper_dots_1")
+    store.save_knowledge_card(
+        card_id="card_dots_1",
+        paper_id="paper_dots_1",
+        model="test-model",
+        card={"paper_id": "paper_dots_1", "title": "...", "main_claim": "..."},
+    )
+
+    assert store.approve_card("card_dots_1") is False
+
+
 # ---------------------------------------------------------------------------
 # 4. test_reject_card
 # ---------------------------------------------------------------------------

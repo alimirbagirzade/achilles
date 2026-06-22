@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 import re
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -45,12 +46,42 @@ from sqlalchemy.orm import (
 
 from app.config import get_settings
 
+log = logging.getLogger(__name__)
+
 
 def _utcnow() -> str:
     return dt.datetime.now(dt.UTC).isoformat()
 
 
 _TITLE_NORM_RE = re.compile(r"[\W_]+", re.UNICODE)
+_ALNUM_RE = re.compile(r"[0-9A-Za-zÇĞİÖŞÜçğıöşü]")
+
+
+def _card_has_content(card_json: str | dict[str, Any]) -> bool:
+    """Kart onaylanabilir içerik taşıyor mu — tamamen boş / '...' placeholder kartı eler.
+
+    Üretim başarısız olduğunda (LLM boş/parse edilemez döndürür) kart yine de
+    `title=None, main_claim=''` ile kaydedilip onaylanabiliyordu; bu 419 onaylı kartın
+    198'inin (≈%47) içeriksiz olmasına ve denetimin (lora-audit) FAIL vermesine yol açtı.
+    Bu guard yalnız GERÇEKTEN boş kartı reddeder: title VE main_claim'in ikisi de
+    alfanümerik karakter taşımıyorsa içeriksiz sayılır. Terse-ama-gerçek kartlara
+    dokunmaz; daha sıkı 'substantive' eşiği (title≥8, main≥40) RAG öğrenme döngüsünde
+    `is_substantive_card` ile ayrıca uygulanır.
+    """
+    if isinstance(card_json, str):
+        try:
+            card = json.loads(card_json)
+        except (json.JSONDecodeError, TypeError):
+            return False
+    elif isinstance(card_json, dict):
+        card = card_json
+    else:
+        return False
+    if not isinstance(card, dict):
+        return False
+    title = _ALNUM_RE.findall(str(card.get("title") or ""))
+    main_claim = _ALNUM_RE.findall(str(card.get("main_claim") or ""))
+    return bool(title or main_claim)
 
 
 def _normalize_title(title: str) -> str:
@@ -1341,10 +1372,18 @@ class SqliteStore:
                 return None
 
     def approve_card(self, card_id: str) -> bool:
-        """Kartı onayla: review_status=approved, lora_eligible=1."""
+        """Kartı onayla: review_status=approved, lora_eligible=1.
+
+        İçerik guard'ı: tamamen boş / '...' placeholder kart onaylanmaz (False döner,
+        kart pending kalır). 198 'approved-ama-boş' kart sorununu kökten önler — üretim
+        başarısızsa kart coverage'ı/denetimi çöple şişiremez (bkz. `_card_has_content`).
+        """
         with self.session() as s:
             row = s.get(KnowledgeCard, card_id)
             if row is None:
+                return False
+            if not _card_has_content(row.card_json):
+                log.warning("approve_card: içeriksiz/boş kart onaylanmadı: %s", card_id)
                 return False
             row.review_status = "approved"
             row.lora_eligible = 1
