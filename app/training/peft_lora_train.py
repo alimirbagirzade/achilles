@@ -14,7 +14,7 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -109,18 +109,19 @@ class PeftTrainConfig:
     # >0 açar (tipik 5). Yalnız eğitim-zamanı; mimariyi değiştirmez → GGUF-güvenli.
     neftune_noise_alpha: float = 0.0
     # assistant_only_loss: kaybı YALNIZ asistan yanıt token'larından hesaplar; sistem/
-    # kullanıcı turları maskelenir (TRL SFTConfig'in native bayrağı). v5 disiplin-
-    # regresyonunun doğrudan adayı: refusal/abstain davranışı sistem-turu gradyanlarıyla
-    # bozuluyordu. OPT-IN, varsayılan KAPALI.
-    # ÖNEMLİ: Bulut eğitim yolu (templates/stage2_lora_colab.ipynb, Hücre 10) bu maskelemeyi
-    # ZATEN unsloth `train_on_responses_only` ile uyguluyor (instruction/response part +
-    # `assert n_loss > 0` guard'ı). Yani GERÇEK eğitim yolunda asistan-only loss zaten CANLI;
-    # bu bayrak TRL-native ALTERNATİFTİR ve notebook'a EKLENMEMELİDİR (çift-maskeleme olur).
-    # Yerel trainer (TrainingArguments) maskeleme yapmaz; orada etkisiz. Bayrak reçeteye
-    # taşınır + dry-run özetinde görünür (niyet/izlenebilirlik), eğitim davranışını TEK
-    # BAŞINA değiştirmez. Bkz docs/egitim/LORA_ARASTIRMA_LOG.md 2026-06-22.
+    # kullanıcı turları maskelenir. v5 disiplin-regresyonunun (degenerate-tekrar) doğrudan
+    # adayı: prompt kalıbı (hep aynı uzun yönerge) full-text loss'ta ezberleniyordu. OPT-IN.
+    # YEREL: train() bunu artık GERÇEKTEN uygular (build_masked_labels + _MaskedDataCollator;
+    # prompt token'ları -100). Yalnız chat_template varken etkin; yoksa maskesiz yola düşer.
+    # BULUT: templates/stage2_lora_colab.ipynb (Hücre 10) maskelemeyi ZATEN unsloth
+    # `train_on_responses_only` ile uyguluyor → notebook'a TRL bayrağı EKLENMEZ (çift-maskeleme).
+    # Bkz docs/egitim/LORA_ARASTIRMA_LOG.md 2026-06-22.
     assistant_only_loss: bool = False
     seed: int = 42
+    # max_examples: yalnız N örnekle eğit (0 = hepsi). CPU'da makul süre için ZORUNLU
+    # kaldıraç — 4B/1.5B'de tam set (~2000) tek epoch'ta bile saatlerce sürer; bu yüzden
+    # yerel eğitim temsilî bir alt-kümeyle yapılır. Determinist örnekleme (seed).
+    max_examples: int = 0
 
 
 def _check_deps() -> list[str]:
@@ -198,7 +199,7 @@ def recipe_summary(cfg: PeftTrainConfig) -> dict:
     if cfg.neftune_noise_alpha and cfg.neftune_noise_alpha > 0:
         techniques.append(f"NEFTune (alpha={cfg.neftune_noise_alpha})")
     if cfg.assistant_only_loss:
-        techniques.append("assistant_only_loss (yalnız asistan token kaybı — notebook'ta etkin)")
+        techniques.append("assistant_only_loss (yalnız asistan token kaybı — yerelde aktif)")
     return {
         "r": cfg.lora_r,
         "alpha": cfg.lora_alpha,
@@ -267,6 +268,7 @@ def dry_run(cfg: PeftTrainConfig) -> dict:
         "valid_jsonl": str(cfg.valid_jsonl),
         "adapter_output": str(cfg.adapter_output_path),
         "iterations": cfg.iterations,
+        "max_examples": cfg.max_examples,
         "recipe": recipe_summary(cfg),
         "missing_packages": missing,
         "install_cmd": f"uv pip install {' '.join(missing)}" if missing else None,
@@ -316,6 +318,59 @@ def _row_to_text(row: dict) -> str:
     if "text" in row:
         return row["text"]
     return "\n".join(f"<|{m['role']}|>{m['content']}<|end|>" for m in _row_to_messages(row))
+
+
+def sample_rows(rows: list[dict], max_examples: int, seed: int) -> list[dict]:
+    """Determinist alt-küme seç (seed). max_examples<=0 veya yetersizse rows aynen döner.
+
+    Yerel CPU eğitimi tam seti (~2000) işleyemez; temsilî bir alt-küme alınır. random
+    yerine sabit seed → tekrar üretilebilir (Kural 6: determinizm).
+    """
+    if not max_examples or max_examples <= 0 or len(rows) <= max_examples:
+        return rows
+    import random
+
+    return random.Random(seed).sample(rows, max_examples)
+
+
+def build_masked_labels(prompt_ids: list[int], full_ids: list[int]) -> list[int] | None:
+    """assistant_only_loss için label dizisi kur: prompt token'larını -100 ile maskele.
+
+    Yalnız asistan cevabı (``full_ids``'in prompt sonrası kısmı) loss'a girer; sistem/
+    kullanıcı turları öğrenilmez. Bu, v5'teki degenerate-tekrar/disiplin-regresyonunun
+    doğrudan ilacı: prompt kalıbı (hep aynı uzun yönerge) artık ezberlenmez.
+
+    ``full_ids`` prompt ile başlamıyorsa (chat-template tutarsızlığı) ya da öğrenilebilir
+    token kalmıyorsa ``None`` döner → çağıran o örneği ATAR (sessiz yanlış-maskeleme yerine
+    görünür veri kaybı). notebook'taki ``assert n_loss > 0`` guard'ının yerel karşılığı.
+    """
+    n = len(prompt_ids)
+    if n == 0 or n >= len(full_ids) or list(full_ids[:n]) != list(prompt_ids):
+        return None
+    return [-100] * n + list(full_ids[n:])
+
+
+class _MaskedDataCollator:
+    """input_ids/attention_mask/labels'ı sağdan doldurur; labels -100 ile (loss'tan muaf).
+
+    ``DataCollatorForLanguageModeling`` labels'ı input'a eşitler (maskeleme yok); bu
+    collator ise ``build_masked_labels``'ın ürettiği maskeli labels'ı korur.
+    """
+
+    def __init__(self, pad_token_id: int) -> None:
+        self.pad_token_id = pad_token_id
+
+    def __call__(self, features: list[dict]) -> dict:
+        import torch
+
+        maxlen = max(len(f["input_ids"]) for f in features)
+        out: dict[str, list] = {"input_ids": [], "attention_mask": [], "labels": []}
+        for f in features:
+            pad = maxlen - len(f["input_ids"])
+            out["input_ids"].append(list(f["input_ids"]) + [self.pad_token_id] * pad)
+            out["attention_mask"].append(list(f["attention_mask"]) + [0] * pad)
+            out["labels"].append(list(f["labels"]) + [-100] * pad)
+        return {k: torch.tensor(v, dtype=torch.long) for k, v in out.items()}
 
 
 def train(cfg: PeftTrainConfig) -> dict:
@@ -373,6 +428,16 @@ def train(cfg: PeftTrainConfig) -> dict:
     model.print_trainable_parameters()
 
     train_rows = _load_jsonl(cfg.train_jsonl)
+    _n_all = len(train_rows)
+    train_rows = sample_rows(train_rows, cfg.max_examples, cfg.seed)
+    if len(train_rows) != _n_all:
+        logger.info(
+            "max_examples=%d → %d/%d örnek (determinist, seed=%d).",
+            cfg.max_examples,
+            len(train_rows),
+            _n_all,
+            cfg.seed,
+        )
 
     def _render(r: dict) -> str:
         # Modelin GERÇEK chat şablonu kullanılır (eğitim ↔ çıkarım format eşleşmesi
@@ -400,8 +465,58 @@ def train(cfg: PeftTrainConfig) -> dict:
             out.append({"input_ids": enc["input_ids"], "attention_mask": enc["attention_mask"]})
         return out
 
-    # HF Dataset yerine düz liste — Trainer indekslenebilir/sized her şeyi kabul eder.
-    train_ds = _tokenize(train_rows)
+    def _tokenize_masked(rows: list[dict]) -> list[dict]:
+        # assistant_only_loss: prompt'u chat-template ile AYRI render edip token sınırını
+        # bul; labels'ta prompt token'larını -100'le → yalnız asistan cevabı öğrenilir.
+        # Maskelenemeyen örnek (final asistan turu yok / template tutarsız) ATILIR.
+        out: list[dict] = []
+        skipped = 0
+        for r in rows:
+            msgs = _row_to_messages(r)
+            if not msgs or msgs[-1].get("role") != "assistant":
+                skipped += 1
+                continue
+            try:
+                prompt_ids = cast(
+                    "list[int]",
+                    tokenizer.apply_chat_template(
+                        msgs[:-1], tokenize=True, add_generation_prompt=True
+                    ),
+                )
+                full_ids = cast("list[int]", tokenizer.apply_chat_template(msgs, tokenize=True))[
+                    : cfg.max_seq_length
+                ]
+            except Exception:
+                skipped += 1
+                continue
+            labels = build_masked_labels(prompt_ids, full_ids)
+            if labels is None:
+                skipped += 1
+                continue
+            out.append(
+                {
+                    "input_ids": full_ids,
+                    "attention_mask": [1] * len(full_ids),
+                    "labels": labels,
+                }
+            )
+        if skipped:
+            logger.warning("assistant_only_loss: %d örnek maskelenemedi/atlandı.", skipped)
+        return out
+
+    # assistant_only_loss yalnız chat_template varken anlamlı (prompt sınırı template'ten
+    # bulunur). Şablon yoksa istek loglanır ama maskesiz (eski) yola düşülür.
+    use_mask = bool(cfg.assistant_only_loss and getattr(tokenizer, "chat_template", None))
+    collator: Any
+    if use_mask:
+        train_ds = _tokenize_masked(train_rows)
+        collator = _MaskedDataCollator(tokenizer.pad_token_id)
+        logger.info("assistant_only_loss AKTİF — prompt maskelendi (%d örnek).", len(train_ds))
+    else:
+        if cfg.assistant_only_loss:
+            logger.warning("assistant_only_loss istendi ama chat_template yok → maskesiz eğitim.")
+        train_ds = _tokenize(train_rows)
+        collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
     if not train_ds:
         return {"ok": False, "error": "Eğitim verisi boş (tokenize sonrası 0 örnek)."}
 
@@ -436,7 +551,7 @@ def train(cfg: PeftTrainConfig) -> dict:
         model=model,
         args=args,
         train_dataset=train_ds,
-        data_collator=DataCollatorForLanguageModeling(tokenizer, mlm=False),
+        data_collator=collator,
         optimizers=optimizers,
     )
 

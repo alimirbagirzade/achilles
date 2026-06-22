@@ -252,7 +252,13 @@ def train(
     profile: str = typer.Option(
         None,
         help="LoRA profili (configs/lora/lora_profiles.yaml; yalnız PEFT): "
-        "standard_reasoning|high_capacity_reasoning|discipline_safe|small_smoke_test",
+        "standard_reasoning|high_capacity_reasoning|discipline_safe|"
+        "discipline_safe_local|small_smoke_test",
+    ),
+    max_examples: int = typer.Option(
+        0,
+        "--max-examples",
+        help="Yalnız N örnekle eğit (0=profil/varsayılan). CPU süresini sınırlar (yalnız PEFT).",
     ),
 ) -> None:
     """LoRA eğitim komutunu hazırla — platform otomatik tespit edilir."""
@@ -368,10 +374,14 @@ def train(
             except (KeyError, FileNotFoundError) as exc:
                 console.print(f"[red]Profil hatası: {exc}[/red]")
                 raise typer.Exit(1) from exc
-            # epochs/max_examples PeftTrainConfig alanı değil — ayıkla (epoch ≠ iterasyon).
+            # epochs PeftTrainConfig alanı değil — ayıkla (epoch ≠ iterasyon). max_examples
+            # ARTIK geçerli bir alan (yerel CPU alt-kümesi) → **prof ile aktarılır.
             prof.pop("epochs", None)
-            prof.pop("max_examples", None)
             console.print(f"[cyan]LoRA profili uygulandı:[/cyan] {profile}")
+
+        # CLI --max-examples profili EZER (>0 ise): hızlı smoke ↔ tam koşu kontrolü.
+        if max_examples > 0:
+            prof["max_examples"] = max_examples
 
         cfg = PeftTrainConfig(  # type: ignore[assignment]
             base_model=base_model or settings.peft_base_model,

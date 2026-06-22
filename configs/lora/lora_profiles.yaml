@@ -78,3 +78,25 @@ discipline_safe:
   assistant_only_loss: false
   target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
   note: "v5 regresyonuna karşı; düşük lr + az epoch + NEFTune + grad-clip. Önce OFFLINE sınav, sonra bulut eğit, sonra adapter_eval gate. Asistan-only loss bulut notebook'ta train_on_responses_only ile zaten canlı."
+
+# YEREL (CPU, Kaggle YOK) eğitim reçetesi — discipline_safe'in yerel ikizi.
+# FARK: assistant_only_loss=TRUE (yerel trainer artık build_masked_labels ile maskeler →
+# prompt kalıbı ezberlenmez, degenerate-tekrar bastırılır) + max_examples (CPU'da biten
+# alt-küme). 4B-altı küçük model (örn. Qwen2.5-1.5B-Instruct) ile kullanılmak üzere.
+discipline_safe_local:
+  r: 16
+  alpha: 32
+  dropout: 0.1
+  epochs: 1
+  max_seq_length: 1024   # CPU'da hız; RAFT bağlamına geçilirse 2048
+  learning_rate: 0.0001  # düşük lr → instruct/refusal davranışını koru
+  use_rslora: false
+  neftune_noise_alpha: 5
+  weight_decay: 0.01
+  warmup_ratio: 0.05
+  lr_scheduler_type: cosine
+  max_grad_norm: 1.0
+  assistant_only_loss: true  # YEREL trainer maskeler (bulut DEĞİL) → çift-maskeleme riski yok
+  max_examples: 300          # CPU'da makul süre; artırılabilir
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+  note: "YEREL CPU eğitimi (Kaggle yok). assistant_only_loss yerelde maskeleme yapar; max_examples ile süre sınırlı. Küçük model (≤1.5B) ile."
