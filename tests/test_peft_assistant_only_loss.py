@@ -65,6 +65,23 @@ def test_sample_rows_zero_or_excess_returns_all() -> None:
     assert sample_rows(rows, -1, seed=42) == rows  # negatif güvenli
 
 
+def test_chat_input_ids_handles_list_and_batchencoding() -> None:
+    """apply_chat_template list[int] VEYA BatchEncoding(dict) dönebilir → her ikisi de
+    düz token listesine inmeli (yoksa maskeleme Encoding kıyaslar, tüm örnek atılır)."""
+    from app.training.peft_lora_train import _chat_input_ids
+
+    class FakeTokList:
+        def apply_chat_template(self, msgs, tokenize, add_generation_prompt):
+            return [1, 2, 3]
+
+    class FakeTokDict:
+        def apply_chat_template(self, msgs, tokenize, add_generation_prompt):
+            return {"input_ids": [4, 5, 6], "attention_mask": [1, 1, 1]}
+
+    assert _chat_input_ids(FakeTokList(), [], add_generation_prompt=True) == [1, 2, 3]
+    assert _chat_input_ids(FakeTokDict(), [], add_generation_prompt=False) == [4, 5, 6]
+
+
 def test_masked_collator_pads_with_minus_100() -> None:
     """_MaskedDataCollator: kısa örneği sağdan doldurur; labels dolgusu -100 olmalı."""
     torch = pytest.importorskip("torch")

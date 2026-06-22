@@ -14,7 +14,7 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -333,6 +333,22 @@ def sample_rows(rows: list[dict], max_examples: int, seed: int) -> list[dict]:
     return random.Random(seed).sample(rows, max_examples)
 
 
+def _chat_input_ids(tokenizer: Any, msgs: list[dict], *, add_generation_prompt: bool) -> list[int]:
+    """``apply_chat_template(tokenize=True)`` çıktısını sürümden bağımsız list[int]'e çevir.
+
+    transformers sürümüne göre düz ``list[int]`` veya ``BatchEncoding`` (UserDict; ``dict``
+    alt-sınıfı DEĞİL → ``isinstance(.., dict)`` yakalamaz) döner. Her iki halde de düz
+    token-id listesi döndürülür. (Bu ayrım atlanınca maskeleme Encoding nesnesi kıyaslar
+    ve TÜM örnekler sessizce atılır — smoke'ta görülen "0 örnek" hatası.)
+    """
+    enc = tokenizer.apply_chat_template(
+        msgs, tokenize=True, add_generation_prompt=add_generation_prompt
+    )
+    if not isinstance(enc, list):  # BatchEncoding/UserDict → input_ids
+        enc = enc["input_ids"]
+    return [int(t) for t in enc]
+
+
 def build_masked_labels(prompt_ids: list[int], full_ids: list[int]) -> list[int] | None:
     """assistant_only_loss için label dizisi kur: prompt token'larını -100 ile maskele.
 
@@ -477,13 +493,8 @@ def train(cfg: PeftTrainConfig) -> dict:
                 skipped += 1
                 continue
             try:
-                prompt_ids = cast(
-                    "list[int]",
-                    tokenizer.apply_chat_template(
-                        msgs[:-1], tokenize=True, add_generation_prompt=True
-                    ),
-                )
-                full_ids = cast("list[int]", tokenizer.apply_chat_template(msgs, tokenize=True))[
+                prompt_ids = _chat_input_ids(tokenizer, msgs[:-1], add_generation_prompt=True)
+                full_ids = _chat_input_ids(tokenizer, msgs, add_generation_prompt=False)[
                     : cfg.max_seq_length
                 ]
             except Exception:
