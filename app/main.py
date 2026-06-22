@@ -437,11 +437,15 @@ def lora_eval(
         Path("evals/discipline_core.jsonl"), "--eval-set", help="Eval seti (.jsonl)"
     ),
     n: int = typer.Option(0, "--n", help="Yalnız ilk N soru (0=hepsi; hızlı doğrulama için 1-2)"),
+    base_model: str = typer.Option(
+        "", "--base-model", help="Base model override (boş=adapter_config'ten, yoksa settings)."
+    ),
 ) -> None:
     """Eğitilen PEFT adapter'ı GERÇEKTEN değerlendir: base vs adapter (Kural 2 dürüst gate).
 
     `evaluate`/ModelEvaluator base Ollama'yı ölçer, adapter'ı yüklemez. Bu komut adapter'ı
-    transformers/PEFT ile yükleyip base ile kıyaslar. AĞIR (CPU'da 4B inference).
+    transformers/PEFT ile yükleyip base ile kıyaslar. AĞIR (CPU'da 4B inference). Base, boş
+    bırakılırsa adapter'ın kendi config'inden alınır (küçük-model adapter'ı için ŞART).
     """
     from app.config import get_settings
     from app.training.adapter_eval import evaluate_adapter
@@ -452,8 +456,8 @@ def lora_eval(
         console.print(f"[red]Adapter bulunamadı:[/red] {adir}")
         raise typer.Exit(code=1)
 
-    console.print(f"[cyan]Değerlendiriliyor (ağır, CPU 4B):[/cyan] {adir} ← {eval_set}")
-    res = evaluate_adapter(adir, eval_set, n=(n or None))
+    console.print(f"[cyan]Değerlendiriliyor (ağır, CPU):[/cyan] {adir} ← {eval_set}")
+    res = evaluate_adapter(adir, eval_set, n=(n or None), base_model=base_model or None)
     color = {"accept": "green", "reject": "red", "inconclusive": "yellow"}.get(res.verdict, "white")
     console.print(
         Panel.fit(

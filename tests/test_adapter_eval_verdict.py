@@ -7,7 +7,9 @@ Tamamen çevrimdışı — saf karar fonksiyonu, torch gerektirmez.
 
 from __future__ import annotations
 
-from app.training.adapter_eval import _MIN_EVAL_N, _decide_verdict
+import json
+
+from app.training.adapter_eval import _MIN_EVAL_N, _decide_verdict, _resolve_base_model
 
 
 def test_regression_rejected_at_any_n() -> None:
@@ -34,3 +36,19 @@ def test_equality_is_inconclusive() -> None:
 def test_custom_min_n_threshold() -> None:
     assert _decide_verdict(0.5, 0.9, n=8, min_n=10) == "inconclusive"
     assert _decide_verdict(0.5, 0.9, n=10, min_n=10) == "accept"
+
+
+def test_resolve_base_model_reads_adapter_config(tmp_path) -> None:
+    """adapter_config.json'daki base_model_name_or_path okunmalı (küçük-model adapter'ı
+    yanlış base'le yüklenmesin)."""
+    (tmp_path / "adapter_config.json").write_text(
+        json.dumps({"base_model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct"}),
+        encoding="utf-8",
+    )
+    assert _resolve_base_model(tmp_path) == "Qwen/Qwen2.5-1.5B-Instruct"
+
+
+def test_resolve_base_model_missing_or_bad_returns_none(tmp_path) -> None:
+    assert _resolve_base_model(tmp_path) is None  # config yok
+    (tmp_path / "adapter_config.json").write_text("{ bozuk json", encoding="utf-8")
+    assert _resolve_base_model(tmp_path) is None  # parse edilemez

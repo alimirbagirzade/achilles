@@ -83,6 +83,24 @@ class AdapterEvalResult:
         }
 
 
+def _resolve_base_model(adapter_dir: str | Path) -> str | None:
+    """adapter_config.json'dan base_model_name_or_path oku (adapter kendi base'ini bilir).
+
+    Küçük-model adapter'ı (örn. Qwen2.5-1.5B) settings.peft_base_model (4B) ile yüklenirse
+    LoRA boyutları uyuşmaz ve yükleme çöker. Bu yüzden base ÖNCE adapter'ın kendi
+    config'inden alınır; yoksa çağıran settings'e düşer.
+    """
+    cfg = Path(adapter_dir) / "adapter_config.json"
+    if not cfg.exists():
+        return None
+    try:
+        data = json.loads(cfg.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    base = data.get("base_model_name_or_path")
+    return str(base) if base else None
+
+
 def _load_model(base_model: str, adapter_dir: str | None):
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -151,7 +169,9 @@ def evaluate_adapter(
     sinyali üretemez (regresyon yine her n'de raporlanır).
     """
     s = get_settings()
-    base_model = base_model or s.peft_base_model
+    # Base önceliği: açık argüman → adapter'ın kendi config'i → settings (4B). Küçük-model
+    # adapter'ını 4B base ile yüklememek için config'ten okumak ŞART (boyut uyuşmazlığı).
+    base_model = base_model or _resolve_base_model(adapter_dir) or s.peft_base_model
     items = load_eval_set(eval_set)
     if n:
         items = items[:n]
