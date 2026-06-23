@@ -709,6 +709,8 @@ def rlm_answer(
     rounds: int = typer.Option(None, help="Maksimum retrieval turu"),
 ) -> None:
     """RLM Controller: çok-adımlı retrieval + iddia doğrulama + kaynaklı nihai cevap."""
+    from rich.markup import escape
+
     from app.rlm.rlm_controller import RlmController
 
     pid_list = [p.strip() for p in paper_ids.split(",")] if paper_ids else None
@@ -720,13 +722,18 @@ def rlm_answer(
         "abstained": "red",
         "no_llm": "yellow",
     }.get(result.status, "white")
+    # final_answer LLM/kaynak metni ('[paper:chunk]' atıfları, ham cümleler) içerir →
+    # markup olarak yorumlanırsa render çöker (MarkupError) veya atıf sessizce yutulur.
+    # İçeriği escape et; renk yalnız kontrollü başlıkta (status/color sabit kümeden).
+    meta = (
+        f"run_id={result.run_id} · görev={result.task_type} · "
+        f"kanıt={result.evidence_score} · tur={result.retrieval_rounds} · "
+        f"güven={result.confidence_level} ({result.final_confidence})"
+    )
     console.print(
         Panel(
-            f"{result.final_answer}\n\n"
-            f"[dim]run_id={result.run_id} · görev={result.task_type} · "
-            f"kanıt={result.evidence_score} · tur={result.retrieval_rounds} · "
-            f"güven={result.confidence_level} ({result.final_confidence})[/dim]",
-            title=f"[{color}]RLM: {result.status}[/{color}]",
+            f"{escape(result.final_answer)}\n\n{escape(meta)}",
+            title=f"[{color}]RLM: {escape(result.status)}[/{color}]",
         )
     )
 
@@ -734,6 +741,8 @@ def rlm_answer(
 @app.command("rlm-runs")
 def rlm_runs(limit: int = typer.Option(20)) -> None:
     """Kayıtlı RLM koşularını listele."""
+    from rich.markup import escape
+
     from app.rlm.rlm_store import RlmStore
 
     rows = RlmStore().list_runs(limit=limit)
@@ -756,7 +765,7 @@ def rlm_runs(limit: int = typer.Option(20)) -> None:
         }.get(r["status"], "white")
         t.add_row(
             r["run_id"][:14],
-            (r["user_query"] or "")[:40],
+            escape((r["user_query"] or "")[:40]),  # kullanıcı sorgusu → markup yorumlanmasın
             r["task_type"],
             f"[{color}]{r['status']}[/{color}]",
             str(r["evidence_score"]),

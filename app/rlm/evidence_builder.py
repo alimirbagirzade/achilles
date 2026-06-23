@@ -73,8 +73,15 @@ class EvidenceSufficiencyScorer:
         *,
         min_to_answer: int = 60,
         min_to_skip_retry: int = 80,
+        min_to_retry: int = 40,
     ) -> EvidenceReport:
         contradictions = contradictions or []
+        # Eşik değişmezini zorla: retry ≤ answer ≤ skip_retry (hepsi [0,100]).
+        # Config/env'den çelişkili değerler gelse bile (ör. skip_retry<answer)
+        # karar bandları tutarsızlaşmaz; 'retry' tabanı artık config'e bağlı (sabit 40 değil).
+        min_to_retry = max(0, min(min_to_retry, 100))
+        min_to_answer = max(min_to_retry, min(min_to_answer, 100))
+        min_to_skip_retry = max(min_to_answer, min(min_to_skip_retry, 100))
         if not chunks:
             return EvidenceReport(
                 score=0.0,
@@ -147,7 +154,7 @@ class EvidenceSufficiencyScorer:
             decision = "answer"
         elif total >= min_to_answer:
             decision = "answer_with_limitation"
-        elif total >= 40:
+        elif total >= min_to_retry:
             decision = "retry"
         else:
             decision = "insufficient"

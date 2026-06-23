@@ -399,9 +399,17 @@ def api_rlm_answer(req: RlmAnswerRequest) -> RlmAnswerResponse:
     from app.rlm.rlm_controller import RlmController
 
     try:
+        # write_report=False: yanıt tüm alanları zaten döndürüyor; her HTTP isteğinde
+        # reports/rlm_runs'a JSON yazmak sınırsız disk büyümesi olurdu (DB logu kalır).
         res = RlmController().answer(
-            req.query, paper_ids=req.paper_ids, top_k=req.top_k, max_rounds=req.max_rounds
+            req.query,
+            paper_ids=req.paper_ids,
+            top_k=req.top_k,
+            max_rounds=req.max_rounds,
+            write_report=False,
         )
+    except HTTPException:
+        raise
     except Exception as exc:  # retrieval/embedding/Chroma hatası → 503
         raise HTTPException(status_code=503, detail=f"RLM controller hatası: {exc}") from exc
 

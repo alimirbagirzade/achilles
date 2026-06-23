@@ -123,8 +123,11 @@ class Settings(BaseSettings):
     # akışında orkestre eden kontrol katmanı (app/rlm). Yeni bilgi deposu değildir;
     # LLM-free skorlayıcılar + mevcut verifier'lar üzerine kuruludur (çevrimdışı uyumlu).
     rlm_max_retrieval_rounds: int = 3  # çok-turlu retrieval üst sınırı
-    rlm_min_evidence_to_answer: int = 60  # kanıt skoru < bu → tekrar retrieval (40-59) / yetersiz
-    rlm_min_evidence_to_skip_retry: int = 80  # kanıt skoru ≥ bu → ek tur gereksiz
+    # Kanıt eşikleri (0-100). Değişmez: retry ≤ answer ≤ skip_retry — score()
+    # içinde normalize edilir (çelişkili env/değer karar bandlarını bozmaz).
+    rlm_min_evidence_to_retry: int = 40  # bu-üstü → tekrar retrieval; altı → yetersiz/abstain
+    rlm_min_evidence_to_answer: int = 60  # bu-üstü → cevap (altı retry/yetersiz)
+    rlm_min_evidence_to_skip_retry: int = 80  # bu-üstü → ek tur gereksiz
     rlm_enable_query_reformulation: bool = True  # yetersiz turda sorguyu bölüm-odaklı genişlet
     rlm_enable_claim_verification: bool = True  # taslağı iddialara böl + dayanak doğrula
     rlm_enable_contradiction_check: bool = True  # kaynaklar arası çelişki taraması
