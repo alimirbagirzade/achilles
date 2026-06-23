@@ -784,7 +784,7 @@ class ToolArtifact(Base):
     __tablename__ = "tool_artifacts"
 
     artifact_id: Mapped[str] = mapped_column(String(80), primary_key=True)
-    tool_run_id: Mapped[str] = mapped_column(String(80), index=True)
+    tool_run_id: Mapped[str] = mapped_column(ForeignKey("tool_runs.tool_run_id"), index=True)
     artifact_type: Mapped[str] = mapped_column(String(32), default="json")
     path: Mapped[str | None] = mapped_column(Text, default=None)
     content_hash: Mapped[str | None] = mapped_column(String(64), default=None)
@@ -802,7 +802,7 @@ class PaperIngestionRun(Base):
     __tablename__ = "paper_ingestion_runs"
 
     ingestion_run_id: Mapped[str] = mapped_column(String(80), primary_key=True)
-    paper_id: Mapped[str] = mapped_column(String(64), index=True)
+    paper_id: Mapped[str] = mapped_column(ForeignKey("papers.paper_id"), index=True)
     status: Mapped[str] = mapped_column(String(32), default="")
     # ready_for_rag / usable / slow_but_usable / unstable / failed
     quality_score: Mapped[float] = mapped_column(Float, default=0.0)

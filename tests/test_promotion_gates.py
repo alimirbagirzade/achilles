@@ -124,3 +124,25 @@ def test_gate_reward_passes_on_clean(reg: RegistryStore) -> None:
     assert out["clean"] is True
     assert out["decision"]["decision"] == "approved"
     assert reg.list_rewards()[0]["secret_scanned"] == 1  # temiz
+
+
+# --- atomik durum geçişi (TOCTOU çift-karar önlemi) ------------------------
+def test_cas_status_atomic_single_winner(reg: RegistryStore) -> None:
+    ds = reg.register_dataset(name="d", n_records=1)
+    vid = ds["dataset_version_id"]
+    # İlk geçiş kazanır, ikinci (artık 'approved') kaybeder → çift-karar olmaz
+    assert reg.cas_dataset_status_unless(vid, "approved", unless="approved") is True
+    assert reg.cas_dataset_status_unless(vid, "approved", unless="approved") is False
+    assert reg.get_dataset(vid)["approval_status"] == "approved"
+
+
+def test_cas_unknown_dataset_false(reg: RegistryStore) -> None:
+    assert reg.cas_dataset_status_unless("ds_nope", "approved", unless="approved") is False
+
+
+def test_double_approve_logs_one_decision(reg: RegistryStore) -> None:
+    ds = reg.register_dataset(name="d", n_records=1)
+    vid = ds["dataset_version_id"]
+    approve_dataset(reg, vid, approver_id="ali")
+    approve_dataset(reg, vid, approver_id="ali")  # idempotent (CAS kaybeder)
+    assert len(reg.list_decisions(target_id=vid)) == 1

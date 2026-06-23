@@ -13,7 +13,7 @@ from __future__ import annotations
 import importlib
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 
 @dataclass(frozen=True)
@@ -83,8 +83,12 @@ def resolve(tool_id: str) -> Callable[..., Any]:
         raise KeyError(f"Bilinmeyen araç: {tool_id}")
     module_path, _, func_name = desc.entrypoint.partition(":")
     module = importlib.import_module(module_path)
-    fn: Callable[..., Any] = getattr(module, func_name)
-    return fn
+    fn = getattr(module, func_name, None)
+    if fn is None:  # entrypoint yanlış yapılandırılmış (fonksiyon adı hatalı) → net hata
+        raise KeyError(
+            f"'{func_name}' fonksiyonu {module_path} içinde yok ({tool_id} entrypoint hatalı)"
+        )
+    return cast("Callable[..., Any]", fn)
 
 
 # --- yerleşik araçlar ------------------------------------------------------
