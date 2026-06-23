@@ -28,6 +28,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 from app.config import get_settings
 
@@ -304,11 +305,16 @@ def launch(
     iterations: int = 0,
     dtype: str = "bf16",
     base_model: str | None = None,
+    profile: str | None = None,
+    max_examples: int = 0,
 ) -> dict:
     """Eğitimi DETACHED başlat (web/terminal kapansa da sürer).
 
     - Veriyi `lora_sft.jsonl`'den yeniden böler (clobber-proof).
     - iterations<=0 → 1 epoch (train örnek sayısı kadar adım).
+    - profile: LoRA reçete profili (örn. `discipline_safe_local` → maskeli, NEFTune).
+      Verilmezse vanilya varsayılan (degenerate riski) — yerel CPU için profil ÖNERİLİR.
+    - max_examples>0: yalnız N örnekle eğit (CPU'da makul süre).
     - {ok, message, adapter} döndürür. Eğitimi GERÇEKTEN başlatır (Kural 8: bu
       çağrı yalnızca açık kullanıcı eylemiyle — buton/onay — tetiklenir).
     """
@@ -369,6 +375,10 @@ def launch(
         ]
         if base_model:
             cmd += ["--base-model", base_model]
+        if profile:
+            cmd += ["--profile", profile]
+        if max_examples > 0:
+            cmd += ["--max-examples", str(max_examples)]
 
         logs = root / "logs"
         logs.mkdir(parents=True, exist_ok=True)
@@ -475,13 +485,21 @@ def _pid_alive(pid: int) -> bool:
 
 
 def is_detached_training_running(root: Path | None = None) -> bool:
-    """Detached eğitim süreci canlı mı? Önce pid (varsa), sonra log tazeliği."""
+    """Detached eğitim süreci canlı mı? Önce pid (varsa), sonra log tazeliği.
+
+    ``root`` verilirse (test/izolasyon) log-tazeliği yedeği de YALNIZ o root'tan
+    okunur; yoksa global ayar kökü kullanılır. Eskiden yedek her zaman
+    ``get_settings()`` (gerçek makine kökü) okuyup verilen ``root``'u yok sayıyordu
+    → ölü-pid testi gerçek makinedeki taze ``logs/train-full-err.log``'u görüp
+    yanlış ``True`` dönüyordu (Linux CI'de log olmadığından gizliydi).
+    """
     info = read_detached_training_status(root)
     pid = info.get("pid")
     if isinstance(pid, int) and _pid_alive(pid):
         return True
     try:
-        return bool(_detached_status(get_settings()))
+        settings = SimpleNamespace(root=Path(root)) if root is not None else get_settings()
+        return bool(_detached_status(settings))
     except Exception:
         return False
 
