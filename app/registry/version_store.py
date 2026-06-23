@@ -18,9 +18,9 @@ from __future__ import annotations
 import json
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from app.config import get_settings
 from app.memory.sqlite_store import (
@@ -113,6 +113,27 @@ class RegistryStore:
             prev = row.approval_status
             row.approval_status = status
             return prev
+
+    def cas_dataset_status_unless(
+        self, dataset_version_id: str, new_status: str, unless: str
+    ) -> bool:
+        """Atomik durum geçişi: ``approval_status != unless`` iken ``new_status`` yaz.
+
+        Koşullu UPDATE + ``rowcount`` (consume_fresh_approval ile aynı CAS deseni) →
+        eşzamanlı iki çağrıdan yalnız BİRİ rowcount=1 alır (TOCTOU çift-karar önlenir).
+        ``True`` = bu çağrı geçişi yaptı; ``False`` = yok / zaten ``unless`` / yarışı kaybetti.
+        """
+        with self.store.session() as s:
+            res = s.execute(
+                update(DatasetVersion)
+                .where(
+                    DatasetVersion.dataset_version_id == dataset_version_id,
+                    DatasetVersion.approval_status != unless,
+                )
+                .values(approval_status=new_status)
+                .execution_options(synchronize_session=False)
+            )
+            return cast("Any", res).rowcount == 1
 
     # --- RAG indeks sürümleri --------------------------------------------
     def register_rag_index(

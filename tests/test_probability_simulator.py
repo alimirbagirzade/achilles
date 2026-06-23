@@ -56,3 +56,24 @@ def test_probabilities_in_unit_range() -> None:
     res = monte_carlo_equity([0.05, -0.06, 0.02, -0.03], seed=9, n_paths=400)
     assert 0.0 <= res.ruin_probability <= 1.0
     assert 0.0 <= res.prob_loss <= 1.0
+
+
+def test_negative_n_trades_raises() -> None:
+    with pytest.raises(ValueError, match="n_trades"):
+        monte_carlo_equity([0.01, -0.02], seed=1, n_trades=-5)
+
+
+def test_negative_n_paths_raises() -> None:
+    with pytest.raises(ValueError, match="n_paths"):
+        monte_carlo_equity([0.01, -0.02], seed=1, n_paths=-1)
+
+
+def test_expected_shortfall_count_based_with_ties() -> None:
+    # Ayrık getiriler → final equity'lerde eşitlik; ES sayıya göre seçilir (kuyruk şişmez).
+    rets = [0.0, 0.01, -0.01]
+    res = monte_carlo_equity(rets, seed=3, n_paths=2000)
+    # ES en kötü %5'in ortalaması → VaR%95'ten (5. yüzdelik tek nokta) küçük olamaz
+    assert res.expected_shortfall_pct >= res.var_95_pct - 1e-9
+    # determinizm korunur
+    res2 = monte_carlo_equity(rets, seed=3, n_paths=2000)
+    assert res.expected_shortfall_pct == res2.expected_shortfall_pct

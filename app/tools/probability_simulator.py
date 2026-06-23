@@ -89,6 +89,11 @@ def monte_carlo_equity(
         raise ValueError("ruin_fraction (0, 1) aralığında olmalı.")
     n_trades = int(n_trades) if n_trades else int(rets.size)
     n_paths = int(n_paths)
+    # Negatif/sıfır değerler numpy'da kriptik hata verir → açık doğrulama (Kural: net hata).
+    if n_trades <= 0:
+        raise ValueError(f"n_trades pozitif olmalı, verilen: {n_trades}")
+    if n_paths <= 0:
+        raise ValueError(f"n_paths pozitif olmalı, verilen: {n_paths}")
 
     rng = np.random.default_rng(seed)
     # Bootstrap: her yol için n_trades işlem yerine koyarak örneklenir.
@@ -105,11 +110,12 @@ def monte_carlo_equity(
     p05 = float(np.percentile(final_equity, 5))
     p95 = float(np.percentile(final_equity, 95))
     var_95_pct = float((initial_equity - p05) / initial_equity * 100.0)
-    worst = final_equity[final_equity <= p05]
-    if worst.size:
-        es_pct = float((initial_equity - worst.mean()) / initial_equity * 100.0)
-    else:
-        es_pct = var_95_pct
+    # Expected Shortfall: en kötü %5'i SAYIYA göre seç (eşik-bağlı `<= p05` filtresi,
+    # final equity'lerde eşitlik olunca >%5 örnekler → kuyruğu şişirir). Sıralayıp
+    # ilk k'yı al → tam %5 (deterministik).
+    k = max(1, round(n_paths * 0.05))
+    worst = np.sort(final_equity)[:k]
+    es_pct = float((initial_equity - worst.mean()) / initial_equity * 100.0)
 
     return MonteCarloResult(
         n_paths=n_paths,

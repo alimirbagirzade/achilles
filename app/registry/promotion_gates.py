@@ -67,7 +67,11 @@ class ScanResult:
 
 
 def _mask(match: str) -> str:
-    """Bulunan gizli dizgenin yalnız ilk 4 karakterini göster (sırrı loglamamak için)."""
+    """Gizli dizgeyi maskele: 4 karakterden uzunsa ilk 4'ü göster, değilse tamamen gizle.
+
+    4 ve daha kısa dizgelerde ilk-4'ü göstermek tüm sırrı açığa çıkarırdı; bu yüzden
+    ``len <= 4`` durumunda yalnız ``***`` döndürülür (güvenli taraf — sır loglanmaz).
+    """
     match = match.strip()
     if len(match) <= 4:
         return "***"
@@ -111,9 +115,13 @@ def approve_dataset(
     ds = registry.get_dataset(dataset_version_id)
     if ds is None:
         raise ValueError(f"Bilinmeyen dataset sürümü: {dataset_version_id}")
-    if ds["approval_status"] == "approved":
+    prev = ds["approval_status"]
+    if prev == "approved":
         return {"ok": True, "already": True, "dataset": ds}
-    prev = registry.set_dataset_status(dataset_version_id, "approved")
+    # ATOMİK geçiş (TOCTOU önlemi): eşzamanlı iki onaydan yalnız BİRİ kazanır → tek karar.
+    won = registry.cas_dataset_status_unless(dataset_version_id, "approved", unless="approved")
+    if not won:
+        return {"ok": True, "already": True, "dataset": registry.get_dataset(dataset_version_id)}
     decision = registry.log_decision(
         target_type="dataset",
         target_id=dataset_version_id,
@@ -137,11 +145,16 @@ def reject_dataset(
     approver_id: str,
     reason: str,
 ) -> dict[str, Any]:
-    """Dataset sürümünü ``rejected`` yap + karar logla."""
+    """Dataset sürümünü ``rejected`` yap + karar logla (atomik; çift-karar önlenir)."""
     ds = registry.get_dataset(dataset_version_id)
     if ds is None:
         raise ValueError(f"Bilinmeyen dataset sürümü: {dataset_version_id}")
-    prev = registry.set_dataset_status(dataset_version_id, "rejected")
+    prev = ds["approval_status"]
+    if prev == "rejected":
+        return {"ok": True, "already": True, "dataset": ds}
+    won = registry.cas_dataset_status_unless(dataset_version_id, "rejected", unless="rejected")
+    if not won:
+        return {"ok": True, "already": True, "dataset": registry.get_dataset(dataset_version_id)}
     decision = registry.log_decision(
         target_type="dataset",
         target_id=dataset_version_id,
@@ -151,7 +164,12 @@ def reject_dataset(
         reason=reason,
         approved_by=approver_id,
     )
-    return {"ok": True, "dataset": registry.get_dataset(dataset_version_id), "decision": decision}
+    return {
+        "ok": True,
+        "already": False,
+        "dataset": registry.get_dataset(dataset_version_id),
+        "decision": decision,
+    }
 
 
 # --- RAG indeks retrieval-eval kapısı --------------------------------------
