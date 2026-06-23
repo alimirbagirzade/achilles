@@ -129,8 +129,9 @@ class Settings(BaseSettings):
     rlm_min_evidence_to_answer: int = 60  # bu-üstü → cevap (altı retry/yetersiz)
     rlm_min_evidence_to_skip_retry: int = 80  # bu-üstü → ek tur gereksiz
     rlm_enable_query_reformulation: bool = True  # yetersiz turda sorguyu bölüm-odaklı genişlet
-    rlm_enable_claim_verification: bool = True  # taslağı iddialara böl + dayanak doğrula
-    rlm_enable_contradiction_check: bool = True  # kaynaklar arası çelişki taraması
+    # NOT: iddia doğrulama + çelişki taraması KONFİG'LE KAPATILAMAZ (güvenlik, kural 4/7) —
+    # bilerek ayar değil. Eskiden rlm_enable_claim_verification/_contradiction_check ölü
+    # bayraklardı (hiç okunmuyordu = sahte-guard); kaldırıldı (doğrulama her zaman çalışır).
     rlm_allow_live_trading_signal: bool = False  # MUTLAK kural 1 — asla True olmaz (yalnız hipotez)
     rlm_seed: int = 42  # determinizm (kural 6) — tüm LLM çağrıları bu seed ile
     # Taslak LLM çağrısı SINIRLI olmalı: sınırsızken qwen3:4b CPU'da tek cevap >9dk sürüp
