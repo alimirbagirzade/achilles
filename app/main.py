@@ -3684,5 +3684,59 @@ def _load_hypotheses(path: str) -> list:
     return data if isinstance(data, list) else [data]
 
 
+# --------------------------------------------------------------------------
+# İçe-alım kalite skoru (compute-on-demand; PaperIndexer sıcak yolu değişmez)
+# --------------------------------------------------------------------------
+@app.command("ingestion-quality")
+def ingestion_quality_cmd(
+    paper_id: str = typer.Option(..., "--paper-id", help="Skorlanacak makale paper_id"),
+    record: bool = typer.Option(
+        False, "--record", help="Skoru KALICI yap (paper_ingestion_runs + Paper alanları)"
+    ),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Bir makalenin içe-alım kalite skorunu (100 puan) hesapla. --record ile kalıcı."""
+    from app.ingestion.quality_scorer import score_paper
+    from app.memory.sqlite_store import SqliteStore
+
+    store = SqliteStore()
+    try:
+        result = score_paper(store, paper_id)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1) from e
+
+    run_id = None
+    if record:
+        from app.ingestion.quality_scorer import gather_inputs
+
+        inp = gather_inputs(store, paper_id)
+        run_id = store.add_ingestion_run(
+            paper_id=paper_id,
+            status=result.status,
+            quality_score=result.total,
+            component_scores=result.components,
+            n_chunks=inp.n_chunks,
+            n_formulas=inp.n_formulas,
+            notes=result.notes,
+        )
+
+    if as_json:
+        out = result.to_dict()
+        if run_id:
+            out["ingestion_run_id"] = run_id
+        console.print_json(json.dumps(out, ensure_ascii=False))
+        return
+    comp = "  ".join(f"{k}={v}" for k, v in result.components.items())
+    body = (
+        f"Toplam: [bold]{result.total}/100[/] · durum: [bold]{result.status}[/]\nBileşenler: {comp}"
+    )
+    if result.notes:
+        body += "\nNot: " + "; ".join(result.notes)
+    if run_id:
+        body += f"\n[green]KAYDEDİLDİ[/] · run={run_id}"
+    console.print(Panel(body, title="İçe-alım Kalite Skoru"))
+
+
 if __name__ == "__main__":  # pragma: no cover
     app()
