@@ -230,6 +230,33 @@ def test_abstained_status_not_high_confidence():
 
     assert res.status == "abstained"
     assert res.confidence_level == "Low"  # decision 'answer' olsa bile abstain'de Low
+    assert res.final_confidence == 0.0  # çekimserde cevaba güven yok (etiket+sayı tutarlı)
+
+
+def test_non_trading_answer_has_no_disclaimer():
+    """Trading-dışı içerikli cevap yatırım uyarısı TAŞIMAMALI (aşırı-tetikleme regresyonu).
+
+    'return' gibi jenerik kelimeler guard'dan çıkarıldı → akademik (ör. Bayes) cevap
+    yanlış-bağlam uyarı taşımaz; uyarı yalnız gerçek trading/sinyal içeriğinde görünür.
+    """
+    chunks = [
+        RetrievedChunk(
+            chunk_id=f"p::c{i:04d}",
+            paper_id="p",
+            text="Bayes teoremi koşullu olasılığı önsel ve olabilirlik çarpımıyla günceller.",
+            page_number=i + 1,
+            section_name="Methods",
+            title="Bayesian Inference Primer",
+            distance=0.1 * i,
+        )
+        for i in range(3)
+    ]
+    draft = "Bayes teoremi koşullu olasılığı önsel ve olabilirlik ile günceller [p:p::c0000]."
+    ctrl = RlmController(retriever=_StubRetriever(chunks), llm=_StubLLM(draft))
+    res = ctrl.answer("Bayes teoremi nasıl çalışır?", write_report=False)
+
+    assert res.status in ("answered", "answered_with_limitation")
+    assert "yatırım tavsiyesi değildir" not in res.final_answer  # trading-dışı → uyarı yok
 
 
 def test_controller_is_deterministic_for_same_input():

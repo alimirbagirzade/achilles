@@ -54,12 +54,14 @@ _TRADING_DISCLAIMER = (
 
 # Trading-içerik tespiti (kural 1). Soru VEYA nihai cevap bunlardan birini taşıyorsa
 # zorunlu uyarı bloğu eklenir. Görev sınıflandırıcıdan BAĞIMSIZ — classifier trading
-# sorusunu MATH/MULTI/UNCERTAINTY'ye düşürse bile uyarı kaçmaz. Geniş tutuldu:
-# trading araştırma sisteminde fazladan uyarı güvenli taraftır.
+# sorusunu MATH/MULTI/UNCERTAINTY'ye düşürse bile uyarı kaçmaz.
+# Terimler SİNYAL/STRATEJİ-özgü tutuldu; jenerik İngilizce kelimeler (return/long/short/
+# position) BİLEREK çıkarıldı — yoksa "return" geçen her akademik cevap yanlış-bağlam
+# yatırım uyarısı taşır ve uyarı anlamını yitirir (sürekli-uyarı = göz ardı edilen uyarı).
 _TRADING_SIGNAL_RE = re.compile(
-    r"\b(trading|strateji\w*|strategy|sinyal\w*|signal\w*|al-?sat|buy|sell|long|short|"
-    r"momentum|mean.?reversion|volatilit\w*|backtest\w*|getiri|return|sharpe|sortino|"
-    r"pozisyon|position|portföy|portfolio|drawdown|kelly)\b",
+    r"\b(trading|strateji\w*|strategy|sinyal\w*|signal\w*|al-?sat|buy|sell|"
+    r"momentum|mean.?reversion|volatilit\w*|backtest\w*|getiri|sharpe|sortino|"
+    r"pozisyon|portföy|portfolio|drawdown|kelly)\b",
     re.IGNORECASE,
 )
 
@@ -487,8 +489,10 @@ class RlmController:
             status = "abstained"
             # Çekimser kalınan çıktı 'High' güven rozeti taşımamalı (gövde 'Low' diyor);
             # confidence_level decision'dan türüyordu, status ile çelişiyordu → hizala.
+            # final_confidence de 0.0: çekimserde CEVABA güven yok (ham skor 0.70 olsa bile
+            # 'Low' etiketiyle 0.70 sayısı çelişirdi; tüm abstain yolları artık 0.0).
             confidence_level = "Low"
-            final_confidence = round(confidence_score, 4)
+            final_confidence = 0.0
         else:
             final_answer = self._build_envelope(
                 supported, used_chunks, contradictions, confidence_level
