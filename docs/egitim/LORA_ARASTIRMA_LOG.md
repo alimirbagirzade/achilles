@@ -21,9 +21,15 @@ Bu dosya **iki işlevi** birden görür:
 ## Kapsanan teknikler (dedup anahtarı — yeniden derin-araştırma YOK)
 
 `rsLoRA` · `DoRA` · `LoRA+` · `PiSSA` · `OLoRA` · `EVA` · `LoftQ` · `CorDA` ·
-`NEFTune` · `gaussian-init` · `QLoRA` · `train_on_responses_only` · `cosine-warmup` ·
-`weight-decay` · `gradient-clipping` · `replay/rehearsal` · `n-gram-repetition-detection` ·
-`assistant_only_loss`
+`orthogonal-init` · `NEFTune` · `gaussian-init` · `QLoRA` · `train_on_responses_only` ·
+`cosine-warmup` · `weight-decay` · `gradient-clipping` · `replay/rehearsal` ·
+`n-gram-repetition-detection` · `assistant_only_loss`
+
+## Elenen adaylar (dedup anahtarı — yeniden derin-araştırma YOK)
+
+`LoRA-GA` (PEFT-native değil) · `VeRA` · `MiLoRA` · `LoRA-FA` (param-azaltma, v5-ilgisiz) ·
+`O-LoRA/orthogonal-subspace-CL` · `CLoRA` · `EWCLoRA` · `FIP` (continual-learning, native değil) ·
+`DFT loss_type=dft` · `OPLoRA` · `SC-LoRA` · `AILoRA` · `D²LoRA` · `all-linear` (zaten hizalı)
 
 ## Kapsanan kaynaklar (arXiv ID / URL)
 
@@ -34,6 +40,56 @@ Bu dosya **iki işlevi** birden görür:
 - huggingface.co/docs/peft/main/en/developer_guides/lora (rsLoRA/DoRA/init/LoRA+)
 - huggingface.co/docs/trl/sft_trainer (NEFTune/response-only/packing/assistant_only_loss)
 - github.com/NVlabs/DoRA · github.com/neelsjain/NEFTune · github.com/yxli2123/LoftQ
+- huggingface.co/docs/peft/main/en/developer_guides/lora (orthogonal/eva/gaussian init listesi)
+- arXiv 2407.05000 (LoRA-GA) · github.com/huggingface/peft/issues/2927 (LoRA-GA PEFT'e EKLENMEDİ)
+
+---
+
+## Tur 2 — 2026-06-22 (derin tur — haftalık zamanlı görev)
+
+**Tetikleyici:** Zamanlı görev `lora-arastirma-haftalik-derin` (weekly-deep). `lora-arastirma`
+alt-ajan tipi bu ortamda yoktu → protokol (`docs/PROTOKOL_LORA_ARASTIRMA.md`, weekly-deep) doğrudan
+uygulandı. CLAUDE.md Kural 2/7/8'e uyuldu; eğitim BAŞLATILMADI.
+
+**Yöntem:** 7 açılı paralel WebSearch sweep — (a) yeni LoRA varyantları, (b) init yöntemleri,
+(c) küçük-LLM catastrophic forgetting/refusal koruma, (d) SFT regularizasyon, (e) Unsloth/Qwen3
+güncel, (f) SFT veri kalitesi, (g) LoRA-GA özel doğrulama. Her aday adversarial süzgeçten geçti:
+*gerçek mi? PEFT 0.19+/Unsloth native mi? Achilles'e uygun mu? GGUF-güvenli mi? v5'e yardım eder mi?*
+
+**Sonuç: YENİ, doğrulanmış, PEFT-native, v5-ilgili teknik BULUNAMADI → kod PR'ı YOK.**
+
+**Adaylar ve eleme gerekçeleri:**
+
+| Aday | Karar | Gerekçe |
+|------|-------|---------|
+| **LoRA-GA** (arXiv 2407.05000) | ❌ ELE | PEFT'e EKLENMEDİ — issue #2927 native merge olmadan kapandı; harici `Outsider565/LoRA-GA` reposu gerekir. Kural 7: native-değil entegre edilmez. |
+| `orthogonal` init | ✅ ZATEN VAR | `peft_lora_train.py:_INIT_STRATEGIES` içinde mevcut (kod kapsıyor) ama dedup defterinde eksikti → log'a eklendi (doküman düzeltmesi). |
+| `assistant_only_loss` (2026-06-22 günlük adayı) | ⚠️ GEREKSİZ | Bulut notebook şablonu (Hücre 10) ZATEN `train_on_responses_only` ile asistan-dışı turları maskeliyor — TRL `assistant_only_loss` ile işlevsel olarak AYNI. Ayrı entegrasyon mükerrer; veri-format dönüşümü riski de cabası. Günlük aday bu mevcut entegrasyonla **karşılanmış** sayılır. |
+| VeRA / MiLoRA / LoRA-FA | ❌ ELE | Parametre-azaltma odaklı; v5 disiplin-gerilemesiyle ilgisiz (sorun param sayısı değil, forgetting/degenerasyon). |
+| O-LoRA / CLoRA / EWCLoRA / FIP | ❌ ELE | Continual-learning; PEFT-native değil + çok-görev orthogonality makinesi gerektirir (tek-adapter Achilles akışına uymaz). CLoRA/EWCLoRA zaten 2026-06-22 günlükte elenmişti. |
+| DFT `loss_type="dft"` (ICLR 2026) | ❌ ELE | 2026-06-22 günlükte elendi; yalnız math/reasoning'de test, 4B/disiplin doğrulanmadı. Tekrar araştırılmadı. |
+| `target_modules="all-linear"` (Unsloth 2026) | ✅ ZATEN HİZALI | Achilles `TARGET_MODULES` zaten tüm linear projeksiyonları (q/k/v/o + gate/up/down) hedefliyor; embed/lm_head bilinçli dışarıda (Qwen3 tied-embeddings / GGUF güvenliği). Değişiklik yok. |
+
+**Doküman/sürüm:** Anlamlı (entegre edilebilir) yeni bulgu olmadığından `LORA_EGITIM_DETAYLI_ANLATIM.md`
+sürümü ARTIRILMADI; PDF yeniden üretilmedi (protokol §6: yalnız anlamlı bulguda). Yalnız bu defter
+güncellendi (dedup listesine `orthogonal` + elenen-adaylar bloğu + kaynaklar).
+
+**Takip (gözetimli seansa not):** `configs/lora/lora_profiles.yaml` yorum satırı (init seçenekleri)
+`orthogonal`/`corda`'yı listelemiyor — saf yorum düzeltmesi ama reçete dosyası olduğu için Kural 5
+gereği PR ister; bu otonom turda dokunulmadı.
+
+### Kaynaklar (Tur 2 — 2026-06-22)
+
+| Teknik / Konu | Kaynak |
+|---------------|--------|
+| LoRA-GA (PEFT-native değil — issue) | <https://github.com/huggingface/peft/issues/2927> · arXiv 2407.05000 |
+| PEFT init listesi (orthogonal/eva/gaussian) | <https://huggingface.co/docs/peft/main/en/developer_guides/lora> |
+| Unsloth Qwen3 2026 (all-linear öneri) | <https://unsloth.ai/docs/models/tutorials/qwen3-how-to-run-and-fine-tune> |
+| TRL SFT (assistant_only_loss ↔ response-only) | <https://huggingface.co/docs/trl/sft_trainer> |
+
+> Kural 7 notu: VeRA/MiLoRA/LoRA-FA/O-LoRA/CLoRA/AILoRA/D²LoRA için atıf gören arXiv'ler var ama
+> Achilles'e uygun + PEFT-native + v5-ilgili kriterini geçmediklerinden entegre edilmedi; yeniden
+> derin-araştırma yapılmaması için "Elenen adaylar" defterine işlendi.
 
 ---
 

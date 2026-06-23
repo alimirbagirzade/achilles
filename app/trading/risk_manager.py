@@ -265,34 +265,45 @@ def analyze_risk(
 
 
 def _extract_trade_returns(position: pd.Series, returns: pd.Series) -> pd.Series:
-    """Her trade için toplam getiriyi çıkar."""
-    pos_prev = position.shift(1).fillna(0)
-    # Pozisyondayken kazanılan bar getirileri
-    in_trade = pos_prev == 1
-    if not in_trade.any():
+    """Her trade için bileşik NET getiriyi çıkar (giriş + ÇIKIŞ maliyeti dahil).
+
+    Bloklar EFEKTİF pozisyon (``position.shift(1)``) üzerinden sınırlanır — ``returns``
+    de bu gecikmeli pozisyondan türetilir (backtester ``_net_returns``: giriş maliyeti
+    eff_pos 0→1 barında, ÇIKIŞ maliyeti eff_pos 1→0 barında yüklenir). Çıkış-maliyeti
+    barı (eff_pos'un 0'a döndüğü bar) bloğa DAHİL edilir.
+
+    Eskiden bloklar HAM ``position`` ile sınırlanıyordu; ``returns`` gecikmeli pozisyondan
+    geldiği için blok bir bar kayıyordu → hem son tutuş-barı getirisi hem çıkış maliyeti
+    bloğun DIŞINDA kalıyordu. Sonuç: per-trade getiri (ve dolayısıyla Kelly tahmini) çıkış
+    maliyetini yok sayıp ŞİŞİYORDU (CLAUDE.md kural 3 — maliyeti yok sayma). Headline
+    metrikler (Sharpe/equity) etkilenmiyordu; yalnız bu Kelly dekompozisyonu hatalıydı.
+
+    Seri sonunda hâlâ açık pozisyon (çıkış barı yok) → maliyetsiz kapatılır; gerçekleşmemiş
+    çıkışın bilinen köşe durumu (backtester ile tutarlı).
+    """
+    eff_pos = position.shift(1).fillna(0.0)
+    if not (eff_pos == 1).any():
         return pd.Series(dtype=float)
 
-    # Basit yaklaşım: her pozisyon bloğunu grupla
-    trade_blocks = []
+    trade_blocks: list[float] = []
     block_rets: list[float] = []
     in_block = False
-    for i in range(len(position)):
-        p = position.iloc[i]
-        if not in_block and p == 1:
-            in_block = True
-            block_rets = []
-        if in_block:
+    for i in range(len(eff_pos)):
+        active = eff_pos.iloc[i] == 1
+        if active:
+            if not in_block:
+                in_block = True
+                block_rets = []
             block_rets.append(returns.iloc[i])
-        if in_block and p == 0:
+        elif in_block:
+            # eff_pos 1→0: bu bar çıkış maliyetini taşır → bloğa dahil et, sonra kapat.
+            block_rets.append(returns.iloc[i])
+            trade_blocks.append(float(np.prod([1.0 + r for r in block_rets]) - 1.0))
             in_block = False
-            if block_rets:
-                # Bileşik getiri
-                compound = float(np.prod([1.0 + r for r in block_rets]) - 1.0)
-                trade_blocks.append(compound)
             block_rets = []
     if in_block and block_rets:
-        compound = float(np.prod([1.0 + r for r in block_rets]) - 1.0)
-        trade_blocks.append(compound)
+        # Veri sonunda açık pozisyon: çıkış maliyeti henüz gerçekleşmedi → maliyetsiz kapat.
+        trade_blocks.append(float(np.prod([1.0 + r for r in block_rets]) - 1.0))
 
     return pd.Series(trade_blocks, dtype=float) if trade_blocks else pd.Series(dtype=float)
 
