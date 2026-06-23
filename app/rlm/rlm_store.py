@@ -141,6 +141,27 @@ class RlmStore:
                 row.evidence_score = evidence_score
                 row.report_path = report_path
 
+    def mark_stale_running_failed(self, max_age_minutes: int = 60) -> int:
+        """`max_age_minutes`'tan uzun süredir 'running' kalmış run'ları 'failed' yap (reaper).
+
+        Controller'daki try/except yalnız YAKALANABİLİR hataları 'failed' işaretler; dış
+        kill / timeout / crash ile yarıda kalan run sonsuza dek 'running' asılı kalırdı
+        (gerçek DB'de gözlendi). Bu reaper o artıkları temizler → rlm-runs/audit gerçeği
+        yansıtsın. created_at ISO8601-UTC (hepsi _utcnow) → leksikografik karşılaştırma
+        doğru. Yaş eşiği aktif/eşzamanlı run'ları korur (genç 'running' dokunulmaz)."""
+        cutoff = (dt.datetime.now(dt.UTC) - dt.timedelta(minutes=max_age_minutes)).isoformat()
+        with self.session() as s:
+            rows = s.scalars(
+                select(RlmRun).where(RlmRun.status == "running", RlmRun.created_at < cutoff)
+            ).all()
+            for r in rows:
+                r.status = "failed"
+                if not r.final_answer:
+                    r.final_answer = (
+                        "[yarıda kaldı — süre aşımı/kesinti; reaper 'failed' işaretledi]"
+                    )
+            return len(rows)
+
     # ── Steps ─────────────────────────────────────────────────────────────────
 
     def add_step(

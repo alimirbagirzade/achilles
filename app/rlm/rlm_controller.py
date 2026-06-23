@@ -153,8 +153,39 @@ class RlmController:
             task_type, n_papers=len(paper_ids) if paper_ids else 0, max_rounds=max_rounds
         )
         model_name = self.llm.active_backend()
+        # Her yeni run'da dış-kill/crash ile asılı kalmış eski 'running' run'ları temizle.
+        self.store.mark_stale_running_failed()
         run_id = self.store.create_run(query, task_type, model_name)
 
+        try:
+            return self._execute(
+                run_id, query, task_type, plan, paper_ids, top_k, model_name, write_report
+            )
+        except Exception as exc:
+            # Beklenmeyen hata (Chroma/embedding/IO vb.) → run'ı 'running' asılı BIRAKMA:
+            # 'failed' işaretle ki rlm-runs/audit gerçeği yansıtsın, sonra yeniden fırlat
+            # (API 503'e çevirir, CLI hatayı gösterir). NOT: SIGKILL/timeout (dış öldürme)
+            # yakalanamaz — o durumda run 'running' kalır; ayrı bir reaper konusu.
+            self.store.finish_run(
+                run_id,
+                status="failed",
+                final_answer=f"[RLM hata: {type(exc).__name__}: {exc}]",
+                final_confidence=0.0,
+                evidence_score=0.0,
+            )
+            raise
+
+    def _execute(
+        self,
+        run_id: str,
+        query: str,
+        task_type: str,
+        plan: ReasoningPlan,
+        paper_ids: list[str] | None,
+        top_k: int,
+        model_name: str,
+        write_report: bool,
+    ) -> RlmResult:
         self.store.add_step(
             run_id,
             1,
@@ -305,7 +336,17 @@ class RlmController:
         # ile en yakın tekrarlanabilirlik; seed onurlanan backend'lerde 0.2 + seed.
         temperature = 0.0 if backend == "anthropic" else 0.2
         try:
-            text = self.llm.generate(prompt, system=system, temperature=temperature, seed=self.seed)
+            # SINIRLI çağrı: max_tokens üretimi, timeout wall-clock'u bağlar. Timeout
+            # aşılırsa generate() LLMUnavailable fırlatır → no_llm yolu (graceful degrade,
+            # dangling 'running' yok). Yavaş CPU'da sınırsız çağrı 9dk+ sürüyordu.
+            text = self.llm.generate(
+                prompt,
+                system=system,
+                temperature=temperature,
+                seed=self.seed,
+                max_tokens=self.settings.rlm_draft_max_tokens,
+                timeout=self.settings.rlm_draft_timeout_s,
+            )
             return text, True
         except LLMUnavailable:
             return "", False
