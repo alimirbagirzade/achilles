@@ -3358,5 +3358,149 @@ def chain_status(
     console.print(t)
 
 
+# --------------------------------------------------------------------------
+# Kayıt defteri (dataset / RAG-index / embedding / ödül sürümleri + terfi)
+# --------------------------------------------------------------------------
+@app.command("registry-list")
+def registry_list(
+    kind: str = typer.Option(
+        "datasets",
+        "--kind",
+        help="datasets | indices | embeddings | rewards | decisions",
+    ),
+    limit: int = typer.Option(50),
+) -> None:
+    """Kayıt defteri sürümlerini listele (sürümleme + denetim izi)."""
+    from app.registry import RegistryStore
+
+    reg = RegistryStore()
+    if kind == "datasets":
+        rows = reg.list_datasets(limit)
+        table = Table(title="Dataset Sürümleri")
+        for c in ("ID", "Ad", "Tür", "Kayıt", "Onay", "Hash"):
+            table.add_column(c)
+        for r in rows:
+            table.add_row(
+                r["dataset_version_id"],
+                r["name"][:28],
+                r["source_type"],
+                str(r["n_records"]),
+                r["approval_status"],
+                (r["content_hash"] or "-")[:12],
+            )
+    elif kind == "indices":
+        rows = reg.list_rag_indices(limit)
+        table = Table(title="RAG İndeks Sürümleri")
+        for c in ("ID", "Collection", "Embedding", "Chunk", "Makale", "Zaman"):
+            table.add_column(c)
+        for r in rows:
+            table.add_row(
+                r["rag_index_version_id"],
+                r["collection_name"],
+                r["embedding_model"][:24],
+                str(r["n_chunks"]),
+                str(r["n_papers"]),
+                r["created_at"][:19],
+            )
+    elif kind == "embeddings":
+        rows = reg.list_embeddings(limit)
+        table = Table(title="Embedding Modeli Sürümleri")
+        for c in ("ID", "Model", "Boyut", "Sağlayıcı", "Zaman"):
+            table.add_column(c)
+        for r in rows:
+            table.add_row(
+                r["embedding_model_id"],
+                r["model_name"][:28],
+                str(r["dimension"] or "-"),
+                r["provider"] or "-",
+                r["created_at"][:19],
+            )
+    elif kind == "rewards":
+        rows = reg.list_rewards(limit)
+        table = Table(title="RLM Ödül Seti Sürümleri")
+        for c in ("ID", "Ad", "Yöntem", "Örnek", "Sır", "PII"):
+            table.add_column(c)
+        _scan = {0: "—", 1: "temiz", 2: "BULGU"}
+        for r in rows:
+            table.add_row(
+                r["reward_version_id"],
+                r["name"][:28],
+                r["method"] or "-",
+                str(r["n_examples"]),
+                _scan.get(r["secret_scanned"], "?"),
+                _scan.get(r["pii_scanned"], "?"),
+            )
+    elif kind == "decisions":
+        rows = reg.list_decisions(limit=limit)
+        table = Table(title="Terfi Kararları (denetim izi)")
+        for c in ("Hedef tür", "Hedef ID", "Karar", "Durum", "Onaylayan", "Gerekçe"):
+            table.add_column(c)
+        for r in rows:
+            table.add_row(
+                r["target_type"],
+                r["target_id"][:16],
+                r["decision"],
+                r["to_status"],
+                r["approved_by"] or "-",
+                (r["reason"] or "")[:36],
+            )
+    else:
+        console.print(f"[red]Bilinmeyen kind: {kind}[/red]")
+        raise typer.Exit(1)
+
+    if not rows:
+        console.print("[yellow]Kayıt yok.[/yellow]")
+        return
+    console.print(table)
+
+
+@app.command("registry-snapshot")
+def registry_snapshot() -> None:
+    """Mevcut RAG indeksinin + embedding modelinin sürüm anlık görüntüsünü al (çevrimdışı)."""
+    from app.registry import RegistryStore
+
+    reg = RegistryStore()
+    idx = reg.snapshot_rag_index()
+    emb = reg.snapshot_embedding()
+    console.print(
+        Panel.fit(
+            f"[green]RAG indeks:[/green] {idx['rag_index_version_id']} "
+            f"({idx['n_chunks']} chunk / {idx['n_papers']} makale)\n"
+            f"[green]Embedding:[/green] {emb['embedding_model_id']} "
+            f"({emb['model_name']} · {emb['provider']})",
+            title="registry snapshot",
+        )
+    )
+
+
+@app.command("registry-promote-dataset")
+def registry_promote_dataset(
+    version: str = typer.Option(..., "--version", help="dataset_version_id"),
+    approver: str = typer.Option(..., "--approver", help="Onaylayan kişi/kimliği"),
+    reject: bool = typer.Option(False, "--reject", help="Onaylamak yerine REDDET"),
+    reason: str = typer.Option("", "--reason", help="Gerekçe (red için zorunlu)"),
+) -> None:
+    """Dataset sürümünü onayla/reddet (Kural 8: onaysız eğitime giremez) — karar loglanır."""
+    from app.registry import RegistryStore, approve_dataset, reject_dataset
+
+    reg = RegistryStore()
+    try:
+        if reject:
+            if not reason:
+                console.print("[red]--reject için --reason zorunlu.[/red]")
+                raise typer.Exit(1)
+            out = reject_dataset(reg, version, approver, reason)
+            console.print(f"[yellow]REDDEDİLDİ[/yellow] · {version} · {reason}")
+        else:
+            out = approve_dataset(reg, version, approver, reason)
+            if out.get("already"):
+                console.print(f"[green]Zaten onaylı[/green] · {version}")
+            else:
+                console.print(f"[green]ONAYLANDI[/green] · {version} · onaylayan={approver}")
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1) from e
+
+
 if __name__ == "__main__":  # pragma: no cover
     app()

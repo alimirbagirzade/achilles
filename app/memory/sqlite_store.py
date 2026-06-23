@@ -645,6 +645,110 @@ class ApprovalRequestRow(Base):
     consumed_at: Mapped[str | None] = mapped_column(String(40), default=None)
 
 
+# ---------------------------------------------------------------------------
+# Deney takibi & model/veri kayıt defteri (app/registry)
+# ---------------------------------------------------------------------------
+# Adapter yaşam döngüsü ZATEN app/lora/adapter_registry.py (JSONL) +
+# app/training/adapter_registry.py (Adapter tablosu) ile kapsanıyor. Buradaki
+# tablolar yalnız EKSİK olan yatay katmanı tamamlar: dataset / rag-index /
+# embedding / rlm-reward sürümleri + her terfi kararının denetlenebilir kaydı.
+
+
+class DatasetVersion(Base):
+    """Bir eğitim/değerlendirme veri seti sürümü (içerik-hash ile sürümlenir).
+
+    ``content_hash`` üretildiği kaynaktan (ör. ``dataset_builder``) gelir →
+    aynı veri iki kez kaydedilirse aynı hash'le idempotent kalır. ``approval_status``
+    yalnız ``promotion_gates`` üzerinden değişir (Kural 8: onaysız eğitime giremez).
+    """
+
+    __tablename__ = "dataset_versions"
+
+    dataset_version_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), index=True)
+    path: Mapped[str | None] = mapped_column(Text, default=None)
+    source_type: Mapped[str] = mapped_column(String(48), default="sft")  # sft/dpo/tool_use
+    content_hash: Mapped[str | None] = mapped_column(String(64), default=None, index=True)
+    n_records: Mapped[int] = mapped_column(Integer, default=0)
+    domain_distribution_json: Mapped[str] = mapped_column(Text, default="{}")
+    quality_score: Mapped[float | None] = mapped_column(Float, default=None)
+    approval_status: Mapped[str] = mapped_column(String(32), default="pending")
+    # pending / approved / rejected
+    created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+
+
+class RagIndexVersion(Base):
+    """Bir RAG vektör-indeks anlık görüntüsünün sürümü (Chroma collection)."""
+
+    __tablename__ = "rag_index_versions"
+
+    rag_index_version_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    vector_db: Mapped[str] = mapped_column(String(32), default="chroma")
+    collection_name: Mapped[str] = mapped_column(String(96), default="")
+    embedding_model: Mapped[str] = mapped_column(String(96), default="")
+    chunking_strategy: Mapped[str | None] = mapped_column(String(48), default=None)
+    n_chunks: Mapped[int] = mapped_column(Integer, default=0)
+    n_papers: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+
+
+class EmbeddingModelVersion(Base):
+    """Kullanılan bir embedding modelinin sürüm kaydı (boyut + sağlayıcı)."""
+
+    __tablename__ = "embedding_model_versions"
+
+    embedding_model_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    model_name: Mapped[str] = mapped_column(String(96), index=True)
+    dimension: Mapped[int | None] = mapped_column(Integer, default=None)
+    provider: Mapped[str | None] = mapped_column(String(48), default=None)  # ollama/openai/fake
+    local_path: Mapped[str | None] = mapped_column(Text, default=None)
+    created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+
+
+class RlmRewardVersion(Base):
+    """RLM/DPO ödül seti sürümü — YALNIZ tablo (kayıt RLM çıktıları OKUNARAK doldurulur).
+
+    DİKKAT: app/rlm/ eş zamanlı bir oturumun sahibidir; bu modül o paketi içe
+    aktarmaz/düzenlemez. Tablo, ödül setlerinin sürümlenmesi + terfi öncesi
+    sır/PII tarama bayraklarının (Kural: ödül seti gizli veri içermemeli) tutulması
+    için vardır. ``pii_scanned``/``secret_scanned``: 0=taranmadı, 1=temiz, 2=bulgu.
+    """
+
+    __tablename__ = "rlm_reward_versions"
+
+    reward_version_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), index=True)
+    dataset_path: Mapped[str | None] = mapped_column(Text, default=None)
+    method: Mapped[str | None] = mapped_column(String(32), default=None)  # dpo/grpo/reward
+    n_examples: Mapped[int] = mapped_column(Integer, default=0)
+    pii_scanned: Mapped[int] = mapped_column(Integer, default=0)
+    secret_scanned: Mapped[int] = mapped_column(Integer, default=0)
+    metrics_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+
+
+class PromotionDecision(Base):
+    """Bir kayıt-defteri varlığının (dataset/rag_index/adapter/reward) terfi kararı.
+
+    Append-only denetim izi: her ``promotion_gates`` çağrısı buraya bir satır yazar
+    (approved / rejected / blocked) → "neden production'a alındı/alınmadı" izlenebilir.
+    """
+
+    __tablename__ = "promotion_decisions"
+
+    decision_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    target_type: Mapped[str] = mapped_column(String(32), index=True)
+    # dataset / rag_index / embedding / adapter / reward
+    target_id: Mapped[str] = mapped_column(String(96), index=True)
+    from_status: Mapped[str | None] = mapped_column(String(32), default=None)
+    to_status: Mapped[str] = mapped_column(String(32), default="")
+    decision: Mapped[str] = mapped_column(String(16), default="blocked")
+    # approved / rejected / blocked
+    reason: Mapped[str | None] = mapped_column(Text, default=None)
+    approved_by: Mapped[str | None] = mapped_column(String(64), default=None)
+    created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+
+
 # Toplu budamada tek IN(...) ifadesinin SQLite değişken sınırını (~32766) aşmaması için
 # parça boyu. Küçük tutuldu (güvenli marj + her DELETE hızlı).
 _PRUNE_CHUNK = 500
