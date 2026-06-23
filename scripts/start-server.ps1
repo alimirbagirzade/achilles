@@ -1,16 +1,24 @@
 # Achilles Web Server -- Windows kalici arka plan servisi
 # Kullanim:
-#   .\scripts\start-server.ps1            -- simdi baslat
+#   .\scripts\start-server.ps1            -- simdi baslat (zaten calisiyorsa DOKUNMAZ)
+#   .\scripts\start-server.ps1 -Restart   -- durdur + tekrar baslat (git pull SONRASI bunu kullan)
 #   .\scripts\start-server.ps1 -Install   -- Windows acilisina ekle + simdi baslat
 #   .\scripts\start-server.ps1 -Uninstall -- Windows acilisindan kaldir + durdur
 #   .\scripts\start-server.ps1 -Stop      -- durdur
 #   .\scripts\start-server.ps1 -Status    -- durum goster
+#
+# NOT: Yeni backend rotalari (orn. /api/agents, AGENTS sekmesi) yalniz proses
+# ACILISINDA yuklenir. `git pull` ettikten sonra duz `start-server.ps1` ESKI
+# prosesi calisiyor birakir -> tarayicida yeni bolumler GORUNMEZ. Cekilen kodu
+# uygulamak icin: `.\scripts\start-server.ps1 -Restart` ya da `.\update.ps1`,
+# ardindan tarayicida Ctrl+Shift+R (sert yenileme).
 
 param(
     [switch]$Install,
     [switch]$Uninstall,
     [switch]$Status,
     [switch]$Stop,
+    [switch]$Restart,     # durdur + tekrar baslat (git pull sonrasi yeni kodu uygula)
     [switch]$SkipVerify   # -Install'da cevrimdisi dogrulama kapisini atla (acil kacis)
 )
 
@@ -91,6 +99,7 @@ function Start-AchillesServer {
     $running = Get-WebPid
     if ($running) {
         Write-Host "  [OK] Zaten calisiyor (PID $running) -- http://127.0.0.1:8765" -ForegroundColor Green
+        Write-Host "       (git pull ettiyseniz yeni kodu uygulamak icin: start-server.ps1 -Restart)" -ForegroundColor Gray
         return
     }
     $null = New-Item -ItemType Directory -Path $LogDir -Force
@@ -266,6 +275,16 @@ if ($Install)   { Install-Autostart;   exit 0 }
 if ($Uninstall) { Uninstall-Autostart; exit 0 }
 if ($Stop)      { Stop-AchillesServer; exit 0 }
 if ($Status)    { Show-Status;         exit 0 }
+if ($Restart)   {
+    # git pull SONRASI: eski prosesi kesin durdur (yeni rotalar yalniz acilista
+    # yuklenir), portun serbest kalmasini bekle, sonra taze baslat.
+    Stop-AchillesServer
+    Start-Sleep -Seconds 1
+    Start-OllamaIfNeeded
+    Start-AchillesServer
+    Write-Host "  >> Tarayicida son halini gormek icin: Ctrl+Shift+R (sert yenileme)" -ForegroundColor Cyan
+    exit 0
+}
 
 Start-OllamaIfNeeded
 Start-AchillesServer
