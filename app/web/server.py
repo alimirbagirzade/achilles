@@ -75,6 +75,9 @@ from app.web.schemas import (
     RiskReportListResponse,
     RiskReportRecord,
     RiskReportResponse,
+    RlmAnswerRequest,
+    RlmAnswerResponse,
+    RlmRunOut,
     SourceOut,
     StatusResponse,
     TrainDryRunRequest,
@@ -384,6 +387,87 @@ def api_ask(req: AskRequest) -> AskResponse:
         llm_used=ans.llm_used,
         embedding_mode=EmbeddingService().mode,
     )
+
+
+@app.post("/api/rlm/answer", response_model=RlmAnswerResponse, dependencies=[api_auth])
+def api_rlm_answer(req: RlmAnswerRequest) -> RlmAnswerResponse:
+    """RLM Controller: çok-adımlı retrieval + iddia doğrulama + kaynaklı nihai cevap.
+
+    Desteklenmeyen iddia nihai cevaba girmez; eksik kaynakta 'yeterli kaynak yok'
+    der (uydurma yasak); trading sorularında yalnız hipotez + uyarı üretir.
+    """
+    from app.rlm.rlm_controller import RlmController
+
+    try:
+        res = RlmController().answer(
+            req.query, paper_ids=req.paper_ids, top_k=req.top_k, max_rounds=req.max_rounds
+        )
+    except Exception as exc:  # retrieval/embedding/Chroma hatası → 503
+        raise HTTPException(status_code=503, detail=f"RLM controller hatası: {exc}") from exc
+
+    sources = [
+        SourceOut(
+            paper_id=s["paper_id"],
+            chunk_id=s["chunk_id"],
+            title=s.get("title"),
+            page=s.get("page"),
+        )
+        for s in res.sources
+    ]
+    return RlmAnswerResponse(
+        run_id=res.run_id,
+        query=res.query,
+        task_type=res.task_type,
+        status=res.status,
+        final_answer=res.final_answer,
+        final_confidence=res.final_confidence,
+        confidence_level=res.confidence_level,
+        evidence_score=res.evidence_score,
+        retrieval_rounds=res.retrieval_rounds,
+        n_sources=res.n_sources,
+        supported_claims=res.supported_claims,
+        unsupported_claims=res.unsupported_claims,
+        contradictions=res.contradictions,
+        sources=sources,
+    )
+
+
+@app.get("/api/rlm/runs", dependencies=[api_auth])
+def api_rlm_runs(limit: int = 20) -> dict:
+    """Son RLM koşularını listele (run_id, görev, durum, kanıt/güven)."""
+    from app.rlm.rlm_store import RlmStore
+
+    rows = RlmStore().list_runs(limit=max(1, min(limit, 100)))
+    runs = [
+        RlmRunOut(
+            run_id=r["run_id"],
+            user_query=r["user_query"],
+            task_type=r["task_type"],
+            status=r["status"],
+            final_confidence=r["final_confidence"],
+            evidence_score=r["evidence_score"],
+            created_at=r["created_at"],
+        )
+        for r in rows
+    ]
+    return {"runs": [r.model_dump() for r in runs]}
+
+
+@app.get("/api/rlm/runs/{run_id}", dependencies=[api_auth])
+def api_rlm_run_detail(run_id: str) -> dict:
+    """Tek bir RLM koşusunun tam detayı: run + adımlar + kanıt + doğrulama."""
+    from app.rlm.rlm_store import RlmStore
+
+    store = RlmStore()
+    run = store.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"RLM koşusu bulunamadı: {run_id}")
+    return {
+        "run": run,
+        "steps": store.get_steps(run_id),
+        "evidence": store.get_evidence(run_id),
+        "verification": store.get_verification(run_id),
+    }
 
 
 @app.get("/api/lora-adapters", dependencies=[api_auth])

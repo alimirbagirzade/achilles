@@ -803,13 +803,20 @@ uv run achilles rag-scan --dry-run      # sadece listele, izleme listesine yazma
 ### Araştırma & Soru-Cevap
 
 ```bash
-uv run achilles ask "soru"              # RAG ile kaynaklı yanıt
+uv run achilles ask "soru"              # RAG ile kaynaklı yanıt (tek-tur)
+uv run achilles rlm-answer "soru"       # RLM: çok-adımlı + iddia-doğrulamalı kaynaklı cevap
+uv run achilles rlm-runs                # RLM koşu geçmişi (görev/durum/kanıt/güven)
 uv run achilles card <paper_id>         # bilgi kartı üret
 uv run achilles extract-formulas        # tüm makalelerden formül çıkar
 uv run achilles formulas                # çıkarılan formülleri listele
 uv run achilles research "soru"         # tam araştırma döngüsü
 uv run achilles research-sessions       # araştırma geçmişi
 ```
+
+> **`ask` vs `rlm-answer`:** `ask` tek-tur RAG verir (hızlı). `rlm-answer`
+> çok-tur retrieval + kanıt yeterlilik kapısı + iddia-düzeyi atıf/dayanak
+> doğrulaması yapar; desteklenmeyen iddiayı atar, kaynak yetersizse "yeterli
+> kaynak yok" der. Mimari: [`docs/rlm_rag_architecture.md`](docs/rlm_rag_architecture.md).
 
 ### Backtest & Strateji
 

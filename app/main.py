@@ -698,6 +698,73 @@ def chain_dataset(only_successful: bool = typer.Option(False)) -> None:
     )
 
 
+# --------------------------------------------------------------------------
+# RLM Controller (Recursive/Reasoning LM — çok-adımlı kaynaklı cevap)
+# --------------------------------------------------------------------------
+@app.command("rlm-answer")
+def rlm_answer(
+    query: str = typer.Argument(..., help="Soru"),
+    paper_ids: str = typer.Option(None, help="Virgülle ayrılmış paper_id listesi (opsiyonel)"),
+    top_k: int = typer.Option(None, help="Tur başına getirilecek chunk sayısı"),
+    rounds: int = typer.Option(None, help="Maksimum retrieval turu"),
+) -> None:
+    """RLM Controller: çok-adımlı retrieval + iddia doğrulama + kaynaklı nihai cevap."""
+    from app.rlm.rlm_controller import RlmController
+
+    pid_list = [p.strip() for p in paper_ids.split(",")] if paper_ids else None
+    result = RlmController().answer(query, paper_ids=pid_list, top_k=top_k, max_rounds=rounds)
+
+    color = {
+        "answered": "green",
+        "answered_with_limitation": "yellow",
+        "abstained": "red",
+        "no_llm": "yellow",
+    }.get(result.status, "white")
+    console.print(
+        Panel(
+            f"{result.final_answer}\n\n"
+            f"[dim]run_id={result.run_id} · görev={result.task_type} · "
+            f"kanıt={result.evidence_score} · tur={result.retrieval_rounds} · "
+            f"güven={result.confidence_level} ({result.final_confidence})[/dim]",
+            title=f"[{color}]RLM: {result.status}[/{color}]",
+        )
+    )
+
+
+@app.command("rlm-runs")
+def rlm_runs(limit: int = typer.Option(20)) -> None:
+    """Kayıtlı RLM koşularını listele."""
+    from app.rlm.rlm_store import RlmStore
+
+    rows = RlmStore().list_runs(limit=limit)
+    if not rows:
+        console.print("[yellow]Koşu bulunamadı — önce 'rlm-answer' çalıştır[/yellow]")
+        return
+    t = Table(title="RLM Koşuları")
+    t.add_column("run_id")
+    t.add_column("Soru")
+    t.add_column("Görev")
+    t.add_column("Durum")
+    t.add_column("Kanıt", justify="right")
+    t.add_column("Güven", justify="right")
+    for r in rows:
+        color = {
+            "answered": "green",
+            "answered_with_limitation": "yellow",
+            "abstained": "red",
+            "no_llm": "yellow",
+        }.get(r["status"], "white")
+        t.add_row(
+            r["run_id"][:14],
+            (r["user_query"] or "")[:40],
+            r["task_type"],
+            f"[{color}]{r['status']}[/{color}]",
+            str(r["evidence_score"]),
+            str(r["final_confidence"]),
+        )
+    console.print(t)
+
+
 @app.command("pine")
 def pine_export(
     strategy_name: str = typer.Argument(default="", help="Strateji adı (boşsa varsayılan örnek)"),
