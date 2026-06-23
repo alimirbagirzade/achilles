@@ -21,6 +21,7 @@ Mutlak kurallar (CLAUDE.md):
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import asdict, dataclass, field
 
@@ -39,6 +40,8 @@ from app.verification.confidence_scorer import ConfidenceScorer
 from app.verification.context_sufficiency import ContextSufficiencyClassifier
 from app.verification.contradiction_detector import Contradiction, ContradictionDetector
 from app.verification.grounding_verifier import GroundingVerifier
+
+log = logging.getLogger(__name__)
 
 _FALLBACK_SYSTEM = (
     "Yalnızca verilen KAYNAKLAR'a dayan; kaynak yoksa 'kaynak bulunamadı' de, uydurma. "
@@ -163,16 +166,20 @@ class RlmController:
             )
         except Exception as exc:
             # Beklenmeyen hata (Chroma/embedding/IO vb.) → run'ı 'running' asılı BIRAKMA:
-            # 'failed' işaretle ki rlm-runs/audit gerçeği yansıtsın, sonra yeniden fırlat
-            # (API 503'e çevirir, CLI hatayı gösterir). NOT: SIGKILL/timeout (dış öldürme)
-            # yakalanamaz — o durumda run 'running' kalır; ayrı bir reaper konusu.
-            self.store.finish_run(
-                run_id,
-                status="failed",
-                final_answer=f"[RLM hata: {type(exc).__name__}: {exc}]",
-                final_confidence=0.0,
-                evidence_score=0.0,
-            )
+            # 'failed' işaretle ki rlm-runs/audit gerçeği yansıtsın, sonra yeniden fırlat.
+            # KRİTİK: yalnız run HÂLÂ 'running' ise işaretle. finish_run ZATEN terminal bir
+            # durum (answered/abstained/no_llm) yazdıysa ve sonrasındaki bir bookkeeping
+            # (ör. _log_evidence_rows içinde 'database is locked') patladıysa, gerçek cevabı
+            # 'failed' ile EZME (audit bütünlüğü — aksi halde başarılı run sahte 'failed' olurdu).
+            current = self.store.get_run(run_id)
+            if current is not None and current["status"] == "running":
+                self.store.finish_run(
+                    run_id,
+                    status="failed",
+                    final_answer=f"[RLM hata: {type(exc).__name__}: {exc}]",
+                    final_confidence=0.0,
+                    evidence_score=0.0,
+                )
             raise
 
     def _execute(
@@ -369,19 +376,25 @@ class RlmController:
     def _log_evidence_rows(
         self, run_id: str, chunks: list[RetrievedChunk], used_ids: set[str]
     ) -> None:
+        # EN-İYİ-ÇABA: kanıt satırları audit logudur; finish_run SONRASI çalışır. Tek bir
+        # add_evidence hatası (ör. 'database is locked') cevabı DÜŞÜRMEMELİ — aksi halde
+        # hata answer()'ın except'ine sızıp başarılı run'ı 'failed' ezerdi (regresyon).
         for c in chunks:
-            self.store.add_evidence(
-                run_id,
-                c.paper_id,
-                c.chunk_id,
-                # distance=0.0 MÜKEMMEL eşleşme (relevance 1.0); None = bilinmiyor (0.0).
-                # Eski `if c.distance` truthiness'i 0.0'ı falsy görüp en iyi eşleşmeyi
-                # en kötü skorla loglardı. max(0.0,…) negatif olmayan metrik garantisi.
-                relevance_score=(
-                    round(max(0.0, 1.0 - c.distance), 4) if c.distance is not None else 0.0
-                ),
-                used_in_final_answer=c.chunk_id in used_ids,
-            )
+            try:
+                self.store.add_evidence(
+                    run_id,
+                    c.paper_id,
+                    c.chunk_id,
+                    # distance=0.0 MÜKEMMEL eşleşme (relevance 1.0); None = bilinmiyor (0.0).
+                    # Eski `if c.distance` truthiness'i 0.0'ı falsy görüp en iyi eşleşmeyi
+                    # en kötü skorla loglardı. max(0.0,…) negatif olmayan metrik garantisi.
+                    relevance_score=(
+                        round(max(0.0, 1.0 - c.distance), 4) if c.distance is not None else 0.0
+                    ),
+                    used_in_final_answer=c.chunk_id in used_ids,
+                )
+            except Exception:  # audit logu cevabı bloke etmemeli (best-effort)
+                log.warning("RLM evidence logu yazılamadı (run=%s chunk=%s)", run_id, c.chunk_id)
 
     def _finish_insufficient(
         self,
@@ -415,6 +428,9 @@ class RlmController:
             final_confidence=0.0,
             evidence_score=evidence.score,
         )
+        # Kaynak getirildi ama yetersiz → kanıt satırlarını yine de logla (eksiksiz audit
+        # izi; _finish_no_llm ile tutarlı). chunks boşsa döngü no-op.
+        self._log_evidence_rows(run_id, chunks, set())
         return RlmResult(
             run_id=run_id,
             query=query,
