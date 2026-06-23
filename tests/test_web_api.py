@@ -104,6 +104,32 @@ def test_ask_validation_rejects_short(client: TestClient) -> None:
     assert r.status_code == 422  # pydantic min_length
 
 
+def test_rlm_answer_validation_rejects_short(client: TestClient) -> None:
+    r = client.post("/api/rlm/answer", json={"query": "x"})
+    assert r.status_code == 422  # pydantic min_length
+
+
+def test_rlm_answer_empty_corpus_abstains(client: TestClient) -> None:
+    # Boş korpus (fake embedding, boş Chroma) → uydurma YOK, çekimser kal (kural 7).
+    r = client.post("/api/rlm/answer", json={"query": "Bilinmeyen bir araştırma konusu?"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "abstained"
+    assert body["supported_claims"] == []
+    assert body["run_id"].startswith("rlm_")
+
+
+def test_rlm_runs_list_ok(client: TestClient) -> None:
+    r = client.get("/api/rlm/runs")
+    assert r.status_code == 200
+    assert "runs" in r.json()
+
+
+def test_rlm_run_detail_unknown_404(client: TestClient) -> None:
+    r = client.get("/api/rlm/runs/rlm_does_not_exist")
+    assert r.status_code == 404
+
+
 def test_card_unknown_paper_404(client: TestClient) -> None:
     r = client.post("/api/card/paper_does_not_exist")
     assert r.status_code == 404

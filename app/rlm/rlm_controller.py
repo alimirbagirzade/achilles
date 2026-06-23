@@ -1,0 +1,585 @@
+"""RLM Controller — çok-adımlı, kaynaklı, denetimli cevap orkestratörü.
+
+Mevcut RAG retrieval + doğrulama modüllerini bir reasoning kontrol katmanında
+birleştirir (talimat §11). Yeni bilgi deposu DEĞİLDİR.
+
+Akış:
+    classify → plan → (retrieval ⇄ reformulation)* → evidence gate → draft (LLM)
+    → claim extraction → citation/grounding verify → contradiction → confidence
+    → abstention → yapısal nihai cevap → run logları + JSON rapor
+
+Mutlak kurallar (CLAUDE.md):
+  1. Canlı trading sinyali / yatırım tavsiyesi ASLA. Trading sorularında çıktı
+     yalnız HİPOTEZ + test noktası + uyarıdır.
+  4. Desteklenmeyen iddia nihai cevaba KONMAZ.
+  6. Determinizm: tüm LLM çağrıları sabit seed ile.
+  7. Eksik bağlamda uydurma YOK → "yeterli kaynak yok" denir.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass, field
+
+from app.brain.local_llm import LLMUnavailable, LocalLLM
+from app.brain.prompt_loader import load_prompt
+from app.config import get_settings
+from app.memory.reranking_retriever import RerankingRetriever
+from app.memory.retrieval_service import RetrievedChunk, Retriever
+from app.rlm.claim_extractor import Claim, extract_claims
+from app.rlm.evidence_builder import EvidenceReport, EvidenceSufficiencyScorer
+from app.rlm.rlm_store import RlmStore
+from app.rlm.task_classifier import ReasoningPlan, TaskClassifier
+from app.verification.abstention_policy import AbstentionPolicy
+from app.verification.citation_verifier import CitationVerifier
+from app.verification.confidence_scorer import ConfidenceScorer
+from app.verification.context_sufficiency import ContextSufficiencyClassifier
+from app.verification.contradiction_detector import Contradiction, ContradictionDetector
+from app.verification.grounding_verifier import GroundingVerifier
+
+_FALLBACK_SYSTEM = (
+    "Yalnızca verilen KAYNAKLAR'a dayan; kaynak yoksa 'kaynak bulunamadı' de, uydurma. "
+    "Her iddiadan sonra [paper_id:chunk_id] satır-içi atıf ver. Yatırım tavsiyesi verme."
+)
+
+_TRADING_DISCLAIMER = (
+    "- Bu yatırım tavsiyesi değildir.\n"
+    "- Bu canlı sinyal değildir.\n"
+    "- Hipotez backtest gerektirir (OOS + komisyon + slippage + look-ahead yok).\n"
+    "- Kullanılan makalelerin veri seti ve zaman aralığı kontrol edilmelidir."
+)
+
+
+@dataclass
+class RlmResult:
+    """RLM koşu sonucu (CLI/API/rapor için)."""
+
+    run_id: str
+    query: str
+    task_type: str
+    status: str  # answered / answered_with_limitation / abstained / no_llm
+    final_answer: str
+    final_confidence: float
+    confidence_level: str  # High / Medium / Low
+    evidence_score: float
+    retrieval_rounds: int
+    n_sources: int
+    supported_claims: list[str] = field(default_factory=list)
+    unsupported_claims: list[str] = field(default_factory=list)
+    contradictions: list[str] = field(default_factory=list)
+    sources: list[dict] = field(default_factory=list)
+    report_path: str | None = None
+
+
+def _format_context(chunks: list[RetrievedChunk]) -> str:
+    blocks = []
+    for c in chunks:
+        head = c.citation
+        if c.title:
+            head += f" — {c.title}"
+        blocks.append(f"{head}\n{c.text}")
+    return "\n\n---\n\n".join(blocks)
+
+
+def _merge_chunks(
+    existing: list[RetrievedChunk], new: list[RetrievedChunk]
+) -> list[RetrievedChunk]:
+    """chunk_id'ye göre dedup ederek birleştir (sıra korunur)."""
+    seen = {c.chunk_id for c in existing}
+    merged = list(existing)
+    for c in new:
+        if c.chunk_id not in seen:
+            merged.append(c)
+            seen.add(c.chunk_id)
+    return merged
+
+
+class RlmController:
+    """Recursive/Reasoning LM kontrol katmanı."""
+
+    def __init__(
+        self,
+        retriever: Retriever | None = None,
+        llm: LocalLLM | None = None,
+        store: RlmStore | None = None,
+    ) -> None:
+        self.settings = get_settings()
+        self.retriever = retriever or RerankingRetriever()
+        self.llm = llm or LocalLLM()
+        self.store = store or RlmStore()
+        self.seed = self.settings.rlm_seed
+
+        self.classifier = TaskClassifier()
+        self.evidence_scorer = EvidenceSufficiencyScorer()
+        self.citation_verifier = CitationVerifier()
+        self.grounding_verifier = GroundingVerifier()
+        self.context_classifier = ContextSufficiencyClassifier()
+        self.contradiction_detector = ContradictionDetector()
+        self.confidence_scorer = ConfidenceScorer()
+        self.abstention_policy = AbstentionPolicy()
+
+    # ----------------------------------------------------------------- public
+
+    def answer(
+        self,
+        query: str,
+        *,
+        paper_ids: list[str] | None = None,
+        top_k: int | None = None,
+        max_rounds: int | None = None,
+        write_report: bool = True,
+    ) -> RlmResult:
+        top_k = top_k or self.settings.rag_top_k
+        max_rounds = max_rounds or self.settings.rlm_max_retrieval_rounds
+
+        task_type = self.classifier.classify(query, paper_ids)
+        plan = self.classifier.plan(
+            task_type, n_papers=len(paper_ids) if paper_ids else 0, max_rounds=max_rounds
+        )
+        model_name = self.llm.active_backend()
+        run_id = self.store.create_run(query, task_type, model_name)
+
+        self.store.add_step(
+            run_id,
+            1,
+            "classify",
+            input_text=query,
+            output_text=task_type,
+            tool_used="TaskClassifier",
+        )
+        self.store.add_step(
+            run_id, 2, "plan", output_text=json.dumps(asdict(plan), ensure_ascii=False)
+        )
+
+        # --- Çok-turlu retrieval + kanıt yeterlilik kapısı --------------------
+        chunks, evidence, rounds_used = self._gather_evidence(run_id, query, plan, paper_ids, top_k)
+
+        # Kanıt çok zayıf → uydurma; abstain (kural 7).
+        if not chunks or evidence.decision == "insufficient":
+            return self._finish_insufficient(
+                run_id, query, task_type, evidence, rounds_used, chunks
+            )
+
+        # --- Taslak cevap (LLM) ----------------------------------------------
+        draft, llm_used = self._draft(query, chunks, plan)
+        self.store.add_step(
+            run_id,
+            10,
+            "draft",
+            output_text=(draft[:2000] if llm_used else "[LLM çevrimdışı]"),
+            tool_used=f"LocalLLM({model_name})",
+        )
+
+        if not llm_used:
+            return self._finish_no_llm(
+                run_id, query, task_type, evidence, rounds_used, chunks, write_report
+            )
+
+        # --- Doğrulama: atıf + dayanak + çelişki -----------------------------
+        citations = self.citation_verifier.verify(draft, chunks)
+        groundings = self.grounding_verifier.verify(draft, chunks)
+        contradictions = self.contradiction_detector.detect(chunks)
+        sufficiency = self.context_classifier.classify(query, chunks)
+        confidence = self.confidence_scorer.score(
+            sufficiency, citations, groundings, contradictions
+        )
+        abstention = self.abstention_policy.decide(confidence, sufficiency)
+
+        claims = extract_claims(groundings)
+        supported = [c for c in claims if c.is_supported]
+        unsupported = [c for c in claims if not c.is_supported]
+
+        self.store.add_step(
+            run_id,
+            11,
+            "verify",
+            output_text=(
+                f"citation={confidence.citation_score} grounding={confidence.grounding_score} "
+                f"supported={len(supported)} unsupported={len(unsupported)} "
+                f"contradictions={len(contradictions)}"
+            ),
+            tool_used="Citation+Grounding+Contradiction",
+        )
+
+        # --- Nihai cevap sentezi ---------------------------------------------
+        return self._synthesize(
+            run_id=run_id,
+            query=query,
+            task_type=task_type,
+            plan=plan,
+            chunks=chunks,
+            evidence=evidence,
+            rounds_used=rounds_used,
+            supported=supported,
+            unsupported=unsupported,
+            contradictions=contradictions,
+            confidence_score=confidence.score,
+            citation_score=confidence.citation_score,
+            grounding_score=confidence.grounding_score,
+            context_score=confidence.context_score,
+            decision=confidence.decision,
+            abstain=abstention.should_abstain,
+            abstain_reason=abstention.reason,
+            write_report=write_report,
+        )
+
+    # ----------------------------------------------------------------- helpers
+
+    def _gather_evidence(
+        self,
+        run_id: str,
+        query: str,
+        plan: ReasoningPlan,
+        paper_ids: list[str] | None,
+        top_k: int,
+    ) -> tuple[list[RetrievedChunk], EvidenceReport, int]:
+        chunks: list[RetrievedChunk] = []
+        evidence = self.evidence_scorer.score(query, [], [])
+        rounds = max(1, plan.retrieval_rounds)
+        used = 0
+        for r in range(rounds):
+            used = r + 1
+            q = self._reformulate(query, plan, r)
+            new = self.retriever.retrieve(q, top_k=top_k)
+            if paper_ids:
+                new = [c for c in new if c.paper_id in paper_ids]
+            chunks = _merge_chunks(chunks, new)
+            contradictions = self.contradiction_detector.detect(chunks)
+            evidence = self.evidence_scorer.score(
+                query,
+                chunks,
+                contradictions,
+                min_to_answer=self.settings.rlm_min_evidence_to_answer,
+                min_to_skip_retry=self.settings.rlm_min_evidence_to_skip_retry,
+            )
+            self.store.add_step(
+                run_id,
+                3 + r,
+                "retrieval",
+                input_text=q,
+                output_text=f"round={used} chunks={len(chunks)} evidence={evidence.score} "
+                f"decision={evidence.decision}",
+                tool_used="RerankingRetriever",
+            )
+            # Yeterli → erken çık. Tekrar gerekmiyorsa veya reformülasyon kapalıysa dur.
+            if evidence.decision in ("answer", "answer_with_limitation"):
+                break
+            if not self.settings.rlm_enable_query_reformulation:
+                break
+        return chunks, evidence, used
+
+    def _reformulate(self, query: str, plan: ReasoningPlan, round_idx: int) -> str:
+        """Deterministik (LLM-free) sorgu yeniden-formülasyonu: ilk tur orijinal,
+        sonraki turlarda plan.must_include bölüm anahtar kelimelerini ekler →
+        retrieval'ı methodology/findings/limitations gibi bölümlere yönlendirir."""
+        if round_idx == 0 or not plan.must_include:
+            return query
+        return f"{query} {' '.join(plan.must_include)}"
+
+    def _draft(
+        self, query: str, chunks: list[RetrievedChunk], plan: ReasoningPlan
+    ) -> tuple[str, bool]:
+        context = _format_context(chunks)
+        try:
+            system = load_prompt("rag_answer")
+        except FileNotFoundError:
+            system = _FALLBACK_SYSTEM
+        prompt = f"SOURCES / KAYNAKLAR:\n{context}\n\nQUESTION / SORU: {query}"
+        try:
+            text = self.llm.generate(prompt, system=system, temperature=0.2, seed=self.seed)
+            return text, True
+        except LLMUnavailable:
+            return "", False
+
+    # ---- sonuç yolları -------------------------------------------------------
+
+    def _sources_payload(self, chunks: list[RetrievedChunk]) -> list[dict]:
+        return [
+            {
+                "paper_id": c.paper_id,
+                "chunk_id": c.chunk_id,
+                "citation": c.citation,
+                "section": c.section_name,
+                "page": c.page_number,
+                "title": c.title,
+            }
+            for c in chunks
+        ]
+
+    def _log_evidence_rows(
+        self, run_id: str, chunks: list[RetrievedChunk], used_ids: set[str]
+    ) -> None:
+        for c in chunks:
+            self.store.add_evidence(
+                run_id,
+                c.paper_id,
+                c.chunk_id,
+                relevance_score=round(1.0 - (c.distance or 0.0), 4) if c.distance else 0.0,
+                used_in_final_answer=c.chunk_id in used_ids,
+            )
+
+    def _finish_insufficient(
+        self,
+        run_id: str,
+        query: str,
+        task_type: str,
+        evidence: EvidenceReport,
+        rounds_used: int,
+        chunks: list[RetrievedChunk],
+    ) -> RlmResult:
+        msg = (
+            "Bu makalelerde bu soruya yeterli kaynak yok.\n\n"
+            "Kanıt yeterlilik skoru çok düşük (uydurma yapılmadı). "
+            "Lütfen ilgili PDF'leri ingest edin veya soruyu yeniden formüle edin."
+        )
+        self.store.set_verification(
+            run_id,
+            supported_claims=[],
+            unsupported_claims=[],
+            contradictions=[],
+            citation_score=0.0,
+            grounding_score=0.0,
+            context_sufficiency_score=0.0,
+            final_decision="insufficient",
+        )
+        self.store.finish_run(
+            run_id,
+            status="abstained",
+            final_answer=msg,
+            final_confidence=0.0,
+            evidence_score=evidence.score,
+        )
+        return RlmResult(
+            run_id=run_id,
+            query=query,
+            task_type=task_type,
+            status="abstained",
+            final_answer=msg,
+            final_confidence=0.0,
+            confidence_level="Low",
+            evidence_score=evidence.score,
+            retrieval_rounds=rounds_used,
+            n_sources=len(chunks),
+            sources=self._sources_payload(chunks),
+        )
+
+    def _finish_no_llm(
+        self,
+        run_id: str,
+        query: str,
+        task_type: str,
+        evidence: EvidenceReport,
+        rounds_used: int,
+        chunks: list[RetrievedChunk],
+        write_report: bool,
+    ) -> RlmResult:
+        cites = "\n".join(f"- {c.citation} {c.title or ''}".strip() for c in chunks)
+        msg = (
+            "[LLM çevrimdışı — yalnızca retrieval sonuçları döndürüldü; iddia üretilmedi]\n\n"
+            "Kaynaklar bulundu ama cevap üretimi için LLM gerekiyor "
+            f"(kanıt skoru: {evidence.score}).\n\n"
+            "Bulunan kaynaklar:\n" + cites
+        )
+        self.store.set_verification(
+            run_id,
+            supported_claims=[],
+            unsupported_claims=[],
+            contradictions=[],
+            citation_score=0.0,
+            grounding_score=0.0,
+            context_sufficiency_score=evidence.score / 100.0,
+            final_decision="no_llm",
+        )
+        report_path = (
+            self._write_report(run_id, query, task_type, msg, evidence, chunks, [], [])
+            if write_report
+            else None
+        )
+        self.store.finish_run(
+            run_id,
+            status="no_llm",
+            final_answer=msg,
+            final_confidence=0.0,
+            evidence_score=evidence.score,
+            report_path=report_path,
+        )
+        self._log_evidence_rows(run_id, chunks, set())
+        return RlmResult(
+            run_id=run_id,
+            query=query,
+            task_type=task_type,
+            status="no_llm",
+            final_answer=msg,
+            final_confidence=0.0,
+            confidence_level="Low",
+            evidence_score=evidence.score,
+            retrieval_rounds=rounds_used,
+            n_sources=len(chunks),
+            sources=self._sources_payload(chunks),
+            report_path=report_path,
+        )
+
+    def _synthesize(
+        self,
+        *,
+        run_id: str,
+        query: str,
+        task_type: str,
+        plan: ReasoningPlan,
+        chunks: list[RetrievedChunk],
+        evidence: EvidenceReport,
+        rounds_used: int,
+        supported: list[Claim],
+        unsupported: list[Claim],
+        contradictions: list[Contradiction],
+        confidence_score: float,
+        citation_score: float,
+        grounding_score: float,
+        context_score: float,
+        decision: str,
+        abstain: bool,
+        abstain_reason: str,
+        write_report: bool,
+    ) -> RlmResult:
+        confidence_level = (
+            "High" if decision == "answer" else "Medium" if decision == "warn" else "Low"
+        )
+
+        used_ids = {cid for c in supported for cid in c.supporting_chunks}
+        used_chunks = [c for c in chunks if c.chunk_id in used_ids] or chunks
+
+        # Abstain VEYA hiç desteklenen iddia yok → çekimser kal (uydurma değil).
+        if abstain or not supported:
+            reason = abstain_reason or (
+                "Taslak cevaptaki hiçbir iddia kaynaklarla yeterince desteklenmedi."
+            )
+            final_answer = (
+                "Kısa cevap:\n"
+                "Bu soruya kaynaklarla desteklenen güvenilir bir cevap üretilemedi.\n\n"
+                f"Neden: {reason}\n\n"
+                "Kaynak dayanakları (retrieval):\n"
+                + "\n".join(f"- {c.citation} {c.title or ''}".strip() for c in chunks)
+                + "\n\nGüven seviyesi: Low"
+            )
+            status = "abstained"
+            final_confidence = round(confidence_score, 4)
+        else:
+            final_answer = self._build_envelope(
+                supported, used_chunks, contradictions, plan, confidence_level
+            )
+            status = "answered_with_limitation" if decision != "answer" else "answered"
+            final_confidence = round(confidence_score, 4)
+
+        self.store.set_verification(
+            run_id,
+            supported_claims=[c.claim for c in supported],
+            unsupported_claims=[c.claim for c in unsupported],
+            contradictions=[f"{ct.chunk_id_a}↔{ct.chunk_id_b}" for ct in contradictions],
+            citation_score=citation_score,
+            grounding_score=grounding_score,
+            context_sufficiency_score=context_score,
+            final_decision=status,
+        )
+        report_path = (
+            self._write_report(
+                run_id, query, task_type, final_answer, evidence, chunks, supported, unsupported
+            )
+            if write_report
+            else None
+        )
+        self.store.finish_run(
+            run_id,
+            status=status,
+            final_answer=final_answer,
+            final_confidence=final_confidence,
+            evidence_score=evidence.score,
+            report_path=report_path,
+        )
+        self._log_evidence_rows(run_id, chunks, used_ids)
+
+        return RlmResult(
+            run_id=run_id,
+            query=query,
+            task_type=task_type,
+            status=status,
+            final_answer=final_answer,
+            final_confidence=final_confidence,
+            confidence_level=confidence_level,
+            evidence_score=evidence.score,
+            retrieval_rounds=rounds_used,
+            n_sources=len(chunks),
+            supported_claims=[c.claim for c in supported],
+            unsupported_claims=[c.claim for c in unsupported],
+            contradictions=[f"{ct.chunk_id_a}↔{ct.chunk_id_b}" for ct in contradictions],
+            sources=self._sources_payload(chunks),
+            report_path=report_path,
+        )
+
+    def _build_envelope(
+        self,
+        supported: list[Claim],
+        used_chunks: list[RetrievedChunk],
+        contradictions: list[Contradiction],
+        plan: ReasoningPlan,
+        confidence_level: str,
+    ) -> str:
+        gerekce = "\n".join(f"{i + 1}. {c.claim}" for i, c in enumerate(supported))
+        kaynaklar = "\n".join(
+            f"- {c.citation} | {c.section_name or '—'} | {c.title or '—'}" for c in used_chunks
+        )
+        limitations = []
+        if contradictions:
+            limitations.append(
+                f"Kaynaklar arasında {len(contradictions)} potansiyel çelişki tespit edildi."
+            )
+        if confidence_level != "High":
+            limitations.append("Kanıt güveni tam değil — bulgular ek doğrulama gerektirir.")
+        if not limitations:
+            limitations.append("Belirgin bir kısıt tespit edilmedi (token-düzeyi dayanak).")
+        limit_block = "\n".join(f"- {x}" for x in limitations)
+
+        parts = [
+            "Kısa cevap:",
+            supported[0].claim,
+            "",
+            "Makalelere göre gerekçe:",
+            gerekce,
+            "",
+            "Kaynak dayanakları:",
+            kaynaklar,
+            "",
+            "Sınırlamalar:",
+            limit_block,
+            "",
+            f"Güven seviyesi: {confidence_level}",
+        ]
+        if plan.allow_trading_hypothesis:
+            parts += ["", "Trading hipotezi uyarıları:", _TRADING_DISCLAIMER]
+        return "\n".join(parts)
+
+    def _write_report(
+        self,
+        run_id: str,
+        query: str,
+        task_type: str,
+        final_answer: str,
+        evidence: EvidenceReport,
+        chunks: list[RetrievedChunk],
+        supported: list[Claim],
+        unsupported: list[Claim],
+    ) -> str:
+        out_dir = self.settings.reports_dir / "rlm_runs"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        path = out_dir / f"{run_id}.json"
+        payload = {
+            "run_id": run_id,
+            "query": query,
+            "task_type": task_type,
+            "evidence": asdict(evidence),
+            "final_answer": final_answer,
+            "supported_claims": [asdict(c) for c in supported],
+            "unsupported_claims": [asdict(c) for c in unsupported],
+            "sources": self._sources_payload(chunks),
+        }
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        return str(path)

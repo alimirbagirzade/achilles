@@ -118,6 +118,19 @@ class Settings(BaseSettings):
     # Varsayılan kapalı (yarı-prefix'li korpus tutarsızlık yaratırdı).
     rag_contextual_embed: bool = False
 
+    # --- RLM Controller (Recursive/Reasoning LM orkestrasyonu) ---
+    # Mevcut RAG retrieval + doğrulama modüllerini çok-adımlı, kaynaklı bir cevap
+    # akışında orkestre eden kontrol katmanı (app/rlm). Yeni bilgi deposu değildir;
+    # LLM-free skorlayıcılar + mevcut verifier'lar üzerine kuruludur (çevrimdışı uyumlu).
+    rlm_max_retrieval_rounds: int = 3  # çok-turlu retrieval üst sınırı
+    rlm_min_evidence_to_answer: int = 60  # kanıt skoru < bu → tekrar retrieval (40-59) / yetersiz
+    rlm_min_evidence_to_skip_retry: int = 80  # kanıt skoru ≥ bu → ek tur gereksiz
+    rlm_enable_query_reformulation: bool = True  # yetersiz turda sorguyu bölüm-odaklı genişlet
+    rlm_enable_claim_verification: bool = True  # taslağı iddialara böl + dayanak doğrula
+    rlm_enable_contradiction_check: bool = True  # kaynaklar arası çelişki taraması
+    rlm_allow_live_trading_signal: bool = False  # MUTLAK kural 1 — asla True olmaz (yalnız hipotez)
+    rlm_seed: int = 42  # determinizm (kural 6) — tüm LLM çağrıları bu seed ile
+
     # --- Trading ---
     default_market: str = "XAUUSD"
     default_timeframe: str = "15m"

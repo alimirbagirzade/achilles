@@ -510,3 +510,38 @@ class ArxivFetchResponse(BaseModel):
     results: list[ArxivFetchResult]
     ingested: int = 0
     message: str
+
+
+# ---------- RLM Controller (çok-adımlı kaynaklı cevap) ----------
+class RlmAnswerRequest(BaseModel):
+    query: str = Field(min_length=3, max_length=2000)
+    paper_ids: list[str] | None = None
+    top_k: int | None = Field(default=None, ge=1, le=20)
+    max_rounds: int | None = Field(default=None, ge=1, le=5)
+
+
+class RlmAnswerResponse(BaseModel):
+    run_id: str
+    query: str
+    task_type: str
+    status: str  # answered / answered_with_limitation / abstained / no_llm
+    final_answer: str
+    final_confidence: float
+    confidence_level: str
+    evidence_score: float
+    retrieval_rounds: int
+    n_sources: int
+    supported_claims: list[str] = Field(default_factory=list)
+    unsupported_claims: list[str] = Field(default_factory=list)
+    contradictions: list[str] = Field(default_factory=list)
+    sources: list[SourceOut] = Field(default_factory=list)
+
+
+class RlmRunOut(BaseModel):
+    run_id: str
+    user_query: str
+    task_type: str
+    status: str
+    final_confidence: float
+    evidence_score: float
+    created_at: str
