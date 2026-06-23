@@ -77,6 +77,7 @@ Kullanıcıya şu proje skillerini öner (içerik `.claude/skills/` dizininde):
 | Skill | Ne zaman | Komut |
 |-------|----------|-------|
 | `/trading-research` | Araştırma döngüsü başlatılacaksa | formül çıkar → sentez → backtest |
+| `/rlm-answer` | Kaynaklı + doğrulanmış cevap / çok-makale sentez gerekiyorsa | çok-tur retrieval → iddia doğrula → çekimser (rlm-answer/rlm-runs) |
 | `/backtest-auditor` | Backtest sonucu değerlendirilecekse | look-ahead + OOS + overfit denetle |
 | `/codegen-review` | Yeni indikatör/strateji kodu yazıldıysa | ruff+mypy+test kontrol |
 | `/health` | Genel kod kalitesi | ruff, mypy, test özeti |

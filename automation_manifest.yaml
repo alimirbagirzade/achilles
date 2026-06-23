@@ -365,6 +365,33 @@ agents:
       - "registry yaml yok/bozuk → yaml hatası"
       - "eksik alanlar .get default"
 
+  - agent_id: rlm-controller
+    name: RLM Controller (kaynaklı denetimli cevap)
+    file: app/rlm/rlm_controller.py
+    entrypoint: RlmController.answer
+    trigger: "CLI `rlm-answer` / web /api/rlm/answer (on-demand)"
+    autonomy: manual
+    dangerous: false
+    default_enabled: false
+    writes:
+      - "sqlite: rlm_runs, rlm_steps, rlm_evidence, rlm_verifications"
+      - reports/rlm_runs/  # run başına JSON (CLI; API'de yazılmaz)
+    reads:
+      - "sqlite/chroma: chunks (retrieval, salt-okuma)"
+    safety_gates:
+      - "iki-kapılı güvence: kanıt çok düşük → LLM hiç çağrılmaz (kural 7)"
+      - "cevap sonrası desteklenmeyen iddia atılır + düşük güvende çekimser (kural 4/7)"
+      - "_apply_trading_guard: trading-içerikli her çıktıya zorunlu uyarı (kural 1)"
+      - "rlm_allow_live_trading_signal MUTLAK false (canlı sinyal asla)"
+      - "_draft max_tokens+timeout sınırlı → graceful no_llm (dangling 'running' yok)"
+    approval_required: false
+    stop_method: "yok (on-demand, senkron); stale 'running' reaper otomatik"
+    status_location: "sqlite: rlm_runs.status; reports/rlm_runs/<run_id>.json"
+    known_failure_modes:
+      - "LLM yok/timeout → status=no_llm (uydurma yok, yalnız retrieval)"
+      - "beklenmeyen hata → status=failed (try/except, dangling kalmaz)"
+      - "dış-kill/SIGKILL → 'running' asılı; sonraki çağrıda reaper temizler"
+
 # --------------------------------------------------------------------------
 # Çalıştırma zinciri (chain) — ajanların topolojik koşma SIRASI (tek kaynak).
 # `app/agents/runtime/chain.py` okur + doğrular (döngü/eksik step). Gate ve otonomi
@@ -392,3 +419,9 @@ chain:
     after: [auto-lora-pipeline]
   - step: rules-updater
     after: [adapter-eval]
+  # RLM kaynaklı-cevap/usability düğümü: korpus "mastered" olduktan sonra anlamlı.
+  # Yaprak (kimse buna bağlı değil); on-demand (autonomy: manual) — otonom döngüyü
+  # tetiklemez, yalnız topolojik yerini belgeler. İleride yüksek-güvenli koşular
+  # LoRA dataset adayı olabilir (talimat §16; onaysız eğitim YOK).
+  - step: rlm-controller
+    after: [paper-mastery-agent]
