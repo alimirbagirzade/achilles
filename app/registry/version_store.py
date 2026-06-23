@@ -114,21 +114,23 @@ class RegistryStore:
             row.approval_status = status
             return prev
 
-    def cas_dataset_status_unless(
-        self, dataset_version_id: str, new_status: str, unless: str
+    def cas_dataset_status(
+        self, dataset_version_id: str, *, expected: str, new_status: str
     ) -> bool:
-        """Atomik durum geçişi: ``approval_status != unless`` iken ``new_status`` yaz.
+        """Atomik durum geçişi: yalnız ``approval_status == expected`` iken ``new_status`` yaz.
 
         Koşullu UPDATE + ``rowcount`` (consume_fresh_approval ile aynı CAS deseni) →
         eşzamanlı iki çağrıdan yalnız BİRİ rowcount=1 alır (TOCTOU çift-karar önlenir).
-        ``True`` = bu çağrı geçişi yaptı; ``False`` = yok / zaten ``unless`` / yarışı kaybetti.
+        ``expected`` durum makinesini de zorlar: yalnız ``pending``'den terminal'e geçilir
+        (approved/rejected terminaldir → çapraz geçiş engellenir). ``True`` = bu çağrı geçişi
+        yaptı; ``False`` = yok / ``expected`` değil / yarışı kaybetti.
         """
         with self.store.session() as s:
             res = s.execute(
                 update(DatasetVersion)
                 .where(
                     DatasetVersion.dataset_version_id == dataset_version_id,
-                    DatasetVersion.approval_status != unless,
+                    DatasetVersion.approval_status == expected,
                 )
                 .values(approval_status=new_status)
                 .execution_options(synchronize_session=False)

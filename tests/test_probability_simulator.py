@@ -77,3 +77,9 @@ def test_expected_shortfall_count_based_with_ties() -> None:
     # determinizm korunur
     res2 = monte_carlo_equity(rets, seed=3, n_paths=2000)
     assert res.expected_shortfall_pct == res2.expected_shortfall_pct
+
+
+def test_zero_n_trades_raises() -> None:
+    # Açık 0 (falsy) sessizce rets.size'a dönmemeli → doğrulamaya düşüp hata vermeli
+    with pytest.raises(ValueError, match="n_trades"):
+        monte_carlo_equity([0.01, -0.02], seed=1, n_trades=0)

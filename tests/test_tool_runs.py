@@ -53,3 +53,9 @@ def test_list_tool_runs_filter_by_tool(store: SqliteStore) -> None:
     mc = store.list_tool_runs(tool_id="montecarlo")
     assert len(mc) == 1
     assert mc[0]["tool_id"] == "montecarlo"
+
+
+def test_link_artifact_unknown_run_raises(store: SqliteStore) -> None:
+    # Öksüz artefakt yaratılmamalı (uygulama düzeyi referans bütünlüğü)
+    with pytest.raises(ValueError, match="tool_run_id"):
+        store.link_tool_artifact(tool_run_id="yok_böyle_run", description="x")
