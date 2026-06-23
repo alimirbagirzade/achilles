@@ -82,3 +82,15 @@ def test_evaluate_many_assigns_ids() -> None:
     assert len(res) == 2
     assert res[0].hypothesis_id == "hyp_0"
     assert res[1].verdict == "rejected"
+
+
+def test_advice_regex_variants_rejected() -> None:
+    # tireli/fiil/boşluklu varyantlar da yakalanmalı (gate kör noktası kapatıldı)
+    for text in (
+        "This is a sure-fire strategy.",
+        "This will guarantee profits next quarter.",
+        "You simply can t lose with this setup.",
+    ):
+        res = evaluate_hypothesis(text)
+        assert res.checklist["no_advice"] is False, text
+        assert res.verdict == "rejected", text

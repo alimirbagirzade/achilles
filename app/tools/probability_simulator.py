@@ -87,7 +87,9 @@ def monte_carlo_equity(
         raise ValueError("trade_returns boş — simülasyon için en az bir işlem getirisi gerekir.")
     if not (0.0 < ruin_fraction < 1.0):
         raise ValueError("ruin_fraction (0, 1) aralığında olmalı.")
-    n_trades = int(n_trades) if n_trades else int(rets.size)
+    # `is not None` (truthy değil) → açık n_trades=0 doğrulamaya düşer, sessizce rets.size'a
+    # dönmez (0 falsy olduğu için eski kontrol onu atlıyordu).
+    n_trades = int(n_trades) if n_trades is not None else int(rets.size)
     n_paths = int(n_paths)
     # Negatif/sıfır değerler numpy'da kriptik hata verir → açık doğrulama (Kural: net hata).
     if n_trades <= 0:

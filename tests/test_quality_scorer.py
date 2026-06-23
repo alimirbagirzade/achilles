@@ -138,3 +138,9 @@ def test_legacy_paper_null_quality_not_blocking(store: SqliteStore) -> None:
     papers = {p.paper_id: p for p in store.list_papers()}
     assert papers["p3"].quality_score is None
     assert papers["p3"].ingest_status is None
+
+
+def test_add_ingestion_run_unknown_paper_raises(store: SqliteStore) -> None:
+    # Öksüz içe-alım koşusu yaratılmamalı (uygulama düzeyi referans bütünlüğü)
+    with pytest.raises(ValueError, match="paper_id"):
+        store.add_ingestion_run(paper_id="yok_makale", status="usable", quality_score=80.0)

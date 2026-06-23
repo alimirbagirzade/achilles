@@ -1389,6 +1389,11 @@ class SqliteStore:
 
         aid = "art_" + _uuid.uuid4().hex[:12]
         with self.session() as s:
+            # Uygulama düzeyi referans bütünlüğü: SQLite'ta FK enforcement varsayılan KAPALI
+            # (PRAGMA global açılmıyor — diğer tablolarda regresyon riski), bu yüzden öksüz
+            # artefakt yaratmamak için ebeveyni burada doğrula.
+            if s.get(ToolRun, tool_run_id) is None:
+                raise ValueError(f"Bilinmeyen tool_run_id: {tool_run_id}")
             s.add(
                 ToolArtifact(
                     artifact_id=aid,
@@ -1466,6 +1471,10 @@ class SqliteStore:
 
         run_id = "ing_" + _uuid.uuid4().hex[:12]
         with self.session() as s:
+            # Önce ebeveyni doğrula (FK enforcement global KAPALI) → öksüz koşu yaratma.
+            paper = s.get(Paper, paper_id)
+            if paper is None:
+                raise ValueError(f"Bilinmeyen paper_id: {paper_id}")
             s.add(
                 PaperIngestionRun(
                     ingestion_run_id=run_id,
@@ -1479,10 +1488,8 @@ class SqliteStore:
                 )
             )
             if update_paper:
-                paper = s.get(Paper, paper_id)
-                if paper is not None:
-                    paper.quality_score = quality_score
-                    paper.ingest_status = status
+                paper.quality_score = quality_score
+                paper.ingest_status = status
         return run_id
 
     def list_ingestion_runs(

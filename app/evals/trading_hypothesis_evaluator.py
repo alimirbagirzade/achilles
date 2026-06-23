@@ -22,7 +22,10 @@ from typing import Any
 _ADVICE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"%\s*100|100\s*%|yüzde\s*yüz"),
     re.compile(r"(?i)\b(garanti|risksiz|kesin(likle)?|mutlaka)\b"),
-    re.compile(r"(?i)\b(guaranteed|risk[\s-]?free|always wins?|surefire|can'?t lose)\b"),
+    # fiil + tireli/boşluklu varyantlar: guarantee(s/d), sure[-/ ]fire, can('|'? )t lose
+    re.compile(
+        r"(?i)\b(guarantee[ds]?|risk[\s-]?free|always wins?|sure[\s-]?fire|can'?\s?t lose)\b"
+    ),
     re.compile(r"(?i)\bkesin sinyal\b|\bal ve unut\b|\bhemen al\b|\bşimdi al\b"),
 )
 _TESTABLE_PATTERNS: tuple[re.Pattern[str], ...] = (
