@@ -235,6 +235,48 @@ def test_abstained_status_not_high_confidence():
     assert res.final_confidence == 0.0  # çekimserde cevaba güven yok (etiket+sayı tutarlı)
 
 
+def test_abstain_with_grounded_claims_records_empty_audit(monkeypatch: pytest.MonkeyPatch):
+    """Çekimser run, desteklenen iddia bulunsa bile audit'e iddia/kullanılan-chunk YAZMAZ.
+
+    Abstain cevabı gövdede iddia içermez → set_verification supported=[], evidence
+    used_in_final_answer hiç True değil (kardeş _finish_* yollarıyla tutarlı audit).
+    """
+    from app.verification.abstention_policy import AbstentionDecision
+
+    chunks = [_chunk(i) for i in range(3)]
+    store = RlmStore()
+    ctrl = RlmController(retriever=_StubRetriever(chunks), llm=_StubLLM(_GOOD_DRAFT), store=store)
+    # Doğrulama desteklenen iddia BULUR (grounded draft) ama politika çekimsere zorlanır.
+    monkeypatch.setattr(
+        ctrl.abstention_policy,
+        "decide",
+        lambda *a, **k: AbstentionDecision(should_abstain=True, reason="zorla çekimser"),
+    )
+    res = ctrl.answer("Momentum kalıcı mı?", write_report=False)
+
+    assert res.status == "abstained"
+    assert res.supported_claims == []  # gövdede iddia yok → RlmResult boş
+    ver = store.get_verification(res.run_id)
+    assert ver is not None and ver["supported_claims"] == []  # DB audit boş
+    ev = store.get_evidence(res.run_id)
+    assert all(not e["used_in_final_answer"] for e in ev)  # hiçbir chunk 'kullanıldı' değil
+
+
+def test_fabricated_inline_citation_stripped_from_body():
+    """Kural 7: LLM taslağındaki UYDURMA satır-içi atıf nihai cevap gövdesine girmez."""
+    chunks = [_chunk(i) for i in range(3)]
+    draft = (
+        "Volatilite kümelenmesi momentum kalıcılığını etkiler "
+        "[paper_x:paper_x::c0000] [paper_x:OLMAYAN9999]."
+    )
+    ctrl = RlmController(retriever=_StubRetriever(chunks), llm=_StubLLM(draft))
+    res = ctrl.answer("Momentum kalıcı mı?", write_report=False)
+
+    assert res.status in ("answered", "answered_with_limitation")
+    assert "OLMAYAN9999" not in res.final_answer  # uydurma atıf çıkarıldı
+    assert "paper_x::c0000" in res.final_answer  # geçerli atıf korundu
+
+
 def test_non_trading_answer_has_no_disclaimer():
     """Trading-dışı içerikli cevap yatırım uyarısı TAŞIMAMALI (aşırı-tetikleme regresyonu).
 
