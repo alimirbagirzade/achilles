@@ -133,6 +133,12 @@ class Settings(BaseSettings):
     rlm_enable_contradiction_check: bool = True  # kaynaklar arası çelişki taraması
     rlm_allow_live_trading_signal: bool = False  # MUTLAK kural 1 — asla True olmaz (yalnız hipotez)
     rlm_seed: int = 42  # determinizm (kural 6) — tüm LLM çağrıları bu seed ile
+    # Taslak LLM çağrısı SINIRLI olmalı: sınırsızken qwen3:4b CPU'da tek cevap >9dk sürüp
+    # süreç kill'ine takılıyor ve run 'running' asılı kalıyordu (gerçek smoke'ta gözlendi).
+    rlm_draft_max_tokens: int = 900  # üretim uzunluğu tavanı (yapısal cevap için yeterli)
+    rlm_draft_timeout_s: int = (
+        300  # LLM çağrı süre tavanı; aşılırsa LLMUnavailable → graceful no_llm
+    )
 
     # --- Trading ---
     default_market: str = "XAUUSD"
