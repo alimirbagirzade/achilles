@@ -1,6 +1,6 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-06-21 · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Son güncelleme: 2026-06-23 · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
 _Açık PR: [#10](https://github.com/alimirbagirzade/achilles/pull/10) — upload 429 retry (oto-merge bekliyor)_
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
@@ -9,6 +9,29 @@ Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple S
 ---
 
 ## 🚨 YENİ SEANS BAŞLANGICI — BUNU OKU
+
+### 🆕 EN SON İŞ (2026-06-23) — Kademe-2 derin av (8 finder) → 3 fix push, kalan denetimli devir
+Kullanıcı "tüm projeyi tara + pushla". 8-finder Kademe-2 workflow + adversarial doğrulama; hedef
+`f14fd33` (sabah Kademe-1'den sonra geldiği için kapsanmamıştı). **Rapor: `reports/bug-scan/scan-2026-06-23_0030.md`.**
+**DÜZELTİLDİ + PUSH (kapı yeşil: ruff+mypy 181+pytest tümü):**
+- **A** `b99c4a0` (HIGH): `is_detached_training_running(root)` log-tazeliği yedeği `root`'u yok sayıp
+  gerçek makine logunu okuyordu → ölü-pid testi yanlış `True`. ("Windows pid bug" sanılan = izolasyon
+  sızıntısı.) `root` verilince yedek de yalnız o root'u sorgular. (Eş zamanlı oturum fix'imi kendi
+  launch() commit'ine süpürdü+pushladı.)
+- **E** `ed44bb5` (BLOCKER-sınıf): `gates._card_text` `limitations`/`datasets`/`risk_warnings` alanlarını
+  toplamıyordu → bu alanlardaki sır/PII Gate 7 (BLOCKER) taramasını atlıyordu. 3 alan eklendi + 2 test.
+- **C-kısmi** `9453a5a` (kural 6): `concept_graph._extract_links` seedsiz LLM → graf kararsız; seed=42 eklendi.
+
+**DENETİMLİ SEANSA DEVİR (gözetimsiz spekülatif fix YOK — rapordaki tabloya bak):**
+- **B**: `risk_manager._extract_trade_returns` per-trade ÇIKIŞ maliyetini düşürüyor → Kelly tahmini
+  şişiyor (headline Sharpe/equity DOĞRU). Fix narin.
+- **C-cross_paper**: sentez yolu seed (determinizm-vs-yaratıcılık tasarım kararı).
+- **D**: l5 composition inflation — adversarial doğrulanMADI (session-limit), buggy fonksiyon
+  `composition_to_result`/`l5_example_result` `l5_composition.py`'de değil; pinle.
+- **safety FN×2**: `safety_scanner.py` eş zamanlı oturumun aktif WIP'i → çakışmamak için bırakıldı.
+
+**GOTCHA:** Büyük çok-ajan av 03:00 (Europe/Istanbul) **session-limit** reset'ine takıldı → `synthesize`
++3 verify düştü; bulgu detayları ana-döngüde elle sentezlendi. Bkz memory [[kademe2-hunt-2026-06-23]].
 
 ### 🆕 EN SON İŞ (2026-06-22) — İki-hat train.jsonl drifti kökten kapatıldı (Kademe-2)
 **Bulgu:** İki ayrı veri hattı aynı `data/training/jsonl/train.jsonl`'i yarışıp habersiz
