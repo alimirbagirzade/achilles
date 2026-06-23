@@ -7,6 +7,8 @@ desteklenmeyen iddia nihai cevaba girmez (kural 4), trading uyarısı zorunlu (k
 
 from __future__ import annotations
 
+import pytest
+
 from app.brain.local_llm import LLMUnavailable
 from app.memory.retrieval_service import RetrievedChunk
 from app.rlm.claim_extractor import extract_claims
@@ -272,3 +274,96 @@ def test_controller_is_deterministic_for_same_input():
     assert a.status == b.status
     assert a.evidence_score == b.evidence_score
     assert a.final_answer == b.final_answer
+
+
+class _RecordingLLM:
+    """generate() çağrısının kwarg'larını kaydeden stub."""
+
+    def __init__(self) -> None:
+        self.kwargs: dict = {}
+
+    def active_backend(self) -> str:
+        return "stub"
+
+    def generate(self, prompt: str, **kwargs: object) -> str:
+        self.kwargs = kwargs
+        return _GOOD_DRAFT
+
+
+def test_draft_llm_call_is_bounded():
+    """Taslak LLM çağrısı max_tokens + timeout ile SINIRLI olmalı (yavaş CPU'da asılı kalmasın).
+
+    Determinizm (seed) da iletilmeli.
+    """
+    chunks = [_chunk(i) for i in range(3)]
+    llm = _RecordingLLM()
+    RlmController(retriever=_StubRetriever(chunks), llm=llm, store=RlmStore()).answer(
+        "Momentum kalıcı mı?", write_report=False
+    )
+    assert llm.kwargs.get("max_tokens") and 0 < llm.kwargs["max_tokens"] <= 2000
+    assert llm.kwargs.get("timeout") and 0 < llm.kwargs["timeout"] <= 600
+    assert llm.kwargs.get("seed") == 42
+
+
+class _BoomRetriever:
+    """Retrieval sırasında beklenmeyen hata fırlatan stub (Chroma/IO çökmesi taklidi)."""
+
+    def retrieve(self, query: str, top_k: int | None = None) -> list[RetrievedChunk]:
+        raise RuntimeError("retrieval patladı")
+
+
+def test_unexpected_error_marks_run_failed_not_running():
+    """Beklenmeyen hata run'ı 'running' asılı BIRAKMAZ → 'failed' işaretlenir + yeniden fırlatılır.
+
+    (Gerçek smoke testte timeout'la kesilen run sonsuza dek 'running' kalmıştı; bu kapı
+    yakalanabilir hataları kapatır. Audit/rlm-runs gerçeği yansıtmalı.)
+    """
+    store = RlmStore()
+    ctrl = RlmController(retriever=_BoomRetriever(), llm=_StubLLM(_GOOD_DRAFT), store=store)
+    with pytest.raises(RuntimeError):
+        ctrl.answer("Momentum kalıcı mı?", write_report=False)
+
+    runs = store.list_runs(limit=10)
+    assert any(r["status"] == "failed" for r in runs)
+    assert all(r["status"] != "running" for r in runs)  # hiçbir run asılı kalmadı
+
+
+def test_stale_running_run_is_reaped():
+    """Dış-kill/timeout ile 'running' asılı kalan run reaper ile 'failed' olur."""
+    from app.rlm.rlm_store import RlmRun
+
+    store = RlmStore()
+    with store.session() as s:
+        s.add(
+            RlmRun(
+                run_id="rlm_staletest0001",
+                user_query="q",
+                task_type="general_paper_question",
+                model_name="m",
+                status="running",
+                created_at="2000-01-01T00:00:00+00:00",  # çok eski
+            )
+        )
+    reaped = store.mark_stale_running_failed(max_age_minutes=60)
+    assert reaped >= 1
+    assert store.get_run("rlm_staletest0001")["status"] == "failed"
+
+
+def test_reaper_protects_fresh_running_run():
+    """Genç (aktif/eşzamanlı) 'running' run reaper'dan korunur — yaş eşiği."""
+    from app.rlm.rlm_store import RlmRun, _utcnow
+
+    store = RlmStore()
+    with store.session() as s:
+        s.add(
+            RlmRun(
+                run_id="rlm_freshtest0001",
+                user_query="q",
+                task_type="general_paper_question",
+                model_name="m",
+                status="running",
+                created_at=_utcnow(),  # şimdi → korunmalı
+            )
+        )
+    store.mark_stale_running_failed(max_age_minutes=60)
+    assert store.get_run("rlm_freshtest0001")["status"] == "running"  # dokunulmadı
