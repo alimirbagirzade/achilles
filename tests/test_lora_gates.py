@@ -244,6 +244,31 @@ def test_gate_7_safety_blocks_secret() -> None:
     assert result.passed is False
 
 
+def test_gate_7_safety_scans_risk_warnings_field() -> None:
+    """Sır YALNIZ risk_warnings alanındaysa bile Gate 7 (BLOCKER) yakalamalı.
+
+    Kör nokta: ``_card_text`` eskiden limitations/datasets/risk_warnings'i
+    toplamıyordu → bu serbest-metin alanlarındaki sır/PII güvenlik kapısını
+    (BLOCKER) ATLIYORDU. Temiz özet + sır-içeren risk_warnings → REDDEDİLMELİ.
+    """
+    card = _approved_card("c1", "RSI momentum göstergesi, tamamen zararsız özet metni.")
+    card["card_json"]["risk_warnings"] = [
+        "Üretim erişimi için password=hunter2 kullanın (kaza sonucu sızdı)."
+    ]
+    result = gate_7_safety([card])
+    assert result.passed is False
+    assert result.rejected_count == 1
+
+
+def test_gate_7_safety_clean_risk_warnings_pass() -> None:
+    """Sırsız risk_warnings (meşru uyarı) Gate 7'yi geçmeli (alan dahil ama temiz)."""
+    card = _approved_card("c1", "RSI momentum göstergesi, zararsız özet.")
+    card["card_json"]["risk_warnings"] = ["Aşırı uydurma riski; örneklem dışı test şart."]
+    card["card_json"]["limitations"] = ["Yalnız günlük zaman diliminde test edildi."]
+    result = gate_7_safety([card])
+    assert result.passed is True
+
+
 def test_gate_8_split_no_leakage_for_distinct_sources() -> None:
     """Farklı kaynaklı örnekler Gate 8'de sızıntısız bölünmeli."""
     examples = [_example(f"src_{i}") for i in range(12)]

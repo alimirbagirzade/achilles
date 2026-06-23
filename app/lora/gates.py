@@ -90,7 +90,19 @@ def _card_text(card: dict) -> str:
             str(card_json.get("trading_relevance") or ""),
             str(card_json.get("domain") or ""),
         ]
-        for field in ("methods", "possible_strategy_hypotheses", "implementation_notes"):
+        # limitations/datasets/risk_warnings de KnowledgeCard'ın serbest-metin
+        # alanları (knowledge_card_builder şeması); eskiden toplanmıyordu →
+        # bu alanlardaki sır/PII Gate 7 (BLOCKER) taramasını ATLIYORDU. Şimdi
+        # dahil edildi: hem güvenlik kapsamı hem domain/math/felsefe denetimi
+        # tüm denetlenebilir metni görür.
+        for field in (
+            "methods",
+            "possible_strategy_hypotheses",
+            "implementation_notes",
+            "limitations",
+            "datasets",
+            "risk_warnings",
+        ):
             items = card_json.get(field) or []
             if isinstance(items, list):
                 parts.extend(str(x) for x in items if x)
