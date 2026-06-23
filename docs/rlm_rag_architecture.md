@@ -49,9 +49,16 @@ Eşikler: `≥80` ek tur gereksiz · `60–79` cevap + sınırlama · `40–59` 
 `<40` çekimser ("yeterli kaynak yok").
 
 ### İki kapılı güvence
-1. **Cevap öncesi** — kanıt skoru çok düşükse LLM hiç çağrılmaz (uydurma engellenir).
+1. **Cevap öncesi** — kanıt skoru çok düşükse (`insufficient`) LLM hiç çağrılmaz (uydurma engellenir).
 2. **Cevap sonrası** — taslak iddialara bölünür; desteklenmeyenler atılır; güven
    düşükse `AbstentionPolicy` çekimser kalır.
+
+### Trading guard (kural 1, içerik-tabanlı)
+Zorunlu uyarı kararı görev sınıflandırıcıya DEĞİL, **çıktı içeriğine** bağlıdır
+(`_apply_trading_guard`): soru VEYA nihai cevap trading dili taşıyorsa
+(`_TRADING_SIGNAL_RE`) ve uyarı henüz yoksa `_TRADING_DISCLAIMER` eklenir. Böylece
+classifier bir trading sorusunu MATH/MULTI/UNCERTAINTY'ye düşürse bile uyarı kaçmaz.
+Guard, `settings.rlm_allow_live_trading_signal` bayrağını gerçekten okur (MUTLAK False).
 
 ## Veri (talimat §6)
 
@@ -80,8 +87,9 @@ GET  /api/rlm/runs/{run_id}     → run + steps + evidence + verification
 | Ayar | Vars. | Anlam |
 |------|------|-------|
 | `rlm_max_retrieval_rounds` | 3 | çok-tur retrieval üst sınırı |
-| `rlm_min_evidence_to_answer` | 60 | altı → tekrar/yetersiz |
-| `rlm_min_evidence_to_skip_retry` | 80 | üstü → ek tur gereksiz |
+| `rlm_min_evidence_to_retry` | 40 | bu-üstü → tekrar retrieval; altı → yetersiz/abstain |
+| `rlm_min_evidence_to_answer` | 60 | bu-üstü → cevap |
+| `rlm_min_evidence_to_skip_retry` | 80 | bu-üstü → ek tur gereksiz (değişmez: retry ≤ answer ≤ skip_retry, normalize edilir) |
 | `rlm_enable_query_reformulation` | true | yetersiz turda bölüm-odaklı genişletme |
 | `rlm_allow_live_trading_signal` | **false** | MUTLAK — asla true (yalnız hipotez) |
 | `rlm_seed` | 42 | determinizm (kural 6) |
