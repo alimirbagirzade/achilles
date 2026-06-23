@@ -22,6 +22,11 @@ logger = logging.getLogger(__name__)
 
 _VALID_RELATIONS = {"extends", "measures", "limits", "combines", "opposite_of", "requires"}
 
+# Determinizm (CLAUDE.md kural 6): bağ-çıkarımı aynı makale için aynı grafı vermeli;
+# seedsiz LLM çağrısı turdan tura farklı kenarlar üretip kavram-grafını kararsız
+# kılıyordu. dataset_splitter/detached_launch ile aynı sabit seed konvansiyonu.
+_LINK_EXTRACTION_SEED = 42
+
 _LINK_PROMPT = """\
 Aşağıdaki formüller ve kavramlar arasındaki ilişkileri belirle.
 
@@ -127,6 +132,7 @@ class ConceptGraph:
                 fmt="json",
                 timeout=60,
                 max_tokens=512,
+                seed=_LINK_EXTRACTION_SEED,
             )
             import json
             import re
