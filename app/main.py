@@ -3511,5 +3511,178 @@ def registry_promote_dataset(
         raise typer.Exit(1) from e
 
 
+# --------------------------------------------------------------------------
+# Bilimsel araç çalışma zamanı (Monte Carlo / istatistik) — saf numpy, seed'li
+# --------------------------------------------------------------------------
+@app.command("tools-list")
+def tools_list(
+    category: str = typer.Option("", "--category", help="probability/statistics/trading/risk/..."),
+) -> None:
+    """Kayıtlı bilimsel araçları listele (keşif + determinizm sözleşmesi)."""
+    from app.tools.tool_registry import list_tools
+
+    tools = list_tools(category or None)
+    if not tools:
+        console.print("[yellow]Araç yok.[/yellow]")
+        return
+    table = Table(title="Bilimsel Araçlar")
+    for c in ("ID", "Kategori", "Seed?", "Açıklama"):
+        table.add_column(c)
+    for t in tools:
+        table.add_row(t.tool_id, t.category, "evet" if t.requires_seed else "—", t.description[:50])
+    console.print(table)
+
+
+def _parse_returns(returns: str, csv: str | None) -> list[float]:
+    """Virgüllü liste veya CSV'den işlem getirisi serisi çıkar."""
+    if returns.strip():
+        return [float(x) for x in returns.split(",") if x.strip()]
+    if csv:
+        import pandas as pd
+
+        df = pd.read_csv(csv)
+        for col in ("trade_return", "return", "ret", "returns"):
+            if col in df.columns:
+                return [float(x) for x in df[col].dropna().tolist()]
+        # tek sayısal kolon → onu kullan
+        num = df.select_dtypes("number")
+        if num.shape[1] >= 1:
+            return [float(x) for x in num.iloc[:, 0].dropna().tolist()]
+    raise typer.BadParameter("--returns (virgüllü) ya da --csv (getiri kolonu) ver.")
+
+
+@app.command("montecarlo")
+def montecarlo_cmd(
+    seed: int = typer.Option(42, "--seed", help="Determinizm (Kural 6) — aynı seed aynı sonuç"),
+    returns: str = typer.Option("", "--returns", help="Virgüllü işlem getirileri (ör. 0.05,-0.02)"),
+    csv: str = typer.Option("", "--csv", help="İşlem getirisi kolonu olan CSV yolu"),
+    n_paths: int = typer.Option(1000, "--n", help="Simüle edilecek yol sayısı"),
+    ruin_fraction: float = typer.Option(0.5, "--ruin", help="Ruin seviyesi (başlangıcın kesri)"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Monte Carlo equity simülasyonu + risk-of-ruin (hipotez; tavsiye değil). Çalışma loglanır."""
+    from app.memory.sqlite_store import SqliteStore
+    from app.tools.probability_simulator import monte_carlo_equity
+
+    series = _parse_returns(returns, csv or None)
+    store = SqliteStore()
+    with store.log_tool_run(
+        tool_id="montecarlo",
+        params={"n_paths": n_paths, "ruin_fraction": ruin_fraction, "n_returns": len(series)},
+        seed=seed,
+    ) as run_id:
+        result = monte_carlo_equity(series, seed=seed, n_paths=n_paths, ruin_fraction=ruin_fraction)
+        store.set_tool_run_output(run_id, result.to_dict())
+
+    if as_json:
+        console.print_json(json.dumps(result.to_dict(), ensure_ascii=False))
+        return
+    console.print(
+        Panel(
+            f"Yol: {result.n_paths} × {result.n_trades} işlem · seed={result.seed}\n"
+            f"Beklenen değer (işlem başı): {result.per_trade_mean:+.4f} "
+            f"(std {result.per_trade_std:.4f})\n"
+            f"Final equity ort/medyan: {result.mean_final_equity:,.0f} / "
+            f"{result.median_final_equity:,.0f}\n"
+            f"VaR%95: {result.var_95_pct:.1f}% · ES%95: {result.expected_shortfall_pct:.1f}%\n"
+            f"Kayıp olasılığı: {result.prob_loss:.1%} · "
+            f"Ruin (≤%{result.ruin_fraction * 100:.0f}): {result.ruin_probability:.1%}\n"
+            f"[dim]{result.note}[/dim]",
+            title="Monte Carlo (risk-of-ruin)",
+        )
+    )
+
+
+@app.command("stats-check")
+def stats_check_cmd(
+    csv: str = typer.Option(..., "--csv", help="CSV yolu"),
+    x: str = typer.Option("", "--x", help="Korelasyon için X kolonu"),
+    y: str = typer.Option("", "--y", help="Korelasyon için Y kolonu"),
+    seed: int = typer.Option(42, "--seed"),
+    n_perm: int = typer.Option(1000, "--n-perm", help="Permütasyon sayısı"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """İstatistik kontrol: iki kolon → korelasyon + permütasyon p-değeri; tek → betimsel."""
+    import pandas as pd
+
+    from app.tools.statistics_checker import correlation_report, describe_series
+
+    df = pd.read_csv(csv)
+    if x and y:
+        rep = correlation_report(df[x].tolist(), df[y].tolist(), seed=seed, n_permutations=n_perm)
+        out = rep.to_dict()
+    else:
+        col = x or y or df.select_dtypes("number").columns[0]
+        out = describe_series(df[col].tolist()).to_dict()
+
+    if as_json:
+        console.print_json(json.dumps(out, ensure_ascii=False))
+        return
+    console.print_json(json.dumps(out, ensure_ascii=False))
+
+
+# --------------------------------------------------------------------------
+# Birleşik değerlendirme çalıştırıcısı (eval-runner) — tek giriş + yayın kapısı
+# --------------------------------------------------------------------------
+@app.command("eval-runner")
+def eval_runner_cmd(
+    eval_type: str = typer.Option(
+        "trading-hypothesis", "--type", help="trading-hypothesis | rag-retrieval"
+    ),
+    input_path: str = typer.Option(
+        "", "--input", help="trading-hypothesis için hipotez JSONL/JSON yolu"
+    ),
+    strict: bool = typer.Option(
+        False, "--strict", help="Kapı geçilemezse hata ver (production engelle)"
+    ),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Değerlendirmeyi çalıştır ve ReleaseGate'ten geçir; rapor reports/evals'a yazılır."""
+    from app.evals.eval_runner import EvalGateError, EvalRunner
+
+    runner = EvalRunner()
+    try:
+        if eval_type == "trading-hypothesis":
+            if not input_path:
+                console.print("[red]--input (hipotez JSON/JSONL) gerekli.[/red]")
+                raise typer.Exit(1)
+            hyps = _load_hypotheses(input_path)
+            result = runner.run("trading-hypothesis", hypotheses=hyps, strict=strict)
+        else:
+            console.print(
+                f"[yellow]'{eval_type}' CLI'dan henüz çalıştırılamıyor "
+                "(retriever/kaynak gerektirir); programatik EvalRunner kullan.[/yellow]"
+            )
+            raise typer.Exit(2)
+    except EvalGateError as e:
+        console.print(f"[red]KAPI GEÇİLEMEDİ:[/red] {e}")
+        raise typer.Exit(1) from e
+
+    if as_json:
+        console.print_json(json.dumps(result.to_dict(), ensure_ascii=False))
+        return
+    mark = "[green]GEÇTİ[/green]" if result.passed else "[red]KALDI[/red]"
+    body = (
+        f"Tip: {result.eval_type} · kalem: {result.n_items} · {mark}\n"
+        f"Metrikler: {json.dumps(result.metrics, ensure_ascii=False)}\n"
+        f"Rapor: {result.report_path}"
+    )
+    if result.failures:
+        body += "\nEksikler: " + "; ".join(result.failures)
+    console.print(Panel(body, title="eval-runner"))
+
+
+def _load_hypotheses(path: str) -> list:
+    """Hipotezleri JSON listesi veya JSONL'den yükle (her satır/öğe str ya da dict)."""
+    p = Path(path)
+    raw = p.read_text(encoding="utf-8").strip()
+    if not raw:
+        return []
+    if p.suffix == ".jsonl":
+        return [json.loads(line) for line in raw.splitlines() if line.strip()]
+    data = json.loads(raw)
+    return data if isinstance(data, list) else [data]
+
+
 if __name__ == "__main__":  # pragma: no cover
     app()

@@ -749,6 +749,44 @@ class PromotionDecision(Base):
     created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
 
 
+# ---------------------------------------------------------------------------
+# Bilimsel araç çalışma kayıtları (app/tools — Scientific Tool Runtime)
+# ---------------------------------------------------------------------------
+# LLM'in hesabı kafadan yapması yerine deterministik Python araçlarıyla
+# doğrulamasının DENETLENEBİLİR izi: her araç çağrısı + ürettiği artefakt loglanır.
+
+
+class ToolRun(Base):
+    """Tek bir bilimsel-araç çalıştırması (Monte Carlo / istatistik / backtest vb.)."""
+
+    __tablename__ = "tool_runs"
+
+    tool_run_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    tool_id: Mapped[str] = mapped_column(String(64), index=True)
+    tool_version: Mapped[str] = mapped_column(String(16), default="1")
+    params_json: Mapped[str] = mapped_column(Text, default="{}")
+    seed: Mapped[int | None] = mapped_column(Integer, default=None)  # determinizm (Kural 6)
+    status: Mapped[str] = mapped_column(String(16), default="running")  # running/ok/error
+    output_summary_json: Mapped[str] = mapped_column(Text, default="{}")
+    error: Mapped[str | None] = mapped_column(Text, default=None)
+    started_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+    finished_at: Mapped[str | None] = mapped_column(String(40), default=None)
+
+
+class ToolArtifact(Base):
+    """Bir araç çalıştırmasının ürettiği artefakt (rapor/CSV/şekil) — soy-kütüğü."""
+
+    __tablename__ = "tool_artifacts"
+
+    artifact_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    tool_run_id: Mapped[str] = mapped_column(String(80), index=True)
+    artifact_type: Mapped[str] = mapped_column(String(32), default="json")
+    path: Mapped[str | None] = mapped_column(Text, default=None)
+    content_hash: Mapped[str | None] = mapped_column(String(64), default=None)
+    description: Mapped[str | None] = mapped_column(Text, default=None)
+    created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+
+
 # Toplu budamada tek IN(...) ifadesinin SQLite değişken sınırını (~32766) aşmaması için
 # parça boyu. Küçük tutuldu (güvenli marj + her DELETE hızlı).
 _PRUNE_CHUNK = 500
@@ -1250,6 +1288,131 @@ class SqliteStore:
             "decided_by": r.decided_by,
             "decision_note": r.decision_note,
             "consumed_at": r.consumed_at,
+        }
+
+    # --- bilimsel araç çalışma kayıtları (app/tools) ---------------------
+    @contextmanager
+    def log_tool_run(
+        self,
+        *,
+        tool_id: str,
+        tool_version: str = "1",
+        params: dict[str, Any] | None = None,
+        seed: int | None = None,
+    ) -> Iterator[str]:
+        """Bir araç çalıştırmasını kaydet (running→ok/error). run_id yield edilir.
+
+        Çağıran, çıkıştan önce ``set_tool_run_output(run_id, ...)`` ile özet yazabilir.
+        İstisna olursa ``error`` damgalanır ve yeniden fırlatılır.
+        """
+        import uuid as _uuid
+
+        run_id = "tr_" + _uuid.uuid4().hex[:12]
+        with self.session() as s:
+            s.add(
+                ToolRun(
+                    tool_run_id=run_id,
+                    tool_id=tool_id,
+                    tool_version=tool_version,
+                    params_json=json.dumps(params or {}, ensure_ascii=False, default=str),
+                    seed=seed,
+                    status="running",
+                    started_at=_utcnow(),
+                )
+            )
+        try:
+            yield run_id
+        except Exception as e:
+            with self.session() as s:
+                row = s.get(ToolRun, run_id)
+                if row is not None:
+                    row.status = "error"
+                    row.error = str(e)
+                    row.finished_at = _utcnow()
+            raise
+        else:
+            with self.session() as s:
+                row = s.get(ToolRun, run_id)
+                if row is not None and row.status == "running":
+                    row.status = "ok"
+                    row.finished_at = _utcnow()
+
+    def set_tool_run_output(self, run_id: str, summary: dict[str, Any]) -> None:
+        with self.session() as s:
+            row = s.get(ToolRun, run_id)
+            if row is not None:
+                row.output_summary_json = json.dumps(summary, ensure_ascii=False, default=str)
+
+    def link_tool_artifact(
+        self,
+        *,
+        tool_run_id: str,
+        artifact_type: str = "json",
+        path: str | None = None,
+        content_hash: str | None = None,
+        description: str | None = None,
+    ) -> str:
+        import uuid as _uuid
+
+        aid = "art_" + _uuid.uuid4().hex[:12]
+        with self.session() as s:
+            s.add(
+                ToolArtifact(
+                    artifact_id=aid,
+                    tool_run_id=tool_run_id,
+                    artifact_type=artifact_type,
+                    path=path,
+                    content_hash=content_hash,
+                    description=description,
+                )
+            )
+        return aid
+
+    def get_tool_run(self, run_id: str) -> dict[str, Any] | None:
+        with self.session() as s:
+            r = s.get(ToolRun, run_id)
+            return self._tool_run_to_dict(r) if r else None
+
+    def list_tool_runs(self, limit: int = 50, tool_id: str | None = None) -> list[dict[str, Any]]:
+        with self.session() as s:
+            stmt = select(ToolRun).order_by(ToolRun.started_at.desc())
+            if tool_id:
+                stmt = stmt.where(ToolRun.tool_id == tool_id)
+            stmt = stmt.limit(limit)
+            return [self._tool_run_to_dict(r) for r in s.scalars(stmt)]
+
+    def list_tool_artifacts(self, tool_run_id: str) -> list[dict[str, Any]]:
+        with self.session() as s:
+            rows = s.scalars(
+                select(ToolArtifact)
+                .where(ToolArtifact.tool_run_id == tool_run_id)
+                .order_by(ToolArtifact.created_at.asc())
+            )
+            return [self._tool_artifact_to_dict(r) for r in rows]
+
+    def _tool_run_to_dict(self, r: ToolRun) -> dict[str, Any]:
+        return {
+            "tool_run_id": r.tool_run_id,
+            "tool_id": r.tool_id,
+            "tool_version": r.tool_version,
+            "params": json.loads(r.params_json or "{}"),
+            "seed": r.seed,
+            "status": r.status,
+            "output_summary": json.loads(r.output_summary_json or "{}"),
+            "error": r.error,
+            "started_at": r.started_at,
+            "finished_at": r.finished_at,
+        }
+
+    def _tool_artifact_to_dict(self, r: ToolArtifact) -> dict[str, Any]:
+        return {
+            "artifact_id": r.artifact_id,
+            "tool_run_id": r.tool_run_id,
+            "artifact_type": r.artifact_type,
+            "path": r.path,
+            "content_hash": r.content_hash,
+            "description": r.description,
+            "created_at": r.created_at,
         }
 
     @contextmanager
