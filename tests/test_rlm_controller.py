@@ -328,6 +328,32 @@ def test_unexpected_error_marks_run_failed_not_running():
     assert all(r["status"] != "running" for r in runs)  # hiçbir run asılı kalmadı
 
 
+def test_evidence_log_failure_does_not_clobber_successful_run():
+    """finish_run SONRASI add_evidence patlasa bile başarılı run 'failed' OLMAZ (audit bütünlüğü).
+
+    Regresyon kapısı: robustluk batch'i (try/except) ilk halinde, _log_evidence_rows
+    (finish_run'dan SONRA, try İÇİNDE) 'database is locked' fırlatınca answer()'ın except'i
+    zaten 'answered' kaydedilmiş run'ı 'failed' ile EZİYORDU. İki katlı çözüm: (a) evidence
+    logu best-effort (yutulur), (b) except yalnız hâlâ 'running' ise işaretler.
+    """
+
+    class _BoomEvidenceStore(RlmStore):
+        def add_evidence(self, *a: object, **k: object) -> None:
+            raise RuntimeError("database is locked")
+
+    store = _BoomEvidenceStore()
+    chunks = [_chunk(i) for i in range(3)]
+    ctrl = RlmController(retriever=_StubRetriever(chunks), llm=_StubLLM(_GOOD_DRAFT), store=store)
+
+    res = ctrl.answer("Momentum kalıcı mı?", write_report=False)  # raise ETMEMELİ
+
+    assert res.status in ("answered", "answered_with_limitation")
+    stored = store.get_run(res.run_id)
+    assert stored is not None
+    assert stored["status"] == res.status  # gerçek cevap korundu
+    assert stored["status"] != "failed"  # KLOBBER YOK
+
+
 def test_stale_running_run_is_reaped():
     """Dış-kill/timeout ile 'running' asılı kalan run reaper ile 'failed' olur."""
     from app.rlm.rlm_store import RlmRun
