@@ -171,14 +171,25 @@ class RlmController:
             # durum (answered/abstained/no_llm) yazdıysa ve sonrasındaki bir bookkeeping
             # (ör. _log_evidence_rows içinde 'database is locked') patladıysa, gerçek cevabı
             # 'failed' ile EZME (audit bütünlüğü — aksi halde başarılı run sahte 'failed' olurdu).
-            current = self.store.get_run(run_id)
-            if current is not None and current["status"] == "running":
-                self.store.finish_run(
+            # KRİTİK-2: get_run/finish_run'ı kendi try'ına al. Bunlar da AYNI kilide
+            # ('database is locked' — guard'ın motive olduğu senaryo) takılabilir; takılırsa
+            # orijinal kök-neden hatasını MASKELEME (her durumda `raise`). Asılı 'running'
+            # kalırsa reaper (mark_stale_running_failed) backstop'u temizler.
+            try:
+                current = self.store.get_run(run_id)
+                if current is not None and current["status"] == "running":
+                    self.store.finish_run(
+                        run_id,
+                        status="failed",
+                        final_answer=f"[RLM hata: {type(exc).__name__}: {exc}]",
+                        final_confidence=0.0,
+                        evidence_score=0.0,
+                    )
+            except Exception:
+                log.warning(
+                    "RLM run 'failed' işaretlenemedi (run=%s) — reaper temizleyecek",
                     run_id,
-                    status="failed",
-                    final_answer=f"[RLM hata: {type(exc).__name__}: {exc}]",
-                    final_confidence=0.0,
-                    evidence_score=0.0,
+                    exc_info=True,
                 )
             raise
 
@@ -394,7 +405,13 @@ class RlmController:
                     used_in_final_answer=c.chunk_id in used_ids,
                 )
             except Exception:  # audit logu cevabı bloke etmemeli (best-effort)
-                log.warning("RLM evidence logu yazılamadı (run=%s chunk=%s)", run_id, c.chunk_id)
+                # exc_info: yutulan hata (gerçek programlama hatası olabilir) loglarda izlenebilsin.
+                log.warning(
+                    "RLM evidence logu yazılamadı (run=%s chunk=%s)",
+                    run_id,
+                    c.chunk_id,
+                    exc_info=True,
+                )
 
     def _finish_insufficient(
         self,

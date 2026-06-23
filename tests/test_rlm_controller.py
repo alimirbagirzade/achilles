@@ -354,6 +354,21 @@ def test_evidence_log_failure_does_not_clobber_successful_run():
     assert stored["status"] != "failed"  # KLOBBER YOK
 
 
+def test_except_get_run_failure_does_not_mask_original_error():
+    """except içinde get_run de patlarsa (aynı kilit) ORİJİNAL kök-neden hatası maskelenmez."""
+
+    class _GetRunBoomStore(RlmStore):
+        def get_run(self, run_id: str) -> dict | None:
+            raise RuntimeError("get_run locked")
+
+    store = _GetRunBoomStore()
+    ctrl = RlmController(retriever=_BoomRetriever(), llm=_StubLLM(_GOOD_DRAFT), store=store)
+    # _BoomRetriever 'retrieval patladı' fırlatır; except'te get_run 'get_run locked' fırlatsa
+    # bile yeniden fırlatılan ORİJİNAL hata olmalı (get_run hatası değil).
+    with pytest.raises(RuntimeError, match="retrieval patladı"):
+        ctrl.answer("Momentum kalıcı mı?", write_report=False)
+
+
 def test_stale_running_run_is_reaped():
     """Dış-kill/timeout ile 'running' asılı kalan run reaper ile 'failed' olur."""
     from app.rlm.rlm_store import RlmRun
