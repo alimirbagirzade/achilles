@@ -36,11 +36,15 @@ def _store(tmp_path: Path) -> SqliteStore:
 
 
 def _score():
+    # Bu dosya KALICILIK (snapshot save/load) testi — skor değeri keyfi test verisi,
+    # eşik semantiği DEĞİL (o test_understanding_score'da). min_graded=1 ile 2-notlu
+    # fixture 'scored' kalır (varsayılan eşik=3 küçük-n şişme koruması ayrı test edilir).
     return aggregate(
         [
             ExamResult("L5", "x", True, "passed", 0),
             ExamResult("L3", "y", False, "failed", 0),
-        ]
+        ],
+        min_graded=1,
     )
 
 

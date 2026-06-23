@@ -52,7 +52,7 @@ class UnderstandingScore:
     skipped: int
     no_data: int
     graded: int  # passed + failed (paydanın tamamı)
-    pass_rate: float | None  # passed/graded (0-1); graded=0 ise None
+    pass_rate: float | None  # passed/graded (0-1); graded < min eşik ise None
     status: str  # "scored" | "insufficient_data"
     by_level: dict[str, dict[str, int]] = field(default_factory=dict)
 
@@ -348,7 +348,19 @@ def score_full_ladder(
     return aggregate(results)
 
 
-def aggregate(results: list[ExamResult]) -> UnderstandingScore:
+# Notlanan (passed+failed) sınav sayısı bu eşiğin ALTINDAysa skor güvenilmez sayılır:
+# pass_rate=None + status='insufficient_data'. Neden: çevrimdışı tam-merdivende L3/L4
+# 'skipped' olur, yalnız deterministik L5 örneği notlanır (graded=1) → tek geçen sınav
+# pass_rate=%100 + 'scored' verip auto_pipeline base-vs-adapter TERFİ kapısını şişirirdi
+# (v5-gerileme sınıfı küçük-n sahte-güveni; adapter eval min_n=5 ile aynı ilke). Eşik=3,
+# mevcut 'graded=3 → scored' sözleşmesini korur (test_pass_rate_skipped_haric). 7 registry
+# spec'i online L3/L4'te 14'e kadar graded üretir → meşru skor bastırılmaz.
+_MIN_GRADED_FOR_SCORE = 3
+
+
+def aggregate(
+    results: list[ExamResult], *, min_graded: int = _MIN_GRADED_FOR_SCORE
+) -> UnderstandingScore:
     by_level: dict[str, dict[str, int]] = {}
     counts = {"passed": 0, "failed": 0, "skipped": 0, "no_data": 0}
 
@@ -359,7 +371,8 @@ def aggregate(results: list[ExamResult]) -> UnderstandingScore:
         lvl[status] += 1
 
     graded = counts["passed"] + counts["failed"]
-    pass_rate = (counts["passed"] / graded) if graded > 0 else None
+    scored = graded >= min_graded
+    pass_rate = (counts["passed"] / graded) if scored else None
     return UnderstandingScore(
         total=len(results),
         passed=counts["passed"],
@@ -368,6 +381,6 @@ def aggregate(results: list[ExamResult]) -> UnderstandingScore:
         no_data=counts["no_data"],
         graded=graded,
         pass_rate=pass_rate,
-        status="scored" if graded > 0 else "insufficient_data",
+        status="scored" if scored else "insufficient_data",
         by_level=by_level,
     )

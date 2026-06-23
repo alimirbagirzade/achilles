@@ -54,6 +54,29 @@ def test_hic_notlanan_yoksa_insufficient() -> None:
     assert score.graded == 0
 
 
+def test_min_graded_guard_kucuk_n_sismeyi_onler() -> None:
+    """graded < eşik(3) → 'scored %100' DEĞİL, 'insufficient_data'.
+
+    Çevrimdışı tam-merdivende L3/L4 'skipped' olup yalnız deterministik L5 örneği
+    notlanırsa (graded=1) tek geçen sınav pass_rate=%100 + 'scored' verip auto_pipeline
+    base-vs-adapter TERFİ kapısını şişirirdi (v5-gerileme sınıfı küçük-n sahte güveni).
+    """
+    one = aggregate([_r("L5", "passed")])  # tek notlanan sınav geçti
+    assert one.graded == 1
+    assert one.pass_rate is None
+    assert one.status == "insufficient_data"
+
+    two = aggregate([_r("L5", "passed"), _r("L3", "failed")])
+    assert two.graded == 2
+    assert two.status == "insufficient_data"
+
+    # eşik (3) sağlanınca normal notlama (mevcut 'graded=3 → scored' sözleşmesi korunur)
+    three = aggregate([_r("L3", "passed"), _r("L3", "passed"), _r("L3", "failed")])
+    assert three.graded == 3
+    assert three.status == "scored"
+    assert abs(three.pass_rate - 2 / 3) < 1e-9
+
+
 def test_score_indicator_exams_llm_yoksa_insufficient(monkeypatch) -> None:
     # LLM erişilemezse tüm sınavlar 'skipped' → insufficient_data, çökme yok.
     from app.brain.local_llm import LocalLLM
