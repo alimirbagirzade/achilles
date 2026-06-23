@@ -392,6 +392,109 @@ agents:
       - "beklenmeyen hata → status=failed (try/except, dangling kalmaz)"
       - "dış-kill/SIGKILL → 'running' asılı; sonraki çağrıda reaper temizler"
 
+  # --- AI-brain ek modülleri (talimat: helix_achilles_ai_beyin_ek_moduller) ---
+  - agent_id: ingestion-quality-scorer
+    name: Ingestion Quality Scorer
+    file: app/ingestion/quality_scorer.py
+    entrypoint: score_paper / gather_inputs / score_ingestion + SqliteStore.add_ingestion_run
+    trigger: "CLI `ingestion-quality --paper-id [--record]` (compute-on-demand)"
+    autonomy: semi_auto
+    dangerous: false
+    default_enabled: false
+    writes:
+      - "sqlite: paper_ingestion_runs"
+      - "sqlite: papers.quality_score/ingest_status (yalnız --record)"
+    reads:
+      - "sqlite: papers, chunks, formulas, chunk_quality_flags"
+    safety_gates:
+      - "compute-on-demand — PaperIndexer SICAK yoluna dokunmaz (çakışmasız)"
+      - "NULL skor ESKİ makaleleri ETKİLEMEZ (retrieval engellenmez)"
+      - "sezgisel rubrik (yer-doğrusu yok); parse başarısızsa çıkarım bileşenleri 0"
+      - "deterministik; salt-skor (eğitim/ingest BAŞLATMAZ)"
+    approval_required: false
+    stop_method: "yok (senkron, salt-skor)"
+    status_location: "sqlite: paper_ingestion_runs + papers.ingest_status"
+    known_failure_modes:
+      - "bilinmeyen paper_id → ValueError"
+      - "n_chars/n_pages NULL → chunk'lardan tahmin (graceful)"
+
+  - agent_id: scientific-tool-runtime
+    name: Scientific Tool Runtime
+    file: app/tools/
+    entrypoint: monte_carlo_equity / correlation_report / verify_backtest_metrics / tool_registry
+    trigger: "CLI `tools-list` / `montecarlo` / `stats-check` (on-demand doğrulama)"
+    autonomy: manual
+    dangerous: false
+    default_enabled: false
+    writes:
+      - "sqlite: tool_runs, tool_artifacts"
+    reads:
+      - "işlem getirisi serisi / CSV (data/ altında)"
+    safety_gates:
+      - "saf numpy (scipy yok); seed ZORUNLU (Kural 6 determinizm)"
+      - "no eval/exec (Kural 5)"
+      - "çıktı hipotez/test-noktası — yatırım tavsiyesi DEĞİL (Kural 1)"
+      - "result_verifier gerçekçi-olmayan metrik (Sharpe>5/Kelly>1/inf/nan) uyarır"
+      - "uygulama düzeyi referans bütünlüğü (öksüz artefakt yok)"
+    approval_required: false
+    stop_method: "yok (senkron, hesap)"
+    status_location: "sqlite: tool_runs"
+    known_failure_modes:
+      - "boş getiri / negatif/0 n_trades/n_paths → ValueError (net)"
+      - "requires_seed araç seed'siz → validate_params eksik bildirir"
+
+  - agent_id: model-data-registry
+    name: Model/Data Registry & Promotion Gate
+    file: app/registry/
+    entrypoint: RegistryStore.* / promotion_gates.approve_dataset / check_rag_index_eval / gate_reward_dataset
+    trigger: "CLI `registry-list` / `registry-snapshot` / `registry-promote-dataset` (insan onayı)"
+    autonomy: requires_approval
+    dangerous: false
+    default_enabled: false
+    writes:
+      - "sqlite: dataset_versions, rag_index_versions, embedding_model_versions"
+      - "sqlite: rlm_reward_versions, promotion_decisions"
+    reads:
+      - "sqlite: papers, chunks (snapshot sayımları)"
+      - "ReleaseGate metrikleri (retrieval eval)"
+    safety_gates:
+      - "dataset onaylanmadan EĞİTİME giremez (Kural 8) — promote İNSAN ONAYI"
+      - "terminal durum makinesi (pending→approved|rejected); atomik CAS (TOCTOU yok)"
+      - "RAG indeks ReleaseGate (recall@10≥0.70 vb.) geçmeli"
+      - "ödül seti sır/PII taraması (kendi-kendine yeten regex; safety_scanner İÇE AKTARILMAZ)"
+      - "app/rlm İÇE AKTARILMAZ (reward tablosu yalnız sürümleme)"
+    approval_required: true
+    stop_method: "yok (senkron, salt-kayıt; terfi tek-yönlü/terminal)"
+    status_location: "sqlite: dataset_versions.approval_status + promotion_decisions"
+    known_failure_modes:
+      - "bilinmeyen sürüm → ValueError"
+      - "terminal durumda yeniden terfi → ValueError (çapraz geçiş yok)"
+
+  - agent_id: hypothesis-evaluator
+    name: Hypothesis & Eval Runner
+    file: app/evals/eval_runner.py
+    entrypoint: EvalRunner.run / trading_hypothesis_evaluator.evaluate_hypothesis
+    trigger: "CLI `eval-runner --type trading-hypothesis|rag-retrieval` (on-demand)"
+    autonomy: semi_auto
+    dangerous: false
+    default_enabled: false
+    writes:
+      - "reports/evals/eval_*.json"
+    reads:
+      - "hipotez JSON/JSONL"
+      - "golden questions + retriever (rag-retrieval)"
+    safety_gates:
+      - "ReleaseGate kapısı; --strict geçilemezse hata (production engellenir)"
+      - "trading hipotez = sinyal DEĞİL test-edilebilir mi (Kural 1-4): tavsiye dili → REJECT"
+      - "no eval/exec; deterministik"
+      - "rag-answer/lora/rlm-reward tipleri ERTELENDİ (net NotImplementedError)"
+    approval_required: false
+    stop_method: "yok (senkron)"
+    status_location: "reports/evals/"
+    known_failure_modes:
+      - "bağlanmamış tip → NotImplementedError (net mesaj)"
+      - "bilinmeyen tip → ValueError"
+
 # --------------------------------------------------------------------------
 # Çalıştırma zinciri (chain) — ajanların topolojik koşma SIRASI (tek kaynak).
 # `app/agents/runtime/chain.py` okur + doğrular (döngü/eksik step). Gate ve otonomi
@@ -405,16 +508,31 @@ chain:
     after: []
   - step: rag-learning-loop
     after: [arxiv-fetcher]
+  # İçe-alım kalite kapısı: ingest sonrası makaleyi 100-puanlık rubrikle skorlar
+  # (compute-on-demand; düşük kalite = needs_reparse/failed). Salt-skor, retrieval engellemez.
+  - step: ingestion-quality-scorer
+    after: [rag-learning-loop]
   - step: paper-mastery-agent
     after: [rag-learning-loop]
   - step: status-manager
+    after: [paper-mastery-agent]
+  # Bilimsel doğrulama düğümü: matematik/istatistik/risk iddialarını deterministik
+  # araçlarla (Monte Carlo / permütasyon) doğrular — korpus anlaşıldıktan sonra anlamlı.
+  - step: scientific-tool-runtime
+    after: [paper-mastery-agent]
+  # Hipotez/eval düğümü: trading hipotezini "test-edilebilir mi" denetler + ReleaseGate.
+  - step: hypothesis-evaluator
     after: [paper-mastery-agent]
   - step: lora-control-plane
     after: [paper-mastery-agent, status-manager]
   - step: dataset-quality-gate
     after: [lora-control-plane]
-  - step: auto-lora-pipeline
+  # Model/veri kayıt defteri + terfi kapısı: dataset SÜRÜM-ONAYI eğitimden ÖNCE (Kural 8).
+  # requires_approval → supervisor tam burada durur (insan onayı).
+  - step: model-data-registry
     after: [dataset-quality-gate]
+  - step: auto-lora-pipeline
+    after: [dataset-quality-gate, model-data-registry]
   - step: adapter-eval
     after: [auto-lora-pipeline]
   - step: rules-updater
