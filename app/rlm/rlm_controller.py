@@ -68,6 +68,22 @@ _TRADING_SIGNAL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Nihai cevap GÖVDESİNE giren ham LLM cümlesindeki satır-içi [paper_id:chunk_id] atıfları:
+# getirilen chunk kümesinde OLMAYAN (uydurma) chunk_id'leri ÇIKAR (kural 7 — uydurma kaynak
+# yasak). Geçerli atıflar korunur; gövde böylece "Kaynak dayanakları" bloğuyla tutarlı kalır.
+_INLINE_CITATION_RE = re.compile(r"\s*\[([^:\]]+):([^\]]+)\]")
+_CIT_PAGE_SUFFIX_RE = re.compile(r",\s*s\.\d+\s*$")
+
+
+def _sanitize_citations(text: str, valid_chunk_ids: set[str]) -> str:
+    """Metindeki geçersiz (getirilen sette olmayan) satır-içi atıf işaretlerini çıkar."""
+
+    def _repl(m: re.Match[str]) -> str:
+        chunk_id = _CIT_PAGE_SUFFIX_RE.sub("", m.group(2).strip()).strip()
+        return m.group(0) if chunk_id in valid_chunk_ids else ""
+
+    return _INLINE_CITATION_RE.sub(_repl, text).strip()
+
 
 @dataclass
 class RlmResult:
@@ -544,10 +560,10 @@ class RlmController:
             "High" if decision == "answer" else "Medium" if decision == "warn" else "Low"
         )
 
-        used_ids = {cid for c in supported for cid in c.supporting_chunks}
-        used_chunks = [c for c in chunks if c.chunk_id in used_ids] or chunks
-
-        # Abstain VEYA hiç desteklenen iddia yok → çekimser kal (uydurma değil).
+        # Audit kaydı (set_verification + evidence) nihai cevaba GERÇEKTEN gireni yansıtmalı.
+        # Çekimser yolda cevap iddia İÇERMEZ → recorded_supported=[] ve used_ids=∅ (kardeş
+        # _finish_insufficient/_finish_no_llm yollarıyla tutarlı). Aksi halde abstain run'ı
+        # 'supported' + used_in_final_answer=True yazıp audit'i çelişkiye düşürürdü.
         if abstain or not supported:
             reason = abstain_reason or (
                 "Taslak cevaptaki hiçbir iddia kaynaklarla yeterince desteklenmedi."
@@ -561,25 +577,32 @@ class RlmController:
                 + "\n\nGüven seviyesi: Low"
             )
             status = "abstained"
-            # Çekimser kalınan çıktı 'High' güven rozeti taşımamalı (gövde 'Low' diyor);
-            # confidence_level decision'dan türüyordu, status ile çelişiyordu → hizala.
-            # final_confidence de 0.0: çekimserde CEVABA güven yok (ham skor 0.70 olsa bile
-            # 'Low' etiketiyle 0.70 sayısı çelişirdi; tüm abstain yolları artık 0.0).
+            # Çekimser çıktı 'High' rozeti taşımamalı (gövde 'Low'); final_confidence 0.0
+            # (çekimserde cevaba güven yok). Audit: hiç iddia/kullanılan-chunk YOK.
             confidence_level = "Low"
             final_confidence = 0.0
+            recorded_supported: list[Claim] = []
+            used_ids: set[str] = set()
         else:
+            used_ids = {cid for c in supported for cid in c.supporting_chunks}
+            used_chunks = [c for c in chunks if c.chunk_id in used_ids] or chunks
             final_answer = self._build_envelope(
-                supported, used_chunks, contradictions, confidence_level
+                supported,
+                used_chunks,
+                contradictions,
+                confidence_level,
+                {c.chunk_id for c in chunks},
             )
             status = "answered_with_limitation" if decision != "answer" else "answered"
             final_confidence = round(confidence_score, 4)
+            recorded_supported = supported
 
         # Kural 1: trading-içerikli her çıktıya (soru veya cevap) zorunlu uyarı bloğu.
         final_answer = self._apply_trading_guard(final_answer, query)
 
         self.store.set_verification(
             run_id,
-            supported_claims=[c.claim for c in supported],
+            supported_claims=[c.claim for c in recorded_supported],
             unsupported_claims=[c.claim for c in unsupported],
             contradictions=[f"{ct.chunk_id_a}↔{ct.chunk_id_b}" for ct in contradictions],
             citation_score=citation_score,
@@ -615,7 +638,7 @@ class RlmController:
             evidence_score=evidence.score,
             retrieval_rounds=rounds_used,
             n_sources=len(chunks),
-            supported_claims=[c.claim for c in supported],
+            supported_claims=[c.claim for c in recorded_supported],
             unsupported_claims=[c.claim for c in unsupported],
             contradictions=[f"{ct.chunk_id_a}↔{ct.chunk_id_b}" for ct in contradictions],
             sources=self._sources_payload(chunks),
@@ -628,8 +651,12 @@ class RlmController:
         used_chunks: list[RetrievedChunk],
         contradictions: list[Contradiction],
         confidence_level: str,
+        valid_chunk_ids: set[str],
     ) -> str:
-        gerekce = "\n".join(f"{i + 1}. {c.claim}" for i, c in enumerate(supported))
+        # Gövdeye giren ham LLM cümlelerindeki uydurma satır-içi atıfları çıkar (kural 7):
+        # getirilen sette olmayan [paper:chunk] işaretleri kullanıcıya gösterilmez.
+        safe_claims = [_sanitize_citations(c.claim, valid_chunk_ids) for c in supported]
+        gerekce = "\n".join(f"{i + 1}. {claim}" for i, claim in enumerate(safe_claims))
         kaynaklar = "\n".join(
             f"- {c.citation} | {c.section_name or '—'} | {c.title or '—'}" for c in used_chunks
         )
@@ -646,7 +673,7 @@ class RlmController:
 
         parts = [
             "Kısa cevap:",
-            supported[0].claim,
+            safe_claims[0],
             "",
             "Makalelere göre gerekçe:",
             gerekce,
