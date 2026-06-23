@@ -107,6 +107,11 @@ class Paper(Base):
     source: Mapped[str | None] = mapped_column(String(64), default=None)  # arxiv/ssrn/manual
     n_pages: Mapped[int | None] = mapped_column(Integer, default=None)
     n_chars: Mapped[int | None] = mapped_column(Integer, default=None)
+    # İçe-alım kalite skoru (compute-on-demand; NULL = henüz skorlanmadı → retrieval
+    # bu alandan ETKİLENMEZ, eski makaleler çalışmaya devam eder). Bkz app/ingestion/quality_scorer.
+    quality_score: Mapped[float | None] = mapped_column(Float, default=None)
+    ingest_status: Mapped[str | None] = mapped_column(String(32), default=None)
+    # ready_for_rag / usable / slow_but_usable / unstable / failed / None
     created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
 
     chunks: Mapped[list[Chunk]] = relationship(back_populates="paper", cascade="all, delete-orphan")
@@ -787,6 +792,27 @@ class ToolArtifact(Base):
     created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
 
 
+class PaperIngestionRun(Base):
+    """Bir makalenin içe-alım kalite skorlama koşusu (compute-on-demand denetim izi).
+
+    PaperIndexer'ın SICAK yolunu DEĞİŞTİRMEZ; ``app/ingestion/quality_scorer`` ile
+    isteğe bağlı çağrılır. component_scores_json 100-puanlık rubriğin kırılımıdır.
+    """
+
+    __tablename__ = "paper_ingestion_runs"
+
+    ingestion_run_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    paper_id: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="")
+    # ready_for_rag / usable / slow_but_usable / unstable / failed
+    quality_score: Mapped[float] = mapped_column(Float, default=0.0)
+    component_scores_json: Mapped[str] = mapped_column(Text, default="{}")
+    n_chunks: Mapped[int] = mapped_column(Integer, default=0)
+    n_formulas: Mapped[int] = mapped_column(Integer, default=0)
+    notes_json: Mapped[str] = mapped_column(Text, default="[]")
+    created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+
+
 # Toplu budamada tek IN(...) ifadesinin SQLite değişken sınırını (~32766) aşmaması için
 # parça boyu. Küçük tutuldu (güvenli marj + her DELETE hızlı).
 _PRUNE_CHUNK = 500
@@ -837,6 +863,13 @@ class SqliteStore:
                             f"ALTER TABLE knowledge_cards ADD COLUMN {col} {typ} DEFAULT {default}"
                         )
                     )
+            # papers: içe-alım kalite alanları (nullable → eski satırlar etkilenmez)
+            paper_cols = {
+                row[1] for row in conn.execute(text("PRAGMA table_info(papers)")).fetchall()
+            }
+            for col, typ in (("quality_score", "REAL"), ("ingest_status", "VARCHAR(32)")):
+                if col not in paper_cols:
+                    conn.execute(text(f"ALTER TABLE papers ADD COLUMN {col} {typ} DEFAULT NULL"))
             conn.commit()
 
     # --- agent runtime gözlemcisi (Phase 1) ------------------------------
@@ -1414,6 +1447,66 @@ class SqliteStore:
             "description": r.description,
             "created_at": r.created_at,
         }
+
+    # --- içe-alım kalite koşuları (app/ingestion) ------------------------
+    def add_ingestion_run(
+        self,
+        *,
+        paper_id: str,
+        status: str,
+        quality_score: float,
+        component_scores: dict[str, float] | None = None,
+        n_chunks: int = 0,
+        n_formulas: int = 0,
+        notes: list[str] | None = None,
+        update_paper: bool = True,
+    ) -> str:
+        """Bir içe-alım kalite koşusu kaydet; ``update_paper`` ise Paper alanlarını da güncelle."""
+        import uuid as _uuid
+
+        run_id = "ing_" + _uuid.uuid4().hex[:12]
+        with self.session() as s:
+            s.add(
+                PaperIngestionRun(
+                    ingestion_run_id=run_id,
+                    paper_id=paper_id,
+                    status=status,
+                    quality_score=quality_score,
+                    component_scores_json=json.dumps(component_scores or {}, ensure_ascii=False),
+                    n_chunks=n_chunks,
+                    n_formulas=n_formulas,
+                    notes_json=json.dumps(notes or [], ensure_ascii=False),
+                )
+            )
+            if update_paper:
+                paper = s.get(Paper, paper_id)
+                if paper is not None:
+                    paper.quality_score = quality_score
+                    paper.ingest_status = status
+        return run_id
+
+    def list_ingestion_runs(
+        self, paper_id: str | None = None, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        with self.session() as s:
+            stmt = select(PaperIngestionRun).order_by(PaperIngestionRun.created_at.desc())
+            if paper_id:
+                stmt = stmt.where(PaperIngestionRun.paper_id == paper_id)
+            stmt = stmt.limit(limit)
+            return [
+                {
+                    "ingestion_run_id": r.ingestion_run_id,
+                    "paper_id": r.paper_id,
+                    "status": r.status,
+                    "quality_score": r.quality_score,
+                    "component_scores": json.loads(r.component_scores_json or "{}"),
+                    "n_chunks": r.n_chunks,
+                    "n_formulas": r.n_formulas,
+                    "notes": json.loads(r.notes_json or "[]"),
+                    "created_at": r.created_at,
+                }
+                for r in s.scalars(stmt)
+            ]
 
     @contextmanager
     def session(self) -> Iterator[Session]:
