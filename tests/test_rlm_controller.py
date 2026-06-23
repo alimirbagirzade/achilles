@@ -176,6 +176,99 @@ def test_trading_answer_always_carries_disclaimer():
     res = ctrl.answer("Momentum trading stratejisi sinyali güçlü mü?", write_report=False)
 
     assert res.task_type == "trading_reasoning"
-    if res.status in ("answered", "answered_with_limitation"):
-        assert "yatırım tavsiyesi değildir" in res.final_answer
+    # KOŞULSUZ: status ne olursa olsun trading-içerikli çıktı uyarı taşımalı (kural 1).
+    assert "yatırım tavsiyesi değildir" in res.final_answer
+    assert "canlı sinyal değildir" in res.final_answer
+
+
+def test_trading_disclaimer_survives_classifier_misroute():
+    """Classifier trading sorusunu MATH/UNCERTAINTY'ye düşürse bile uyarı kaçmamalı.
+
+    Kural 1 yaptırımı içerik-tabanlı (_apply_trading_guard) — görev tipinden bağımsız.
+    """
+    chunks = [
+        _chunk(i, text="Momentum stratejisi Sharpe oranı backtest getiri volatilite rejimi.")
+        for i in range(3)
+    ]
+    draft = "Momentum stratejisi yüksek Sharpe üretir [paper_x:paper_x::c0000]."
+    ctrl = RlmController(retriever=_StubRetriever(chunks), llm=_StubLLM(draft))
+
+    # "Sharpe ... hesapla" → MATH; "güvenilir mi" → UNCERTAINTY (ikisi de TRADING değil)
+    for q in (
+        "Bu momentum stratejisinin Sharpe oranını hesapla",
+        "Bu al-sat stratejisi güvenilir mi",
+    ):
+        res = ctrl.answer(q, write_report=False)
+        assert res.task_type != "trading_reasoning"  # bilerek başka tipe düşüyor
+        assert "yatırım tavsiyesi değildir" in res.final_answer, f"uyarı kaçtı: {q}"
         assert "canlı sinyal değildir" in res.final_answer
+
+
+def test_unsupported_claim_not_in_final_answer():
+    """Kural 4: desteklenmeyen iddia nihai cevaba GİRMEZ (uçtan uca controller testi)."""
+    chunks = [_chunk(i) for i in range(3)]
+    # 1 destekli (chunk kelimeleriyle örtüşür) + 1 tamamen alakasız (sıfır örtüşme) cümle.
+    draft = (
+        "Volatilite kümelenmesi momentum kalıcılığını etkiler [paper_x:paper_x::c0000]. "
+        "Kuantum bilgisayarlar kripto madenciliğini tamamen değiştirecektir."
+    )
+    ctrl = RlmController(retriever=_StubRetriever(chunks), llm=_StubLLM(draft))
+    res = ctrl.answer("Momentum kalıcı mı?", write_report=False)
+
+    assert res.status in ("answered", "answered_with_limitation")
+    assert "kuantum" not in res.final_answer.lower()  # desteksiz cümle çıkarıldı
+    assert any("kuantum" in c.lower() for c in res.unsupported_claims)
+
+
+def test_abstained_status_not_high_confidence():
+    """Çekimser kalınan çıktı yüksek güven rozeti taşımamalı (tutarlı metadata)."""
+    chunks = [_chunk(i) for i in range(3)]
+    # Atıfsız + chunk'larla örtüşmeyen taslak → tüm iddialar UNSUPPORTED → abstain.
+    draft = "Kuantum bilgisayarlar kripto madenciliğini tamamen değiştirecektir."
+    ctrl = RlmController(retriever=_StubRetriever(chunks), llm=_StubLLM(draft))
+    res = ctrl.answer("Bilinmeyen bir konu hakkında?", write_report=False)
+
+    assert res.status == "abstained"
+    assert res.confidence_level == "Low"  # decision 'answer' olsa bile abstain'de Low
+    assert res.final_confidence == 0.0  # çekimserde cevaba güven yok (etiket+sayı tutarlı)
+
+
+def test_non_trading_answer_has_no_disclaimer():
+    """Trading-dışı içerikli cevap yatırım uyarısı TAŞIMAMALI (aşırı-tetikleme regresyonu).
+
+    'return' gibi jenerik kelimeler guard'dan çıkarıldı → akademik (ör. Bayes) cevap
+    yanlış-bağlam uyarı taşımaz; uyarı yalnız gerçek trading/sinyal içeriğinde görünür.
+    """
+    chunks = [
+        RetrievedChunk(
+            chunk_id=f"p::c{i:04d}",
+            paper_id="p",
+            text="Bayes teoremi koşullu olasılığı önsel ve olabilirlik çarpımıyla günceller.",
+            page_number=i + 1,
+            section_name="Methods",
+            title="Bayesian Inference Primer",
+            distance=0.1 * i,
+        )
+        for i in range(3)
+    ]
+    draft = "Bayes teoremi koşullu olasılığı önsel ve olabilirlik ile günceller [p:p::c0000]."
+    ctrl = RlmController(retriever=_StubRetriever(chunks), llm=_StubLLM(draft))
+    res = ctrl.answer("Bayes teoremi nasıl çalışır?", write_report=False)
+
+    assert res.status in ("answered", "answered_with_limitation")
+    assert "yatırım tavsiyesi değildir" not in res.final_answer  # trading-dışı → uyarı yok
+
+
+def test_controller_is_deterministic_for_same_input():
+    """Kural 6: aynı girdi → aynı sınıflandırma/durum/cevap (stub LLM deterministik)."""
+    chunks = [_chunk(i) for i in range(3)]
+    a = RlmController(retriever=_StubRetriever(chunks), llm=_StubLLM(_GOOD_DRAFT)).answer(
+        "Momentum kalıcı mı?", write_report=False
+    )
+    b = RlmController(retriever=_StubRetriever(chunks), llm=_StubLLM(_GOOD_DRAFT)).answer(
+        "Momentum kalıcı mı?", write_report=False
+    )
+    assert a.task_type == b.task_type
+    assert a.status == b.status
+    assert a.evidence_score == b.evidence_score
+    assert a.final_answer == b.final_answer
