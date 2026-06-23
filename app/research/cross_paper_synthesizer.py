@@ -244,6 +244,18 @@ def _example_id(formula_ids: list[str]) -> str:
     return "syn_" + hashlib.sha256(key.encode()).hexdigest()[:24]
 
 
+def _synthesis_seed(block: str) -> int:
+    """Sentez girdisinden deterministik LLM seed türet (CLAUDE.md kural 6).
+
+    Aynı formül bloğu → aynı seed → aynı sentez (REPRODÜKLENEBİLİR); farklı blok →
+    farklı seed → girdiye göre doğal çeşitlilik. Böylece seedsiz çağrının
+    nondeterminizmi (kural 6 ihlali) kapanır AMA sabit-seed'in 'her girdi için hep
+    aynı çıktı' sorununa düşülmez. Süreçler-arası KARARLI sha256 kullanılır (Python'un
+    salt'lı ``hash()``'i değil); 32-bit aralık Ollama/OpenAI seed için yeterli.
+    """
+    return int(hashlib.sha256(block.encode("utf-8")).hexdigest()[:8], 16)
+
+
 def _select_cross_paper(
     flist_a: list[dict[str, Any]],
     flist_b: list[dict[str, Any]],
@@ -360,6 +372,7 @@ class CrossPaperSynthesizer:
                 _SYNTHESIS_PROMPT.format(formula_block=block),
                 max_tokens=1024,
                 timeout=120,
+                seed=_synthesis_seed(block),
             )
             if raw and len(raw.strip()) > 150:
                 return {"instruction": instruction, "input": block, "output": raw.strip()}
