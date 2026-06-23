@@ -81,8 +81,11 @@ _LITERATURE_KW = re.compile(
 class ReasoningPlan:
     """Görev tipine göre türeyen çalışma planı.
 
-    `allow_trading_signal` MUTLAK olarak False'tur (CLAUDE.md kural 1 — canlı
-    sinyal/yatırım tavsiyesi yasak). Alan yalnızca açıkça belgelemek için var.
+    NOT: `allow_trading_hypothesis` ve `allow_trading_signal` AÇIKLAYICI metadata'dır
+    (run logunda görünür) — davranışı TEK BAŞINA belirlemezler. Kural 1 yaptırımı
+    içerik-tabanlıdır: RlmController._apply_trading_guard, soru VEYA nihai cevap
+    trading dili taşıyorsa zorunlu uyarıyı ekler ve `settings.rlm_allow_live_trading_signal`
+    bayrağını gerçekten okur (canlı sinyal asla üretilmez).
     """
 
     task_type: str
@@ -90,8 +93,8 @@ class ReasoningPlan:
     retrieval_rounds: int = 2
     must_include: list[str] = field(default_factory=list)
     verification_required: bool = True
-    allow_trading_hypothesis: bool = False
-    allow_trading_signal: bool = False  # asla True olmaz
+    allow_trading_hypothesis: bool = False  # açıklayıcı: trading task hipotez üretebilir
+    allow_trading_signal: bool = False  # açıklayıcı: asla True; gerçek kapı _apply_trading_guard
 
 
 class TaskClassifier:

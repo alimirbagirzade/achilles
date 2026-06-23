@@ -9,16 +9,19 @@ Akış:
     → abstention → yapısal nihai cevap → run logları + JSON rapor
 
 Mutlak kurallar (CLAUDE.md):
-  1. Canlı trading sinyali / yatırım tavsiyesi ASLA. Trading sorularında çıktı
-     yalnız HİPOTEZ + test noktası + uyarıdır.
+  1. Canlı trading sinyali / yatırım tavsiyesi ASLA. Trading-içerikli her çıktıda
+     (soru VEYA cevap trading dili taşıyorsa) zorunlu uyarı bloğu eklenir — karar
+     classifier görev tipine değil, çıktı içeriğine bağlıdır (_apply_trading_guard).
   4. Desteklenmeyen iddia nihai cevaba KONMAZ.
-  6. Determinizm: tüm LLM çağrıları sabit seed ile.
+  6. Determinizm: LLM çağrıları sabit seed ile (Ollama/OpenAI/Google). Anthropic
+     API seed desteklemez → o backend'de en yakın determinizm için temperature=0.0.
   7. Eksik bağlamda uydurma YOK → "yeterli kaynak yok" denir.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field
 
 from app.brain.local_llm import LLMUnavailable, LocalLLM
@@ -47,6 +50,17 @@ _TRADING_DISCLAIMER = (
     "- Bu canlı sinyal değildir.\n"
     "- Hipotez backtest gerektirir (OOS + komisyon + slippage + look-ahead yok).\n"
     "- Kullanılan makalelerin veri seti ve zaman aralığı kontrol edilmelidir."
+)
+
+# Trading-içerik tespiti (kural 1). Soru VEYA nihai cevap bunlardan birini taşıyorsa
+# zorunlu uyarı bloğu eklenir. Görev sınıflandırıcıdan BAĞIMSIZ — classifier trading
+# sorusunu MATH/MULTI/UNCERTAINTY'ye düşürse bile uyarı kaçmaz. Geniş tutuldu:
+# trading araştırma sisteminde fazladan uyarı güvenli taraftır.
+_TRADING_SIGNAL_RE = re.compile(
+    r"\b(trading|strateji\w*|strategy|sinyal\w*|signal\w*|al-?sat|buy|sell|long|short|"
+    r"momentum|mean.?reversion|volatilit\w*|backtest\w*|getiri|return|sharpe|sortino|"
+    r"pozisyon|position|portföy|portfolio|drawdown|kelly)\b",
+    re.IGNORECASE,
 )
 
 
@@ -161,7 +175,7 @@ class RlmController:
             )
 
         # --- Taslak cevap (LLM) ----------------------------------------------
-        draft, llm_used = self._draft(query, chunks, plan)
+        draft, llm_used = self._draft(query, chunks, plan, backend=model_name)
         self.store.add_step(
             run_id,
             10,
@@ -206,7 +220,6 @@ class RlmController:
             run_id=run_id,
             query=query,
             task_type=task_type,
-            plan=plan,
             chunks=chunks,
             evidence=evidence,
             rounds_used=rounds_used,
@@ -251,6 +264,7 @@ class RlmController:
                 contradictions,
                 min_to_answer=self.settings.rlm_min_evidence_to_answer,
                 min_to_skip_retry=self.settings.rlm_min_evidence_to_skip_retry,
+                min_to_retry=self.settings.rlm_min_evidence_to_retry,
             )
             self.store.add_step(
                 run_id,
@@ -277,7 +291,7 @@ class RlmController:
         return f"{query} {' '.join(plan.must_include)}"
 
     def _draft(
-        self, query: str, chunks: list[RetrievedChunk], plan: ReasoningPlan
+        self, query: str, chunks: list[RetrievedChunk], plan: ReasoningPlan, *, backend: str = ""
     ) -> tuple[str, bool]:
         context = _format_context(chunks)
         try:
@@ -285,8 +299,11 @@ class RlmController:
         except FileNotFoundError:
             system = _FALLBACK_SYSTEM
         prompt = f"SOURCES / KAYNAKLAR:\n{context}\n\nQUESTION / SORU: {query}"
+        # Determinizm (kural 6): Anthropic API seed desteklemez → orada temperature=0.0
+        # ile en yakın tekrarlanabilirlik; seed onurlanan backend'lerde 0.2 + seed.
+        temperature = 0.0 if backend == "anthropic" else 0.2
         try:
-            text = self.llm.generate(prompt, system=system, temperature=0.2, seed=self.seed)
+            text = self.llm.generate(prompt, system=system, temperature=temperature, seed=self.seed)
             return text, True
         except LLMUnavailable:
             return "", False
@@ -314,7 +331,12 @@ class RlmController:
                 run_id,
                 c.paper_id,
                 c.chunk_id,
-                relevance_score=round(1.0 - (c.distance or 0.0), 4) if c.distance else 0.0,
+                # distance=0.0 MÜKEMMEL eşleşme (relevance 1.0); None = bilinmiyor (0.0).
+                # Eski `if c.distance` truthiness'i 0.0'ı falsy görüp en iyi eşleşmeyi
+                # en kötü skorla loglardı. max(0.0,…) negatif olmayan metrik garantisi.
+                relevance_score=(
+                    round(max(0.0, 1.0 - c.distance), 4) if c.distance is not None else 0.0
+                ),
                 used_in_final_answer=c.chunk_id in used_ids,
             )
 
@@ -332,6 +354,7 @@ class RlmController:
             "Kanıt yeterlilik skoru çok düşük (uydurma yapılmadı). "
             "Lütfen ilgili PDF'leri ingest edin veya soruyu yeniden formüle edin."
         )
+        msg = self._apply_trading_guard(msg, query)  # trading sorusuysa uyarı taşı (kural 1)
         self.store.set_verification(
             run_id,
             supported_claims=[],
@@ -380,6 +403,7 @@ class RlmController:
             f"(kanıt skoru: {evidence.score}).\n\n"
             "Bulunan kaynaklar:\n" + cites
         )
+        msg = self._apply_trading_guard(msg, query)  # trading sorusuysa uyarı taşı (kural 1)
         self.store.set_verification(
             run_id,
             supported_claims=[],
@@ -425,7 +449,6 @@ class RlmController:
         run_id: str,
         query: str,
         task_type: str,
-        plan: ReasoningPlan,
         chunks: list[RetrievedChunk],
         evidence: EvidenceReport,
         rounds_used: int,
@@ -462,13 +485,19 @@ class RlmController:
                 + "\n\nGüven seviyesi: Low"
             )
             status = "abstained"
+            # Çekimser kalınan çıktı 'High' güven rozeti taşımamalı (gövde 'Low' diyor);
+            # confidence_level decision'dan türüyordu, status ile çelişiyordu → hizala.
+            confidence_level = "Low"
             final_confidence = round(confidence_score, 4)
         else:
             final_answer = self._build_envelope(
-                supported, used_chunks, contradictions, plan, confidence_level
+                supported, used_chunks, contradictions, confidence_level
             )
             status = "answered_with_limitation" if decision != "answer" else "answered"
             final_confidence = round(confidence_score, 4)
+
+        # Kural 1: trading-içerikli her çıktıya (soru veya cevap) zorunlu uyarı bloğu.
+        final_answer = self._apply_trading_guard(final_answer, query)
 
         self.store.set_verification(
             run_id,
@@ -520,7 +549,6 @@ class RlmController:
         supported: list[Claim],
         used_chunks: list[RetrievedChunk],
         contradictions: list[Contradiction],
-        plan: ReasoningPlan,
         confidence_level: str,
     ) -> str:
         gerekce = "\n".join(f"{i + 1}. {c.claim}" for i, c in enumerate(supported))
@@ -553,9 +581,26 @@ class RlmController:
             "",
             f"Güven seviyesi: {confidence_level}",
         ]
-        if plan.allow_trading_hypothesis:
-            parts += ["", "Trading hipotezi uyarıları:", _TRADING_DISCLAIMER]
+        # Trading uyarısı burada DEĞİL — tek nokta _apply_trading_guard (içerik-tabanlı,
+        # görev tipinden bağımsız). Böylece MATH/MULTI/UNCERTAINTY'ye sınıflanan trading
+        # soruları da uyarıyı kaçırmaz (kural 1 sızıntısı kapandı).
         return "\n".join(parts)
+
+    def _apply_trading_guard(self, answer: str, query: str) -> str:
+        """Kural 1 tek-nokta yaptırımı: canlı sinyal/yatırım tavsiyesi ASLA.
+
+        `rlm_allow_live_trading_signal` (config) burada gerçekten OKUNUR — ölü guard
+        değil. MUTLAK olarak False'tur; biri yanlışlıkla True yapsa dahi sistem canlı
+        sinyal üretmez, yalnızca bu (kozmetik olmayan) uyarı eklemeyi atlardı. Soru veya
+        nihai cevap trading dili taşıyorsa ve uyarı henüz yoksa zorunlu uyarı eklenir.
+        """
+        if self.settings.rlm_allow_live_trading_signal:
+            return answer  # asla True olmaz; yine de açıkça okunur (sahte-guard değil)
+        if "yatırım tavsiyesi değildir" in answer:
+            return answer  # zaten var → çiftleme
+        if not (_TRADING_SIGNAL_RE.search(query) or _TRADING_SIGNAL_RE.search(answer)):
+            return answer  # trading-içerik yok → uyarı gereksiz
+        return f"{answer}\n\nTrading uyarıları:\n{_TRADING_DISCLAIMER}"
 
     def _write_report(
         self,
