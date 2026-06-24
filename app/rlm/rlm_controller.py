@@ -320,6 +320,7 @@ class RlmController:
         for r in range(rounds):
             used = r + 1
             q = self._reformulate(query, plan, r)
+            prev_len = len(chunks)
             new = self.retriever.retrieve(q, top_k=top_k)
             if paper_ids:
                 new = [c for c in new if c.paper_id in paper_ids]
@@ -347,15 +348,24 @@ class RlmController:
                 break
             if not self.settings.rlm_enable_query_reformulation:
                 break
+            # Bu tur YENİ chunk eklemediyse (deterministik retrieval → ilerleme yok), ek
+            # turlar da boşa çıkar → erken dur (ölü iş + yanıltıcı audit step'i önle).
+            if r > 0 and len(chunks) == prev_len:
+                break
         return chunks, evidence, used
 
     def _reformulate(self, query: str, plan: ReasoningPlan, round_idx: int) -> str:
-        """Deterministik (LLM-free) sorgu yeniden-formülasyonu: ilk tur orijinal,
-        sonraki turlarda plan.must_include bölüm anahtar kelimelerini ekler →
-        retrieval'ı methodology/findings/limitations gibi bölümlere yönlendirir."""
+        """Deterministik (LLM-free) sorgu yeniden-formülasyonu: ilk tur orijinal; sonraki
+        turlarda plan.must_include'dan DÖNÜŞÜMLÜ TEK bölüm anahtarı ekler → her tur farklı
+        bölüme (methodology→findings→limitations…) yönelir.
+
+        Eskiden her tur ' '.join(must_include) ile AYNI sorguyu üretiyordu → deterministik
+        retriever aynı chunk'ları getirip 3-turlu görevlerde 3. tur boşa gidiyordu (ölü iş +
+        yanıltıcı 'round=3' audit). Tur-başına farklı bölüm anahtarı bu redundansı kapatır."""
         if round_idx == 0 or not plan.must_include:
             return query
-        return f"{query} {' '.join(plan.must_include)}"
+        section = plan.must_include[(round_idx - 1) % len(plan.must_include)]
+        return f"{query} {section}"
 
     def _draft(
         self, query: str, chunks: list[RetrievedChunk], plan: ReasoningPlan, *, backend: str = ""
