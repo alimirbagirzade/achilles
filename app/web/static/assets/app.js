@@ -97,6 +97,7 @@
       if (name === "eval") loadEvalSets();
       if (name === "about") loadSystemStatus();
       if (name === "agents") loadAgentsDashboard();
+      if (name === "rlm") loadRlmDashboard();
     });
   });
 
@@ -3236,6 +3237,193 @@
         loadAgRuns();
         updateAgFilterHint();
       }
+    });
+  })();
+
+  // ---------- RLM dashboard (salt-okuma; /api/rlm/*) ----------
+  function rlmStatusBadge(s) {
+    var cls = "ag-gray";
+    if (s === "answered") cls = "ag-green";
+    else if (s === "answered_with_limitation" || s === "no_llm") cls = "ag-yellow";
+    else if (s === "abstained" || s === "failed") cls = "ag-red";
+    return '<span class="ag-badge ' + cls + '">' + esc(s) + "</span>";
+  }
+
+  function loadRlmDashboard() {
+    var el = document.getElementById("rlmRunsTable");
+    if (!el) return;
+    el.innerHTML = '<span class="muted small">Yükleniyor…</span>';
+    api("/rlm/runs?limit=50")
+      .then(function (d) {
+        var runs = d.runs || [];
+        if (!runs.length) {
+          el.innerHTML =
+            '<span class="muted small">Henüz RLM koşusu yok. CLI: achilles rlm-answer "soru"</span>';
+          return;
+        }
+        var rows = "";
+        runs.forEach(function (r) {
+          rows +=
+            "<tr><td><button class=\"ag-link\" data-rlm-run=\"" +
+            esc(r.run_id) +
+            '">' +
+            agShort(r.run_id) +
+            "</button></td><td>" +
+            esc((r.user_query || "").slice(0, 60)) +
+            "</td><td>" +
+            esc(r.task_type) +
+            "</td><td>" +
+            rlmStatusBadge(r.status) +
+            "</td><td>" +
+            esc(r.evidence_score) +
+            "</td><td>" +
+            esc(r.final_confidence) +
+            "</td><td>" +
+            agTime(r.created_at) +
+            "</td></tr>";
+        });
+        el.innerHTML =
+          '<table class="ag-table"><thead><tr><th>Run</th><th>Soru</th><th>Görev</th>' +
+          "<th>Durum</th><th>Kanıt</th><th>Güven</th><th>Tarih</th></tr></thead><tbody>" +
+          rows +
+          "</tbody></table>";
+      })
+      .catch(function (e) {
+        el.innerHTML = '<span class="ag-red">Yüklenemedi: ' + esc(e.message) + "</span>";
+      });
+  }
+
+  function rlmClaimList(title, claims, red) {
+    if (!claims || !claims.length) return "";
+    var items = claims
+      .map(function (c) {
+        return "<li>" + esc(c) + "</li>";
+      })
+      .join("");
+    return (
+      '<div class="small' +
+      (red ? " ag-red" : "") +
+      '"><strong>' +
+      esc(title) +
+      "</strong><ul>" +
+      items +
+      "</ul></div>"
+    );
+  }
+
+  function loadRlmRunDetail(runId) {
+    var el = document.getElementById("rlmDetail");
+    if (!el) return;
+    el.classList.remove("hidden");
+    el.innerHTML = '<span class="muted small">Yükleniyor…</span>';
+    api("/rlm/runs/" + encodeURIComponent(runId))
+      .then(function (d) {
+        var r = d.run || {},
+          steps = d.steps || [],
+          ev = d.evidence || [],
+          v = d.verification || null;
+        var head =
+          '<div class="ag-detail-head"><strong>' +
+          esc(r.run_id) +
+          "</strong> " +
+          rlmStatusBadge(r.status) +
+          ' <button class="ag-link" id="rlmDetailClose">kapat ✕</button></div>' +
+          '<div class="muted small">görev: ' +
+          esc(r.task_type) +
+          " · kanıt: " +
+          esc(r.evidence_score) +
+          " · güven: " +
+          esc(r.final_confidence) +
+          " · model: " +
+          esc(r.model_name || "—") +
+          " · " +
+          agTime(r.created_at) +
+          "</div>" +
+          '<div style="white-space:pre-wrap;background:rgba(127,127,127,.12);padding:.5rem;' +
+          'border-radius:4px;margin:.4rem 0;font-size:.85rem">' +
+          esc(r.final_answer || "") +
+          "</div>";
+        var sl = "";
+        steps.forEach(function (s) {
+          var txt =
+            (s.tool_used ? s.tool_used + " — " : "") + (s.output_text || s.input_text || "");
+          sl +=
+            '<li class="ag-tl"><span class="ag-badge ag-gray">' +
+            esc(s.step_type) +
+            "</span> " +
+            esc(txt.slice(0, 220)) +
+            "</li>";
+        });
+        var er = "";
+        ev.forEach(function (e2) {
+          er +=
+            "<tr><td>" +
+            esc(e2.paper_id) +
+            "</td><td>" +
+            esc(e2.chunk_id) +
+            "</td><td>" +
+            esc(e2.relevance_score) +
+            "</td><td>" +
+            (e2.used_in_final_answer ? "✓" : "—") +
+            "</td></tr>";
+        });
+        var vb;
+        if (v) {
+          vb =
+            '<div class="muted small">citation: ' +
+            esc(v.citation_score) +
+            " · grounding: " +
+            esc(v.grounding_score) +
+            " · sufficiency: " +
+            esc(v.context_sufficiency_score) +
+            " · karar: " +
+            esc(v.final_decision) +
+            "</div>" +
+            rlmClaimList("Desteklenen iddialar:", v.supported_claims, false) +
+            rlmClaimList("Desteklenmeyen (atılan):", v.unsupported_claims, true) +
+            (v.contradictions && v.contradictions.length
+              ? "<div class=\"small\"><strong>Çelişki:</strong> " +
+                esc(v.contradictions.join(", ")) +
+                "</div>"
+              : "");
+        } else {
+          vb = '<span class="muted small">doğrulama kaydı yok</span>';
+        }
+        el.innerHTML =
+          head +
+          '<h4 style="margin:.6rem 0 .2rem">Adımlar</h4><ul class="ag-timeline">' +
+          (sl || '<li class="muted small">adım yok</li>') +
+          "</ul>" +
+          '<h4 style="margin:.6rem 0 .2rem">Kanıt (chunk)</h4>' +
+          (er
+            ? '<table class="ag-table"><thead><tr><th>paper</th><th>chunk</th>' +
+              "<th>relevance</th><th>kullanıldı</th></tr></thead><tbody>" +
+              er +
+              "</tbody></table>"
+            : '<span class="muted small">kanıt satırı yok</span>') +
+          '<h4 style="margin:.6rem 0 .2rem">Doğrulama</h4>' +
+          vb;
+        var cl = document.getElementById("rlmDetailClose");
+        if (cl)
+          cl.addEventListener("click", function () {
+            el.classList.add("hidden");
+            el.innerHTML = "";
+          });
+      })
+      .catch(function (e) {
+        el.innerHTML = '<span class="ag-red">Detay yüklenemedi: ' + esc(e.message) + "</span>";
+      });
+  }
+
+  (function () {
+    var panel = document.getElementById("panel-rlm");
+    if (!panel) return;
+    panel.addEventListener("click", function (e) {
+      var t = e.target;
+      if (!t || t.nodeType !== 1) return;
+      if (t.id === "rlmRefreshBtn") return loadRlmDashboard();
+      var runId = t.getAttribute("data-rlm-run");
+      if (runId) return loadRlmRunDetail(runId);
     });
   })();
 

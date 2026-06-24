@@ -60,6 +60,7 @@
       <button class="tab" data-tab="about">08 · SİSTEM</button>
       <button class="tab" data-tab="learning">09 · ÖĞRENME</button>
       <button class="tab" data-tab="agents">10 · AGENTS / OTOMASYON</button>
+      <button class="tab" data-tab="rlm">11 · RLM</button>
     </nav>
 
     <main>
@@ -803,6 +804,21 @@
           <h3 style="margin:0 0 .5rem">Genel Olay Akışı (son 100)</h3>
           <div id="agEventsTable"><span class="muted small">Yükleniyor…</span></div>
         </div>
+      </section>
+
+      <!-- 11 · RLM (Recursive/Reasoning LM — çok-adımlı kaynaklı cevap) -->
+      <section class="panel" id="panel-rlm">
+        <div class="ag-toolbar">
+          <h2 style="margin:0">RLM — Kaynaklı Cevap Koşuları</h2>
+          <button class="btn" id="rlmRefreshBtn">↻ Yenile</button>
+          <span class="muted small">Çok-adımlı retrieval + iddia-düzeyi doğrulama. Salt-okuma
+            görünüm; bir koşuya tıklayınca adımlar + kanıt + doğrulama açılır.</span>
+        </div>
+        <div class="card">
+          <h3 style="margin:0 0 .5rem">Koşular</h3>
+          <div id="rlmRunsTable"><span class="muted small">Yükleniyor…</span></div>
+        </div>
+        <div class="card hidden" id="rlmDetail"></div>
       </section>
     </main>
 
