@@ -31,9 +31,19 @@ uv run achilles rlm-answer "..." --rounds 3 --top-k 8
 
 # Kayıtlı koşuları listele (durum/kanıt/güven)
 uv run achilles rlm-runs
+
+# §16 LoRA dataset ADAYLARI (salt-okuma; eğitim YOK, insan onayı şart)
+uv run achilles rlm-lora-candidates [--export data/rlm_lora_candidates.jsonl]
 ```
 
 API: `POST /api/rlm/answer` · `GET /api/rlm/runs` · `GET /api/rlm/runs/{run_id}`.
+
+## LoRA aday seçimi (§16)
+
+Yüksek-güvenli RLM koşuları ileride LoRA için aday olabilir — `app/rlm/lora_candidate.py`.
+Eşik (§16): `final_confidence≥0.85 ∧ citation≥0.90 ∧ grounding≥0.90 ∧ unsupported=[]` ∧
+status gerçek-cevap. **ADAY ≠ eğitim verisi:** `requires_human_approval=True`; onaysız
+eğitim YOK (kural 8). Salt-okuma seçim + JSONL export; hiçbir eğitim başlatmaz.
 
 ## Akış (özet)
 
