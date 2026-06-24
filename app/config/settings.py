@@ -141,6 +141,21 @@ class Settings(BaseSettings):
         300  # LLM çağrı süre tavanı; aşılırsa LLMUnavailable → graceful no_llm
     )
 
+    # --- RLM engine adapter (opsiyonel alexzhang13/rlm — talimat) ---
+    # Çekirdek RLM Controller (native) VARSAYILANDIR. alexzhang adapter opsiyoneldir;
+    # `rlms` paketi kurulu + açık değilse sistem native ile çalışır. OpenAI VARSAYILAN
+    # provider DEĞİL. Bu alanlar engine_config + security guard + adapter'larca OKUNUR.
+    rlm_engine_provider: str = "native"  # native | alexzhang
+    rlm_production_mode: bool = True  # üretim: local-exec/shell/network/fs-write YASAK
+    rlm_alexzhang_enabled: bool = False  # opsiyonel motor; varsayılan KAPALI
+    rlm_alexzhang_backend: str = "anthropic"  # anthropic | local_openai_compatible (OpenAI değil)
+    rlm_alexzhang_model: str = ""  # boşsa anthropic_model'e düşer (hardcode yok)
+    rlm_alexzhang_environment: str = "docker"  # docker | ipython | local (üretimde 'local' yasak)
+    rlm_alexzhang_allow_local_exec: bool = False  # üretimde MUTLAK kapalı
+    rlm_alexzhang_allow_shell: bool = False
+    rlm_alexzhang_allow_network: bool = False
+    rlm_alexzhang_allow_filesystem_write: bool = False
+
     # --- Trading ---
     default_market: str = "XAUUSD"
     default_timeframe: str = "15m"

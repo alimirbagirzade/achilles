@@ -833,6 +833,62 @@ def rlm_lora_candidates(
         )
 
 
+@app.command("rlm-engine")
+def rlm_engine() -> None:
+    """RLM motor yapılandırmasını göster (provider/alexzhang/güvenlik; salt-okuma)."""
+    from app.rlm.engine_config import public_engine_config
+
+    cfg = public_engine_config()
+    t = Table(title="RLM Engine Config")
+    t.add_column("Ayar")
+    t.add_column("Değer")
+    for k in (
+        "provider",
+        "alexzhang_enabled",
+        "alexzhang_backend",
+        "alexzhang_environment",
+        "production_mode",
+        "allow_local_exec",
+    ):
+        t.add_row(k, str(cfg[k]))
+    t.add_row("allowed_tools", ", ".join(cfg["allowed_tools"]))
+    console.print(t)
+    if cfg["provider"] == "alexzhang" and not cfg["alexzhang_enabled"]:
+        console.print("[yellow]provider=alexzhang ama enabled=false → native çalışır.[/yellow]")
+
+
+@app.command("rlm-test-adapter")
+def rlm_test_adapter(
+    adapter: str = typer.Option("native", help="native | alexzhang"),
+) -> None:
+    """Bir RLM motorunun kullanılabilirliğini test et (çağrı YAPMAZ; salt uygunluk)."""
+    from app.rlm.adapters.alexzhang_rlm import AlexZhangRLMAdapter
+    from app.rlm.adapters.native import NativeRLMAdapter
+    from app.rlm.engine_config import build_engine_config
+
+    if adapter == "native":
+        ok = NativeRLMAdapter().is_available()
+        msg = "native her zaman kullanılabilir (çekirdek)."
+    elif adapter == "alexzhang":
+        ok = AlexZhangRLMAdapter(build_engine_config()).is_available()
+        msg = (
+            "rlms paketi kurulu ✓"
+            if ok
+            else "rlms paketi KURULU DEĞİL → `uv sync --extra rlm` "
+            "veya provider'ı native bırak (sistem native ile çalışır)."
+        )
+    else:
+        console.print("[red]adapter native|alexzhang olmalı[/red]")
+        raise typer.Exit(1)
+    color = "green" if ok else "yellow"
+    console.print(
+        Panel(
+            f"[{color}]{adapter}: {'kullanılabilir' if ok else 'yok'}[/{color}]\n{msg}",
+            title="RLM Adapter Testi",
+        )
+    )
+
+
 @app.command("pine")
 def pine_export(
     strategy_name: str = typer.Argument(default="", help="Strateji adı (boşsa varsayılan örnek)"),

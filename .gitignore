@@ -45,6 +45,8 @@ reports/synthesis/*
 reports/agent_runs/*
 # RLM koşu raporları — koşu başına JSON (runtime çıktısı; achilles rlm-answer üretir)
 reports/rlm_runs/*
+# RLM motor trajektori logları (opsiyonel alexzhang motoru; runtime + olası hassas içerik)
+reports/rlm/trajectories/*
 # Lokal eğitim-denetim raporları (Phase 5A) — report-only çıktılar (runtime)
 reports/local_training_orchestrator/*
 
@@ -60,6 +62,11 @@ data/lora_sft/*.jsonl
 outputs/
 checkpoints/
 adapters/
+# AMA: RLM motor-adapter KAYNAK paketi (LoRA eğitim çıktısı DEĞİL) izlenmeli — yoksa
+# 'adapters/' kuralı app/rlm/adapters/* kaynak dosyalarını sessizce commit dışı bırakır.
+# Yalnız .py kaynağı geri-dahil; __pycache__/*.pyc ignore'da KALIR (genel '!**' onu ezerdi).
+!app/rlm/adapters/
+!app/rlm/adapters/*.py
 *.safetensors
 *.bin
 *.gguf
