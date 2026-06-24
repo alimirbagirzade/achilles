@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from app.rlm.lora_candidate import (
     export_candidates_jsonl,
     select_lora_candidates,
@@ -105,3 +107,12 @@ def test_count_runs_and_truncation_warning(tmp_path: Path, caplog):
     cands = select_lora_candidates(store=store, limit=2)  # 3 koşu, limit 2 → kesme
     assert len(cands) == 2  # yalnız en yeni 2 tarandı (hepsi uygun)
     assert "ATLANDI" in caplog.text  # kullanıcı sessizce kaybetmedi
+
+
+def test_select_rejects_nonpositive_limit(tmp_path: Path):
+    """limit<=0 (SQLite'ta -1='sınırsız', 0=hiç) yanlış/çelişkili uyarı üretirdi → reddedilir."""
+    store = RlmStore(db_path=tmp_path / "rlm.db")
+    _make_run(store, status="answered", conf=0.95, cit=0.95, gnd=0.95, unsupported=[])
+    for bad in (0, -1):
+        with pytest.raises(ValueError):
+            select_lora_candidates(store=store, limit=bad)
