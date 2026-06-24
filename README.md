@@ -805,7 +805,10 @@ uv run achilles rag-scan --dry-run      # sadece listele, izleme listesine yazma
 ```bash
 uv run achilles ask "soru"              # RAG ile kaynaklı yanıt (tek-tur)
 uv run achilles rlm-answer "soru"       # RLM: çok-adımlı + iddia-doğrulamalı kaynaklı cevap
+uv run achilles rlm-answer "soru" --engine alexzhang  # opsiyonel motor (yoksa native'e düşer)
 uv run achilles rlm-runs                # RLM koşu geçmişi (görev/durum/kanıt/güven)
+uv run achilles rlm-engine              # RLM motor config (provider/güvenlik; salt-okuma)
+uv run achilles rlm-tools               # RLM güvenli tool allowlist'i (deny-by-default)
 uv run achilles rlm-lora-candidates     # §16 LoRA adayları (salt-okuma; eğitim YOK, onay şart)
 uv run achilles card <paper_id>         # bilgi kartı üret
 uv run achilles extract-formulas        # tüm makalelerden formül çıkar

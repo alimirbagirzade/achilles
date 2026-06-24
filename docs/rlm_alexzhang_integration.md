@@ -70,7 +70,22 @@ uv run achilles rlm-test-adapter --adapter native
 uv run achilles rlm-test-adapter --adapter alexzhang
 # kaynaklı cevap (native varsayılan):
 uv run achilles rlm-answer "Momentum stratejisi yüksek volatilitede zayıflıyor mu?"
+# opsiyonel motoru dene (kurulu+açık+güvenli değilse sessizce native'e düşer):
+uv run achilles rlm-answer "..." --engine alexzhang
+# güvenli tool allowlist'i listele veya saf bir tool'u çağır:
+uv run achilles rlm-tools
+uv run achilles rlm-tools --call calculator --expr "2*(3+4)"
 uv run python -m app.rlm.answer_pipeline --query "..." --adapter native
+```
+
+## API uçları
+
+```text
+POST /api/rlm/answer            # RLM Controller (native): kaynaklı + doğrulanmış cevap
+GET  /api/rlm/runs              # son koşular
+GET  /api/rlm/runs/{run_id}     # koşu detayı (adım + kanıt + doğrulama)
+GET  /api/rlm/config            # motor config (salt-okuma; sır YOK)
+POST /api/rlm/test-adapter      # ?adapter=native|alexzhang → uygunluk (çağrı yapmaz)
 ```
 
 ## Tool allowlist
@@ -90,10 +105,15 @@ input-doğrulamalı, shell/network/secret-erişimsiz güvenli wrapper.
 
 `app/rlm/adapters/{base,native,alexzhang_rlm,security}.py`, `app/rlm/{engine_config,
 tool_registry,safe_tools,answer_pipeline}.py`; Settings `rlm_engine_*`/`rlm_alexzhang_*`;
-CLI `rlm-engine`/`rlm-test-adapter`; testler `tests/test_rlm_engine_*`, `test_rlm_tool_allowlist`.
+CLI `rlm-engine`/`rlm-test-adapter`/`rlm-tools` + `rlm-answer --engine`; web `GET /api/rlm/config`
++ `POST /api/rlm/test-adapter`; testler `tests/test_rlm_engine_*`, `test_rlm_tool_allowlist`.
+
+alexzhang yolu cevabı verifier'la doğrular, kaynaklara `support_level` (strong|partial|weak)
+ekler ve koşuyu `rlm_store`'a yazar (best-effort) → `rlm-runs` / `/api/rlm/runs` görür.
 
 ## Kalan / sonraki adımlar
 
-- API uçları (`GET /api/rlm/config`, `POST /api/rlm/test-adapter`) — sonraki PR (CLI eşdeğeri var).
 - Level 3 izole REPL (docker/ipython) gerçek koşumu — ortam hazır olunca; şu an güvenlik
   kapısı + config iskeleti hazır, ortam yoksa temiz hata.
+- Trajektori logları (`reports/rlm/trajectories/`) — alexzhang motoru kurulu+çalışınca üretilir
+  (dizin `.gitignore`'da; runtime çıktısı).

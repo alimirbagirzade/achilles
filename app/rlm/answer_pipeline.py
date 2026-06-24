@@ -149,6 +149,7 @@ def _try_alexzhang(
     unsupported = [c.claim for c in claims if not c.is_supported]
     cit_valid = sum(1 for c in citations if c.exists)
     cit_score = (cit_valid / len(citations)) if citations else 1.0
+    grounding_score = (len(supported) / len(claims)) if claims else 0.0
 
     if require_citations and not supported:
         status = "insufficient_evidence"
@@ -161,11 +162,24 @@ def _try_alexzhang(
     # ham taslağını (resp.answer) GÖVDEYE koyma. Aksi halde desteklenmeyen/uydurma iddialar
     # 'unsupported_claims_removed' içine yazılsa da gövdede kalır (native bunu yapmaz).
     answer_text = _rebuild_from_supported(supported, chunks, status)
+    support_levels = _chunk_support_levels(claims)
+
+    # §13.14: alexzhang yolu da run kaydı yazsın (rlm_store) → rlm-runs / /api/rlm/runs
+    # alexzhang cevaplarını da gösterir. Best-effort: DB hatası cevabı BOZMAZ (suppress).
+    run_id = _log_alexzhang_run(
+        query, answer_text, status, cit_score, grounding_score, supported, unsupported
+    )
 
     return {
+        "run_id": run_id,
         "answer": answer_text,
         "sources": [
-            {"paper_id": c.paper_id, "chunk_id": c.chunk_id, "section": c.section_name}
+            {
+                "paper_id": c.paper_id,
+                "chunk_id": c.chunk_id,
+                "section": c.section_name,
+                "support_level": support_levels.get(c.chunk_id, "weak"),
+            }
             for c in chunks
         ],
         "unsupported_claims_removed": unsupported,
@@ -174,6 +188,72 @@ def _try_alexzhang(
         "adapter": "alexzhang_rlm",
         "status": status,
     }
+
+
+def _chunk_support_levels(claims: list[Any]) -> dict[str, str]:
+    """Her chunk için en güçlü dayanak seviyesini hesapla (§13: strong|partial|weak).
+
+    Bir chunk 'supported' bir iddiayı destekliyorsa strong; yalnız 'partially_supported'
+    iddiada geçiyorsa partial; hiçbir desteklenen iddiada geçmiyorsa weak.
+    """
+    rank = {"strong": 2, "partial": 1, "weak": 0}
+    levels: dict[str, str] = {}
+    for c in claims:
+        if c.support_status == "supported":
+            lvl = "strong"
+        elif c.support_status == "partially_supported":
+            lvl = "partial"
+        else:
+            continue  # speculative/unsupported chunk'a güç katmaz
+        for cid in c.supporting_chunks:
+            if rank[lvl] > rank.get(levels.get(cid, "weak"), 0):
+                levels[cid] = lvl
+    return levels
+
+
+def _log_alexzhang_run(
+    query: str,
+    final_answer: str,
+    status: str,
+    cit_score: float,
+    grounding_score: float,
+    supported: list[str],
+    unsupported: list[str],
+) -> str | None:
+    """alexzhang cevabını rlm_store'a kaydet (best-effort). DB hatası cevabı BOZMAZ ama
+    SESSİZ YUTULMAZ — log.warning ile görünür kılınır (CLAUDE.md: sessiz kesme yok)."""
+    try:
+        from app.rlm.rlm_store import RlmStore
+        from app.rlm.task_classifier import TaskClassifier
+
+        store = RlmStore()
+        task_type = TaskClassifier().classify(query)
+        run_id = store.create_run(query, task_type, model_name="alexzhang_rlm")
+        store.set_verification(
+            run_id,
+            supported_claims=supported,
+            unsupported_claims=unsupported,
+            contradictions=[],
+            citation_score=round(cit_score, 4),
+            grounding_score=round(grounding_score, 4),
+            context_sufficiency_score=round(grounding_score, 4),
+            final_decision=status,
+        )
+        store.finish_run(
+            run_id,
+            status=status,
+            final_answer=final_answer,
+            final_confidence=round(cit_score, 4),
+            evidence_score=round(grounding_score, 4),
+        )
+        return run_id
+    except Exception as exc:  # DB/import hatası → run_id=None ama cevap döner; görünür logla
+        log.warning(
+            "alexzhang run kaydı başarısız (cevap etkilenmedi): %s: %s",
+            type(exc).__name__,
+            exc,
+        )
+        return None
 
 
 def _rebuild_from_supported(supported: list[str], chunks: list[Any], status: str) -> str:
