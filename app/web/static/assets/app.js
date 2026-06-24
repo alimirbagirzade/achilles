@@ -234,12 +234,20 @@
     api("/lora-adapters")
       .then(function (data) {
         var cur = sel.value;
-        var opts = '<option value="">(base — adapter yok)</option>';
-        (data.adapters || []).forEach(function (a) {
+        var adapters = data.adapters || [];
+        var opts = '<option value="">(base model — eğitimsiz, 4B)</option>';
+        adapters.forEach(function (a) {
           opts += '<option value="' + esc(a) + '">' + esc(a) + "</option>";
         });
         sel.innerHTML = opts;
-        if (cur) sel.value = cur;
+        // Varsayılan: EĞİTİLMİŞ 1.5B adapter (kullanıcı kazara base=4B'ye düşmesin).
+        if (cur) {
+          sel.value = cur;
+        } else if (adapters.indexOf("achilles_lora_qwen15b") >= 0) {
+          sel.value = "achilles_lora_qwen15b";
+        } else if (adapters.length) {
+          sel.value = adapters[0];
+        }
       })
       .catch(function () {});
   }
