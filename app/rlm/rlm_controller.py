@@ -85,6 +85,16 @@ def _sanitize_citations(text: str, valid_chunk_ids: set[str]) -> str:
     return _INLINE_CITATION_RE.sub(_repl, text).strip()
 
 
+def _has_content(text: str) -> bool:
+    """Atıf temizliği sonrası iddia gerçek içerik (harf/rakam) taşıyor mu?
+
+    Yalnız geçersiz/uydurma satır-içi atıftan ibaret bir iddia sanitize edilince
+    geriye sadece noktalama kalır (ör. '.'); bu boş-içerikli iddia gövdeye
+    konursa "Kısa cevap" tek bir noktaya çökerdi (kural 7 + degenerate-cevap).
+    """
+    return any(ch.isalnum() for ch in text)
+
+
 @dataclass
 class RlmResult:
     """RLM koşu sonucu (CLI/API/rapor için)."""
@@ -570,13 +580,23 @@ class RlmController:
             "High" if decision == "answer" else "Medium" if decision == "warn" else "Low"
         )
 
+        # Sahte/geçersiz atıftan ibaret olup sanitize sonrası içerikten boşalan supported
+        # iddialar (kural 7): gövdeye gerçek dayanak katmaz, "Kısa cevap"ı tek bir noktaya
+        # ('.') çökertirdi → karar + gövde için anlamlı iddialarla çalış.
+        valid_chunk_ids = {c.chunk_id for c in chunks}
+        meaningful_supported = [
+            c for c in supported if _has_content(_sanitize_citations(c.claim, valid_chunk_ids))
+        ]
+
         # Audit kaydı (set_verification + evidence) nihai cevaba GERÇEKTEN gireni yansıtmalı.
         # Çekimser yolda cevap iddia İÇERMEZ → recorded_supported=[] ve used_ids=∅ (kardeş
         # _finish_insufficient/_finish_no_llm yollarıyla tutarlı). Aksi halde abstain run'ı
         # 'supported' + used_in_final_answer=True yazıp audit'i çelişkiye düşürürdü.
-        if abstain or not supported:
+        if abstain or not meaningful_supported:
             reason = abstain_reason or (
-                "Taslak cevaptaki hiçbir iddia kaynaklarla yeterince desteklenmedi."
+                "Destekli iddialar yalnızca geçersiz atıftan ibaretti (gerçek dayanak yok)."
+                if supported
+                else "Taslak cevaptaki hiçbir iddia kaynaklarla yeterince desteklenmedi."
             )
             final_answer = (
                 "Kısa cevap:\n"
@@ -594,18 +614,18 @@ class RlmController:
             recorded_supported: list[Claim] = []
             used_ids: set[str] = set()
         else:
-            used_ids = {cid for c in supported for cid in c.supporting_chunks}
+            used_ids = {cid for c in meaningful_supported for cid in c.supporting_chunks}
             used_chunks = [c for c in chunks if c.chunk_id in used_ids] or chunks
             final_answer = self._build_envelope(
-                supported,
+                meaningful_supported,
                 used_chunks,
                 contradictions,
                 confidence_level,
-                {c.chunk_id for c in chunks},
+                valid_chunk_ids,
             )
             status = "answered_with_limitation" if decision != "answer" else "answered"
             final_confidence = round(confidence_score, 4)
-            recorded_supported = supported
+            recorded_supported = meaningful_supported
 
         # Kural 1: trading-içerikli her çıktıya (soru veya cevap) zorunlu uyarı bloğu.
         final_answer = self._apply_trading_guard(final_answer, query)
@@ -664,8 +684,15 @@ class RlmController:
         valid_chunk_ids: set[str],
     ) -> str:
         # Gövdeye giren ham LLM cümlelerindeki uydurma satır-içi atıfları çıkar (kural 7):
-        # getirilen sette olmayan [paper:chunk] işaretleri kullanıcıya gösterilmez.
-        safe_claims = [_sanitize_citations(c.claim, valid_chunk_ids) for c in supported]
+        # getirilen sette olmayan [paper:chunk] işaretleri kullanıcıya gösterilmez. Atıf
+        # temizliği sonrası içerikten boşalan (yalnız geçersiz atıftan ibaret) iddialar
+        # elenir — aksi halde "Kısa cevap" gövdesi tek bir noktaya çökerdi. Çağıran zaten
+        # anlamlı iddialarla çağırır; bu filtre fonksiyonu kendi başına da güvenli kılar.
+        safe_claims = [
+            s
+            for s in (_sanitize_citations(c.claim, valid_chunk_ids) for c in supported)
+            if _has_content(s)
+        ]
         gerekce = "\n".join(f"{i + 1}. {claim}" for i, claim in enumerate(safe_claims))
         kaynaklar = "\n".join(
             f"- {c.citation} | {c.section_name or '—'} | {c.title or '—'}" for c in used_chunks
