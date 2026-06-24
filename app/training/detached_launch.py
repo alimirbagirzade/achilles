@@ -144,6 +144,25 @@ def _hash_jsonl_lines(lines: list[str]) -> str:
     return h.hexdigest()[:16]
 
 
+def _auto_register_dataset(settings, src: Path) -> None:
+    """Kanonik veri setini (lora_sft.jsonl) ``DatasetVersion`` olarak sürümle (Modül 8).
+
+    Eğitim verisi hazırlandığında otomatik kayıt → ``model-data-registry`` Kural-8 kapısı
+    gerçek veriyle dolar. İçerik-hash ile İDEMPOTENT (aynı veri → tek sürüm). BEST-EFFORT:
+    registry hatası eğitimi/önizlemeyi BOZMAZ. Onay/terfi yine İNSAN ELİYLE (CLI
+    ``registry-promote-dataset``; Kural 8 — burada eğitim BAŞLATILMAZ, terfi YAPILMAZ).
+    """
+    if _count_lines(src) <= 0:
+        return
+    with contextlib.suppress(Exception):
+        from app.memory.sqlite_store import SqliteStore
+        from app.registry import RegistryStore
+
+        RegistryStore(SqliteStore(settings.sqlite_file)).register_dataset_from_file(
+            src, name="lora_sft", source_type="sft"
+        )
+
+
 def build_training_split(settings=None) -> TrainingSplit:
     """TEK KANONİK eğitim verisi: `lora_sft.jsonl` → `jsonl_dir/{train,valid}.jsonl`.
 
@@ -178,6 +197,7 @@ def build_training_split(settings=None) -> TrainingSplit:
         if train_path.exists()
         else []
     )
+    _auto_register_dataset(s, src)  # Modül 8: kanonik veri setini sürümle (best-effort, idempotent)
     return TrainingSplit(
         train_path=train_path,
         valid_path=valid_path,
