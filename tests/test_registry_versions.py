@@ -80,3 +80,27 @@ def test_decision_log_roundtrip(reg: RegistryStore) -> None:
     rows = reg.list_decisions(target_id="ds_x")
     assert len(rows) == 1
     assert rows[0]["approved_by"] == "ali"
+
+
+# --- dosyadan dataset kaydı ------------------------------------------------
+def test_register_dataset_from_file(reg: RegistryStore, tmp_path: Path) -> None:
+    f = tmp_path / "lora_sft.jsonl"
+    f.write_text('{"a":1}\n{"b":2}\n\n{"c":3}\n', encoding="utf-8")  # 3 dolu satır
+    out = reg.register_dataset_from_file(f, source_type="sft")
+    assert out["n_records"] == 3
+    assert out["content_hash"] and len(out["content_hash"]) == 64  # sha-256 hex
+    assert out["name"] == "lora_sft"
+
+
+def test_register_dataset_from_file_idempotent(reg: RegistryStore, tmp_path: Path) -> None:
+    f = tmp_path / "d.jsonl"
+    f.write_text('{"x":1}\n', encoding="utf-8")
+    a = reg.register_dataset_from_file(f)
+    b = reg.register_dataset_from_file(f)  # aynı içerik → aynı hash → idempotent
+    assert a["dataset_version_id"] == b["dataset_version_id"]
+    assert len(reg.list_datasets()) == 1
+
+
+def test_register_dataset_from_missing_file_raises(reg: RegistryStore, tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError):
+        reg.register_dataset_from_file(tmp_path / "yok.jsonl")
