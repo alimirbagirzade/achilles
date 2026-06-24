@@ -1,7 +1,7 @@
 # HANDOFF — Achilles Trader AI
 
 _Son güncelleme: 2026-06-24 · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
-_Açık PR: yok — RLM iş PR'ları #43/44/45/46 hepsi MERGED._
+_Açık PR: yok — AI Brain (~16 PR) + RLM (#43-46) hepsi MERGED._
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
@@ -17,6 +17,49 @@ araçlarla (Claude Code, Codex vb.) — API anahtarı/faturalı endpoint DEĞİL
 RLM `backend="anthropic"` (API) yolu OPSİYONEL + KAPALI kalır (`rlm_alexzhang_enabled=False`,
 `provider=native`); varsayılan/zorunlu YAPILMAZ. Yeni özelliklerde bulut API'sini varsayılan
 bağımlılık yapma → opt-in + native fallback şart. Bkz memory [[no-api-local-subscription-only]].
+
+### 🆕 EN SON İŞ (2026-06-24) — AI Brain ek modülleri (~16 PR MERGED)
+Desktop\RAG Kaynak\Eğitim geliştirme\helix_..._talimati.txt (10-modül "AI beyin" genişletme
+emri) audit edildi → çoğu ZATEN vardı. **4 gerçek boşluk** additive olarak entegre edildi
+(offline, deterministik; **app/rlm DOKUNULMADI**). 3-tur adversarial bug-fix loop → CONVERGED.
+
+**Eklenen modüller:**
+- **F1 app/registry/** — DatasetVersion/RagIndexVersion/EmbeddingModelVersion/RlmRewardVersion/
+  PromotionDecision ORM + RegistryStore + promotion_gates (atomik CAS approve/reject, terminal
+  state machine pending→approved|rejected). Commit `e08a674`.
+- **F2 app/tools/** — probability_simulator (seed'li Monte Carlo + risk-of-ruin + VaR/ES),
+  statistics_checker (permütasyon p-değeri, scipy bağımlılığı YOK), result_verifier,
+  tool_registry + ToolRun/ToolArtifact ORM + log_tool_run. CLI tools-list/montecarlo/stats-check.
+- **F3 app/evals/eval_runner.py** — EvalRunner (trading-hypothesis/rag-retrieval tipi),
+  trading_hypothesis_evaluator (regex tavsiye tespit: sure-fire/guarantee/can't-lose).
+  CLI eval-runner. → F2+F3 = **PR #14**.
+- **F4 app/ingestion/quality_scorer.py** — clean_text_scorer + PaperIngestionRun ORM +
+  Paper.quality_score/ingest_status. compute-on-demand. CLI ingestion-quality/ingestion-quality-scan.
+  → **PR #16**.
+
+**Bug-fix loop (3 tur, converged):**
+- Tur 1 (PR #19): 8 onaylı bug — 2 HIGH: TOCTOU approve/reject yarışı → atomik CAS.
+- Tur 2 (PR #21): 9 fix — terminal durum makinesi; n_trades=0 falsy bypass; FK parent
+  doğrulaması (SQLite FK enforcement GLOBAL KAPALI, BİLEREK); tavsiye-regex genişletme.
+- Tur 3: critic tek-tur → CONVERGED, high/blocker yok.
+
+**Zincir entegrasyonu (PR #24):** 4 yeni ajan + skill `automation_manifest.yaml`'de:
+ingestion-quality-scorer, scientific-tool-runtime, hypothesis-evaluator,
+model-data-registry (requires_approval → Kural 8 zincire gömülü). 20 ajan/14 adım, topolojik.
+
+**Web + bağlantılar (PR #26/28/29/32/33/35/38):**
+- `app/web/ai_brain_routes.py` — registry/tools/ingestion/eval REST API'leri.
+- `/ai-brain` dashboard (bağımsız ai_brain.html, 4 sekme).
+- eval→registry snapshot + karar-log; batch ingestion-quality-scan CLI.
+- `registry-register-dataset` CLI (SHA-256, idempotent).
+- README "AI Brain ek modülleri" CLI referansı.
+- **#38 dataset auto-registration LIVE**: `build_training_split()` → `_auto_register_dataset`
+  (best-effort, contextlib.suppress) → eğitim hattı kanonik lora_sft.jsonl'i otomatik
+  DatasetVersion (pending) yapar.
+
+**~135 yeni test.** Tüm PR'lar izole-worktree→auto-merge (çakışma yok).
+**ERTELENEN (opsiyonel):** ana index.html'e /ai-brain nav linki; rag-answer/lora/rlm-reward
+eval tipleri (app/rlm bağımlı). Bkz memory [[ai-brain-modules-integration-2026-06-24]].
 
 ### 🆕 EN SON İŞ (2026-06-24) — alexzhang13/rlm OPSİYONEL motor-adapter (4 PR MERGED)
 `Desktop\RAG Kaynak\RLM\achilles_alexzhang_rlm_claude_integration_prompt` (1051 satır) uçtan uca
