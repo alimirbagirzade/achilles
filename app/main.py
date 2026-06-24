@@ -3530,6 +3530,30 @@ def registry_snapshot() -> None:
     )
 
 
+@app.command("registry-register-dataset")
+def registry_register_dataset(
+    path: str = typer.Option(..., "--path", help="Dataset dosyası (JSONL) yolu"),
+    name: str = typer.Option("", "--name", help="Sürüm adı (boşsa dosya adı)"),
+    source_type: str = typer.Option("sft", "--source-type", help="sft | dpo | tool_use"),
+) -> None:
+    """Bir dataset dosyasını kayıt defterine sürümle (hash+sayı otomatik; sonra promote)."""
+    from app.registry import RegistryStore
+
+    reg = RegistryStore()
+    try:
+        out = reg.register_dataset_from_file(path, name=name or None, source_type=source_type)
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1) from e
+    console.print(
+        f"[green]Kayıt edildi:[/green] {out['dataset_version_id']} · "
+        f"{out['n_records']} kayıt · durum={out['approval_status']} · "
+        f"hash={(out['content_hash'] or '')[:12]}\n"
+        f"Onay için: achilles registry-promote-dataset --version {out['dataset_version_id']} "
+        f"--approver <kim>"
+    )
+
+
 @app.command("registry-promote-dataset")
 def registry_promote_dataset(
     version: str = typer.Option(..., "--version", help="dataset_version_id"),
