@@ -147,6 +147,10 @@ class EvalRunner:
         candidate_rate = round(len(candidates) / n, 4) if n else 0.0
 
         failures: list[str] = []
+        if n == 0:
+            # Boş set + min_candidate_rate=0.0 → 0.0 < 0.0 False → vacuous 'passed=True'.
+            # Hiçbir şey değerlendirmeden "geçti" demek Kural 2 ihlalidir; açıkça başarısız say.
+            failures.append("değerlendirilecek hipotez yok (boş set) — vacuous pass engellendi")
         if rejected:
             failures.append(
                 f"{len(rejected)} hipotez REDDEDİLDİ (tavsiye/kesinlik dili ya da test-edilemez)"

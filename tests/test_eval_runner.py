@@ -24,6 +24,14 @@ def runner(tmp_path: Path) -> EvalRunner:
 
 
 # --- trading-hypothesis ----------------------------------------------------
+def test_empty_hypotheses_not_vacuous_pass(runner: EvalRunner) -> None:
+    """Boş hipotez seti + min_candidate_rate=0.0 → 'vacuous pass' (passed=True) OLMAMALI.
+    Hiçbir şey değerlendirmeden 'geçti' demek Kural 2 ihlalidir."""
+    res = runner.run("trading-hypothesis", hypotheses=[], min_candidate_rate=0.0)
+    assert res.passed is False
+    assert any("boş set" in f for f in res.failures)
+
+
 def test_trading_hypothesis_pass_writes_report(runner: EvalRunner) -> None:
     res = runner.run("trading-hypothesis", hypotheses=[_GOOD_HYP])
     assert res.passed is True

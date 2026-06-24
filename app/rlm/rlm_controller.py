@@ -85,6 +85,27 @@ def _sanitize_citations(text: str, valid_chunk_ids: set[str]) -> str:
     return _INLINE_CITATION_RE.sub(_repl, text).strip()
 
 
+def apply_trading_guard(answer: str, query: str, *, allow_live_signal: bool = False) -> str:
+    """Kural 1 MOTOR-BAĞIMSIZ tek-nokta yaptırımı: canlı sinyal/yatırım tavsiyesi ASLA.
+
+    Soru VEYA cevap trading dili taşıyorsa ve uyarı henüz yoksa zorunlu uyarı bloğu eklenir.
+    Idempotent (uyarı zaten varsa çiftlemez) → native yol kendi içinde uygulasa bile cevap
+    pipeline'da yeniden geçirilebilir. `allow_live_signal` MUTLAK False'tur; biri yanlışlıkla
+    True yapsa dahi sistem canlı sinyal üretmez, yalnızca bu (kozmetik olmayan) uyarıyı atlardı.
+
+    Native `RlmController` bunu `_synthesize` içinde uygular; alexzhang motor yolu ve
+    `insufficient_evidence` erken-dönüşleri uygulamıyordu → kural-1 sızıntısı. Bu fonksiyon
+    `answer_pipeline.run_rlm_answer` son kapısında HER motor çıktısına uygulanır.
+    """
+    if allow_live_signal:
+        return answer
+    if "yatırım tavsiyesi değildir" in answer:
+        return answer
+    if not (_TRADING_SIGNAL_RE.search(query) or _TRADING_SIGNAL_RE.search(answer)):
+        return answer
+    return f"{answer}\n\nTrading uyarıları:\n{_TRADING_DISCLAIMER}"
+
+
 @dataclass
 class RlmResult:
     """RLM koşu sonucu (CLI/API/rapor için)."""
@@ -709,13 +730,9 @@ class RlmController:
         sinyal üretmez, yalnızca bu (kozmetik olmayan) uyarı eklemeyi atlardı. Soru veya
         nihai cevap trading dili taşıyorsa ve uyarı henüz yoksa zorunlu uyarı eklenir.
         """
-        if self.settings.rlm_allow_live_trading_signal:
-            return answer  # asla True olmaz; yine de açıkça okunur (sahte-guard değil)
-        if "yatırım tavsiyesi değildir" in answer:
-            return answer  # zaten var → çiftleme
-        if not (_TRADING_SIGNAL_RE.search(query) or _TRADING_SIGNAL_RE.search(answer)):
-            return answer  # trading-içerik yok → uyarı gereksiz
-        return f"{answer}\n\nTrading uyarıları:\n{_TRADING_DISCLAIMER}"
+        return apply_trading_guard(
+            answer, query, allow_live_signal=self.settings.rlm_allow_live_trading_signal
+        )
 
     def _write_report(
         self,

@@ -85,6 +85,13 @@ def monte_carlo_equity(
     rets = np.asarray([float(r) for r in trade_returns], dtype=float)
     if rets.size == 0:
         raise ValueError("trade_returns boş — simülasyon için en az bir işlem getirisi gerekir.")
+    if not np.all(np.isfinite(rets)):
+        # NaN/inf getiri cumprod boyunca yayılıp tüm metrikleri sessizce zehirlerdi.
+        raise ValueError("trade_returns sonlu olmalı (NaN/inf yok) — bozuk veri girişi.")
+    if np.any(rets < -1.0):
+        # 1+r < 0 → cumprod equity işaretini çevirir (anlamsız negatif sermaye). Tek
+        # işlemde >%100 kayıp imkânsız (kaldıraçsız long); bozuk girdiyi açıkça reddet.
+        raise ValueError("trade_returns < -1.0 olamaz (tek işlemde >%100 kayıp imkânsız).")
     if not (0.0 < ruin_fraction < 1.0):
         raise ValueError("ruin_fraction (0, 1) aralığında olmalı.")
     # `is not None` (truthy değil) → açık n_trades=0 doğrulamaya düşer, sessizce rets.size'a
