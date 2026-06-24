@@ -18,7 +18,48 @@ RLM `backend="anthropic"` (API) yolu OPSİYONEL + KAPALI kalır (`rlm_alexzhang_
 `provider=native`); varsayılan/zorunlu YAPILMAZ. Yeni özelliklerde bulut API'sini varsayılan
 bağımlılık yapma → opt-in + native fallback şart. Bkz memory [[no-api-local-subscription-only]].
 
-### 🆕 EN SON İŞ (2026-06-24) — AI Brain ek modülleri (~16 PR MERGED)
+### 🆕 EN SON İŞ (2026-06-24 #3) — LoRA degenerate kök-neden fix + 1.5B web chat entegrasyonu
+
+**SORUN:** Eğitilmiş LoRA adapter'ları (v5 dahil) degenerate tekrar döngüsüne giriyordu
+("pasaja göre" ezber, maliyetsiz rakam uydurma). 4B model CPU'da eğitilemez derecede ağırdı.
+Kullanıcı istedi: "eğitilmiş LLM'e soru sorabileyim, web'den."
+
+**KÖK NEDEN + FIX (push'lu, origin/main):**
+1. **assistant_only_loss maskeleme** (`app/training/peft_lora_train.py`):
+   - `build_masked_labels(prompt_ids, full_ids)` — prompt token'larını `-100` ile maskeler,
+     yalnız asistan cevabını öğretir. Tekrar döngüsü kökten çözüldü.
+   - `_chat_input_ids()` — `BatchEncoding` vs `list[int]` tip uyumsuzluğu düzeltildi.
+   - `_MaskedDataCollator(pad_token_id)` — label pad'lerini `-100` yapar (0 değil).
+   - `sample_rows(rows, max_examples, seed)` — deterministik alt-küme (Kural 6).
+   - 10 yeni test: `tests/test_peft_assistant_only_loss.py`.
+
+2. **Küçük model pivotu** — 4B→**Qwen2.5-1.5B-Instruct** (CPU'da eğitilebilir):
+   - `adapter_eval.py` → `_resolve_base_model(adapter_dir)` adapter_config.json'dan base okur.
+   - `discipline_safe_local` profili: `configs/lora/lora_profiles.yaml` (r=16, alpha=32,
+     assistant_only_loss=true, NEFTune, max_examples=300).
+   - `detached_launch.py` → `--profile` + `--max-examples` desteği.
+
+3. **Web LoRA chat entegrasyonu** (kullanıcı web'den soru sorabilir):
+   - `app/web/lora_chat_service.py` — adapter tarama + lazy-load + thread-safe cache.
+   - `app/web/schemas.py` — `LoraChatRequest/Response`.
+   - `app/web/server.py` — `GET /api/lora-adapters` + `POST /api/lora-chat`.
+   - `app/web/static/index.html` + `assets/app.js` — sohbet paneli, adapter seçici, spinner.
+   - Varsayılan: `achilles_lora_qwen15b` (1.5B). Base "(eğitimsiz, 4B)" etiketi.
+   - **Bölüm takas:** "Eğitilen Modelle Sohbet" → **3. sıra**, "Araştırma Geçmişi" → **6. sıra**.
+
+4. **Doğrulama:** `reports/lora_chat_check.txt` — 1.5B adapter non-degenerate cevap veriyor.
+
+**COMMIT'LER:** `398fadb` (bölüm takas), `4515091` (1.5B varsayılan) + önceki maskeleme/chat
+commit'leri — hepsi origin/main'de.
+
+**GOTCHA'lar:**
+- Working tree `fix/rlm-hardening-2` dalında (eşzamanlı oturum). Push'lar izole worktree ile.
+- `achilles_lora_qwen15b` adapter'ı eşzamanlı oturumda eğitildi (1.5B, discipline_safe_local).
+- **AchillesWeb scheduled task** yanlış yolda (`C:\Users\sevinc\achilles`); kullanıcı onayı bekliyor.
+
+---
+
+### 🆕 EN SON İŞ (2026-06-24 #2) — AI Brain ek modülleri (~16 PR MERGED)
 Desktop\RAG Kaynak\Eğitim geliştirme\helix_..._talimati.txt (10-modül "AI beyin" genişletme
 emri) audit edildi → çoğu ZATEN vardı. **4 gerçek boşluk** additive olarak entegre edildi
 (offline, deterministik; **app/rlm DOKUNULMADI**). 3-tur adversarial bug-fix loop → CONVERGED.
