@@ -774,6 +774,54 @@ def rlm_runs(limit: int = typer.Option(20)) -> None:
     console.print(t)
 
 
+@app.command("rlm-lora-candidates")
+def rlm_lora_candidates(
+    export: str = typer.Option("", help="Aday JSONL çıktı yolu (boşsa yalnız listele)"),
+    min_confidence: float = typer.Option(0.85, help="§16 final_confidence eşiği"),
+) -> None:
+    """RLM koşularından LoRA dataset ADAYLARINI seç (salt-okuma; talimat §16).
+
+    ADAY ≠ eğitim verisi: insan onayı olmadan EĞİTİM YOK (kural 8). Yalnız çok yüksek
+    güvenli, tam-doğrulanmış (citation≥0.90, grounding≥0.90, desteklenmeyen iddia yok)
+    koşular aday olur.
+    """
+    from rich.markup import escape
+
+    from app.rlm.lora_candidate import export_candidates_jsonl, select_lora_candidates
+
+    cands = select_lora_candidates(min_confidence=min_confidence)
+    if not cands:
+        console.print(
+            "[yellow]Aday bulunamadı — §16 eşiklerini geçen yüksek-güvenli RLM koşusu yok.[/yellow]"
+        )
+        return
+    t = Table(title=f"LoRA Adayları ({len(cands)}) — insan onayı ŞART (eğitim verisi değil)")
+    t.add_column("run_id")
+    t.add_column("Soru")
+    t.add_column("Güven", justify="right")
+    t.add_column("Citation", justify="right")
+    t.add_column("Grounding", justify="right")
+    for c in cands:
+        t.add_row(
+            c.run_id[:14],
+            escape(c.query[:40]),
+            f"{c.final_confidence:.2f}",
+            f"{c.citation_score:.2f}",
+            f"{c.grounding_score:.2f}",
+        )
+    console.print(t)
+    if export:
+        n = export_candidates_jsonl(cands, export)
+        console.print(
+            Panel(
+                f"{n} aday yazıldı: {escape(export)}\n"
+                "[yellow]UYARI: Bunlar ADAY'dır; eğitimden önce İNSAN ONAYI şart "
+                "(kural 8).[/yellow]",
+                title="[green]Export[/green]",
+            )
+        )
+
+
 @app.command("pine")
 def pine_export(
     strategy_name: str = typer.Argument(default="", help="Strateji adı (boşsa varsayılan örnek)"),
