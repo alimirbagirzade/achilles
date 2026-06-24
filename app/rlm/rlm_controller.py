@@ -320,7 +320,6 @@ class RlmController:
         for r in range(rounds):
             used = r + 1
             q = self._reformulate(query, plan, r)
-            prev_len = len(chunks)
             new = self.retriever.retrieve(q, top_k=top_k)
             if paper_ids:
                 new = [c for c in new if c.paper_id in paper_ids]
@@ -344,13 +343,14 @@ class RlmController:
                 tool_used="RerankingRetriever",
             )
             # Yeterli → erken çık. Tekrar gerekmiyorsa veya reformülasyon kapalıysa dur.
+            # NOT: "yeni chunk yok → dur" guard'ı KALDIRILDI — _reformulate her tur FARKLI
+            # bölüm hedeflediğinden (methodology→findings→…) bir tur yeni chunk getirmese
+            # bile sonraki FARKLI-bölüm turu yeni chunk yüzeye çıkarabilir; guard o turu
+            # haksız yere kesip section-diversity'yi iptal ederdi. Tur sayısı zaten
+            # max_rounds ile sınırlı; farklı sorgular boşa-tur değildir.
             if evidence.decision in ("answer", "answer_with_limitation"):
                 break
             if not self.settings.rlm_enable_query_reformulation:
-                break
-            # Bu tur YENİ chunk eklemediyse (deterministik retrieval → ilerleme yok), ek
-            # turlar da boşa çıkar → erken dur (ölü iş + yanıltıcı audit step'i önle).
-            if r > 0 and len(chunks) == prev_len:
                 break
         return chunks, evidence, used
 
