@@ -801,6 +801,40 @@ def rlm_runs(limit: int = typer.Option(20)) -> None:
     console.print(t)
 
 
+@app.command("rlm-trajectory")
+def rlm_trajectory(run_id: str = typer.Argument(..., help="RLM koşu run_id")) -> None:
+    """Bir RLM koşusunun trajektorisini göster (adım izi + varsa alexzhang motor metadata)."""
+    from rich.markup import escape
+
+    from app.rlm.answer_pipeline import read_trajectory_file
+    from app.rlm.rlm_store import RlmStore
+
+    store = RlmStore()
+    if store.get_run(run_id) is None:
+        console.print(f"[red]Koşu bulunamadı: {escape(run_id)}[/red]")
+        raise typer.Exit(1)
+    steps = store.get_steps(run_id)
+    if not steps:
+        console.print("[yellow]Bu koşuda adım kaydı yok (eski koşu olabilir).[/yellow]")
+    else:
+        t = Table(title=f"Trajektori — {run_id[:14]}")
+        t.add_column("#", justify="right")
+        t.add_column("Aşama")
+        t.add_column("Çıktı")
+        for st in steps:
+            t.add_row(
+                str(st.get("step_order", "")),
+                escape(str(st.get("step_type", ""))),
+                escape((str(st.get("output_text", "")) or "")[:80]),
+            )
+        console.print(t)
+    traj = read_trajectory_file(run_id)
+    if traj and traj.get("engine_metadata"):
+        console.print(
+            Panel(escape(str(traj["engine_metadata"])[:1000]), title="Motor metadata (alexzhang)")
+        )
+
+
 @app.command("rlm-lora-candidates")
 def rlm_lora_candidates(
     export: str = typer.Option("", help="Aday JSONL çıktı yolu (boşsa yalnız listele)"),
@@ -897,13 +931,18 @@ def rlm_test_adapter(
         ok = NativeRLMAdapter().is_available()
         msg = "native her zaman kullanılabilir (çekirdek)."
     elif adapter == "alexzhang":
-        ok = AlexZhangRLMAdapter(build_engine_config()).is_available()
-        msg = (
-            "rlms paketi kurulu ✓"
-            if ok
-            else "rlms paketi KURULU DEĞİL → `uv sync --extra rlm` "
-            "veya provider'ı native bırak (sistem native ile çalışır)."
-        )
+        adp = AlexZhangRLMAdapter(build_engine_config())
+        ok = adp.is_available()
+        if ok:
+            env_ready, env_note = adp.environment_ready()
+            msg = "rlms paketi kurulu ✓\nOrtam: " + (
+                "hazır ✓" if env_ready else f"HAZIR DEĞİL — {env_note}"
+            )
+        else:
+            msg = (
+                "rlms paketi KURULU DEĞİL → `uv sync --extra rlm` "
+                "veya provider'ı native bırak (sistem native ile çalışır)."
+            )
     else:
         console.print("[red]adapter native|alexzhang olmalı[/red]")
         raise typer.Exit(1)

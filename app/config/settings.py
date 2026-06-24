@@ -155,6 +155,7 @@ class Settings(BaseSettings):
     rlm_alexzhang_allow_shell: bool = False
     rlm_alexzhang_allow_network: bool = False
     rlm_alexzhang_allow_filesystem_write: bool = False
+    rlm_alexzhang_log_trajectories: bool = True  # alexzhang koşu trajektorisini JSON'a yaz
 
     # --- Trading ---
     default_market: str = "XAUUSD"

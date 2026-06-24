@@ -3257,7 +3257,69 @@
     return '<span class="ag-badge ' + cls + '">' + esc(s) + "</span>";
   }
 
+  function rlmCfgRow(k, v) {
+    return '<tr><td class="muted">' + esc(k) + "</td><td>" + esc(String(v)) + "</td></tr>";
+  }
+  function rlmAvail(ok) {
+    return ok
+      ? '<span class="ag-badge ag-green">var</span>'
+      : '<span class="ag-badge ag-yellow">yok</span>';
+  }
+
+  // Motor paneli: /api/rlm/config (salt-okuma) + /test-adapter uygunluk (çağrı yapmaz).
+  function loadRlmEnginePanel() {
+    var el = document.getElementById("rlmEnginePanel");
+    if (!el) return;
+    el.innerHTML = '<span class="muted small">Yükleniyor…</span>';
+    api("/rlm/config")
+      .then(function (d) {
+        var c = (d && d.config) || {};
+        var rows =
+          rlmCfgRow("Sağlayıcı (provider)", c.provider) +
+          rlmCfgRow("alexzhang açık", c.alexzhang_enabled ? "evet" : "hayır") +
+          rlmCfgRow("Backend", c.alexzhang_backend) +
+          rlmCfgRow("Ortam (environment)", c.alexzhang_environment) +
+          rlmCfgRow("Üretim modu", c.production_mode ? "açık" : "kapalı") +
+          rlmCfgRow("Local exec", c.allow_local_exec ? "AÇIK" : "kapalı") +
+          rlmCfgRow("İzinli tool'lar", (c.allowed_tools || []).join(", "));
+        el.innerHTML =
+          '<table class="ag-table"><tbody>' +
+          rows +
+          "</tbody></table>" +
+          '<div id="rlmAdapterTest" class="small muted" style="margin-top:.4rem">' +
+          "Motor uygunluğu kontrol ediliyor…</div>";
+        Promise.all([
+          api("/rlm/test-adapter?adapter=native", { method: "POST" }).catch(function () {
+            return { available: false };
+          }),
+          api("/rlm/test-adapter?adapter=alexzhang", { method: "POST" }).catch(function () {
+            return { available: false };
+          }),
+        ])
+          .then(function (res) {
+            var t = document.getElementById("rlmAdapterTest");
+            if (!t) return;
+            var a = res[1] || {};
+            t.innerHTML =
+              "native: " +
+              rlmAvail((res[0] || {}).available) +
+              " · alexzhang: " +
+              rlmAvail(a.available) +
+              (a.note ? ' <span class="muted">(' + esc(a.note) + ")</span>" : "");
+          })
+          .catch(function (e) {
+            // Beklenmedik hata panelin geri kalanını bozmasın (savunma; iç fetch'ler zaten catch'li).
+            var t = document.getElementById("rlmAdapterTest");
+            if (t) t.innerHTML = '<span class="ag-red">Motor durumu alınamadı: ' + esc(e.message) + "</span>";
+          });
+      })
+      .catch(function (e) {
+        el.innerHTML = '<span class="ag-red">Yüklenemedi: ' + esc(e.message) + "</span>";
+      });
+  }
+
   function loadRlmDashboard() {
+    loadRlmEnginePanel();
     var el = document.getElementById("rlmRunsTable");
     if (!el) return;
     el.innerHTML = '<span class="muted small">Yükleniyor…</span>';

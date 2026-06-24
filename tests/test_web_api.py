@@ -130,6 +130,11 @@ def test_rlm_run_detail_unknown_404(client: TestClient) -> None:
     assert r.status_code == 404
 
 
+def test_rlm_trajectory_unknown_404(client: TestClient) -> None:
+    r = client.get("/api/rlm/runs/rlm_does_not_exist/trajectory")
+    assert r.status_code == 404
+
+
 def test_rlm_config_endpoint_native_default_no_secrets(client: TestClient) -> None:
     # /api/rlm/config salt-okuma + sır YOK: provider native, backend anthropic (OpenAI değil).
     r = client.get("/api/rlm/config")

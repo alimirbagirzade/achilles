@@ -46,6 +46,7 @@ def build_engine_config() -> dict[str, Any]:
             "allow_network": s.rlm_alexzhang_allow_network,
             "allow_shell": s.rlm_alexzhang_allow_shell,
             "allow_filesystem_write": s.rlm_alexzhang_allow_filesystem_write,
+            "log_trajectories": s.rlm_alexzhang_log_trajectories,
             "trajectory_log_dir": "reports/rlm/trajectories",
         },
         "security": {

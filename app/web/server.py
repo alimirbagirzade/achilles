@@ -486,6 +486,28 @@ def api_rlm_run_detail(run_id: str) -> dict:
     }
 
 
+@app.get("/api/rlm/runs/{run_id}/trajectory", dependencies=[api_auth])
+def api_rlm_run_trajectory(run_id: str) -> dict:
+    """Bir RLM koşusunun trajektorisi (adım izi + varsa alexzhang motor JSON dosyası).
+
+    Önce DB adımlarını döndürür (her motor için var); alexzhang koşularında ek olarak
+    `reports/rlm/trajectories/{run_id}.json` varsa motor metadata'sını ekler.
+    """
+    from app.rlm.rlm_store import RlmStore
+
+    store = RlmStore()
+    run = store.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"RLM koşusu bulunamadı: {run_id}")
+    out: dict = {"run_id": run_id, "steps": store.get_steps(run_id), "engine_trajectory": None}
+    from app.rlm.answer_pipeline import read_trajectory_file
+
+    traj = read_trajectory_file(run_id)
+    if traj is not None:
+        out["engine_trajectory"] = traj
+    return out
+
+
 @app.get("/api/rlm/config", dependencies=[api_auth])
 def api_rlm_config() -> dict:
     """RLM motor yapılandırması (salt-okuma; sır YOK).
@@ -502,7 +524,6 @@ def api_rlm_config() -> dict:
 def api_rlm_test_adapter(adapter: str = "native") -> dict:
     """Bir RLM motorunun kullanılabilirliğini test et (çağrı YAPMAZ; salt uygunluk)."""
     from app.rlm.adapters.alexzhang_rlm import AlexZhangRLMAdapter
-    from app.rlm.adapters.native import NativeRLMAdapter
     from app.rlm.engine_config import build_engine_config
 
     name = (adapter or "native").lower()
@@ -510,15 +531,21 @@ def api_rlm_test_adapter(adapter: str = "native") -> dict:
         raise HTTPException(status_code=400, detail="adapter native|alexzhang olmalı")
     try:
         if name == "native":
-            ok = NativeRLMAdapter().is_available()
-        else:
-            ok = AlexZhangRLMAdapter(build_engine_config()).is_available()
+            return {"adapter": "native", "available": True, "note": "", "environment_ready": True}
+        adp = AlexZhangRLMAdapter(build_engine_config())
+        ok = adp.is_available()
+        env_ready, env_note = adp.environment_ready()
     except Exception:
-        # is_available() (örn. importlib.find_spec) beklenmedik hata atarsa uç 500 vermesin;
-        # uygunluk kontrolü 'yok' kabul edilir (sistem native ile çalışmaya devam eder).
+        # is_available()/preflight beklenmedik hata atarsa uç 500 vermesin; uygunluk 'yok'
+        # kabul edilir (sistem native ile çalışmaya devam eder).
         return {"adapter": name, "available": False, "note": "uygunluk kontrolü başarısız"}
-    note = "" if (ok or name == "native") else "rlms paketi kurulu değil → native kullanılır."
-    return {"adapter": name, "available": ok, "note": note}
+    note = "" if ok else "rlms paketi kurulu değil → native kullanılır."
+    return {
+        "adapter": "alexzhang",
+        "available": ok,
+        "environment_ready": env_ready,
+        "note": note or ("" if env_ready else env_note),
+    }
 
 
 @app.get("/api/lora-adapters", dependencies=[api_auth])
