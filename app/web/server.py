@@ -486,6 +486,41 @@ def api_rlm_run_detail(run_id: str) -> dict:
     }
 
 
+@app.get("/api/rlm/config", dependencies=[api_auth])
+def api_rlm_config() -> dict:
+    """RLM motor yapılandırması (salt-okuma; sır YOK).
+
+    provider/alexzhang/güvenlik durumunu döndürür. Anahtar/token içermez
+    (public_engine_config secret-free görünüm verir).
+    """
+    from app.rlm.engine_config import public_engine_config
+
+    return {"config": public_engine_config()}
+
+
+@app.post("/api/rlm/test-adapter", dependencies=[api_auth])
+def api_rlm_test_adapter(adapter: str = "native") -> dict:
+    """Bir RLM motorunun kullanılabilirliğini test et (çağrı YAPMAZ; salt uygunluk)."""
+    from app.rlm.adapters.alexzhang_rlm import AlexZhangRLMAdapter
+    from app.rlm.adapters.native import NativeRLMAdapter
+    from app.rlm.engine_config import build_engine_config
+
+    name = (adapter or "native").lower()
+    if name not in ("native", "alexzhang"):
+        raise HTTPException(status_code=400, detail="adapter native|alexzhang olmalı")
+    try:
+        if name == "native":
+            ok = NativeRLMAdapter().is_available()
+        else:
+            ok = AlexZhangRLMAdapter(build_engine_config()).is_available()
+    except Exception:
+        # is_available() (örn. importlib.find_spec) beklenmedik hata atarsa uç 500 vermesin;
+        # uygunluk kontrolü 'yok' kabul edilir (sistem native ile çalışmaya devam eder).
+        return {"adapter": name, "available": False, "note": "uygunluk kontrolü başarısız"}
+    note = "" if (ok or name == "native") else "rlms paketi kurulu değil → native kullanılır."
+    return {"adapter": name, "available": ok, "note": note}
+
+
 @app.get("/api/lora-adapters", dependencies=[api_auth])
 def api_lora_adapters() -> dict:
     """Sohbet için kullanılabilir (tam) LoRA adapter'larını listele."""

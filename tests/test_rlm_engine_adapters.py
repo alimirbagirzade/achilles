@@ -85,6 +85,22 @@ def test_alexzhang_answer_abstains_when_no_supported_claims():
     assert "Güven seviyesi: Low" in body
 
 
+def test_chunk_support_levels_strong_partial_weak():
+    # §13: kaynak support_level — supported→strong, partially→partial, diğeri→weak.
+    from app.rlm.answer_pipeline import _chunk_support_levels
+    from app.rlm.claim_extractor import Claim
+
+    claims = [
+        Claim(claim="a", support_status="supported", supporting_chunks=["c1"]),
+        Claim(claim="b", support_status="partially_supported", supporting_chunks=["c2", "c1"]),
+        Claim(claim="c", support_status="unsupported", supporting_chunks=["c3"]),
+    ]
+    levels = _chunk_support_levels(claims)
+    assert levels["c1"] == "strong"  # supported, partial'dan güçlü → strong kazanır
+    assert levels["c2"] == "partial"
+    assert "c3" not in levels  # unsupported chunk'a güç katmaz → varsayılan weak
+
+
 def test_no_secret_patterns_in_rlm_engine_source():
     """Public repo hijyeni: yeni RLM motor dosyalarında gerçek sır/key kalıbı olmamalı."""
     import re

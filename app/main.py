@@ -707,13 +707,40 @@ def rlm_answer(
     paper_ids: str = typer.Option(None, help="Virgülle ayrılmış paper_id listesi (opsiyonel)"),
     top_k: int = typer.Option(None, help="Tur başına getirilecek chunk sayısı"),
     rounds: int = typer.Option(None, help="Maksimum retrieval turu"),
+    engine: str = typer.Option(
+        "native", "--engine", help="native (varsayılan) | alexzhang (opsiyonel motor)"
+    ),
 ) -> None:
-    """RLM Controller: çok-adımlı retrieval + iddia doğrulama + kaynaklı nihai cevap."""
+    """RLM Controller: çok-adımlı retrieval + iddia doğrulama + kaynaklı nihai cevap.
+
+    --engine alexzhang: opsiyonel alexzhang13/rlm motorunu dener (kurulu+açık+güvenliyse);
+    aksi halde sessizce native'e düşer (sistem bozulmaz). Varsayılan native.
+    """
     from rich.markup import escape
+
+    pid_list = [p.strip() for p in paper_ids.split(",")] if paper_ids else None
+
+    if engine.lower() == "alexzhang":
+        from app.rlm.answer_pipeline import run_rlm_answer
+
+        out = run_rlm_answer(
+            query, adapter="alexzhang", top_k=top_k, paper_ids=pid_list, max_rounds=rounds
+        )
+        meta = (
+            f"motor={out['adapter']} · durum={out['status']} · "
+            f"güven={out['confidence']} · kaynak={len(out.get('sources', []))}"
+        )
+        color = {"grounded": "green", "needs_review": "yellow"}.get(out["status"], "red")
+        console.print(
+            Panel(
+                f"{escape(out['answer'])}\n\n{escape(meta)}",
+                title=f"[{color}]RLM ({escape(out['adapter'])}): {escape(out['status'])}[/{color}]",
+            )
+        )
+        return
 
     from app.rlm.rlm_controller import RlmController
 
-    pid_list = [p.strip() for p in paper_ids.split(",")] if paper_ids else None
     result = RlmController().answer(query, paper_ids=pid_list, top_k=top_k, max_rounds=rounds)
 
     color = {
@@ -887,6 +914,53 @@ def rlm_test_adapter(
             title="RLM Adapter Testi",
         )
     )
+
+
+@app.command("rlm-tools")
+def rlm_tools(
+    call: str = typer.Option(
+        None, "--call", help="İzinli bir tool'u çağır (örn: calculator, formula_check)"
+    ),
+    expr: str = typer.Option(None, "--expr", help="calculator için ifade (örn: '2*(3+4)')"),
+    text: str = typer.Option(None, "--text", help="formula_check için metin"),
+) -> None:
+    """RLM güvenli tool allowlist'ini göster veya izinli bir tool'u çağır.
+
+    Tool'lar deny-by-default allowlist'tedir; shell/network/secret/fs-write YAPMAZ.
+    Argümansız: izinli tool'ları listeler. --call ile saf bir tool'u (örn calculator)
+    çağırıp structured sonucu gösterir; izinsiz ad ToolNotAllowed ile reddedilir.
+    """
+    from rich.markup import escape
+
+    from app.rlm.safe_tools import build_default_registry
+    from app.rlm.tool_registry import ToolNotAllowed
+
+    reg = build_default_registry()
+    if not call:
+        t = Table(title="RLM Güvenli Tool Allowlist")
+        t.add_column("Tool")
+        t.add_column("İzinli", justify="center")
+        for name in reg.available():
+            t.add_row(name, "[green]✓[/green]")
+        console.print(t)
+        console.print(
+            "[dim]Çağrı örneği: achilles rlm-tools --call calculator --expr '2*(3+4)'[/dim]"
+        )
+        return
+
+    kwargs: dict[str, object] = {}
+    if expr is not None:
+        kwargs["expression"] = expr
+    if text is not None:
+        kwargs["text"] = text
+    try:
+        res = reg.call(call, **kwargs)
+    except ToolNotAllowed as exc:
+        console.print(f"[red]Reddedildi: {escape(str(exc))}[/red]")
+        raise typer.Exit(1) from exc
+    ok = bool(res.get("ok"))
+    color = "green" if ok else "yellow"
+    console.print(Panel(escape(str(res)), title=f"[{color}]rlm-tools: {escape(call)}[/{color}]"))
 
 
 @app.command("pine")
