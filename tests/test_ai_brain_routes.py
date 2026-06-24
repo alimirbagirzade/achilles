@@ -102,3 +102,13 @@ def test_eval_strict_gate_422(client: TestClient) -> None:
 def test_eval_empty_422(client: TestClient) -> None:
     r = client.post("/api/eval/trading-hypothesis", json={"hypotheses": []})
     assert r.status_code == 422
+
+
+# --- dashboard sayfası -----------------------------------------------------
+def test_ai_brain_dashboard_serves_html(client: TestClient) -> None:
+    r = client.get("/ai-brain")
+    assert r.status_code == 200
+    assert "text/html" in r.headers["content-type"]
+    assert "AI Brain" in r.text
+    # sayfa kendi /api uçlarına referans veriyor (entegre dashboard)
+    assert "/api/registry/" in r.text and "/api/eval/trading-hypothesis" in r.text
