@@ -1,7 +1,7 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-06-23 · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
-_Açık PR: [#10](https://github.com/alimirbagirzade/achilles/pull/10) — upload 429 retry (oto-merge bekliyor)_
+_Son güncelleme: 2026-06-24 · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Açık PR: yok — RLM iş PR'ları #43/44/45/46 hepsi MERGED._
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
@@ -9,6 +9,35 @@ Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple S
 ---
 
 ## 🚨 YENİ SEANS BAŞLANGICI — BUNU OKU
+
+### ⛔ KALICI KISIT (2026-06-24) — API ASLA KULLANILMAZ
+Kullanıcı direktifi: **pay-per-token API hiçbir zaman kullanılmayacak.** Çalışma-zamanı LLM
+hattı YEREL (Ollama / native RLM Controller + RAG). Geliştirme/AI yardımı aylık **abonelikli**
+araçlarla (Claude Code, Codex vb.) — API anahtarı/faturalı endpoint DEĞİL. Sonuç: alexzhang
+RLM `backend="anthropic"` (API) yolu OPSİYONEL + KAPALI kalır (`rlm_alexzhang_enabled=False`,
+`provider=native`); varsayılan/zorunlu YAPILMAZ. Yeni özelliklerde bulut API'sini varsayılan
+bağımlılık yapma → opt-in + native fallback şart. Bkz memory [[no-api-local-subscription-only]].
+
+### 🆕 EN SON İŞ (2026-06-24) — alexzhang13/rlm OPSİYONEL motor-adapter (4 PR MERGED)
+`Desktop\RAG Kaynak\RLM\achilles_alexzhang_rlm_claude_integration_prompt` (1051 satır) uçtan uca
+entegre edildi — additive, **native VARSAYILAN korundu**, OpenAI default değil, RAG/Mastery/LoRA
+DOKUNULMADI. Hepsi izole-worktree→PR→auto-merge (paylaşılan tree çakışması yok).
+- **PR #43** entegrasyon: `app/rlm/adapters/` (base/native/alexzhang/security), `engine_config`,
+  `tool_registry`+`safe_tools` (deny-by-default allowlist), `answer_pipeline`; CLI `rlm-engine`/
+  `rlm-test-adapter`. rlm-security-reviewer KENDİ kodumda 4 fix buldu (HIGH ipython-bypass→allow-list).
+  GOTCHA: `.gitignore` `adapters/` (LoRA) → `app/rlm/adapters/` kaynağını sessizce yutuyordu → `*.py` negasyonu.
+- **PR #44** wiring: `rlm-answer --engine`, web `/api/rlm/config`+`/test-adapter`, `rlm-tools` CLI
+  (ölü-kod allowlist'i canlı bağladı), alexzhang run-log, source `support_level`.
+- **PR #45** lock: pyproject `rlm` extra ↔ `uv.lock` drift kapandı (openai yalnız opsiyonel-transitive).
+- **PR #46** Level 3 + observability: trajektori logging (rlm_store+JSON, `/runs/{id}/trajectory`,
+  `rlm-trajectory`), docker preflight (CLI+daemon probe), web motor dashboard paneli (preview-verified),
+  GERÇEK `rlms` kurulum doğrulaması. Bug-avı 5 fix (orphan-run→failed, determinizm temperature=0,
+  daemon-probe, relevance clamp, traj 50MB+OOM).
+- **Doğrulama:** her PR ruff+format+mypy+pytest yeşil (main CI success); dashboard preview_eval ile.
+- **AÇIK KARAR (kullanıcı):** gerçek Claude-destekli alexzhang inference API+key+docker ister → API
+  YOK direktifi gereği KOŞTURULMAZ; sistem native (Ollama) ile tam çalışır. Memory [[rlm-alexzhang-adapter-2026-06-24]].
+- **NOT:** `rlms` paketi dev `.venv`'de kurulu kaldı (#46 doğrulaması; eşzamanlı achilles-web.exe
+  `uv sync`'i kilitledi). Zararsız; temizlemek için web sunucusunu kapat + `uv sync`.
 
 ### 🆕 EN SON İŞ (2026-06-23) — Kademe-2 derin av (8 finder) → 5 fix push, 2 devir
 Kullanıcı "tüm projeyi tara + pushla". 8-finder Kademe-2 workflow + adversarial doğrulama; hedef
