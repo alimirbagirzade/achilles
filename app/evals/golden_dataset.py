@@ -29,7 +29,15 @@ class GoldenDataset:
     """Altın veri seti yöneticisi.
 
     JSON dosyasından yükleme, kaydetme ve örnek sorular üretme işlemlerini sağlar.
+    Örnek (instance) `questions` taşır → RegressionRunner enjekte edilen seti kullanır
+    (eskiden örnek yok sayılıp her zaman statik `get_sample_questions()` koşulurdu).
     """
+
+    def __init__(self, questions: list[GoldenQuestion] | None = None) -> None:
+        # Enjekte edilen sorular yoksa hardcoded örnek sete düş (geriye uyumlu: GoldenDataset()).
+        self.questions: list[GoldenQuestion] = (
+            questions if questions is not None else self.get_sample_questions()
+        )
 
     @staticmethod
     def load_from_json(path: Path) -> list[GoldenQuestion]:

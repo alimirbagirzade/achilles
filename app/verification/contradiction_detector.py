@@ -38,6 +38,21 @@ def _tokenize_lower(text: str) -> set[str]:
     return set(re.findall(r"[a-zA-ZçğıöşüÇĞİÖŞÜ]{3,}", text.lower()))
 
 
+# Antonim kelimeleri kelime-sınırı (\b) ile eşleştir: çıplak substring (`in`) YANLIŞ çelişki
+# üretiyordu — "stable" ⊂ "unstable", "lower" ⊂ "follower", "fall" ⊂ "shortfall",
+# "gain" ⊂ "against", "rise" ⊂ "arise". Bu sahte çelişkiler RLM cevabına haksız "limitasyon"
+# ekleyip güveni düşürüyordu. \b ile yalnız tam kelime eşleşir.
+_WORD_RE_CACHE: dict[str, re.Pattern[str]] = {}
+
+
+def _word_present(word: str, text_lower: str) -> bool:
+    pat = _WORD_RE_CACHE.get(word)
+    if pat is None:
+        pat = re.compile(rf"\b{re.escape(word)}\b")
+        _WORD_RE_CACHE[word] = pat
+    return pat.search(text_lower) is not None
+
+
 def _find_topic_tokens(chunks: list[RetrievedChunk]) -> set[str]:
     """Tüm chunk'larda en az 2 kez geçen kelimeleri ortak konu olarak al."""
     counter: dict[str, int] = {}
@@ -90,12 +105,15 @@ class ContradictionDetector:
                 if not shared:
                     continue
 
-                # Karşıt terim çifti var mı?
+                a_lower = ca.text.lower()
+                b_lower = cb.text.lower()
+
+                # Karşıt terim çifti var mı? (kelime-sınırı eşleşmesi — substring değil)
                 for word_a, word_b in _ANTONYM_PAIRS:
-                    has_a_in_a = word_a in ca.text.lower()
-                    has_b_in_b = word_b in cb.text.lower()
-                    has_b_in_a = word_b in ca.text.lower()
-                    has_a_in_b = word_a in cb.text.lower()
+                    has_a_in_a = _word_present(word_a, a_lower)
+                    has_b_in_b = _word_present(word_b, b_lower)
+                    has_b_in_a = _word_present(word_b, a_lower)
+                    has_a_in_b = _word_present(word_a, b_lower)
 
                     if (has_a_in_a and has_b_in_b) or (has_b_in_a and has_a_in_b):
                         # Bağlamı çıkar (ilgili cümleyi bul)
