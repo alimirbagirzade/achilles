@@ -35,7 +35,10 @@ class RegressionRunner:
         Returns:
             {"passed": int, "failed": int, "results": list} formatında özet.
         """
-        questions = GoldenDataset.get_sample_questions()
+        # Enjekte edilen veri setinin sorularını kullan (eskiden statik get_sample_questions()
+        # çağrılıp ctor'a verilen `dataset` sessizce yok sayılıyordu). Varsayılan GoldenDataset
+        # zaten örnek sorulara düşer → davranış geriye uyumlu.
+        questions = self._dataset.questions
         retrieval_results = self._retrieval_eval.evaluate(questions)
 
         results = []

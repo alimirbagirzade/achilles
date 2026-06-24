@@ -79,3 +79,27 @@ def test_quality_flags_impact() -> None:
         SufficiencyLevel.MISSING_FORMULA_CONTINUATION,
         SufficiencyLevel.PARTIALLY_SUFFICIENT,
     )
+
+
+def test_mismatched_quality_flags_do_not_force_missing_formula() -> None:
+    """chunks ile HİZASIZ quality_flags (başka chunk_id'ler) yanlış MISSING_FORMULA_CONTINUATION
+    üretmemeli. all_have_incomplete kıyası yalnız getirilen chunk'ların bayraklarına dayanmalı —
+    aksi halde len(incomplete_ids)==len(chunks) iki AYRI koleksiyonu kıyaslar ve can_answer'ı
+    haksız yere False yapardı."""
+    from app.memory.contextual_chunker import ChunkQualityFlags
+
+    classifier = ContextSufficiencyClassifier()
+    chunks = [_make_chunk("paper1_c0001")]  # sağlam chunk (eksik formül YOK)
+    # Bayrak BAŞKA bir chunk için — getirilen sette yok → dikkate alınmamalı.
+    flags = [
+        ChunkQualityFlags(
+            chunk_id="other_paper_c9999",
+            has_formula=True,
+            has_incomplete_formula=True,
+            needs_adjacent_context=True,
+            next_chunk_id=None,
+        )
+    ]
+    result = classifier.classify("query", chunks, quality_flags=flags)
+    assert result.level != SufficiencyLevel.MISSING_FORMULA_CONTINUATION
+    assert result.can_answer is True
