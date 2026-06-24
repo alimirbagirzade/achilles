@@ -5,6 +5,7 @@ MVP thresholds: Recall@10 >= 0.70, Citation accuracy >= 0.85, etc.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 # MVP minimum eşikleri (üretim hedeflerinden daha düşük)
@@ -54,6 +55,21 @@ class ReleaseGate:
                 failures.append(f"{metric}: EKSİK (eşik: {threshold:.2f})")
                 continue
             value = metrics[metric]
+            # Geçersiz/hesaplanamayan metrik (None, NaN, inf, sayısal-olmayan) → FAIL-CLOSED.
+            # Eskiden NaN SESSİZCE GEÇERDİ (nan<eşik=False → fail-open: bozuk metrik yayını
+            # geçirir, Kural 2) ve None TypeError ile ÇÖKERDİ. Yayın kapısı asla fail-open
+            # olmamalı: hesaplanamayan bir metrik eşiği KARŞILAMADI sayılır.
+            valid_number = (
+                isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and math.isfinite(value)
+            )
+            if not valid_number:
+                failures.append(
+                    f"{metric}: geçersiz/hesaplanamayan değer ({value!r}) — fail-closed "
+                    f"(eşik: {threshold:.2f})"
+                )
+                continue
             if value < threshold:
                 failures.append(f"{metric}: {value:.3f} < {threshold:.2f} (eşik karşılanmadı)")
 
