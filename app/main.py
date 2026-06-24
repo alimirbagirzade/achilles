@@ -3738,5 +3738,42 @@ def ingestion_quality_cmd(
     console.print(Panel(body, title="İçe-alım Kalite Skoru"))
 
 
+@app.command("ingestion-quality-scan")
+def ingestion_quality_scan_cmd(
+    record: bool = typer.Option(False, "--record", help="Skorları KALICI yap (tüm korpus)"),
+    worst: int = typer.Option(10, "--worst", help="En düşük kaç makaleyi listele"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Tüm korpusu içe-alım kalitesi için tara: durum dağılımı + en zayıf makaleler."""
+    from app.ingestion.quality_scorer import score_all_papers
+    from app.memory.sqlite_store import SqliteStore
+
+    summary = score_all_papers(SqliteStore(), record=record, worst_n=worst)
+    if as_json:
+        console.print_json(json.dumps(summary.to_dict(), ensure_ascii=False))
+        return
+    if summary.total == 0:
+        console.print("[yellow]Makale yok.[/yellow]")
+        return
+    dist = Table(title=f"İçe-alım Kalite Dağılımı ({summary.scored}/{summary.total} skorlandı)")
+    dist.add_column("Durum")
+    dist.add_column("Sayı", justify="right")
+    for status in ("ready_for_rag", "usable", "slow_but_usable", "unstable", "failed"):
+        n = summary.by_status.get(status, 0)
+        if n:
+            dist.add_row(status, str(n))
+    console.print(dist)
+    console.print(f"Ortalama skor: [bold]{summary.avg_score}/100[/]")
+    if summary.worst:
+        worst_t = Table(title=f"En zayıf {len(summary.worst)} makale")
+        for c in ("paper_id", "Başlık", "Skor", "Durum"):
+            worst_t.add_column(c)
+        for w in summary.worst:
+            worst_t.add_row(w["paper_id"], w["title"], f"{w['total']}", w["status"])
+        console.print(worst_t)
+    if record:
+        console.print("[green]KAYDEDİLDİ[/] (paper_ingestion_runs + papers.quality_score)")
+
+
 if __name__ == "__main__":  # pragma: no cover
     app()
