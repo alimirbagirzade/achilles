@@ -33,8 +33,8 @@ OpenAI key/provider GEREKMEZ. Yerel vLLM/OpenAI-uyumlu endpoint yalnız açıkç
 
 | environment | izolasyon | üretim |
 |-------------|-----------|--------|
-| `docker`  | konteyner REPL | ✓ önerilen |
-| `ipython` | izole IPython/subprocess | ✓ |
+| `docker`  | konteyner REPL | ✓ **üretimde tek izinli** |
+| `ipython` | izole IPython/subprocess | ✗ üretimde reddedilir (yalnız `production_mode=false` dev) |
 | `local`   | host-içi exec | ✗ **YASAK** (güvenlik kapısı reddeder) |
 
 ```
@@ -42,8 +42,23 @@ ACHILLES_RLM_ALEXZHANG_ENVIRONMENT=docker
 ACHILLES_RLM_PRODUCTION_MODE=true        # local exec/shell/network/fs-write kapalı
 ```
 
-Üretimde `environment=local` veya `allow_local_exec/shell/network/filesystem_write=true`
-→ `RLMUnsafeRuntimeError` → native fallback. Detay: [`rlm_security_model.md`](rlm_security_model.md).
+Güvenlik kapısı **allow-list**'tir: üretimde yalnız `docker` geçer; `ipython`, `local` ve
+bilinmeyen ortamlar `RLMUnsafeRuntimeError` ile reddedilir → native fallback.
+Detay: [`rlm_security_model.md`](rlm_security_model.md).
+
+### Ortam preflight'ı (Level 3 sertleştirme)
+
+Güvenlik kapısından SONRA, motoru çağırmadan ÖNCE ortam hazırlığı kontrol edilir; eksikse
+`rlms` içinde derin/anlaşılmaz stack yerine **temiz hata** verilir (`success=False` → native):
+
+- `environment=docker` ama `docker` CLI PATH'te yok → "Docker bulunamadı…" + native fallback.
+- `environment=ipython` ama IPython kurulu değil → "IPython kurulu değil…" + native fallback.
+
+Uygunluğu çağrı yapmadan görmek için:
+```bash
+uv run achilles rlm-test-adapter --adapter alexzhang   # rlms + ortam hazırlığı
+```
+veya web: `POST /api/rlm/test-adapter?adapter=alexzhang` → `{available, environment_ready, note}`.
 
 ## Fallback zinciri
 

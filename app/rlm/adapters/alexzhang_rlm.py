@@ -46,6 +46,19 @@ class AlexZhangRLMAdapter:
         # Bilerek try DIŞINDA: güvenlik ihlali asla "yumuşak hata"ya çevrilmez.
         validate_rlm_runtime_security(self.config)
 
+        # Level 3 ortam preflight'ı: environment=docker/ipython hazır değilse motoru çağırmadan
+        # ÖNCE temiz hata ver (rlms içinde derin/anlaşılmaz stack yerine). Güvenlik DEĞİL,
+        # ortam eksikliği → success=False (çağıran native'e düşer). Preflight'ın kendisi
+        # beklenmedik hata atarsa da çökme değil, temiz fallback.
+        try:
+            preflight_error = self._preflight_environment()
+        except Exception as exc:
+            preflight_error = f"ortam preflight hatası: {type(exc).__name__}: {exc}"
+        if preflight_error:
+            return RLMResponse(
+                answer="", success=False, error=preflight_error, used_adapter=self.name
+            )
+
         # SDK/ağ/API hataları base sözleşmesine göre RAISE EDİLMEZ → success=False döndürülür
         # (çağıran native'e düşer; sistem bozulmaz). Güvenlik istisnası burada YAKALANMAZ.
         try:
@@ -69,12 +82,70 @@ class AlexZhangRLMAdapter:
             success=True,
         )
 
+    def _preflight_environment(self) -> str | None:
+        """Level 3 ortamı (docker/ipython) hazır mı? Değilse temiz hata mesajı döner.
+
+        docker: `docker` CLI PATH'te olmalı. ipython: IPython paketi import edilebilmeli.
+        native/local: ek ortam gerekmez (local üretimde güvenlik kapısınca zaten reddedilir).
+        """
+        import shutil
+
+        alex = self.config.get("alexzhang", {}) or {}
+        env = str(alex.get("environment", "docker")).lower()
+        if env == "docker":
+            if shutil.which("docker") is None:
+                return (
+                    "RLM environment='docker' ama 'docker' CLI bulunamadı (Docker kurulu değil). "
+                    "Docker'ı kurun/başlatın, environment'ı 'native' yapın ya da provider'ı native "
+                    "bırakın (sistem native ile çalışır)."
+                )
+            if not self._docker_daemon_ok():
+                return (
+                    "RLM environment='docker': 'docker' CLI var ama daemon çalışmıyor "
+                    "('docker info' başarısız). Docker Desktop/daemon'ı başlatın ya da provider'ı "
+                    "native bırakın (sistem native ile çalışır)."
+                )
+        if env == "ipython" and importlib.util.find_spec("IPython") is None:
+            return (
+                "RLM environment='ipython' ama IPython kurulu değil. `pip install ipython` ya da "
+                "environment'ı 'docker' yapın (üretimde yalnız 'docker' güvenlidir)."
+            )
+        return None
+
+    @staticmethod
+    def _docker_daemon_ok() -> bool:
+        """`docker info` ile daemon canlı mı (read-only probe, shell DEĞİL, kısa timeout).
+
+        Probe'un KENDİSİ patlarsa (spawn hatası vb.) fail-closed YAPMA → True dön; gerçek
+        sorun olsa bile rlms içinde yakalanıp native'e düşülür (çift güvenlik)."""
+        import subprocess
+
+        try:
+            # Sabit argv (shell YOK), salt-okuma probe, kısa timeout — kullanıcı girdisi geçmez.
+            r = subprocess.run(["docker", "info"], capture_output=True, timeout=4)
+            return r.returncode == 0
+        except Exception:
+            return True  # probe çalıştırılamadı → which-sonucuna güven (bloklamadan)
+
+    def environment_ready(self) -> tuple[bool, str]:
+        """Motorun seçili ortamı çalıştırmaya hazır mı? (uygunluk raporu; çağrı yapmaz)."""
+        if not self.is_available():
+            return False, "rlms paketi kurulu değil"
+        err = self._preflight_environment()
+        return (err is None, err or "ortam hazır")
+
     def _build_rlm_kwargs(self) -> dict[str, Any]:
         alex = self.config.get("alexzhang", {}) or {}
+        # Determinizm (kural 6): üretim/alt-çağrılarda temperature=0 → greedy decode.
+        # Anthropic'te determinizm kaldıracı sıcaklıktır (seed param yok); sampling_args
+        # rlms tarafından backend'e iletilir. Desteklenmezse rlms içinde yakalanır → fallback.
+        sampling = {"temperature": 0.0}
         return {
             "backend": alex.get("backend", "anthropic"),  # OpenAI değil
             "backend_kwargs": {"model_name": alex.get("model_name")},
             "environment": alex.get("environment", "docker"),  # üretimde 'local' yasak
+            "sampling_args": sampling,
+            "sub_sampling_args": sampling,
             "verbose": False,
         }
 
