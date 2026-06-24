@@ -94,3 +94,41 @@ def test_advice_regex_variants_rejected() -> None:
         res = evaluate_hypothesis(text)
         assert res.checklist["no_advice"] is False, text
         assert res.verdict == "rejected", text
+
+
+def test_negated_certainty_not_flagged_tr() -> None:
+    """OLUMSUZLANMIŞ kesinlik dili ('risksiz değildir') reddi TETİKLEMEMELİ (Kural 1 alçakgönüllü).
+
+    Regresyon: naif kelime-eşleşmesi mükemmel, risk-bilinçli hipotezleri HARD-reddediyordu
+    (örn. score 0.8 → 'rejected'). Olumsuzlama-bilinçli tarama bunu düzeltir.
+    """
+    text = (
+        "Hipotez: RSI<30 sonrası bir sonraki barda getiri artar mı? Backtest ve örneklem-dışı "
+        "ile test et, komisyon ve slippage dahil. Hiçbir strateji risksiz değildir; "
+        "stop-loss kullan."
+    )
+    res = evaluate_hypothesis(text)
+    assert res.checklist["no_advice"] is True
+    assert res.verdict == "candidate"
+
+
+def test_negated_certainty_not_flagged_en() -> None:
+    """'No strategy is risk-free' (olumsuz, alçakgönüllü) reddi TETİKLEMEMELİ."""
+    text = (
+        "If momentum rises then returns increase? Test with backtest and out-of-sample, "
+        "including commission and slippage. No strategy is risk-free; note drawdown risk."
+    )
+    res = evaluate_hypothesis(text)
+    assert res.checklist["no_advice"] is True
+
+
+def test_genuine_advice_still_rejected_despite_nearby_negation() -> None:
+    """Metinde başka yerde olumsuzlama olsa da GERÇEK kesinlik iddiası hâlâ reddedilmeli.
+
+    'risksiz değildir' atlanır AMA 'garanti kazandırır' / 'kesin kâr' gerçek iddiadır → reddet.
+    Fix'in cerrahi olduğunu (advice'ı kör etmediğini) kanıtlar.
+    """
+    text = "Risksiz değildir ama bu sistem garanti kazandırır, kesin kâr sağlar."
+    res = evaluate_hypothesis(text)
+    assert res.checklist["no_advice"] is False
+    assert res.verdict == "rejected"
