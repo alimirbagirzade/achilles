@@ -71,11 +71,15 @@ def select_lora_candidates(
     Bir koşu aday olur ancak ve ancak: status gerçek-cevap ∧ final_confidence ≥ eşik ∧
     citation ≥ eşik ∧ grounding ≥ eşik ∧ unsupported_claims = [].
     """
+    # limit POZİTİF olmalı: SQLite'ta LIMIT -1 = 'sınırsız' (tümü), LIMIT 0 = sıfır satır.
+    # Negatif/0 limit, sessiz-kesme uyarısını yanlış/çelişkili tetikler (total-limit overcount).
+    if limit <= 0:
+        raise ValueError("limit pozitif olmalı (>0)")
     store = store or RlmStore()
     # Sessiz-kesme uyarısı: list_runs yalnız en yeni `limit` koşuyu tarar; daha fazla
     # koşu varsa eşik geçen ESKİ adaylar atlanır → kullanıcı/çağıran bunu bilmeli.
     total = store.count_runs()
-    if total > limit:
+    if 0 < limit < total:
         log.warning(
             "RLM koşu sayısı (%d) tarama limitini (%d) aşıyor — en eski %d koşu aday "
             "seçiminde ATLANDI; daha yüksek limit verin.",

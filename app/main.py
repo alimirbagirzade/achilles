@@ -778,7 +778,9 @@ def rlm_runs(limit: int = typer.Option(20)) -> None:
 def rlm_lora_candidates(
     export: str = typer.Option("", help="Aday JSONL çıktı yolu (boşsa yalnız listele)"),
     min_confidence: float = typer.Option(0.85, help="§16 final_confidence eşiği"),
-    limit: int = typer.Option(1000, help="Taranacak en yeni koşu sayısı (sessiz-kesme sınırı)"),
+    limit: int = typer.Option(
+        1000, min=1, help="Taranacak en yeni koşu sayısı (sessiz-kesme sınırı; >0)"
+    ),
 ) -> None:
     """RLM koşularından LoRA dataset ADAYLARINI seç (salt-okuma; talimat §16).
 
@@ -793,7 +795,7 @@ def rlm_lora_candidates(
 
     # Sessiz-kesme uyarısı: limitten fazla koşu varsa eski adaylar atlanır (--limit artır).
     total = RlmStore().count_runs()
-    if total > limit:
+    if 0 < limit < total:
         console.print(
             f"[yellow]Uyarı: {total} koşudan yalnız en yeni {limit} tarandı; "
             f"{total - limit} eski koşu atlandı. --limit artırın.[/yellow]"
