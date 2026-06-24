@@ -806,6 +806,7 @@ uv run achilles rag-scan --dry-run      # sadece listele, izleme listesine yazma
 uv run achilles ask "soru"              # RAG ile kaynaklı yanıt (tek-tur)
 uv run achilles rlm-answer "soru"       # RLM: çok-adımlı + iddia-doğrulamalı kaynaklı cevap
 uv run achilles rlm-runs                # RLM koşu geçmişi (görev/durum/kanıt/güven)
+uv run achilles rlm-lora-candidates     # §16 LoRA adayları (salt-okuma; eğitim YOK, onay şart)
 uv run achilles card <paper_id>         # bilgi kartı üret
 uv run achilles extract-formulas        # tüm makalelerden formül çıkar
 uv run achilles formulas                # çıkarılan formülleri listele
