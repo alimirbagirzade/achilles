@@ -707,13 +707,40 @@ def rlm_answer(
     paper_ids: str = typer.Option(None, help="Virgülle ayrılmış paper_id listesi (opsiyonel)"),
     top_k: int = typer.Option(None, help="Tur başına getirilecek chunk sayısı"),
     rounds: int = typer.Option(None, help="Maksimum retrieval turu"),
+    engine: str = typer.Option(
+        "native", "--engine", help="native (varsayılan) | alexzhang (opsiyonel motor)"
+    ),
 ) -> None:
-    """RLM Controller: çok-adımlı retrieval + iddia doğrulama + kaynaklı nihai cevap."""
+    """RLM Controller: çok-adımlı retrieval + iddia doğrulama + kaynaklı nihai cevap.
+
+    --engine alexzhang: opsiyonel alexzhang13/rlm motorunu dener (kurulu+açık+güvenliyse);
+    aksi halde sessizce native'e düşer (sistem bozulmaz). Varsayılan native.
+    """
     from rich.markup import escape
+
+    pid_list = [p.strip() for p in paper_ids.split(",")] if paper_ids else None
+
+    if engine.lower() == "alexzhang":
+        from app.rlm.answer_pipeline import run_rlm_answer
+
+        out = run_rlm_answer(
+            query, adapter="alexzhang", top_k=top_k, paper_ids=pid_list, max_rounds=rounds
+        )
+        meta = (
+            f"motor={out['adapter']} · durum={out['status']} · "
+            f"güven={out['confidence']} · kaynak={len(out.get('sources', []))}"
+        )
+        color = {"grounded": "green", "needs_review": "yellow"}.get(out["status"], "red")
+        console.print(
+            Panel(
+                f"{escape(out['answer'])}\n\n{escape(meta)}",
+                title=f"[{color}]RLM ({escape(out['adapter'])}): {escape(out['status'])}[/{color}]",
+            )
+        )
+        return
 
     from app.rlm.rlm_controller import RlmController
 
-    pid_list = [p.strip() for p in paper_ids.split(",")] if paper_ids else None
     result = RlmController().answer(query, paper_ids=pid_list, top_k=top_k, max_rounds=rounds)
 
     color = {
@@ -774,6 +801,40 @@ def rlm_runs(limit: int = typer.Option(20)) -> None:
     console.print(t)
 
 
+@app.command("rlm-trajectory")
+def rlm_trajectory(run_id: str = typer.Argument(..., help="RLM koşu run_id")) -> None:
+    """Bir RLM koşusunun trajektorisini göster (adım izi + varsa alexzhang motor metadata)."""
+    from rich.markup import escape
+
+    from app.rlm.answer_pipeline import read_trajectory_file
+    from app.rlm.rlm_store import RlmStore
+
+    store = RlmStore()
+    if store.get_run(run_id) is None:
+        console.print(f"[red]Koşu bulunamadı: {escape(run_id)}[/red]")
+        raise typer.Exit(1)
+    steps = store.get_steps(run_id)
+    if not steps:
+        console.print("[yellow]Bu koşuda adım kaydı yok (eski koşu olabilir).[/yellow]")
+    else:
+        t = Table(title=f"Trajektori — {run_id[:14]}")
+        t.add_column("#", justify="right")
+        t.add_column("Aşama")
+        t.add_column("Çıktı")
+        for st in steps:
+            t.add_row(
+                str(st.get("step_order", "")),
+                escape(str(st.get("step_type", ""))),
+                escape((str(st.get("output_text", "")) or "")[:80]),
+            )
+        console.print(t)
+    traj = read_trajectory_file(run_id)
+    if traj and traj.get("engine_metadata"):
+        console.print(
+            Panel(escape(str(traj["engine_metadata"])[:1000]), title="Motor metadata (alexzhang)")
+        )
+
+
 @app.command("rlm-lora-candidates")
 def rlm_lora_candidates(
     export: str = typer.Option("", help="Aday JSONL çıktı yolu (boşsa yalnız listele)"),
@@ -831,6 +892,114 @@ def rlm_lora_candidates(
                 title="[green]Export[/green]",
             )
         )
+
+
+@app.command("rlm-engine")
+def rlm_engine() -> None:
+    """RLM motor yapılandırmasını göster (provider/alexzhang/güvenlik; salt-okuma)."""
+    from app.rlm.engine_config import public_engine_config
+
+    cfg = public_engine_config()
+    t = Table(title="RLM Engine Config")
+    t.add_column("Ayar")
+    t.add_column("Değer")
+    for k in (
+        "provider",
+        "alexzhang_enabled",
+        "alexzhang_backend",
+        "alexzhang_environment",
+        "production_mode",
+        "allow_local_exec",
+    ):
+        t.add_row(k, str(cfg[k]))
+    t.add_row("allowed_tools", ", ".join(cfg["allowed_tools"]))
+    console.print(t)
+    if cfg["provider"] == "alexzhang" and not cfg["alexzhang_enabled"]:
+        console.print("[yellow]provider=alexzhang ama enabled=false → native çalışır.[/yellow]")
+
+
+@app.command("rlm-test-adapter")
+def rlm_test_adapter(
+    adapter: str = typer.Option("native", help="native | alexzhang"),
+) -> None:
+    """Bir RLM motorunun kullanılabilirliğini test et (çağrı YAPMAZ; salt uygunluk)."""
+    from app.rlm.adapters.alexzhang_rlm import AlexZhangRLMAdapter
+    from app.rlm.adapters.native import NativeRLMAdapter
+    from app.rlm.engine_config import build_engine_config
+
+    if adapter == "native":
+        ok = NativeRLMAdapter().is_available()
+        msg = "native her zaman kullanılabilir (çekirdek)."
+    elif adapter == "alexzhang":
+        adp = AlexZhangRLMAdapter(build_engine_config())
+        ok = adp.is_available()
+        if ok:
+            env_ready, env_note = adp.environment_ready()
+            msg = "rlms paketi kurulu ✓\nOrtam: " + (
+                "hazır ✓" if env_ready else f"HAZIR DEĞİL — {env_note}"
+            )
+        else:
+            msg = (
+                "rlms paketi KURULU DEĞİL → `uv sync --extra rlm` "
+                "veya provider'ı native bırak (sistem native ile çalışır)."
+            )
+    else:
+        console.print("[red]adapter native|alexzhang olmalı[/red]")
+        raise typer.Exit(1)
+    color = "green" if ok else "yellow"
+    console.print(
+        Panel(
+            f"[{color}]{adapter}: {'kullanılabilir' if ok else 'yok'}[/{color}]\n{msg}",
+            title="RLM Adapter Testi",
+        )
+    )
+
+
+@app.command("rlm-tools")
+def rlm_tools(
+    call: str = typer.Option(
+        None, "--call", help="İzinli bir tool'u çağır (örn: calculator, formula_check)"
+    ),
+    expr: str = typer.Option(None, "--expr", help="calculator için ifade (örn: '2*(3+4)')"),
+    text: str = typer.Option(None, "--text", help="formula_check için metin"),
+) -> None:
+    """RLM güvenli tool allowlist'ini göster veya izinli bir tool'u çağır.
+
+    Tool'lar deny-by-default allowlist'tedir; shell/network/secret/fs-write YAPMAZ.
+    Argümansız: izinli tool'ları listeler. --call ile saf bir tool'u (örn calculator)
+    çağırıp structured sonucu gösterir; izinsiz ad ToolNotAllowed ile reddedilir.
+    """
+    from rich.markup import escape
+
+    from app.rlm.safe_tools import build_default_registry
+    from app.rlm.tool_registry import ToolNotAllowed
+
+    reg = build_default_registry()
+    if not call:
+        t = Table(title="RLM Güvenli Tool Allowlist")
+        t.add_column("Tool")
+        t.add_column("İzinli", justify="center")
+        for name in reg.available():
+            t.add_row(name, "[green]✓[/green]")
+        console.print(t)
+        console.print(
+            "[dim]Çağrı örneği: achilles rlm-tools --call calculator --expr '2*(3+4)'[/dim]"
+        )
+        return
+
+    kwargs: dict[str, object] = {}
+    if expr is not None:
+        kwargs["expression"] = expr
+    if text is not None:
+        kwargs["text"] = text
+    try:
+        res = reg.call(call, **kwargs)
+    except ToolNotAllowed as exc:
+        console.print(f"[red]Reddedildi: {escape(str(exc))}[/red]")
+        raise typer.Exit(1) from exc
+    ok = bool(res.get("ok"))
+    color = "green" if ok else "yellow"
+    console.print(Panel(escape(str(res)), title=f"[{color}]rlm-tools: {escape(call)}[/{color}]"))
 
 
 @app.command("pine")
@@ -3541,6 +3710,30 @@ def registry_snapshot() -> None:
     )
 
 
+@app.command("registry-register-dataset")
+def registry_register_dataset(
+    path: str = typer.Option(..., "--path", help="Dataset dosyası (JSONL) yolu"),
+    name: str = typer.Option("", "--name", help="Sürüm adı (boşsa dosya adı)"),
+    source_type: str = typer.Option("sft", "--source-type", help="sft | dpo | tool_use"),
+) -> None:
+    """Bir dataset dosyasını kayıt defterine sürümle (hash+sayı otomatik; sonra promote)."""
+    from app.registry import RegistryStore
+
+    reg = RegistryStore()
+    try:
+        out = reg.register_dataset_from_file(path, name=name or None, source_type=source_type)
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1) from e
+    console.print(
+        f"[green]Kayıt edildi:[/green] {out['dataset_version_id']} · "
+        f"{out['n_records']} kayıt · durum={out['approval_status']} · "
+        f"hash={(out['content_hash'] or '')[:12]}\n"
+        f"Onay için: achilles registry-promote-dataset --version {out['dataset_version_id']} "
+        f"--approver <kim>"
+    )
+
+
 @app.command("registry-promote-dataset")
 def registry_promote_dataset(
     version: str = typer.Option(..., "--version", help="dataset_version_id"),
@@ -3741,6 +3934,97 @@ def _load_hypotheses(path: str) -> list:
         return [json.loads(line) for line in raw.splitlines() if line.strip()]
     data = json.loads(raw)
     return data if isinstance(data, list) else [data]
+
+
+# --------------------------------------------------------------------------
+# İçe-alım kalite skoru (compute-on-demand; PaperIndexer sıcak yolu değişmez)
+# --------------------------------------------------------------------------
+@app.command("ingestion-quality")
+def ingestion_quality_cmd(
+    paper_id: str = typer.Option(..., "--paper-id", help="Skorlanacak makale paper_id"),
+    record: bool = typer.Option(
+        False, "--record", help="Skoru KALICI yap (paper_ingestion_runs + Paper alanları)"
+    ),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Bir makalenin içe-alım kalite skorunu (100 puan) hesapla. --record ile kalıcı."""
+    from app.ingestion.quality_scorer import score_paper
+    from app.memory.sqlite_store import SqliteStore
+
+    store = SqliteStore()
+    try:
+        result = score_paper(store, paper_id)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1) from e
+
+    run_id = None
+    if record:
+        from app.ingestion.quality_scorer import gather_inputs
+
+        inp = gather_inputs(store, paper_id)
+        run_id = store.add_ingestion_run(
+            paper_id=paper_id,
+            status=result.status,
+            quality_score=result.total,
+            component_scores=result.components,
+            n_chunks=inp.n_chunks,
+            n_formulas=inp.n_formulas,
+            notes=result.notes,
+        )
+
+    if as_json:
+        out = result.to_dict()
+        if run_id:
+            out["ingestion_run_id"] = run_id
+        console.print_json(json.dumps(out, ensure_ascii=False))
+        return
+    comp = "  ".join(f"{k}={v}" for k, v in result.components.items())
+    body = (
+        f"Toplam: [bold]{result.total}/100[/] · durum: [bold]{result.status}[/]\nBileşenler: {comp}"
+    )
+    if result.notes:
+        body += "\nNot: " + "; ".join(result.notes)
+    if run_id:
+        body += f"\n[green]KAYDEDİLDİ[/] · run={run_id}"
+    console.print(Panel(body, title="İçe-alım Kalite Skoru"))
+
+
+@app.command("ingestion-quality-scan")
+def ingestion_quality_scan_cmd(
+    record: bool = typer.Option(False, "--record", help="Skorları KALICI yap (tüm korpus)"),
+    worst: int = typer.Option(10, "--worst", help="En düşük kaç makaleyi listele"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Tüm korpusu içe-alım kalitesi için tara: durum dağılımı + en zayıf makaleler."""
+    from app.ingestion.quality_scorer import score_all_papers
+    from app.memory.sqlite_store import SqliteStore
+
+    summary = score_all_papers(SqliteStore(), record=record, worst_n=worst)
+    if as_json:
+        console.print_json(json.dumps(summary.to_dict(), ensure_ascii=False))
+        return
+    if summary.total == 0:
+        console.print("[yellow]Makale yok.[/yellow]")
+        return
+    dist = Table(title=f"İçe-alım Kalite Dağılımı ({summary.scored}/{summary.total} skorlandı)")
+    dist.add_column("Durum")
+    dist.add_column("Sayı", justify="right")
+    for status in ("ready_for_rag", "usable", "slow_but_usable", "unstable", "failed"):
+        n = summary.by_status.get(status, 0)
+        if n:
+            dist.add_row(status, str(n))
+    console.print(dist)
+    console.print(f"Ortalama skor: [bold]{summary.avg_score}/100[/]")
+    if summary.worst:
+        worst_t = Table(title=f"En zayıf {len(summary.worst)} makale")
+        for c in ("paper_id", "Başlık", "Skor", "Durum"):
+            worst_t.add_column(c)
+        for w in summary.worst:
+            worst_t.add_row(w["paper_id"], w["title"], f"{w['total']}", w["status"])
+        console.print(worst_t)
+    if record:
+        console.print("[green]KAYDEDİLDİ[/] (paper_ingestion_runs + papers.quality_score)")
 
 
 if __name__ == "__main__":  # pragma: no cover

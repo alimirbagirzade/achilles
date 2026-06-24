@@ -15,12 +15,13 @@ Tasarım ilkeleri:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from app.config import get_settings
 from app.memory.sqlite_store import (
@@ -82,6 +83,28 @@ class RegistryStore:
         assert result is not None  # az önce eklendi
         return result
 
+    def register_dataset_from_file(
+        self, path: str | Path, *, name: str | None = None, source_type: str = "sft"
+    ) -> dict[str, Any]:
+        """Bir dataset dosyasından (JSONL) sürüm kaydet: içerik-hash + kayıt sayısı otomatik.
+
+        ``content_hash`` = SHA-256(dosya baytları) → aynı dosya tekrar kaydedilirse idempotent.
+        ``n_records`` = boş-olmayan satır sayısı. Eğitim öncesi "bu veriyi sürümle"nin operasyonel
+        ucu (sonra ``registry-promote-dataset`` ile İNSAN ONAYI; Kural 8).
+        """
+        p = Path(path)
+        if not p.exists():
+            raise FileNotFoundError(f"Dataset dosyası yok: {p}")
+        content_hash = hashlib.sha256(p.read_bytes()).hexdigest()
+        n_records = sum(1 for line in p.read_text(encoding="utf-8").splitlines() if line.strip())
+        return self.register_dataset(
+            name=name or p.stem,
+            path=str(p),
+            source_type=source_type,
+            content_hash=content_hash,
+            n_records=n_records,
+        )
+
     def find_dataset_by_hash(self, content_hash: str) -> dict[str, Any] | None:
         with self.store.session() as s:
             row = s.scalar(
@@ -113,6 +136,29 @@ class RegistryStore:
             prev = row.approval_status
             row.approval_status = status
             return prev
+
+    def cas_dataset_status(
+        self, dataset_version_id: str, *, expected: str, new_status: str
+    ) -> bool:
+        """Atomik durum geçişi: yalnız ``approval_status == expected`` iken ``new_status`` yaz.
+
+        Koşullu UPDATE + ``rowcount`` (consume_fresh_approval ile aynı CAS deseni) →
+        eşzamanlı iki çağrıdan yalnız BİRİ rowcount=1 alır (TOCTOU çift-karar önlenir).
+        ``expected`` durum makinesini de zorlar: yalnız ``pending``'den terminal'e geçilir
+        (approved/rejected terminaldir → çapraz geçiş engellenir). ``True`` = bu çağrı geçişi
+        yaptı; ``False`` = yok / ``expected`` değil / yarışı kaybetti.
+        """
+        with self.store.session() as s:
+            res = s.execute(
+                update(DatasetVersion)
+                .where(
+                    DatasetVersion.dataset_version_id == dataset_version_id,
+                    DatasetVersion.approval_status == expected,
+                )
+                .values(approval_status=new_status)
+                .execution_options(synchronize_session=False)
+            )
+            return cast("Any", res).rowcount == 1
 
     # --- RAG indeks sürümleri --------------------------------------------
     def register_rag_index(

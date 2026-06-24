@@ -1,7 +1,7 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-06-23 · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
-_Açık PR: [#10](https://github.com/alimirbagirzade/achilles/pull/10) — upload 429 retry (oto-merge bekliyor)_
+_Son güncelleme: 2026-06-24 · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Açık PR: yok — AI Brain (~16 PR) + RLM (#43-46) hepsi MERGED._
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
@@ -9,6 +9,119 @@ Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple S
 ---
 
 ## 🚨 YENİ SEANS BAŞLANGICI — BUNU OKU
+
+### ⛔ KALICI KISIT (2026-06-24) — API ASLA KULLANILMAZ
+Kullanıcı direktifi: **pay-per-token API hiçbir zaman kullanılmayacak.** Çalışma-zamanı LLM
+hattı YEREL (Ollama / native RLM Controller + RAG). Geliştirme/AI yardımı aylık **abonelikli**
+araçlarla (Claude Code, Codex vb.) — API anahtarı/faturalı endpoint DEĞİL. Sonuç: alexzhang
+RLM `backend="anthropic"` (API) yolu OPSİYONEL + KAPALI kalır (`rlm_alexzhang_enabled=False`,
+`provider=native`); varsayılan/zorunlu YAPILMAZ. Yeni özelliklerde bulut API'sini varsayılan
+bağımlılık yapma → opt-in + native fallback şart. Bkz memory [[no-api-local-subscription-only]].
+
+### 🆕 EN SON İŞ (2026-06-24 #3) — LoRA degenerate kök-neden fix + 1.5B web chat entegrasyonu
+
+**SORUN:** Eğitilmiş LoRA adapter'ları (v5 dahil) degenerate tekrar döngüsüne giriyordu
+("pasaja göre" ezber, maliyetsiz rakam uydurma). 4B model CPU'da eğitilemez derecede ağırdı.
+Kullanıcı istedi: "eğitilmiş LLM'e soru sorabileyim, web'den."
+
+**KÖK NEDEN + FIX (push'lu, origin/main):**
+1. **assistant_only_loss maskeleme** (`app/training/peft_lora_train.py`):
+   - `build_masked_labels(prompt_ids, full_ids)` — prompt token'larını `-100` ile maskeler,
+     yalnız asistan cevabını öğretir. Tekrar döngüsü kökten çözüldü.
+   - `_chat_input_ids()` — `BatchEncoding` vs `list[int]` tip uyumsuzluğu düzeltildi.
+   - `_MaskedDataCollator(pad_token_id)` — label pad'lerini `-100` yapar (0 değil).
+   - `sample_rows(rows, max_examples, seed)` — deterministik alt-küme (Kural 6).
+   - 10 yeni test: `tests/test_peft_assistant_only_loss.py`.
+
+2. **Küçük model pivotu** — 4B→**Qwen2.5-1.5B-Instruct** (CPU'da eğitilebilir):
+   - `adapter_eval.py` → `_resolve_base_model(adapter_dir)` adapter_config.json'dan base okur.
+   - `discipline_safe_local` profili: `configs/lora/lora_profiles.yaml` (r=16, alpha=32,
+     assistant_only_loss=true, NEFTune, max_examples=300).
+   - `detached_launch.py` → `--profile` + `--max-examples` desteği.
+
+3. **Web LoRA chat entegrasyonu** (kullanıcı web'den soru sorabilir):
+   - `app/web/lora_chat_service.py` — adapter tarama + lazy-load + thread-safe cache.
+   - `app/web/schemas.py` — `LoraChatRequest/Response`.
+   - `app/web/server.py` — `GET /api/lora-adapters` + `POST /api/lora-chat`.
+   - `app/web/static/index.html` + `assets/app.js` — sohbet paneli, adapter seçici, spinner.
+   - Varsayılan: `achilles_lora_qwen15b` (1.5B). Base "(eğitimsiz, 4B)" etiketi.
+   - **Bölüm takas:** "Eğitilen Modelle Sohbet" → **3. sıra**, "Araştırma Geçmişi" → **6. sıra**.
+
+4. **Doğrulama:** `reports/lora_chat_check.txt` — 1.5B adapter non-degenerate cevap veriyor.
+
+**COMMIT'LER:** `398fadb` (bölüm takas), `4515091` (1.5B varsayılan) + önceki maskeleme/chat
+commit'leri — hepsi origin/main'de.
+
+**GOTCHA'lar:**
+- Working tree `fix/rlm-hardening-2` dalında (eşzamanlı oturum). Push'lar izole worktree ile.
+- `achilles_lora_qwen15b` adapter'ı eşzamanlı oturumda eğitildi (1.5B, discipline_safe_local).
+- **AchillesWeb scheduled task** yanlış yolda (`C:\Users\sevinc\achilles`); kullanıcı onayı bekliyor.
+
+---
+
+### 🆕 EN SON İŞ (2026-06-24 #2) — AI Brain ek modülleri (~16 PR MERGED)
+Desktop\RAG Kaynak\Eğitim geliştirme\helix_..._talimati.txt (10-modül "AI beyin" genişletme
+emri) audit edildi → çoğu ZATEN vardı. **4 gerçek boşluk** additive olarak entegre edildi
+(offline, deterministik; **app/rlm DOKUNULMADI**). 3-tur adversarial bug-fix loop → CONVERGED.
+
+**Eklenen modüller:**
+- **F1 app/registry/** — DatasetVersion/RagIndexVersion/EmbeddingModelVersion/RlmRewardVersion/
+  PromotionDecision ORM + RegistryStore + promotion_gates (atomik CAS approve/reject, terminal
+  state machine pending→approved|rejected). Commit `e08a674`.
+- **F2 app/tools/** — probability_simulator (seed'li Monte Carlo + risk-of-ruin + VaR/ES),
+  statistics_checker (permütasyon p-değeri, scipy bağımlılığı YOK), result_verifier,
+  tool_registry + ToolRun/ToolArtifact ORM + log_tool_run. CLI tools-list/montecarlo/stats-check.
+- **F3 app/evals/eval_runner.py** — EvalRunner (trading-hypothesis/rag-retrieval tipi),
+  trading_hypothesis_evaluator (regex tavsiye tespit: sure-fire/guarantee/can't-lose).
+  CLI eval-runner. → F2+F3 = **PR #14**.
+- **F4 app/ingestion/quality_scorer.py** — clean_text_scorer + PaperIngestionRun ORM +
+  Paper.quality_score/ingest_status. compute-on-demand. CLI ingestion-quality/ingestion-quality-scan.
+  → **PR #16**.
+
+**Bug-fix loop (3 tur, converged):**
+- Tur 1 (PR #19): 8 onaylı bug — 2 HIGH: TOCTOU approve/reject yarışı → atomik CAS.
+- Tur 2 (PR #21): 9 fix — terminal durum makinesi; n_trades=0 falsy bypass; FK parent
+  doğrulaması (SQLite FK enforcement GLOBAL KAPALI, BİLEREK); tavsiye-regex genişletme.
+- Tur 3: critic tek-tur → CONVERGED, high/blocker yok.
+
+**Zincir entegrasyonu (PR #24):** 4 yeni ajan + skill `automation_manifest.yaml`'de:
+ingestion-quality-scorer, scientific-tool-runtime, hypothesis-evaluator,
+model-data-registry (requires_approval → Kural 8 zincire gömülü). 20 ajan/14 adım, topolojik.
+
+**Web + bağlantılar (PR #26/28/29/32/33/35/38):**
+- `app/web/ai_brain_routes.py` — registry/tools/ingestion/eval REST API'leri.
+- `/ai-brain` dashboard (bağımsız ai_brain.html, 4 sekme).
+- eval→registry snapshot + karar-log; batch ingestion-quality-scan CLI.
+- `registry-register-dataset` CLI (SHA-256, idempotent).
+- README "AI Brain ek modülleri" CLI referansı.
+- **#38 dataset auto-registration LIVE**: `build_training_split()` → `_auto_register_dataset`
+  (best-effort, contextlib.suppress) → eğitim hattı kanonik lora_sft.jsonl'i otomatik
+  DatasetVersion (pending) yapar.
+
+**~135 yeni test.** Tüm PR'lar izole-worktree→auto-merge (çakışma yok).
+**ERTELENEN (opsiyonel):** ana index.html'e /ai-brain nav linki; rag-answer/lora/rlm-reward
+eval tipleri (app/rlm bağımlı). Bkz memory [[ai-brain-modules-integration-2026-06-24]].
+
+### 🆕 EN SON İŞ (2026-06-24) — alexzhang13/rlm OPSİYONEL motor-adapter (4 PR MERGED)
+`Desktop\RAG Kaynak\RLM\achilles_alexzhang_rlm_claude_integration_prompt` (1051 satır) uçtan uca
+entegre edildi — additive, **native VARSAYILAN korundu**, OpenAI default değil, RAG/Mastery/LoRA
+DOKUNULMADI. Hepsi izole-worktree→PR→auto-merge (paylaşılan tree çakışması yok).
+- **PR #43** entegrasyon: `app/rlm/adapters/` (base/native/alexzhang/security), `engine_config`,
+  `tool_registry`+`safe_tools` (deny-by-default allowlist), `answer_pipeline`; CLI `rlm-engine`/
+  `rlm-test-adapter`. rlm-security-reviewer KENDİ kodumda 4 fix buldu (HIGH ipython-bypass→allow-list).
+  GOTCHA: `.gitignore` `adapters/` (LoRA) → `app/rlm/adapters/` kaynağını sessizce yutuyordu → `*.py` negasyonu.
+- **PR #44** wiring: `rlm-answer --engine`, web `/api/rlm/config`+`/test-adapter`, `rlm-tools` CLI
+  (ölü-kod allowlist'i canlı bağladı), alexzhang run-log, source `support_level`.
+- **PR #45** lock: pyproject `rlm` extra ↔ `uv.lock` drift kapandı (openai yalnız opsiyonel-transitive).
+- **PR #46** Level 3 + observability: trajektori logging (rlm_store+JSON, `/runs/{id}/trajectory`,
+  `rlm-trajectory`), docker preflight (CLI+daemon probe), web motor dashboard paneli (preview-verified),
+  GERÇEK `rlms` kurulum doğrulaması. Bug-avı 5 fix (orphan-run→failed, determinizm temperature=0,
+  daemon-probe, relevance clamp, traj 50MB+OOM).
+- **Doğrulama:** her PR ruff+format+mypy+pytest yeşil (main CI success); dashboard preview_eval ile.
+- **AÇIK KARAR (kullanıcı):** gerçek Claude-destekli alexzhang inference API+key+docker ister → API
+  YOK direktifi gereği KOŞTURULMAZ; sistem native (Ollama) ile tam çalışır. Memory [[rlm-alexzhang-adapter-2026-06-24]].
+- **NOT:** `rlms` paketi dev `.venv`'de kurulu kaldı (#46 doğrulaması; eşzamanlı achilles-web.exe
+  `uv sync`'i kilitledi). Zararsız; temizlemek için web sunucusunu kapat + `uv sync`.
 
 ### 🆕 EN SON İŞ (2026-06-23) — Kademe-2 derin av (8 finder) → 5 fix push, 2 devir
 Kullanıcı "tüm projeyi tara + pushla". 8-finder Kademe-2 workflow + adversarial doğrulama; hedef

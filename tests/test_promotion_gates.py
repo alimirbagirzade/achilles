@@ -124,3 +124,41 @@ def test_gate_reward_passes_on_clean(reg: RegistryStore) -> None:
     assert out["clean"] is True
     assert out["decision"]["decision"] == "approved"
     assert reg.list_rewards()[0]["secret_scanned"] == 1  # temiz
+
+
+# --- atomik durum geçişi (TOCTOU çift-karar önlemi + terminal durum makinesi) ----
+def test_cas_status_atomic_single_winner(reg: RegistryStore) -> None:
+    ds = reg.register_dataset(name="d", n_records=1)
+    vid = ds["dataset_version_id"]
+    # pending→approved kazanır; ikinci (artık 'approved', expected 'pending' değil) kaybeder
+    assert reg.cas_dataset_status(vid, expected="pending", new_status="approved") is True
+    assert reg.cas_dataset_status(vid, expected="pending", new_status="approved") is False
+    assert reg.get_dataset(vid)["approval_status"] == "approved"
+
+
+def test_cas_unknown_dataset_false(reg: RegistryStore) -> None:
+    assert reg.cas_dataset_status("ds_nope", expected="pending", new_status="approved") is False
+
+
+def test_double_approve_logs_one_decision(reg: RegistryStore) -> None:
+    ds = reg.register_dataset(name="d", n_records=1)
+    vid = ds["dataset_version_id"]
+    approve_dataset(reg, vid, approver_id="ali")
+    approve_dataset(reg, vid, approver_id="ali")  # idempotent (CAS kaybeder)
+    assert len(reg.list_decisions(target_id=vid)) == 1
+
+
+def test_terminal_state_machine_no_cross_transition(reg: RegistryStore) -> None:
+    # approved/rejected terminaldir → çapraz geçiş sessizce kabul edilmez (ValueError)
+    ds = reg.register_dataset(name="d", n_records=1)
+    vid = ds["dataset_version_id"]
+    approve_dataset(reg, vid, approver_id="ali")
+    with pytest.raises(ValueError, match="terminal"):
+        reject_dataset(reg, vid, approver_id="ali", reason="geç kalan red")
+    assert reg.get_dataset(vid)["approval_status"] == "approved"
+
+    ds2 = reg.register_dataset(name="d2", n_records=1)
+    vid2 = ds2["dataset_version_id"]
+    reject_dataset(reg, vid2, approver_id="ali", reason="kötü")
+    with pytest.raises(ValueError, match="terminal"):
+        approve_dataset(reg, vid2, approver_id="ali")

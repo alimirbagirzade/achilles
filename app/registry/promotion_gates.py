@@ -67,7 +67,11 @@ class ScanResult:
 
 
 def _mask(match: str) -> str:
-    """Bulunan gizli dizgenin yalnız ilk 4 karakterini göster (sırrı loglamamak için)."""
+    """Gizli dizgeyi maskele: 4 karakterden uzunsa ilk 4'ü göster, değilse tamamen gizle.
+
+    4 ve daha kısa dizgelerde ilk-4'ü göstermek tüm sırrı açığa çıkarırdı; bu yüzden
+    ``len <= 4`` durumunda yalnız ``***`` döndürülür (güvenli taraf — sır loglanmaz).
+    """
     match = match.strip()
     if len(match) <= 4:
         return "***"
@@ -106,18 +110,29 @@ def approve_dataset(
 ) -> dict[str, Any]:
     """Dataset sürümünü ``approved`` yap (Kural 8 kapısı) + karar logla.
 
-    Bilinmeyen sürüm → ValueError. Zaten onaylıysa idempotenttir (yeni karar yazılmaz).
+    Durum makinesi: yalnız ``pending`` → ``approved``. Zaten onaylıysa idempotent;
+    ``rejected`` ise terminal olduğundan ValueError (sessiz çapraz-geçiş yok).
+    Bilinmeyen sürüm → ValueError.
     """
     ds = registry.get_dataset(dataset_version_id)
     if ds is None:
         raise ValueError(f"Bilinmeyen dataset sürümü: {dataset_version_id}")
-    if ds["approval_status"] == "approved":
+    prev = ds["approval_status"]
+    if prev == "approved":
         return {"ok": True, "already": True, "dataset": ds}
-    prev = registry.set_dataset_status(dataset_version_id, "approved")
+    if prev != "pending":
+        raise ValueError(
+            f"'{prev}' terminal durumdaki dataset onaylanamaz (yalnız pending → approved)"
+        )
+    # ATOMİK geçiş (TOCTOU önlemi): pending→approved; eşzamanlı iki onaydan yalnız BİRİ kazanır.
+    won = registry.cas_dataset_status(dataset_version_id, expected="pending", new_status="approved")
+    if not won:
+        # araya giren çağrı pending'i değiştirdi → mevcut durumu döndür (idempotent)
+        return {"ok": True, "already": True, "dataset": registry.get_dataset(dataset_version_id)}
     decision = registry.log_decision(
         target_type="dataset",
         target_id=dataset_version_id,
-        from_status=prev,
+        from_status="pending",  # CAS pending'den kazandı → kesin önceki durum
         to_status="approved",
         decision="approved",
         reason=reason or "kullanıcı onayı",
@@ -137,21 +152,35 @@ def reject_dataset(
     approver_id: str,
     reason: str,
 ) -> dict[str, Any]:
-    """Dataset sürümünü ``rejected`` yap + karar logla."""
+    """Dataset'i ``rejected`` yap + karar logla (atomik; yalnız pending → rejected)."""
     ds = registry.get_dataset(dataset_version_id)
     if ds is None:
         raise ValueError(f"Bilinmeyen dataset sürümü: {dataset_version_id}")
-    prev = registry.set_dataset_status(dataset_version_id, "rejected")
+    prev = ds["approval_status"]
+    if prev == "rejected":
+        return {"ok": True, "already": True, "dataset": ds}
+    if prev != "pending":
+        raise ValueError(
+            f"'{prev}' terminal durumdaki dataset reddedilemez (yalnız pending → rejected)"
+        )
+    won = registry.cas_dataset_status(dataset_version_id, expected="pending", new_status="rejected")
+    if not won:
+        return {"ok": True, "already": True, "dataset": registry.get_dataset(dataset_version_id)}
     decision = registry.log_decision(
         target_type="dataset",
         target_id=dataset_version_id,
-        from_status=prev,
+        from_status="pending",
         to_status="rejected",
         decision="rejected",
         reason=reason,
         approved_by=approver_id,
     )
-    return {"ok": True, "dataset": registry.get_dataset(dataset_version_id), "decision": decision}
+    return {
+        "ok": True,
+        "already": False,
+        "dataset": registry.get_dataset(dataset_version_id),
+        "decision": decision,
+    }
 
 
 # --- RAG indeks retrieval-eval kapısı --------------------------------------

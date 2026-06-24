@@ -213,41 +213,9 @@
           <div id="researchResult" class="result hidden"></div>
         </div>
 
-        <!-- Araştırma Geçmişi -->
-        <div class="training-section">
-          <h3>3 · Araştırma Geçmişi</h3>
-          <button class="btn" id="refreshSessions">↻ YENİLE</button>
-          <div id="sessionsList" class="sessions-list"></div>
-        </div>
-
-        <!-- Zincir Veri Seti -->
-        <div class="training-section">
-          <h3>4 · Zincir Veri Seti (LoRA)</h3>
-          <p class="muted small">Araştırma oturumlarını reasoning-chain eğitim verisine çevir.</p>
-          <label class="filter-btn-label">
-            <input type="checkbox" id="onlySuccessful" /> Yalnız başarılı oturumlar
-          </label>
-          <button class="btn btn-primary" id="buildChainBtn">⚡ ZİNCİR DATASET OLUŞTUR</button>
-          <div id="chainResult" class="result hidden"></div>
-        </div>
-
-        <!-- Sentez Makaleleri -->
-        <div class="training-section">
-          <h3>5 · Sentez Makaleleri</h3>
-          <p class="muted small">
-            Araştırma oturumlarındaki hipotezler tek bir incelenebilir makaleye dönüştürülür:
-            kaynaklar, formüller, backtest sonuçları, yansıma ve test noktaları.
-            İndir → incele → istersen RAG'a geri besle.
-          </p>
-          <button class="btn btn-primary" id="genSynthPaperBtn">📄 SENTEZ MAKALESİ ÜRET</button>
-          <button class="btn" id="refreshSynthPapers">↻ LİSTEYİ YENİLE</button>
-          <div id="synthPaperResult" class="result hidden"></div>
-          <div id="synthPapersList" class="sessions-list"></div>
-        </div>
-
         <!-- Eğitilen Modelle Sohbet -->
         <div class="training-section">
-          <h3>6 · Eğitilen Modelle Sohbet (LoRA)</h3>
+          <h3>3 · Eğitilen Modelle Sohbet (LoRA)</h3>
           <p class="muted small">
             Eğitilen LoRA adapter'ı (veya base model) ile <strong>LOKAL</strong> sohbet —
             Ollama gerektirmez. CPU'da yavaştır (cevap dakikalar sürebilir). Liste boşsa
@@ -276,6 +244,38 @@
             </div>
           </form>
           <div id="loraChatResult" class="result hidden"></div>
+        </div>
+
+        <!-- Zincir Veri Seti -->
+        <div class="training-section">
+          <h3>4 · Zincir Veri Seti (LoRA)</h3>
+          <p class="muted small">Araştırma oturumlarını reasoning-chain eğitim verisine çevir.</p>
+          <label class="filter-btn-label">
+            <input type="checkbox" id="onlySuccessful" /> Yalnız başarılı oturumlar
+          </label>
+          <button class="btn btn-primary" id="buildChainBtn">⚡ ZİNCİR DATASET OLUŞTUR</button>
+          <div id="chainResult" class="result hidden"></div>
+        </div>
+
+        <!-- Sentez Makaleleri -->
+        <div class="training-section">
+          <h3>5 · Sentez Makaleleri</h3>
+          <p class="muted small">
+            Araştırma oturumlarındaki hipotezler tek bir incelenebilir makaleye dönüştürülür:
+            kaynaklar, formüller, backtest sonuçları, yansıma ve test noktaları.
+            İndir → incele → istersen RAG'a geri besle.
+          </p>
+          <button class="btn btn-primary" id="genSynthPaperBtn">📄 SENTEZ MAKALESİ ÜRET</button>
+          <button class="btn" id="refreshSynthPapers">↻ LİSTEYİ YENİLE</button>
+          <div id="synthPaperResult" class="result hidden"></div>
+          <div id="synthPapersList" class="sessions-list"></div>
+        </div>
+
+        <!-- Araştırma Geçmişi -->
+        <div class="training-section">
+          <h3>6 · Araştırma Geçmişi</h3>
+          <button class="btn" id="refreshSessions">↻ YENİLE</button>
+          <div id="sessionsList" class="sessions-list"></div>
         </div>
       </section>
 
@@ -813,6 +813,10 @@
           <button class="btn" id="rlmRefreshBtn">↻ Yenile</button>
           <span class="muted small">Çok-adımlı retrieval + iddia-düzeyi doğrulama. Salt-okuma
             görünüm; bir koşuya tıklayınca adımlar + kanıt + doğrulama açılır.</span>
+        </div>
+        <div class="card">
+          <h3 style="margin:0 0 .5rem">Motor (salt-okuma)</h3>
+          <div id="rlmEnginePanel"><span class="muted small">Yükleniyor…</span></div>
         </div>
         <div class="card">
           <h3 style="margin:0 0 .5rem">Koşular</h3>

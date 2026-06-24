@@ -130,6 +130,36 @@ def test_rlm_run_detail_unknown_404(client: TestClient) -> None:
     assert r.status_code == 404
 
 
+def test_rlm_trajectory_unknown_404(client: TestClient) -> None:
+    r = client.get("/api/rlm/runs/rlm_does_not_exist/trajectory")
+    assert r.status_code == 404
+
+
+def test_rlm_config_endpoint_native_default_no_secrets(client: TestClient) -> None:
+    # /api/rlm/config salt-okuma + sır YOK: provider native, backend anthropic (OpenAI değil).
+    r = client.get("/api/rlm/config")
+    assert r.status_code == 200
+    cfg = r.json()["config"]
+    assert cfg["provider"] == "native"
+    assert cfg["alexzhang_backend"] == "anthropic"
+    # secret-free görünüm: hiçbir anahtar/değerde 'key'/'token'/'secret' alanı sızmamalı.
+    blob = str(cfg).lower()
+    assert "api_key" not in blob and "secret" not in blob and "token" not in blob
+
+
+def test_rlm_test_adapter_endpoint(client: TestClient) -> None:
+    rn = client.post("/api/rlm/test-adapter", params={"adapter": "native"})
+    assert rn.status_code == 200
+    assert rn.json()["adapter"] == "native"
+    assert rn.json()["available"] is True
+    ra = client.post("/api/rlm/test-adapter", params={"adapter": "alexzhang"})
+    assert ra.status_code == 200
+    assert ra.json()["adapter"] == "alexzhang"
+    assert isinstance(ra.json()["available"], bool)  # rlms yoksa False, sistem bozulmaz
+    rbad = client.post("/api/rlm/test-adapter", params={"adapter": "openai"})
+    assert rbad.status_code == 400  # allowlist dışı motor adı reddedilir
+
+
 def test_card_unknown_paper_404(client: TestClient) -> None:
     r = client.post("/api/card/paper_does_not_exist")
     assert r.status_code == 404

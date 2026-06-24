@@ -805,7 +805,10 @@ uv run achilles rag-scan --dry-run      # sadece listele, izleme listesine yazma
 ```bash
 uv run achilles ask "soru"              # RAG ile kaynaklı yanıt (tek-tur)
 uv run achilles rlm-answer "soru"       # RLM: çok-adımlı + iddia-doğrulamalı kaynaklı cevap
+uv run achilles rlm-answer "soru" --engine alexzhang  # opsiyonel motor (yoksa native'e düşer)
 uv run achilles rlm-runs                # RLM koşu geçmişi (görev/durum/kanıt/güven)
+uv run achilles rlm-engine              # RLM motor config (provider/güvenlik; salt-okuma)
+uv run achilles rlm-tools               # RLM güvenli tool allowlist'i (deny-by-default)
 uv run achilles rlm-lora-candidates     # §16 LoRA adayları (salt-okuma; eğitim YOK, onay şart)
 uv run achilles card <paper_id>         # bilgi kartı üret
 uv run achilles extract-formulas        # tüm makalelerden formül çıkar
@@ -908,6 +911,36 @@ uv run achilles approval-reject <id>     # onayı reddet
 uv run achilles stop-all                 # KÜRESEL acil-durdurma (tüm tehlikeli aksiyonları blokla)
 uv run achilles clear-stop-all           # acil-durdurmayı kaldır
 ```
+
+### AI Brain ek modülleri (registry · tools · ingestion · eval)
+
+Talimattaki RAG/RLM/LoRA-dışı katmanlar. Hepsi yerel + çevrimdışı + deterministik;
+yatırım tavsiyesi üretmez (çıktı her zaman hipotez/test-noktası).
+
+```bash
+# Bilimsel araç çalışma zamanı — hesabı LLM "kafadan" değil deterministik araçla doğrula
+uv run achilles tools-list                       # kayıtlı araçlar + determinizm sözleşmesi
+uv run achilles montecarlo --returns "0.05,-0.02,0.03" --seed 42   # Monte Carlo + risk-of-ruin
+uv run achilles stats-check --csv x.csv --x a --y b --seed 42      # korelasyon + permütasyon p-değeri
+
+# İçe-alım kalite skoru (100 puan; salt-skor, eğitim başlatmaz)
+uv run achilles ingestion-quality --paper-id <id>     # tek makale skoru (bileşen kırılımı)
+uv run achilles ingestion-quality-scan --record       # tüm korpus: dağılım + en zayıflar
+
+# Hipotez & eval — fikir "sinyal" değil test-edilebilir mi? + ReleaseGate
+uv run achilles eval-runner --type trading-hypothesis --input hyps.jsonl   # --strict ile kapı
+
+# Model/veri kayıt defteri + terfi (Kural 8: dataset onayı eğitimden ÖNCE; promote İNSAN ONAYI)
+uv run achilles registry-snapshot                     # RAG indeks + embedding sürüm anlık görüntüsü
+uv run achilles registry-register-dataset --path lora_sft.jsonl --name v1   # hash+sayı otomatik
+uv run achilles registry-list --kind datasets         # datasets|rag-indices|embeddings|rewards|decisions
+uv run achilles registry-promote-dataset --version <id> --approver <kim>    # onayla (veya --reject)
+```
+
+> **Web dashboard:** `uv run achilles-web` → tarayıcıda **`/ai-brain`** (registry/tools/ingestion/eval
+> tek sayfada; salt-okuma/hesap). Bu modüller otomasyon **zincirine** de bağlıdır
+> (`automation_manifest.yaml`): `ingestion-quality-scorer`, `scientific-tool-runtime`,
+> `hypothesis-evaluator`, `model-data-registry` (`achilles chain-status` ile görülür).
 
 ---
 

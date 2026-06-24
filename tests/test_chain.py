@@ -39,6 +39,41 @@ def test_chain_human_gates_flagged() -> None:
     assert steps["arxiv-fetcher"].requires_approval is False  # otonom
 
 
+# --- AI-brain ek modül ajanları (talimat entegrasyonu) -------------------
+_AIBRAIN_AGENTS = {
+    "ingestion-quality-scorer",
+    "scientific-tool-runtime",
+    "model-data-registry",
+    "hypothesis-evaluator",
+}
+
+
+def test_aibrain_agents_registered() -> None:
+    from app.agents.runtime.registry import list_agents
+
+    ids = {a.agent_id for a in list_agents()}
+    missing = _AIBRAIN_AGENTS - ids
+    assert not missing, f"Manifest'te eksik AI-brain ajanı: {missing}"
+
+
+def test_aibrain_agents_in_chain() -> None:
+    steps = {s.step: s for s in resolve_chain()}
+    missing = _AIBRAIN_AGENTS - set(steps)
+    assert not missing, f"Zincirde eksik AI-brain ajanı: {missing}"
+    # model-data-registry insan onayı ister (Kural 8); auto-lora ona BAĞLI (sürüm-onayı önce)
+    assert steps["model-data-registry"].requires_approval is True
+    assert steps["model-data-registry"].order < steps["auto-lora-pipeline"].order
+
+
+def test_aibrain_agent_md_and_skill_exist() -> None:
+    from app.config import get_settings
+
+    root = get_settings().root
+    for aid in _AIBRAIN_AGENTS:
+        assert (root / ".claude" / "agents" / f"{aid}.md").exists(), aid
+        assert (root / ".claude" / "skills" / aid / "SKILL.md").exists(), aid
+
+
 # --- sentetik bozuk manifest (doğrulama) ---------------------------------
 def _agent(aid: str) -> dict:
     return {"agent_id": aid, "name": aid, "file": "x.py", "entrypoint": "x"}

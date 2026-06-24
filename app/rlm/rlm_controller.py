@@ -85,37 +85,6 @@ def _sanitize_citations(text: str, valid_chunk_ids: set[str]) -> str:
     return _INLINE_CITATION_RE.sub(_repl, text).strip()
 
 
-def _has_content(text: str) -> bool:
-    """Atıf temizliği sonrası iddia gerçek içerik (harf/rakam) taşıyor mu?
-
-    Yalnız geçersiz/uydurma satır-içi atıftan ibaret bir iddia sanitize edilince
-    geriye sadece noktalama kalır (ör. '.'); bu boş-içerikli iddia gövdeye
-    konursa "Kısa cevap" tek bir noktaya çökerdi (kural 7 + degenerate-cevap).
-    """
-    return any(ch.isalnum() for ch in text)
-
-
-def apply_trading_guard(answer: str, query: str, *, allow_live_signal: bool = False) -> str:
-    """Kural 1 MOTOR-BAĞIMSIZ tek-nokta yaptırımı: canlı sinyal/yatırım tavsiyesi ASLA.
-
-    Soru VEYA cevap trading dili taşıyorsa ve uyarı henüz yoksa zorunlu uyarı bloğu eklenir.
-    Idempotent (uyarı zaten varsa çiftlemez) → native yol kendi içinde uygulasa bile cevap
-    pipeline'da yeniden geçirilebilir. `allow_live_signal` MUTLAK False'tur; biri yanlışlıkla
-    True yapsa dahi sistem canlı sinyal üretmez, yalnızca bu (kozmetik olmayan) uyarıyı atlardı.
-
-    Native `RlmController` bunu `_synthesize` içinde uygular; alexzhang motor yolu ve
-    `insufficient_evidence` erken-dönüşleri uygulamıyordu → kural-1 sızıntısı. Bu fonksiyon
-    `answer_pipeline.run_rlm_answer` son kapısında HER motor çıktısına uygulanır.
-    """
-    if allow_live_signal:
-        return answer
-    if "yatırım tavsiyesi değildir" in answer:
-        return answer
-    if not (_TRADING_SIGNAL_RE.search(query) or _TRADING_SIGNAL_RE.search(answer)):
-        return answer
-    return f"{answer}\n\nTrading uyarıları:\n{_TRADING_DISCLAIMER}"
-
-
 @dataclass
 class RlmResult:
     """RLM koşu sonucu (CLI/API/rapor için)."""
@@ -601,23 +570,13 @@ class RlmController:
             "High" if decision == "answer" else "Medium" if decision == "warn" else "Low"
         )
 
-        # Sahte/geçersiz atıftan ibaret olup sanitize sonrası içerikten boşalan supported
-        # iddialar (kural 7): gövdeye gerçek dayanak katmaz, "Kısa cevap"ı tek bir noktaya
-        # ('.') çökertirdi → karar + gövde için anlamlı iddialarla çalış.
-        valid_chunk_ids = {c.chunk_id for c in chunks}
-        meaningful_supported = [
-            c for c in supported if _has_content(_sanitize_citations(c.claim, valid_chunk_ids))
-        ]
-
         # Audit kaydı (set_verification + evidence) nihai cevaba GERÇEKTEN gireni yansıtmalı.
         # Çekimser yolda cevap iddia İÇERMEZ → recorded_supported=[] ve used_ids=∅ (kardeş
         # _finish_insufficient/_finish_no_llm yollarıyla tutarlı). Aksi halde abstain run'ı
         # 'supported' + used_in_final_answer=True yazıp audit'i çelişkiye düşürürdü.
-        if abstain or not meaningful_supported:
+        if abstain or not supported:
             reason = abstain_reason or (
-                "Destekli iddialar yalnızca geçersiz atıftan ibaretti (gerçek dayanak yok)."
-                if supported
-                else "Taslak cevaptaki hiçbir iddia kaynaklarla yeterince desteklenmedi."
+                "Taslak cevaptaki hiçbir iddia kaynaklarla yeterince desteklenmedi."
             )
             final_answer = (
                 "Kısa cevap:\n"
@@ -635,18 +594,18 @@ class RlmController:
             recorded_supported: list[Claim] = []
             used_ids: set[str] = set()
         else:
-            used_ids = {cid for c in meaningful_supported for cid in c.supporting_chunks}
+            used_ids = {cid for c in supported for cid in c.supporting_chunks}
             used_chunks = [c for c in chunks if c.chunk_id in used_ids] or chunks
             final_answer = self._build_envelope(
-                meaningful_supported,
+                supported,
                 used_chunks,
                 contradictions,
                 confidence_level,
-                valid_chunk_ids,
+                {c.chunk_id for c in chunks},
             )
             status = "answered_with_limitation" if decision != "answer" else "answered"
             final_confidence = round(confidence_score, 4)
-            recorded_supported = meaningful_supported
+            recorded_supported = supported
 
         # Kural 1: trading-içerikli her çıktıya (soru veya cevap) zorunlu uyarı bloğu.
         final_answer = self._apply_trading_guard(final_answer, query)
@@ -661,19 +620,9 @@ class RlmController:
             context_sufficiency_score=context_score,
             final_decision=status,
         )
-        # JSON raporu DB audit (set_verification) + nihai cevapla AYNI iddia kümesini yansıtmalı:
-        # recorded_supported (çekimserde [], citation-only boşalanları elenmiş). Ham `supported`
-        # kullanılırsa rapor, gövdede/audit'te OLMAYAN iddiaları listeleyip tutarsızlık yaratırdı.
         report_path = (
             self._write_report(
-                run_id,
-                query,
-                task_type,
-                final_answer,
-                evidence,
-                chunks,
-                recorded_supported,
-                unsupported,
+                run_id, query, task_type, final_answer, evidence, chunks, supported, unsupported
             )
             if write_report
             else None
@@ -715,15 +664,8 @@ class RlmController:
         valid_chunk_ids: set[str],
     ) -> str:
         # Gövdeye giren ham LLM cümlelerindeki uydurma satır-içi atıfları çıkar (kural 7):
-        # getirilen sette olmayan [paper:chunk] işaretleri kullanıcıya gösterilmez. Atıf
-        # temizliği sonrası içerikten boşalan (yalnız geçersiz atıftan ibaret) iddialar
-        # elenir — aksi halde "Kısa cevap" gövdesi tek bir noktaya çökerdi. Çağıran zaten
-        # anlamlı iddialarla çağırır; bu filtre fonksiyonu kendi başına da güvenli kılar.
-        safe_claims = [
-            s
-            for s in (_sanitize_citations(c.claim, valid_chunk_ids) for c in supported)
-            if _has_content(s)
-        ]
+        # getirilen sette olmayan [paper:chunk] işaretleri kullanıcıya gösterilmez.
+        safe_claims = [_sanitize_citations(c.claim, valid_chunk_ids) for c in supported]
         gerekce = "\n".join(f"{i + 1}. {claim}" for i, claim in enumerate(safe_claims))
         kaynaklar = "\n".join(
             f"- {c.citation} | {c.section_name or '—'} | {c.title or '—'}" for c in used_chunks
@@ -767,9 +709,13 @@ class RlmController:
         sinyal üretmez, yalnızca bu (kozmetik olmayan) uyarı eklemeyi atlardı. Soru veya
         nihai cevap trading dili taşıyorsa ve uyarı henüz yoksa zorunlu uyarı eklenir.
         """
-        return apply_trading_guard(
-            answer, query, allow_live_signal=self.settings.rlm_allow_live_trading_signal
-        )
+        if self.settings.rlm_allow_live_trading_signal:
+            return answer  # asla True olmaz; yine de açıkça okunur (sahte-guard değil)
+        if "yatırım tavsiyesi değildir" in answer:
+            return answer  # zaten var → çiftleme
+        if not (_TRADING_SIGNAL_RE.search(query) or _TRADING_SIGNAL_RE.search(answer)):
+            return answer  # trading-içerik yok → uyarı gereksiz
+        return f"{answer}\n\nTrading uyarıları:\n{_TRADING_DISCLAIMER}"
 
     def _write_report(
         self,

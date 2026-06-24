@@ -107,6 +107,11 @@ class Paper(Base):
     source: Mapped[str | None] = mapped_column(String(64), default=None)  # arxiv/ssrn/manual
     n_pages: Mapped[int | None] = mapped_column(Integer, default=None)
     n_chars: Mapped[int | None] = mapped_column(Integer, default=None)
+    # İçe-alım kalite skoru (compute-on-demand; NULL = henüz skorlanmadı → retrieval
+    # bu alandan ETKİLENMEZ, eski makaleler çalışmaya devam eder). Bkz app/ingestion/quality_scorer.
+    quality_score: Mapped[float | None] = mapped_column(Float, default=None)
+    ingest_status: Mapped[str | None] = mapped_column(String(32), default=None)
+    # ready_for_rag / usable / slow_but_usable / unstable / failed / None
     created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
 
     chunks: Mapped[list[Chunk]] = relationship(back_populates="paper", cascade="all, delete-orphan")
@@ -749,6 +754,65 @@ class PromotionDecision(Base):
     created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
 
 
+# ---------------------------------------------------------------------------
+# Bilimsel araç çalışma kayıtları (app/tools — Scientific Tool Runtime)
+# ---------------------------------------------------------------------------
+# LLM'in hesabı kafadan yapması yerine deterministik Python araçlarıyla
+# doğrulamasının DENETLENEBİLİR izi: her araç çağrısı + ürettiği artefakt loglanır.
+
+
+class ToolRun(Base):
+    """Tek bir bilimsel-araç çalıştırması (Monte Carlo / istatistik / backtest vb.)."""
+
+    __tablename__ = "tool_runs"
+
+    tool_run_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    tool_id: Mapped[str] = mapped_column(String(64), index=True)
+    tool_version: Mapped[str] = mapped_column(String(16), default="1")
+    params_json: Mapped[str] = mapped_column(Text, default="{}")
+    seed: Mapped[int | None] = mapped_column(Integer, default=None)  # determinizm (Kural 6)
+    status: Mapped[str] = mapped_column(String(16), default="running")  # running/ok/error
+    output_summary_json: Mapped[str] = mapped_column(Text, default="{}")
+    error: Mapped[str | None] = mapped_column(Text, default=None)
+    started_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+    finished_at: Mapped[str | None] = mapped_column(String(40), default=None)
+
+
+class ToolArtifact(Base):
+    """Bir araç çalıştırmasının ürettiği artefakt (rapor/CSV/şekil) — soy-kütüğü."""
+
+    __tablename__ = "tool_artifacts"
+
+    artifact_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    tool_run_id: Mapped[str] = mapped_column(ForeignKey("tool_runs.tool_run_id"), index=True)
+    artifact_type: Mapped[str] = mapped_column(String(32), default="json")
+    path: Mapped[str | None] = mapped_column(Text, default=None)
+    content_hash: Mapped[str | None] = mapped_column(String(64), default=None)
+    description: Mapped[str | None] = mapped_column(Text, default=None)
+    created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+
+
+class PaperIngestionRun(Base):
+    """Bir makalenin içe-alım kalite skorlama koşusu (compute-on-demand denetim izi).
+
+    PaperIndexer'ın SICAK yolunu DEĞİŞTİRMEZ; ``app/ingestion/quality_scorer`` ile
+    isteğe bağlı çağrılır. component_scores_json 100-puanlık rubriğin kırılımıdır.
+    """
+
+    __tablename__ = "paper_ingestion_runs"
+
+    ingestion_run_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    paper_id: Mapped[str] = mapped_column(ForeignKey("papers.paper_id"), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="")
+    # ready_for_rag / usable / slow_but_usable / unstable / failed
+    quality_score: Mapped[float] = mapped_column(Float, default=0.0)
+    component_scores_json: Mapped[str] = mapped_column(Text, default="{}")
+    n_chunks: Mapped[int] = mapped_column(Integer, default=0)
+    n_formulas: Mapped[int] = mapped_column(Integer, default=0)
+    notes_json: Mapped[str] = mapped_column(Text, default="[]")
+    created_at: Mapped[str] = mapped_column(String(40), default=_utcnow)
+
+
 # Toplu budamada tek IN(...) ifadesinin SQLite değişken sınırını (~32766) aşmaması için
 # parça boyu. Küçük tutuldu (güvenli marj + her DELETE hızlı).
 _PRUNE_CHUNK = 500
@@ -799,6 +863,13 @@ class SqliteStore:
                             f"ALTER TABLE knowledge_cards ADD COLUMN {col} {typ} DEFAULT {default}"
                         )
                     )
+            # papers: içe-alım kalite alanları (nullable → eski satırlar etkilenmez)
+            paper_cols = {
+                row[1] for row in conn.execute(text("PRAGMA table_info(papers)")).fetchall()
+            }
+            for col, typ in (("quality_score", "REAL"), ("ingest_status", "VARCHAR(32)")):
+                if col not in paper_cols:
+                    conn.execute(text(f"ALTER TABLE papers ADD COLUMN {col} {typ} DEFAULT NULL"))
             conn.commit()
 
     # --- agent runtime gözlemcisi (Phase 1) ------------------------------
@@ -1251,6 +1322,198 @@ class SqliteStore:
             "decision_note": r.decision_note,
             "consumed_at": r.consumed_at,
         }
+
+    # --- bilimsel araç çalışma kayıtları (app/tools) ---------------------
+    @contextmanager
+    def log_tool_run(
+        self,
+        *,
+        tool_id: str,
+        tool_version: str = "1",
+        params: dict[str, Any] | None = None,
+        seed: int | None = None,
+    ) -> Iterator[str]:
+        """Bir araç çalıştırmasını kaydet (running→ok/error). run_id yield edilir.
+
+        Çağıran, çıkıştan önce ``set_tool_run_output(run_id, ...)`` ile özet yazabilir.
+        İstisna olursa ``error`` damgalanır ve yeniden fırlatılır.
+        """
+        import uuid as _uuid
+
+        run_id = "tr_" + _uuid.uuid4().hex[:12]
+        with self.session() as s:
+            s.add(
+                ToolRun(
+                    tool_run_id=run_id,
+                    tool_id=tool_id,
+                    tool_version=tool_version,
+                    params_json=json.dumps(params or {}, ensure_ascii=False, default=str),
+                    seed=seed,
+                    status="running",
+                    started_at=_utcnow(),
+                )
+            )
+        try:
+            yield run_id
+        except Exception as e:
+            with self.session() as s:
+                row = s.get(ToolRun, run_id)
+                if row is not None:
+                    row.status = "error"
+                    row.error = str(e)
+                    row.finished_at = _utcnow()
+            raise
+        else:
+            with self.session() as s:
+                row = s.get(ToolRun, run_id)
+                if row is not None and row.status == "running":
+                    row.status = "ok"
+                    row.finished_at = _utcnow()
+
+    def set_tool_run_output(self, run_id: str, summary: dict[str, Any]) -> None:
+        with self.session() as s:
+            row = s.get(ToolRun, run_id)
+            if row is not None:
+                row.output_summary_json = json.dumps(summary, ensure_ascii=False, default=str)
+
+    def link_tool_artifact(
+        self,
+        *,
+        tool_run_id: str,
+        artifact_type: str = "json",
+        path: str | None = None,
+        content_hash: str | None = None,
+        description: str | None = None,
+    ) -> str:
+        import uuid as _uuid
+
+        aid = "art_" + _uuid.uuid4().hex[:12]
+        with self.session() as s:
+            # Uygulama düzeyi referans bütünlüğü: SQLite'ta FK enforcement varsayılan KAPALI
+            # (PRAGMA global açılmıyor — diğer tablolarda regresyon riski), bu yüzden öksüz
+            # artefakt yaratmamak için ebeveyni burada doğrula.
+            if s.get(ToolRun, tool_run_id) is None:
+                raise ValueError(f"Bilinmeyen tool_run_id: {tool_run_id}")
+            s.add(
+                ToolArtifact(
+                    artifact_id=aid,
+                    tool_run_id=tool_run_id,
+                    artifact_type=artifact_type,
+                    path=path,
+                    content_hash=content_hash,
+                    description=description,
+                )
+            )
+        return aid
+
+    def get_tool_run(self, run_id: str) -> dict[str, Any] | None:
+        with self.session() as s:
+            r = s.get(ToolRun, run_id)
+            return self._tool_run_to_dict(r) if r else None
+
+    def list_tool_runs(self, limit: int = 50, tool_id: str | None = None) -> list[dict[str, Any]]:
+        with self.session() as s:
+            stmt = select(ToolRun).order_by(ToolRun.started_at.desc())
+            if tool_id:
+                stmt = stmt.where(ToolRun.tool_id == tool_id)
+            stmt = stmt.limit(limit)
+            return [self._tool_run_to_dict(r) for r in s.scalars(stmt)]
+
+    def list_tool_artifacts(self, tool_run_id: str) -> list[dict[str, Any]]:
+        with self.session() as s:
+            rows = s.scalars(
+                select(ToolArtifact)
+                .where(ToolArtifact.tool_run_id == tool_run_id)
+                .order_by(ToolArtifact.created_at.asc())
+            )
+            return [self._tool_artifact_to_dict(r) for r in rows]
+
+    def _tool_run_to_dict(self, r: ToolRun) -> dict[str, Any]:
+        return {
+            "tool_run_id": r.tool_run_id,
+            "tool_id": r.tool_id,
+            "tool_version": r.tool_version,
+            "params": json.loads(r.params_json or "{}"),
+            "seed": r.seed,
+            "status": r.status,
+            "output_summary": json.loads(r.output_summary_json or "{}"),
+            "error": r.error,
+            "started_at": r.started_at,
+            "finished_at": r.finished_at,
+        }
+
+    def _tool_artifact_to_dict(self, r: ToolArtifact) -> dict[str, Any]:
+        return {
+            "artifact_id": r.artifact_id,
+            "tool_run_id": r.tool_run_id,
+            "artifact_type": r.artifact_type,
+            "path": r.path,
+            "content_hash": r.content_hash,
+            "description": r.description,
+            "created_at": r.created_at,
+        }
+
+    # --- içe-alım kalite koşuları (app/ingestion) ------------------------
+    def add_ingestion_run(
+        self,
+        *,
+        paper_id: str,
+        status: str,
+        quality_score: float,
+        component_scores: dict[str, float] | None = None,
+        n_chunks: int = 0,
+        n_formulas: int = 0,
+        notes: list[str] | None = None,
+        update_paper: bool = True,
+    ) -> str:
+        """Bir içe-alım kalite koşusu kaydet; ``update_paper`` ise Paper alanlarını da güncelle."""
+        import uuid as _uuid
+
+        run_id = "ing_" + _uuid.uuid4().hex[:12]
+        with self.session() as s:
+            # Önce ebeveyni doğrula (FK enforcement global KAPALI) → öksüz koşu yaratma.
+            paper = s.get(Paper, paper_id)
+            if paper is None:
+                raise ValueError(f"Bilinmeyen paper_id: {paper_id}")
+            s.add(
+                PaperIngestionRun(
+                    ingestion_run_id=run_id,
+                    paper_id=paper_id,
+                    status=status,
+                    quality_score=quality_score,
+                    component_scores_json=json.dumps(component_scores or {}, ensure_ascii=False),
+                    n_chunks=n_chunks,
+                    n_formulas=n_formulas,
+                    notes_json=json.dumps(notes or [], ensure_ascii=False),
+                )
+            )
+            if update_paper:
+                paper.quality_score = quality_score
+                paper.ingest_status = status
+        return run_id
+
+    def list_ingestion_runs(
+        self, paper_id: str | None = None, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        with self.session() as s:
+            stmt = select(PaperIngestionRun).order_by(PaperIngestionRun.created_at.desc())
+            if paper_id:
+                stmt = stmt.where(PaperIngestionRun.paper_id == paper_id)
+            stmt = stmt.limit(limit)
+            return [
+                {
+                    "ingestion_run_id": r.ingestion_run_id,
+                    "paper_id": r.paper_id,
+                    "status": r.status,
+                    "quality_score": r.quality_score,
+                    "component_scores": json.loads(r.component_scores_json or "{}"),
+                    "n_chunks": r.n_chunks,
+                    "n_formulas": r.n_formulas,
+                    "notes": json.loads(r.notes_json or "[]"),
+                    "created_at": r.created_at,
+                }
+                for r in s.scalars(stmt)
+            ]
 
     @contextmanager
     def session(self) -> Iterator[Session]:
