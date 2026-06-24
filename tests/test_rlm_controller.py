@@ -465,25 +465,29 @@ def test_reformulate_varies_section_per_round():
     assert q1 != q2  # turlar birbirinden farklı
 
 
-class _CountingRetriever:
-    """Her çağrıda AYNI chunk'ları döndürür; çağrı sayısını sayar (erken-çıkış testi)."""
+class _QueryRecordingRetriever:
+    """Çağrıldığı SORGULARI kaydeder (section-diversity testi). Chunk'lar sorgudan bağımsız."""
 
     def __init__(self, chunks: list[RetrievedChunk]) -> None:
         self._chunks = chunks
-        self.calls = 0
+        self.queries: list[str] = []
 
     def retrieve(self, query: str, top_k: int | None = None) -> list[RetrievedChunk]:
-        self.calls += 1
+        self.queries.append(query)
         return list(self._chunks)
 
 
-def test_gather_evidence_early_exit_on_no_new_chunks():
-    """Tur yeni chunk eklemiyorsa (deterministik retrieval) 3-turlu görevde 3. tur boşa gitmez."""
+def test_gather_evidence_runs_distinct_section_queries_per_round():
+    """3-turlu görevde her tur FARKLI bölüm-odaklı sorgu çalıştırır (no-new-chunk guard'ı YOK).
+
+    Eski erken-çıkış guard'ı, farklı-bölüm hedefleyen sonraki turu haksız kesiyordu;
+    kaldırıldı. Bu test guard'ın geri gelip diversity'yi iptal etmediğini korur.
+    """
     chunks = [
         RetrievedChunk(
             chunk_id=f"u::c{i}",
             paper_id="u",
-            text="Lorem ipsum dolor amet consectetur",
+            text="Lorem ipsum dolor amet consectetur",  # sorguyla alakasız → düşük kanıt
             page_number=i,
             section_name="X",
             title="T",
@@ -491,9 +495,9 @@ def test_gather_evidence_early_exit_on_no_new_chunks():
         )
         for i in range(2)
     ]
-    retr = _CountingRetriever(chunks)
-    # MULTI görevi 3 tur planlar; chunk'lar sorguyla alakasız (düşük kanıt) → erken cevap yok;
-    # 2. tur aynı chunk'ları getirir → guard erken durur (3 değil 2 retrieve çağrısı).
+    retr = _QueryRecordingRetriever(chunks)
+    # MULTI görevi 3 tur planlar; düşük kanıt → erken cevap yok → 3 tur da çalışır.
     ctrl = RlmController(retriever=retr, llm=_StubLLM(_GOOD_DRAFT))
     ctrl.answer("Makaleleri karşılaştır ve sentezle alakasız sorgu", write_report=False)
-    assert retr.calls == 2  # 3. tur atlandı (no-new-chunks guard)
+    assert len(retr.queries) == 3  # 3 tur çalıştı (guard kaldırıldı, kesilmiyor)
+    assert len(set(retr.queries)) == 3  # hepsi FARKLI sorgu (section diversity korunuyor)

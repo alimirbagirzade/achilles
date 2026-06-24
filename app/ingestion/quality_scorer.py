@@ -197,3 +197,66 @@ def gather_inputs(store: SqliteStore, paper_id: str) -> IngestionInputs:
 def score_paper(store: SqliteStore, paper_id: str) -> IngestionQualityResult:
     """Bir makalenin içe-alım kalitesini DB'den hesapla (compute-on-demand)."""
     return score_ingestion(gather_inputs(store, paper_id))
+
+
+@dataclass
+class CorpusQualitySummary:
+    """Tüm korpusun içe-alım kalite taraması özeti (dağılım + en zayıflar)."""
+
+    total: int  # toplam makale
+    scored: int  # skorlanabilen
+    by_status: dict[str, int]  # durum → sayı (ready_for_rag/usable/.../failed)
+    avg_score: float
+    worst: list[dict[str, Any]] = field(default_factory=list)  # en düşük skorlular
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "total": self.total,
+            "scored": self.scored,
+            "by_status": self.by_status,
+            "avg_score": self.avg_score,
+            "worst": self.worst,
+        }
+
+
+def score_all_papers(
+    store: SqliteStore, *, record: bool = False, worst_n: int = 10
+) -> CorpusQualitySummary:
+    """Tüm makaleleri içe-alım kalitesi için tara (deterministik; salt-skor / opt-in record).
+
+    Operasyonel kullanım: "korpusumda hangi makaleler RAG'a hazır değil?" Her makale tek tek
+    skorlanır; ``record=True`` ise ``paper_ingestion_runs`` + ``papers.quality_score`` yazılır.
+    """
+    papers = store.list_papers()
+    by_status: dict[str, int] = {}
+    scored: list[tuple[str, str, IngestionQualityResult]] = []
+    for p in papers:
+        try:
+            inp = gather_inputs(store, p.paper_id)
+        except ValueError:
+            continue
+        res = score_ingestion(inp)
+        by_status[res.status] = by_status.get(res.status, 0) + 1
+        scored.append((p.paper_id, p.title or "", res))
+        if record:
+            store.add_ingestion_run(
+                paper_id=p.paper_id,
+                status=res.status,
+                quality_score=res.total,
+                component_scores=res.components,
+                n_chunks=inp.n_chunks,
+                n_formulas=inp.n_formulas,
+                notes=res.notes,
+            )
+    avg = round(sum(r.total for _, _, r in scored) / len(scored), 2) if scored else 0.0
+    worst = sorted(scored, key=lambda t: t[2].total)[: max(0, worst_n)]
+    return CorpusQualitySummary(
+        total=len(papers),
+        scored=len(scored),
+        by_status=by_status,
+        avg_score=avg,
+        worst=[
+            {"paper_id": pid, "title": title[:48], "total": r.total, "status": r.status}
+            for pid, title, r in worst
+        ],
+    )

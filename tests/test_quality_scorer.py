@@ -9,6 +9,7 @@ import pytest
 from app.ingestion.quality_scorer import (
     IngestionInputs,
     gather_inputs,
+    score_all_papers,
     score_ingestion,
     score_paper,
 )
@@ -144,3 +145,43 @@ def test_add_ingestion_run_unknown_paper_raises(store: SqliteStore) -> None:
     # Öksüz içe-alım koşusu yaratılmamalı (uygulama düzeyi referans bütünlüğü)
     with pytest.raises(ValueError, match="paper_id"):
         store.add_ingestion_run(paper_id="yok_makale", status="usable", quality_score=80.0)
+
+
+# --- toplu korpus taraması -------------------------------------------------
+def _add_paper(store: SqliteStore, pid: str, n_chunks: int) -> None:
+    store.upsert_paper(
+        paper_id=pid, file_hash=f"h_{pid}", source_path=f"{pid}.pdf", title="T", n_pages=4
+    )
+    if n_chunks:
+        store.add_chunks(
+            [
+                {"chunk_id": f"{pid}_{i}", "paper_id": pid, "chunk_index": i, "text": "metin " * 60}
+                for i in range(n_chunks)
+            ]
+        )
+
+
+def test_score_all_papers_distribution(store: SqliteStore) -> None:
+    _add_paper(store, "good", 5)
+    _add_paper(store, "empty", 0)  # chunk yok → düşük/failed
+    summary = score_all_papers(store, worst_n=5)
+    assert summary.total == 2
+    assert summary.scored == 2
+    assert sum(summary.by_status.values()) == 2
+    assert 0.0 <= summary.avg_score <= 100.0
+    # en zayıf en başta (artan skor)
+    assert summary.worst[0]["total"] <= summary.worst[-1]["total"]
+
+
+def test_score_all_papers_record_persists(store: SqliteStore) -> None:
+    _add_paper(store, "p1", 3)
+    summary = score_all_papers(store, record=True)
+    assert summary.scored == 1
+    assert store.list_ingestion_runs(paper_id="p1")
+    papers = {p.paper_id: p for p in store.list_papers()}
+    assert papers["p1"].quality_score is not None
+
+
+def test_score_all_papers_empty_corpus(store: SqliteStore) -> None:
+    summary = score_all_papers(store)
+    assert summary.total == 0 and summary.scored == 0 and summary.avg_score == 0.0
