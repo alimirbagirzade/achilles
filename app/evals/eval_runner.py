@@ -49,6 +49,9 @@ class EvalRunResult:
     failures: list[str] = field(default_factory=list)
     items: list[dict[str, Any]] = field(default_factory=list)
     report_path: str | None = None
+    # opt-in registry entegrasyonu (Modül 6→8): rag-retrieval eval'inde indeks sürümü +
+    # terfi kararı loglanırsa burada görünür (None = registry verilmedi).
+    registry_decision: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -59,6 +62,7 @@ class EvalRunResult:
             "failures": self.failures,
             "items": self.items,
             "report_path": self.report_path,
+            "registry_decision": self.registry_decision,
         }
 
 
@@ -74,6 +78,7 @@ class EvalRunner:
         *,
         strict: bool = False,
         write_report: bool = True,
+        registry: Any | None = None,
         **kwargs: Any,
     ) -> EvalRunResult:
         if eval_type in DEFERRED_TYPES:
@@ -88,6 +93,10 @@ class EvalRunner:
             raise ValueError(
                 f"Bilinmeyen eval tipi: {eval_type} (geçerli: {', '.join(SUPPORTED_TYPES)})"
             )
+        # opt-in: registry verilirse rag-retrieval sonucunu indeks-sürümü + terfi kararı olarak
+        # logla (Modül 6→8). Varsayılan (registry=None) davranış değişmez.
+        if registry is not None and eval_type == "rag-retrieval":
+            result.registry_decision = self._log_rag_index_promotion(registry, result)
         if write_report:
             result.report_path = self._write_report(result)
         if strict and not result.passed:
@@ -95,6 +104,32 @@ class EvalRunner:
                 f"{eval_type} kapısı geçilemedi: {'; '.join(result.failures) or 'eşik altı'}"
             )
         return result
+
+    def _log_rag_index_promotion(self, registry: Any, result: EvalRunResult) -> dict[str, Any]:
+        """Mevcut RAG indeksini sürümle + eval sonucunu terfi kararı olarak logla.
+
+        Eval kapısı (``result.passed``) ne diyorsa onu yansıtır: geçti → ``approved``
+        (eval_passed), kaldı → ``blocked``. Karar ``promotion_decisions``'a append-only yazılır.
+        """
+        idx = registry.snapshot_rag_index()
+        vid = idx["rag_index_version_id"]
+        if result.passed:
+            decision = registry.log_decision(
+                target_type="rag_index",
+                target_id=vid,
+                to_status="eval_passed",
+                decision="approved",
+                reason="retrieval eval geçti (recall eşiği)",
+            )
+        else:
+            decision = registry.log_decision(
+                target_type="rag_index",
+                target_id=vid,
+                to_status="blocked",
+                decision="blocked",
+                reason="; ".join(result.failures) or "retrieval eşik altı",
+            )
+        return {"rag_index_version_id": vid, "n_chunks": idx["n_chunks"], "decision": decision}
 
     # --- tipler ----------------------------------------------------------
     def _run_trading_hypothesis(
