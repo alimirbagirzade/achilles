@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import Float, Integer, String, Text, create_engine, event, select
+from sqlalchemy import Float, Integer, String, Text, create_engine, event, func, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from app.config import get_settings
@@ -267,6 +267,11 @@ class RlmStore:
         with self.session() as s:
             rows = s.scalars(select(RlmRun).order_by(RlmRun.created_at.desc()).limit(limit)).all()
             return [_run_to_dict(r) for r in rows]
+
+    def count_runs(self) -> int:
+        """Toplam RLM koşu sayısı (aday seçiminde sessiz-kesme tespiti için)."""
+        with self.session() as s:
+            return int(s.scalar(select(func.count()).select_from(RlmRun)) or 0)
 
     def get_steps(self, run_id: str) -> list[dict[str, Any]]:
         with self.session() as s:
