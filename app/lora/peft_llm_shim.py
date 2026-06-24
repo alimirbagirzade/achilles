@@ -89,9 +89,15 @@ class PeftAdapterLLMShim:
 
         try:
             from app.config import get_settings
+            from app.training.adapter_eval import _resolve_base_model
 
             settings = get_settings()
-            base_model_id = settings.peft_base_model
+            # Adapter'ın KENDİ base'ini adapter_config.json'dan çöz; settings.peft_base_model
+            # yalnız fallback. Aksi halde küçük-model adapter (1.5B) settings'teki 4B base'e
+            # yüklenmeye çalışıp boyut-uyuşmazlığıyla patlar → except None döner → auto_pipeline
+            # anlama-merdiveni kıyası (v5 regresyon savunması) SESSİZCE atlanır. adapter_eval
+            # ile aynı çözüm (tutarlı base çözümleme).
+            base_model_id = _resolve_base_model(adapter_dir) or settings.peft_base_model
 
             log.info("PeftAdapterLLMShim: %s üzerine %s yükleniyor…", base_model_id, adapter_dir)
             tokenizer = AutoTokenizer.from_pretrained(base_model_id)

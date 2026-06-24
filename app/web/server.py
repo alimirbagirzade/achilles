@@ -238,7 +238,15 @@ async def api_upload(
     Ingestion agir oldugu icin (PDF parse + embedding) BackgroundTasks ile
     ayristiriliyor; HTTP baglantisi beklemeden kapaniyor.
     """
-    content = await file.read()
+    # Boyut tavanını gövdeyi SINIRSIZ belleğe materyalize etmeden uygula: read(max_bytes+1)
+    # en çok o kadar okur → çok-GB gövdede tek-tahsis RAM şişmesi olmaz (ağa açık dağıtımda
+    # kaynak-tükenmesi yüzeyini daraltır). Boyut aşımında parse/validate beklemeden 413.
+    _max_bytes = get_settings().max_upload_mb * 1024 * 1024
+    content = await file.read(_max_bytes + 1)
+    if len(content) > _max_bytes:
+        raise HTTPException(
+            status_code=413, detail=f"Dosya çok büyük (max {get_settings().max_upload_mb} MB)."
+        )
     safe_name = security.validate_pdf_upload(file.filename or "", content)
 
     # Senkron dedup: birebir aynı dosya (aynı file_hash) zaten yüklüyse parse beklemeden
@@ -1493,7 +1501,13 @@ async def api_backtest_csv(file: UploadFile = File(...)) -> BacktestResponse:
     from app.trading.market_data_loader import load_ohlcv
     from app.trading.strategy_ir import example_ir
 
-    content = await file.read()
+    # Boyut tavanını gövdeyi sınırsız materyalize etmeden uygula (bkz. api_upload).
+    _max_bytes = get_settings().max_upload_mb * 1024 * 1024
+    content = await file.read(_max_bytes + 1)
+    if len(content) > _max_bytes:
+        raise HTTPException(
+            status_code=413, detail=f"Dosya çok büyük (max {get_settings().max_upload_mb} MB)."
+        )
     safe_name = security.validate_csv_upload(file.filename or "", content)
 
     s = get_settings()
