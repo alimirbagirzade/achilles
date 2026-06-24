@@ -71,7 +71,12 @@ class ContextSufficiencyClassifier:
         missing_items: list[str] = []
 
         if quality_flags:
-            flags_by_id = {f.chunk_id: f for f in quality_flags}
+            # Yalnız GERÇEKTEN getirilen chunk'ların bayraklarını dikkate al: quality_flags
+            # chunks ile hizasız gelebilir (fazla/eksik/başka id). Aşağıdaki
+            # len(incomplete_formula_ids) == len(chunks) kıyası iki AYRI koleksiyonu kıyaslayıp
+            # yanlış MISSING_FORMULA_CONTINUATION (can_answer=False) üretirdi. Kesişimle sınırla:
+            chunk_ids = {c.chunk_id for c in chunks}
+            flags_by_id = {f.chunk_id: f for f in quality_flags if f.chunk_id in chunk_ids}
 
             incomplete_formula_ids = [
                 cid

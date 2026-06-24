@@ -54,6 +54,18 @@ def in_out_of_sample(
 ) -> OverfitReport:
     n = len(df)
     cut = int(n * split)
+    if cut <= 0 or cut >= n:
+        # Boş IS veya OOS dilimi: run_backtest boş df'te çökmez ama TÜM-SIFIR metrik üretir →
+        # geçerli bir "0% OOS" gibi görünüp sahte-OOS sonucuna yol açardı. Açıkça yetersiz-veri
+        # uyarısı ver, yanıltıcı backtest koşma (in/out_sample=None → degradation_pct=None).
+        return OverfitReport(
+            warnings=[
+                f"Veri IS/OOS bölünmesi için yetersiz (n={n}, split={split} → "
+                f"IS={cut} / OOS={n - cut} bar); overfit denetimi atlandı."
+            ],
+            in_sample=None,
+            out_sample=None,
+        )
     in_df, out_df = df.iloc[:cut], df.iloc[cut:]
 
     in_res = run_backtest(in_df, ir)

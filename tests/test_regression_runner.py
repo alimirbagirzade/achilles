@@ -83,3 +83,33 @@ def test_runner_result_keys() -> None:
         assert required_keys.issubset(item.keys()), (
             f"Eksik anahtarlar: {required_keys - item.keys()}"
         )
+
+
+def test_runner_uses_injected_dataset_questions() -> None:
+    """Enjekte edilen GoldenDataset'in soruları kullanılmalı (eskiden ctor'a verilen dataset
+    sessizce yok sayılıp her zaman statik get_sample_questions() koşuluyordu)."""
+    from app.evals.golden_dataset import GoldenQuestion
+
+    custom = [
+        GoldenQuestion(
+            question_id="custom_001",
+            question_text="özel enjekte soru",
+            domain="general",
+            expected_answer="",
+            expected_source_ids=[],
+            expected_chunk_ids=[],
+            answer_type="factual",
+            difficulty="easy",
+        )
+    ]
+    mock_retrieval = MagicMock(spec=RetrievalEvaluator)
+    mock_retrieval.evaluate.side_effect = _mock_retrieval_eval
+    mock_answer = MagicMock(spec=AnswerEvaluator)
+    mock_answer.evaluate.side_effect = _mock_answer_eval
+
+    runner = RegressionRunner(GoldenDataset(custom), mock_retrieval, mock_answer)
+    result = runner.run()
+
+    # 5 statik örnek DEĞİL, enjekte edilen tek özel soru koşulmalı.
+    assert len(result["results"]) == 1
+    assert result["results"][0]["question_id"] == "custom_001"
