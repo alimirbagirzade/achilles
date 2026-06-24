@@ -450,3 +450,50 @@ def test_reaper_protects_fresh_running_run():
         )
     store.mark_stale_running_failed(max_age_minutes=60)
     assert store.get_run("rlm_freshtest0001")["status"] == "running"  # dokunulmadı
+
+
+def test_reformulate_varies_section_per_round():
+    """Yeniden-formülasyon her turda FARKLI bölüm anahtarı ekler (aynı sorguyu tekrar etmez)."""
+    from app.rlm.task_classifier import TaskClassifier
+
+    plan = TaskClassifier().plan("multi_paper_synthesis", max_rounds=3)
+    assert len(plan.must_include) >= 2  # dönüşüm için
+    ctrl = RlmController(retriever=_StubRetriever([]), llm=_StubLLM(_GOOD_DRAFT))
+    assert ctrl._reformulate("soru", plan, 0) == "soru"  # ilk tur orijinal
+    q1 = ctrl._reformulate("soru", plan, 1)
+    q2 = ctrl._reformulate("soru", plan, 2)
+    assert q1 != q2  # turlar birbirinden farklı
+
+
+class _CountingRetriever:
+    """Her çağrıda AYNI chunk'ları döndürür; çağrı sayısını sayar (erken-çıkış testi)."""
+
+    def __init__(self, chunks: list[RetrievedChunk]) -> None:
+        self._chunks = chunks
+        self.calls = 0
+
+    def retrieve(self, query: str, top_k: int | None = None) -> list[RetrievedChunk]:
+        self.calls += 1
+        return list(self._chunks)
+
+
+def test_gather_evidence_early_exit_on_no_new_chunks():
+    """Tur yeni chunk eklemiyorsa (deterministik retrieval) 3-turlu görevde 3. tur boşa gitmez."""
+    chunks = [
+        RetrievedChunk(
+            chunk_id=f"u::c{i}",
+            paper_id="u",
+            text="Lorem ipsum dolor amet consectetur",
+            page_number=i,
+            section_name="X",
+            title="T",
+            distance=0.5,
+        )
+        for i in range(2)
+    ]
+    retr = _CountingRetriever(chunks)
+    # MULTI görevi 3 tur planlar; chunk'lar sorguyla alakasız (düşük kanıt) → erken cevap yok;
+    # 2. tur aynı chunk'ları getirir → guard erken durur (3 değil 2 retrieve çağrısı).
+    ctrl = RlmController(retriever=retr, llm=_StubLLM(_GOOD_DRAFT))
+    ctrl.answer("Makaleleri karşılaştır ve sentezle alakasız sorgu", write_report=False)
+    assert retr.calls == 2  # 3. tur atlandı (no-new-chunks guard)
