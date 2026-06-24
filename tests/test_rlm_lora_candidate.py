@@ -92,3 +92,16 @@ def test_export_writes_jsonl_with_approval_flag(tmp_path: Path):
     assert len(rows) == 1
     assert rows[0]["requires_human_approval"] is True
     assert "eğitim verisi DEĞİL" in rows[0]["note"]
+
+
+def test_count_runs_and_truncation_warning(tmp_path: Path, caplog):
+    """count_runs toplam verir; limit aşılınca sessiz-kesme UYARISI loglanır (no silent cap)."""
+    store = RlmStore(db_path=tmp_path / "rlm.db")
+    for _ in range(3):
+        _make_run(store, status="answered", conf=0.95, cit=0.95, gnd=0.95, unsupported=[])
+    assert store.count_runs() == 3
+
+    caplog.set_level("WARNING")
+    cands = select_lora_candidates(store=store, limit=2)  # 3 koşu, limit 2 → kesme
+    assert len(cands) == 2  # yalnız en yeni 2 tarandı (hepsi uygun)
+    assert "ATLANDI" in caplog.text  # kullanıcı sessizce kaybetmedi

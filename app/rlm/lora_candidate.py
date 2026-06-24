@@ -7,7 +7,10 @@ yalnız çok yüksek güvenli, tam-doğrulanmış koşular. Eşikler (§16):
     citation_score   ≥ 0.90
     grounding_score  ≥ 0.90
     unsupported_claims = []
-    (+ human_review_status = approved)
+
+§16 ayrıca `human_review_status = approved` der; ama RLM'de otomatik onay mekanizması
+YOKTUR. Bu yüzden seçim YALNIZ yukarıdaki SAYISAL kapıları uygular; insan onayı seçimin
+PARÇASI değil, AŞAĞI-AKIŞ manuel adımdır (her aday `requires_human_approval=True` taşır).
 
 ÖNEMLİ — ADAY ≠ EĞİTİM VERİSİ:
 - Bu modül SALT-OKUMA seçim + export yapar. Hiçbir eğitim başlatmaz (CLAUDE.md kural 8).
@@ -20,11 +23,14 @@ yalnız çok yüksek güvenli, tam-doğrulanmış koşular. Eşikler (§16):
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from app.rlm.rlm_store import RlmStore
+
+log = logging.getLogger(__name__)
 
 # §16 eşikleri (sabit; talimattan). Salt-okuma seçim eşikleri — config'e bağlanmadı
 # (dead-config riskinden kaçınmak için fonksiyon parametresi olarak verilir).
@@ -66,6 +72,17 @@ def select_lora_candidates(
     citation ≥ eşik ∧ grounding ≥ eşik ∧ unsupported_claims = [].
     """
     store = store or RlmStore()
+    # Sessiz-kesme uyarısı: list_runs yalnız en yeni `limit` koşuyu tarar; daha fazla
+    # koşu varsa eşik geçen ESKİ adaylar atlanır → kullanıcı/çağıran bunu bilmeli.
+    total = store.count_runs()
+    if total > limit:
+        log.warning(
+            "RLM koşu sayısı (%d) tarama limitini (%d) aşıyor — en eski %d koşu aday "
+            "seçiminde ATLANDI; daha yüksek limit verin.",
+            total,
+            limit,
+            total - limit,
+        )
     candidates: list[LoraCandidate] = []
     for run in store.list_runs(limit=limit):
         if run["status"] not in _ELIGIBLE_STATUS:
