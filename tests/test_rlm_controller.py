@@ -277,6 +277,33 @@ def test_fabricated_inline_citation_stripped_from_body():
     assert "paper_x::c0000" in res.final_answer  # geçerli atıf korundu
 
 
+def test_citation_only_supported_claim_does_not_collapse_body():
+    """Kural 7 + degenerate-cevap: yalnız UYDURMA atıftan ibaret bir 'destekli' iddia,
+    atıf temizliği sonrası boşalır ('.'); gövdeye konursa "Kısa cevap" tek noktaya çökerdi.
+
+    İlk iddia citation-only (geçersiz chunk) → sanitize → '.'; ikinci iddia gerçek
+    içerik + geçerli atıf taşır. Düzeltme: boş-içerikli iddia elenir, gövde ikinci
+    (anlamlı) iddiaya dayanır — "Kısa cevap" asla noktaya çökmez.
+    """
+    chunks = [_chunk(i) for i in range(3)]
+    draft = (
+        "[volatilite:momentum kalicilik etkiler piyasa nonexist9999]. "
+        "Volatilite kümelenmesi momentum kalıcılığını etkiler [paper_x:paper_x::c0000]."
+    )
+    ctrl = RlmController(retriever=_StubRetriever(chunks), llm=_StubLLM(draft))
+    res = ctrl.answer("Momentum kalıcı mı?", write_report=False)
+
+    lines = res.final_answer.splitlines()
+    body = next(
+        (lines[i + 1] for i, ln in enumerate(lines) if ln.startswith("Kısa cevap")),
+        "",
+    )
+    assert body.strip(" .,;:") != "", f"GÖVDE ÇÖKTÜ: {body!r}"
+    assert "nonexist9999" not in res.final_answer  # uydurma atıf gövdeye sızmadı
+    if res.status in ("answered", "answered_with_limitation"):
+        assert "Volatilite" in body  # anlamlı iddia gövdeye taşındı
+
+
 def test_non_trading_answer_has_no_disclaimer():
     """Trading-dışı içerikli cevap yatırım uyarısı TAŞIMAMALI (aşırı-tetikleme regresyonu).
 
