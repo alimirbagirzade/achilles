@@ -94,6 +94,35 @@ def _any(patterns: tuple[re.Pattern[str], ...], text: str) -> bool:
     return any(p.search(text) for p in patterns)
 
 
+# Olumsuzlama-bilinçli advice taraması (gates.gate_6 ile aynı ilke). Bir kesinlik
+# kelimesinin yakınında (±pencere) olumsuzlama varsa eşleşme ALÇAKGÖNÜLLÜ ifadedir,
+# tavsiye DEĞİL: "risksiz değildir" / "garanti yok" / "not guaranteed" / "no strategy
+# is risk-free" reddi TETİKLEMEZ; "garanti kazanç sağlar" tetikler. (Ekli olumsuzlama
+# '-maz/-mez' kapsanmaz — gate_6'daki gibi bilinçli, dar sınır; yanlış-pozitif düşürür.)
+_ADVICE_NEGATION: re.Pattern[str] = re.compile(
+    r"(?i)(?:\bde[ğg]il\w*|\byok\w*|\bolma[zd]\w*|\bhi[çc]\w*|\basla\b"
+    r"|\bnot\b|\bno\b|\bnever\b|\bwithout\b|\bcannot\b|\bcan'?t\b)"
+)
+_ADVICE_NEG_WINDOW: int = 20
+
+
+def _advice_present(text: str) -> bool:
+    """Kesinlik/tavsiye dili VAR mı — olumsuzlanmış (alçakgönüllü) kullanımları atlayarak.
+
+    Kural 1: çıktı alçakgönüllü _hipotez_ olmalı. Naif kelime-eşleşmesi "risksiz değildir"
+    gibi DOĞRU (olumsuz) ifadeleri tavsiye sanıp mükemmel hipotezleri HARD-reddediyordu.
+    Artık eşleşmenin ±``_ADVICE_NEG_WINDOW`` krk komşuluğunda olumsuzlama varsa atlanır.
+    """
+    for pat in _ADVICE_PATTERNS:
+        for m in pat.finditer(text):
+            before = text[max(0, m.start() - _ADVICE_NEG_WINDOW) : m.start()]
+            after = text[m.end() : m.end() + _ADVICE_NEG_WINDOW]
+            if _ADVICE_NEGATION.search(before) or _ADVICE_NEGATION.search(after):
+                continue  # olumsuzlanmış → alçakgönüllü, tavsiye değil
+            return True
+    return False
+
+
 def evaluate_hypothesis(
     hypothesis: dict[str, Any] | str, *, hypothesis_id: str = ""
 ) -> HypothesisEvalResult:
@@ -103,7 +132,7 @@ def evaluate_hypothesis(
     if not hid and isinstance(hypothesis, dict):
         hid = str(hypothesis.get("hypothesis_id") or hypothesis.get("id") or "")
 
-    has_advice = _any(_ADVICE_PATTERNS, text)
+    has_advice = _advice_present(text)
     checklist = {
         "testable": _any(_TESTABLE_PATTERNS, text),
         "costs": _any(_COST_PATTERNS, text),
