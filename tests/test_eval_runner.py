@@ -101,3 +101,43 @@ def test_rag_retrieval_empty_fails_gate(runner: EvalRunner) -> None:
     assert res.metrics["recall_at_10"] == 0.0
     assert res.passed is False
     assert res.failures
+
+
+# --- opt-in registry entegrasyonu (Modül 6→8) ------------------------------
+def test_rag_retrieval_logs_registry_decision(runner: EvalRunner, tmp_path: Path) -> None:
+    from app.memory.sqlite_store import SqliteStore
+    from app.registry import RegistryStore
+
+    store = SqliteStore(db_path=tmp_path / "evalreg.db")
+    store.upsert_paper(paper_id="p1", file_hash="h1", source_path="x.pdf", title="T")
+    store.add_chunks([{"chunk_id": "c1", "paper_id": "p1", "chunk_index": 0, "text": "abc"}])
+    reg = RegistryStore(store)
+
+    q = _golden("q1", "ATR nedir?", ["c1"])
+    retr = _PerfectRetriever({"ATR nedir?": ["c1"]})
+    res = runner.run("rag-retrieval", questions=[q], retriever=retr, registry=reg)
+
+    assert res.registry_decision is not None
+    assert res.registry_decision["decision"]["decision"] == "approved"
+    # indeks sürümü + terfi kararı kalıcı yazıldı
+    assert reg.list_rag_indices()
+    decisions = reg.list_decisions()
+    assert decisions and decisions[0]["target_type"] == "rag_index"
+
+
+def test_rag_retrieval_registry_blocked_on_fail(runner: EvalRunner, tmp_path: Path) -> None:
+    from app.memory.sqlite_store import SqliteStore
+    from app.registry import RegistryStore
+
+    reg = RegistryStore(SqliteStore(db_path=tmp_path / "evalreg2.db"))
+    q = _golden("q1", "ATR nedir?", ["c1"])
+    res = runner.run("rag-retrieval", questions=[q], retriever=_EmptyRetriever(), registry=reg)
+    assert res.registry_decision["decision"]["decision"] == "blocked"  # type: ignore[index]
+
+
+def test_no_registry_keeps_default(runner: EvalRunner) -> None:
+    q = _golden("q1", "ATR nedir?", ["c1"])
+    res = runner.run(
+        "rag-retrieval", questions=[q], retriever=_PerfectRetriever({"ATR nedir?": ["c1"]})
+    )
+    assert res.registry_decision is None  # opt-in: verilmezse davranış değişmez
