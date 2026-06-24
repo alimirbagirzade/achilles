@@ -15,11 +15,13 @@ import logging
 import re
 from typing import Any
 
+from app.config import get_settings
 from app.rlm.adapters.alexzhang_rlm import AlexZhangRLMAdapter
 from app.rlm.adapters.base import RLMRequest
 from app.rlm.adapters.native import NativeRLMAdapter
 from app.rlm.adapters.security import RLMUnsafeRuntimeError
 from app.rlm.engine_config import build_engine_config
+from app.rlm.rlm_controller import apply_trading_guard
 
 log = logging.getLogger(__name__)
 
@@ -38,15 +40,28 @@ def run_rlm_answer(
     cfg = build_engine_config()
     provider = (adapter or cfg.get("provider") or "native").lower()
 
+    result: dict[str, Any] | None = None
     if provider == "alexzhang" and cfg.get("alexzhang", {}).get("enabled"):
         result = _try_alexzhang(query, cfg, top_k, paper_ids, require_citations)
-        if result is not None:
-            return result
-        log.warning("alexzhang motoru kullanılamadı/başarısız → native'e düşülüyor.")
+        if result is None:
+            log.warning("alexzhang motoru kullanılamadı/başarısız → native'e düşülüyor.")
 
-    return _native(
-        query, top_k=top_k, paper_ids=paper_ids, max_rounds=max_rounds, write_report=write_report
+    if result is None:
+        result = _native(
+            query,
+            top_k=top_k,
+            paper_ids=paper_ids,
+            max_rounds=max_rounds,
+            write_report=write_report,
+        )
+
+    # Kural 1 MOTOR-BAĞIMSIZ son kapı: trading-içerikli her cevap zorunlu uyarı taşır. Native
+    # yol bunu zaten uygular (idempotent → çiftlemez); alexzhang motoru ve insufficient_evidence
+    # erken-dönüşleri uygulamıyordu → kural-1 sızıntısı burada kapanır.
+    result["answer"] = apply_trading_guard(
+        result["answer"], query, allow_live_signal=get_settings().rlm_allow_live_trading_signal
     )
+    return result
 
 
 def _native(

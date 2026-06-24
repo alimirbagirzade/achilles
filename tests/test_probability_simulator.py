@@ -68,6 +68,22 @@ def test_negative_n_paths_raises() -> None:
         monte_carlo_equity([0.01, -0.02], seed=1, n_paths=-1)
 
 
+def test_non_finite_returns_raise() -> None:
+    """NaN/inf getiri cumprod boyunca yayılıp tüm metrikleri sessizce zehirler → net hata."""
+    import math
+
+    with pytest.raises(ValueError):
+        monte_carlo_equity([0.01, math.nan], seed=1)
+    with pytest.raises(ValueError):
+        monte_carlo_equity([0.01, math.inf], seed=1)
+
+
+def test_return_below_minus_one_raises() -> None:
+    """getiri < -1.0 → 1+r < 0 → cumprod equity işaretini çevirir (anlamsız); reddedilmeli."""
+    with pytest.raises(ValueError):
+        monte_carlo_equity([0.01, -1.5], seed=1)
+
+
 def test_expected_shortfall_count_based_with_ties() -> None:
     # Ayrık getiriler → final equity'lerde eşitlik; ES sayıya göre seçilir (kuyruk şişmez).
     rets = [0.0, 0.01, -0.01]
