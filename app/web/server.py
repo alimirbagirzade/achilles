@@ -1693,7 +1693,7 @@ def api_backtest_risk(
     from sqlalchemy import select
 
     from app.memory.sqlite_store import Backtest, SqliteStore, Strategy
-    from app.trading.backtester import _compute_columns, _position_series
+    from app.trading.backtester import _compute_columns, _net_returns, _position_series
     from app.trading.market_data_loader import generate_synthetic_ohlcv
     from app.trading.risk_manager import analyze_risk
     from app.trading.strategy_ir import StrategyIR
@@ -1708,16 +1708,15 @@ def api_backtest_risk(
             raise HTTPException(status_code=404, detail="Strateji bulunamadı.")
         ir = StrategyIR.model_validate_json(strat.ir_json)
 
-    # Sentetik veriyle risk hesabı (gerçek CSV saklanmıyor, senkron hesaplama)
+    # Sentetik veriyle risk hesabı (gerçek CSV saklanmıyor, senkron hesaplama).
+    # Kanonik `_net_returns` kullanılır: maliyet, GECİKMELİ pozisyondan (eff_pos.diff())
+    # alınır. Eski hâl turnover'ı kaydırılmamış position.diff()'ten alıyordu → giriş
+    # maliyeti bir bar erken düşüp _extract_trade_returns'ün varsaydığı hizayı bozuyordu.
     df = generate_synthetic_ohlcv(n=2000, seed=42)
     enriched = _compute_columns(df, ir)
     position = _position_series(enriched, ir)
     bar_ret = enriched["close"].pct_change().fillna(0.0)
-    strat_ret = position.shift(1).fillna(0.0) * bar_ret
-    # BUG-H3 fix: komisyon + slippage maliyet düşüldü (backtester ile aynı mantık)
-    turnover = position.diff().abs().fillna(0.0)
-    cost = turnover * (ir.costs.commission + ir.costs.slippage)
-    net_ret = strat_ret - cost
+    net_ret = _net_returns(position, bar_ret, ir.costs.commission + ir.costs.slippage)
     equity_curve = (1 + net_ret).cumprod()
 
     report = analyze_risk(

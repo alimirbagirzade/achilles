@@ -132,3 +132,28 @@ def test_genuine_advice_still_rejected_despite_nearby_negation() -> None:
     res = evaluate_hypothesis(text)
     assert res.checklist["no_advice"] is False
     assert res.verdict == "rejected"
+
+
+def test_advice_not_suppressed_by_cross_sentence_negation() -> None:
+    """Ayrı CÜMLEDEKİ olumsuzlama gerçek tavsiyeyi bastırmamalı (Kademe-2 anchor'suz bypass).
+
+    'Guaranteed profit. No doubt about it.' → 'No' ayrı cümlede; eski ±pencere bunu
+    'Guaranteed'i alçakgönüllü sayıp tavsiyeyi kapıdan geçiriyordu (Kural 1 sahte-PASS).
+    """
+    res = evaluate_hypothesis("Guaranteed profit. No doubt about it.")
+    assert res.checklist["no_advice"] is False
+    assert res.verdict == "rejected"
+
+
+def test_advice_not_suppressed_by_cross_clause_negation_tr() -> None:
+    """Ayrı CÜMLECİKTEKİ ('asla satma') olumsuzlama 'Kesinlikle al' komutunu bastırmamalı."""
+    res = evaluate_hypothesis("Kesinlikle al, asla satma.")
+    assert res.checklist["no_advice"] is False
+    assert res.verdict == "rejected"
+
+
+def test_advice_not_suppressed_by_english_postfix_never() -> None:
+    """İngilizce sonrası 'never fails' üstünlük iddiasıdır, olumsuzlama değil → bastırmamalı."""
+    res = evaluate_hypothesis("This is risk-free and never fails to deliver.")
+    assert res.checklist["no_advice"] is False
+    assert res.verdict == "rejected"
