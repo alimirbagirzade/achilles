@@ -460,8 +460,8 @@ input:focus {
 /* ---------- buttons ---------- */
 .btn {
   background: var(--surface);
-  border: 1px solid var(--border-strong);
-  color: var(--ink);
+  border: 1px solid var(--border);
+  color: var(--ink-dim);
   font-family: var(--sans);
   font-size: 13px;
   font-weight: 500;
@@ -528,6 +528,12 @@ input:focus {
   background: var(--neg-soft);
   color: var(--neg);
   border-color: var(--neg-border);
+}
+
+/* ---------- jargon (açıklamalı terim) ---------- */
+.jargon {
+  border-bottom: 1px dotted var(--ink-dim);
+  cursor: help;
 }
 
 /* ---------- results ---------- */

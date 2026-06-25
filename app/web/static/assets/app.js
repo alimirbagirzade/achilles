@@ -27,25 +27,66 @@
     return h;
   }
 
+  // Ham HTTP kodlarını eylem-odaklı Türkçe mesajlara çevirir.
+  function humanError(status, detail) {
+    if (detail && typeof detail === "string" && !/^HTTP \d+$/i.test(detail)) {
+      return detail; // backend zaten anlamlı bir mesaj verdiyse onu koru
+    }
+    switch (status) {
+      case 400:
+        return "Geçersiz istek — girdiyi kontrol edin.";
+      case 401:
+        return "Yetkisiz — SİSTEM sekmesinden API token girin.";
+      case 403:
+        return "Erişim reddedildi.";
+      case 404:
+        return "İstenen uç bulunamadı (sunucu güncel mi?).";
+      case 413:
+        return "Dosya çok büyük — boyut limitini aşıyor.";
+      case 422:
+        return "Girdi doğrulanamadı — alanları kontrol edin.";
+      case 429:
+        return "Çok hızlı istek — birkaç saniye bekleyip tekrar deneyin.";
+      case 500:
+      case 502:
+      case 503:
+        return "Sunucu/servis hatası — Ollama kapalı olabilir; SİSTEM sekmesinden durumu kontrol edin.";
+      default:
+        return "Beklenmeyen hata" + (status ? " (kod " + status + ")" : "") + ".";
+    }
+  }
+
   function api(path, opts) {
     opts = opts || {};
     opts.headers = authHeaders(opts.headers);
-    return fetch("/api" + path, opts).then(function (r) {
-      if (r.status === 401) {
-        toast("Yetkisiz — SİSTEM sekmesinden API token gir.", true);
-        throw new Error("unauthorized");
-      }
-      if (r.status === 429) {
-        toast("Hız sınırı aşıldı; biraz bekle.", true);
-        throw new Error("rate-limited");
-      }
-      return r.json().then(function (body) {
-        if (!r.ok) {
-          throw new Error(body.detail || ("HTTP " + r.status));
+    return fetch("/api" + path, opts).then(
+      function (r) {
+        if (r.status === 401) {
+          toast(humanError(401), true);
+          throw new Error(humanError(401));
         }
-        return body;
-      });
-    });
+        if (r.status === 429) {
+          toast(humanError(429), true);
+          throw new Error(humanError(429));
+        }
+        return r.json().then(
+          function (body) {
+            if (!r.ok) throw new Error(humanError(r.status, body && body.detail));
+            return body;
+          },
+          function () {
+            // gövde JSON değil (ör. ham hata sayfası)
+            throw new Error(humanError(r.status));
+          }
+        );
+      },
+      function () {
+        // ağ hatası — sunucuya hiç ulaşılamadı
+        throw new Error(
+          "Sunucuya ulaşılamadı — web servisi çalışıyor mu? (yerel: uv run achilles-web)"
+        );
+      }
+    );
   }
 
   // ---------- toast ----------
