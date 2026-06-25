@@ -1,7 +1,7 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-06-24 · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
-_Açık PR: yok — AI Brain (~16 PR) + RLM (#43-46) hepsi MERGED._
+_Son güncelleme: 2026-06-25 · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Açık PR: yok — çok-makine senkron yakınsama (#54·#55·#56·#57·#58) hepsi MERGED._
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
@@ -17,6 +17,46 @@ araçlarla (Claude Code, Codex vb.) — API anahtarı/faturalı endpoint DEĞİL
 RLM `backend="anthropic"` (API) yolu OPSİYONEL + KAPALI kalır (`rlm_alexzhang_enabled=False`,
 `provider=native`); varsayılan/zorunlu YAPILMAZ. Yeni özelliklerde bulut API'sini varsayılan
 bağımlılık yapma → opt-in + native fallback şart. Bkz memory [[no-api-local-subscription-only]].
+
+### 🆕 EN SON İŞ (2026-06-25) — Çok-makine güncelleme yakınsama protokolü + sürüm rozeti
+
+**SORUN (kullanıcı):** "2 W10 + 1 Mac'te sadece bu makinede güncel sürüm var; diğerlerinde
+güncelleme/sıfırdan kurulum tam oturmuyor." → **üç katmanlı sessiz yakınsama çöküşü** (hepsi
+yeni `achilles doctor` ile canlı kanıtlandı):
+1. **update.ps1/sh main'e geçmiyordu** — mevcut dal main değilken `git pull origin main`
+   origin/main'i feature dalına MERGE ediyordu → makine asla yakınsamaz (dev checkout
+   `fix/rlm-hardening-2`'de parklanmıştı, 74 behind).
+2. **Ölü scheduled-task yolları** — `start-server.ps1 -Install` yolu kuruluma sabitliyor; repo
+   taşınınca AchillesWeb/AchillesUpdate (03:00) ölü `~/achilles`'i çağırıp sessizce no-op
+   (ERROR_DIRECTORY). 3. **install.ps1 sessiz ff-only** + iki-kopya tehlikesi.
+
+**FIX (hepsi MERGED):**
+- **#54** — update.ps1/sh deterministik main yakınsama (parklanmış dalı zorla main'e al,
+  ff-only, ıraksaksa AUTO-MERGE YOK + -Force; throwaway-klon testli) · `start-server.ps1
+  -Repair` + `-Status` yol-eşleşme (non-admin'de sahte-[OK] yok) · install.ps1 görünür +
+  yabancı-kopya tespiti · **YENİ `achilles doctor`** (offline drift teşhisi, sapma→exit 2).
+- **#55** — `docs/GUNCELLEME_KILAVUZU.md` (yeni-başlayan kullanım kılavuzu) + README tazeleme
+  (eski `reset --hard` kurtarma → `update --force`; doctor/-Repair; SSS satırları).
+- **#56·#57** — stranded yerel iş cherry-pick (citation-degenerate guard + rag-chains-work
+  router/abstain/golden-eval, ~+1068). `fix/rlm-hardening-2` OLDUĞU GİBİ MERGE EDİLMEZ.
+- **#58 (PREVENTİF)** — web header **sürüm/sapma rozeti**: `app/web/version_info.py` (offline
+  git) + `GET /api/version` + rozet (yeşil "güncel ✓" / amber "N commit geride — güncelle" /
+  "dal X main değil"). **30 dk throttle'lı offline-güvenli `git fetch`** → nightly görev bozuk
+  olsa bile gerçek drift görünür; "sessizce 333 commit geride" bir daha olamaz. Preview'da canlı
+  doğrulandı (behind=12 yakaladı). Bkz memory [[multi-machine-sync-convergence]].
+
+**MAKİNE DURUMU:** ✅ sevinc dev checkout **main'e alındı** (`HANDOFF.md` eski hâli `stash@{0}`'da);
+✅ HUAWEI makinesi senkron; ⚠️ **Mac + sevinc'in zamanlanmış görevleri** kaldı: her makinede tek
+sefer `git fetch origin main; git switch main; update.ps1 -Force` (mac: `./update.sh --force`) +
+**yönetici** `start-server.ps1 -Repair`, sonra `achilles doctor` ile dal=main · +0/-0 doğrula.
+Rozet yeni kod olduğu için her makine bir kez daha `update` edince görünür.
+
+**GOTCHA:** PR otomasyonu BEHIND dalı kendi "Merge branch main" ile günceller; `gh pr
+update-branch <n>` ile elle tetiklenebilir (ben #58'de yaptım). İzole worktree origin/main'den
+açılınca origin ALTINDAN ilerleyebilir (eşzamanlı PR merge) → two-dot diff sahte "silme"; GitHub
+three-dot kullanır.
+
+---
 
 ### 🆕 EN SON İŞ (2026-06-24 #3) — LoRA degenerate kök-neden fix + 1.5B web chat entegrasyonu
 
