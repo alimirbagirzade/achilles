@@ -203,6 +203,52 @@ def test_approve_endpoint(client: TestClient) -> None:
     assert card["lora_eligible"] == 1
 
 
+def test_approve_endpoint_empty_card_returns_clear_message(client: TestClient) -> None:
+    """POST /api/card/{id}/approve — VAR olan ama içeriksiz kart, yanıltıcı 'not_found'
+    DEĞİL açık 'empty' mesajı döndürmeli. (Kuyruk boş kartlarla doluyken her Onayla
+    'Kart bulunamadı' verip ekranı 'çalışmıyor' gösteren regresyonu önler.) Kart pending
+    kalmalı — boş kart eğitime girmez (içerik guard'ı korunur)."""
+    from app.memory.sqlite_store import SqliteStore
+
+    s = SqliteStore()
+    s.upsert_paper(
+        paper_id="ep_empty_paper",
+        file_hash="hash_ep_empty",
+        source_path="/tmp/ep_empty.pdf",
+        title="Endpoint Empty Paper",
+    )
+    s.save_knowledge_card(
+        card_id="ep_empty_card",
+        paper_id="ep_empty_paper",
+        model="test-model",
+        card={"paper_id": "ep_empty_paper", "title": None, "main_claim": ""},
+        review_status="pending",
+    )
+
+    r = client.post("/api/card/ep_empty_card/approve")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "empty"
+    assert body["card_id"] == "ep_empty_card"
+    assert "bulunamadı" not in body["message"].lower()
+    assert "boş" in body["message"].lower() or "içeriksiz" in body["message"].lower()
+
+    # boş kart onaylanmamış, pending kalmış olmalı
+    card = s.get_card_by_id("ep_empty_card")
+    assert card is not None
+    assert card["review_status"] == "pending"
+    assert card["lora_eligible"] == 0
+
+
+def test_approve_endpoint_missing_card_still_not_found(client: TestClient) -> None:
+    """POST /api/card/{id}/approve — gerçekten OLMAYAN kart hâlâ 'not_found' döner;
+    'empty' ayrımı not_found semantiğini bozmamalı."""
+    r = client.post("/api/card/ep_does_not_exist_xyz/approve")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "not_found"
+
+
 def test_reject_endpoint(client: TestClient) -> None:
     """POST /api/card/{id}/reject — var olan kart reddedilir."""
     from app.memory.sqlite_store import SqliteStore
