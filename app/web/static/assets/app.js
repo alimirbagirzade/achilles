@@ -1718,6 +1718,11 @@
       })
       .join("");
 
+    var verdictNote =
+      v === "pass"
+        ? '<p class="verdict-note">Strateji bir <strong>adaydır</strong> — yatırım tavsiyesi/canlı sinyal değil; ileri doğrulama (örneklem-dışı, farklı seed) gerekir.</p>'
+        : '<p class="verdict-note">Strateji <strong>aday değildir</strong> ("hazır" sayılmaz) — gözden geçirilmeli.</p>';
+
     res.innerHTML =
       '<div class="result-section"><div class="result-label">strateji</div>' +
       '<div class="result-body">' +
@@ -1733,14 +1738,18 @@
       '<div class="result-section"><div class="result-label">metrikler</div>' +
       '<div class="metrics-grid">' +
       cells +
-      "</div></div>" +
+      "</div>" +
+      '<div class="cost-note">Tüm metrikler komisyon + slippage dahildir.</div>' +
+      "</div>" +
       '<div class="result-section"><div class="verdict ' +
       vClass +
       '"><h4>YARGI: ' +
       vLabel +
       "</h4><ul>" +
       reasons +
-      "</ul></div></div>";
+      "</ul>" +
+      verdictNote +
+      "</div></div>";
   }
 
   // ---------- trader beyin ----------
