@@ -1983,9 +1983,11 @@ def api_learning_card_growth() -> dict:
     return {"rows": rows}
 
 
-@app.get("/api/profile")
+@app.get("/api/profile", dependencies=[api_auth])
 def api_hardware_profile() -> dict:
-    """Donanım profili döndürür (auth gerekmez — kurulum popup için)."""
+    """Donanım profili döndürür. Token AYARLIYSA korunur (ağa açık modda donanım parmak-izi
+    sızıntısını engeller); yerel/token-yok modda açık kalır (kurulum popup için — require_auth
+    token boşken no-op)."""
     from app.agents.system_profiler.profiler import collect
 
     p = collect()
@@ -2010,9 +2012,10 @@ def api_hardware_profile() -> dict:
     }
 
 
-@app.get("/api/recommend")
+@app.get("/api/recommend", dependencies=[api_auth])
 def api_model_recommend() -> dict:
-    """RAM'e göre önerilen Ollama modellerini döndürür (auth gerekmez)."""
+    """RAM'e göre önerilen Ollama modellerini döndürür. Token ayarlıysa korunur (ağa açık
+    modda keşif sızıntısını engeller); yerel/token-yok modda açık (require_auth no-op)."""
     from app.agents.model_advisor.advisor import recommend
     from app.agents.system_profiler.profiler import collect
 
