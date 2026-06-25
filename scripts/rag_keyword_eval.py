@@ -7,10 +7,11 @@ sorguları üretir; her sorgunun golden cevabı o terimin geldiği makaledir. BM
 yardımcı olmalı (exact-match). dense-only vs router (lexical→konveks-hibrit) karşılaştırır.
 
 Deterministik, LLM'siz, sızıntı-az (sorgu = ham nadir terim, kart-özeti değil). Temiz
-ortamda çalıştır. Embed sahte-fallback'i önlemek için BM25 ÖNCE kurulur (CPU doysa bile
-embed o sırada yapılmaz), sonra ısınma embed (ollama saptanır), sonra eval.
+ortamda + TEK BAŞINA çalıştır (Chroma çekişmesi get_all'ı düşürür → boş korpus). Embed
+sahte-fallback'i önlemek için BM25 ÖNCE kurulur (CPU doysa bile embed o sırada yapılmaz),
+sonra ısınma embed (ollama saptanır), sonra eval.
 
-Kullanım: RAG_KW_LIMIT=60 uv run --no-sync python scripts/rag_keyword_eval.py
+Kullanım: RAG_KW_LIMIT=50 uv run --no-sync python scripts/rag_keyword_eval.py
 """
 
 from __future__ import annotations
@@ -59,14 +60,14 @@ def main() -> None:
     from app.memory.bm25_corpus import get_corpus_bm25
     from app.memory.reranking_retriever import RerankingRetriever
 
-    limit = int(os.environ.get("RAG_KW_LIMIT", "60"))
+    limit = int(os.environ.get("RAG_KW_LIMIT", "50"))
 
     # 1) BM25'i ÖNCE kur (chunk_map = id→RetrievedChunk, paper_id'li). CPU-ağır ama embed yok.
     t = time.perf_counter()
     _bm25, chunk_map = get_corpus_bm25()
     print(f"# bm25 build: {time.perf_counter() - t:.1f}s, chunks={len(chunk_map)}", flush=True)
     if not chunk_map:
-        print("# HATA: korpus boş", flush=True)
+        print("# HATA: korpus boş (Chroma çekişmesi? TEK başına çalıştır)", flush=True)
         return
 
     # 2) Terim → makale-frekansı (kaç farklı makalede geçiyor) + makale → terimler.
@@ -79,7 +80,7 @@ def main() -> None:
         for w in toks:
             paper_of.setdefault(w, set()).add(pid)
 
-    # 3) Her makale için EN AYIRT EDİCİ terim (en düşük paper-frequency, ≥1 makalede; nadir).
+    # 3) Her makale için EN AYIRT EDİCİ terim (en düşük paper-frequency; nadir).
     #    Golden = o makale. Sorgu = nadir terim (gerekirse 2. nadir terimle 2-kelime).
     queries: list[tuple[str, str]] = []  # (query, golden_paper_id)
     for pid, terms in sorted(paper_terms.items()):

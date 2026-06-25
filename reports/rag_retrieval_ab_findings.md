@@ -26,6 +26,14 @@ Donanım: i7-1165G7, **GPU yok**. Çevrimdışı, deterministik (Kural 2/6).
 | hybrid+rerank | 64.3% | 71.4% | 0.665 | 2216 ms |
 | rrf | 67.1% | 72.9% | 0.689 | 2286 ms |
 | dense + cross-encoder (bge-reranker-base) | — | — | — | **>15.000 ms** (CPU'da kullanılamaz) |
+| dense + FlashRank (ms-marco-MiniLM-L-12, ONNX-int8) | 67.5% | 70.0% | 0.688 | **12.388 ms** |
+
+> **FlashRank (Zincir 3, derin araştırma sonrası ölçüldü):** Web-araştırma FlashRank'i CPU'da
+> ~30-100ms olarak veriyordu (M-serisi Mac / kısa pasaj). Bu GPU'suz i7-1165G7'de 40 GERÇEK
+> akademik aday (≤1200 char) ile **TEMİZ koşulda bile ~12,4 s/sorgu** VE recall@1 dense'den
+> DÜŞÜK (67.5 < 70.0). Sonuç KESİN: **bu donanımda hiçbir cross-encoder reranking (bge >15s,
+> FlashRank ~12s) kullanılamaz** — dense-only kazanır. FlashRank opt-in olarak KODDA (GPU
+> gelirse / kısa chunk'larda işe yarayabilir) ama KAPALI. `ACHILLES_RAG_FLASHRANK`.
 
 ## 3. Sonuç ve karar
 
@@ -41,3 +49,38 @@ BM25 sayfalama fix'i kodda kalıcı (hibrit ileride açılırsa veya başka kull
 sorularında BM25 hibrit teorik olarak yardımcı olabilir → ileride keyword golden-set ile
 yeniden değerlendirilebilir. Cevap-üretimi (LLM, qwen3:4b) gecikmesi retrieval'dan AYRI ve
 CPU/model-bağlı (mimari kısıt; bu çalışmanın kapsamı dışı).
+
+## 4. Keyword golden-eval — ROUTER VALIDATED (2026-06-21, SQLite-BM25 ile ölçüldü)
+
+`scripts/rag_keyword_eval.py` (korpustan ayırt edici nadir terim → kısa keyword sorgu;
+golden = makale). 40 sorgu, BM25 korpusu SQLite'tan (94.104 chunk), öğrenme döngüsü dönerken.
+
+| config | recall@1 | recall@5 | recall@10 | MRR | gecikme p50 |
+|---|---|---|---|---|---|
+| dense_only | 30.0 | 50.0 | 57.5 | 0.386 | **368 ms** |
+| **router (lexical→konveks-hibrit)** | **37.5** | 50.0 | **77.5** | **0.454** | **12.577 ms** |
+
+**Sonuç:** Keyword/exact-term sorgularda router hibridi BELIRGIN kazanıyor (recall@10 **+20 puan**,
+recall@1 +7.5, MRR +18%). "Sorgu-tipine göre yönlendir" (BEIR/Bruch) gerçek veriyle DOĞRULANDI —
+bu, semantik metrikte dense'in kazandığı bulgunun TERSİ DEĞİL, tamamlayıcısı (rejim farkı).
+
+**AMA router ~34× yavaş** (özel BM25Index.search 94k chunk'ta O(korpus)). Bu, araştırmanın işaret
+ettiği yavaş-BM25 → **BM25S** (eager sparse scoring, ~ms) ile çözülür → router hem daha doğru hem
+hızlı olur. KARAR: BM25S uygulanana kadar router opt-in/KAPALI; BM25S sonrası hız ölçülüp enable.
+Ayrıca BU ÖLÇÜM mümkün oldu çünkü BM25 korpusu artık SQLite'tan kuruluyor (eşzamanlı döngüyle
+çakışmadan; bkz commit "BM25 korpusu SQLite'tan kur").
+
+### 4b. Gecikme DÜZELTMESİ — router 12.6s'i contention'dı, BM25 DEĞİL (izole ölçüm)
+
+İlk verdict'te router'ın 12.6s gecikmesini "yavaş BM25 → BM25S gerek" diye yorumladım — YANLIŞ.
+İzole ölçüm (öğrenme döngüsü DURDURULDU, dense/Ollama YOK, sadece bm25.search 94.104 chunk):
+**BM25.search mean=5.2ms, p50=2.8ms** (nadir-2-kelime sorgu). BM25Index zaten ters-indeks
+kullanıyor → yalnız sorgu-terimini İÇEREN doc'ları skorlar (nadir terim df≤2 → ~µs).
+
+Yani 12.6s = **dense sorgu-embed'inin Ollama'da döngünün qwen3:4b kart-üretimine TAKILMASI**
+(dense_only düşük-contention penceresinde, router yüksek-contention penceresinde ölçüldü).
+TEMİZ ortamda router gecikmesi ≈ dense (~370ms) + BM25 (~3ms) + füzyon ≈ **~370ms (hızlı)**.
+
+**DÜZELTİLMİŞ KARAR:** BM25S GEREKMEZ. Router keyword'de hem DAHA İYİ (recall@10 +20p) hem
+HIZLI (warm) → **ENABLE** (.env ACHILLES_RAG_ROUTER=true). Tek operasyonel not: ilk lexical
+sorgu BM25'i kurar (~171s, tek-seferlik/process) → startup warm-up follow-up önerilir.

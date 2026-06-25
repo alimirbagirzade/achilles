@@ -1599,6 +1599,16 @@ class SqliteStore:
                 )
             )
 
+    def list_all_chunks(self) -> list[Chunk]:
+        """TÜM chunk'ları döndür (BM25 korpus indeksi için — sağlam kaynak).
+
+        Chroma `get_all()` 91k id'yi bulk okur ve eşzamanlı erişimde (öğrenme döngüsü/MCP)
+        SQLite-kilidine takılıp BM25'i sessizce öldürürdü. SQLite WAL eşzamanlı-okumayı
+        sorunsuz kaldırır → BM25 korpusu buradan kurulur (kaynak = doğru, dayanıklı).
+        """
+        with self.session() as s:
+            return list(s.scalars(select(Chunk).order_by(Chunk.paper_id, Chunk.chunk_index)))
+
     def save_knowledge_card(
         self,
         card_id: str,
