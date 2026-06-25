@@ -783,7 +783,15 @@ uv run achilles-web
 ```bash
 uv run achilles init                    # kurulum (bir kez)
 uv run achilles status                  # sistem durumunu gör
+uv run achilles doctor                  # sürüm/sapma teşhisi: bu makine origin/main'de mi? (salt-okuma)
 ```
+
+> `doctor`, çok-makineli kurulumlarda **"güncelleme neden oturmuyor"** sorusunu yanıtlar:
+> mevcut dalı, HEAD'i, `origin/main`'e göre ahead/behind'ı, push'lanmamış yerel dalları ve
+> (Windows'ta) `AchillesWeb`/`AchillesUpdate` zamanlanmış görevlerinin bu repoyu mu yoksa ölü bir
+> yolu mu işaret ettiğini raporlar. Sapma varsa çıkış kodu `2` döner (CI/kapı yakalayabilir).
+> Hiçbir şey çekmez/birleştirmez/değiştirmez. Bu makineyi `origin/main`'e zorla eşitlemek için:
+> `update.ps1 -Force` (Windows) · `./update.sh --force` (mac/Linux).
 
 ### Makaleler
 

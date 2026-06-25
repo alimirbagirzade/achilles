@@ -87,6 +87,164 @@ def status() -> None:
 
 
 # --------------------------------------------------------------------------
+# doctor — kurulum & sürüm sapması teşhisi (salt-okuma, offline)
+# --------------------------------------------------------------------------
+def _git_ro(args: list[str], cwd: Path) -> tuple[int, str]:
+    """Salt-okuma git yardımcısı (offline; ağ yok). (returncode, stdout)."""
+    import subprocess
+
+    try:
+        proc = subprocess.run(
+            ["git", *args],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return 127, ""
+    return proc.returncode, (proc.stdout or "").strip()
+
+
+def _task_path_matches(task_name: str, repo: Path) -> tuple[bool | None, str | None]:
+    """Windows scheduled-task hedef yolu bu repoyu mu işaret ediyor? (salt-okuma).
+
+    Dönüş: ``(None, None)`` görev kayıtlı değil; aksi halde
+    ``(eşleşti_mi, gözlenen_yol)``. Hiçbir mutasyon/ağ yok.
+    """
+    import subprocess
+
+    ps = (
+        "$ErrorActionPreference='SilentlyContinue';"
+        f"$t=Get-ScheduledTask -TaskName '{task_name}';"
+        "if(-not $t){exit 3};"
+        "$t.Actions|ForEach-Object{Write-Output ($_.Arguments+'|'+$_.WorkingDirectory)}"
+    )
+    try:
+        proc = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None, None
+    if proc.returncode == 3:
+        return None, None
+    out = (proc.stdout or "").strip()
+    if not out:
+        return None, None
+    matched = str(repo).lower() in out.lower()
+    return matched, out.replace("\n", " ")[:100]
+
+
+@app.command()
+def doctor() -> None:
+    """Kurulum/sürüm sapması teşhisi (SALT-OKUMA, offline).
+
+    Hiçbir şey çekmez/birleştirmez/değiştirmez. Raporlar: repo yolu, dal,
+    HEAD vs origin/main yakınsaması, ahead/behind, push'lanmamış yerel dallar;
+    Windows'ta AchillesWeb/AchillesUpdate görev yolu bu repoyla eşleşiyor mu.
+    Çıkış kodu: 0 sağlıklı · 2 SAPMA · 1 git yok.
+
+    origin/main YEREL ref'ten okunur (ağ yok). 'behind' büyükse önce
+    `git fetch origin main`. Iraksamış dalı asla otomatik merge etme.
+    """
+    import sys
+
+    repo = Path(__file__).resolve().parents[1]
+    rc, _ = _git_ro(["rev-parse", "--is-inside-work-tree"], repo)
+    if rc != 0:
+        console.print("[red]git bulunamadı ya da bu bir git deposu değil.[/red]")
+        raise typer.Exit(1)
+
+    _, branch = _git_ro(["rev-parse", "--abbrev-ref", "HEAD"], repo)
+    _, head = _git_ro(["rev-parse", "--short", "HEAD"], repo)
+    _, head_full = _git_ro(["rev-parse", "HEAD"], repo)
+    rc_om, origin_main = _git_ro(["rev-parse", "--short", "origin/main"], repo)
+    _, om_full = _git_ro(["rev-parse", "origin/main"], repo)
+
+    drift = False
+    t = Table(title="Achilles doctor — kurulum & sürüm sapması (salt-okuma)")
+    t.add_column("Kontrol")
+    t.add_column("Değer")
+    t.add_row("Repo yolu", str(repo))
+    t.add_row("Mevcut dal", branch or "?")
+    t.add_row("HEAD", head or "?")
+
+    if rc_om != 0 or not origin_main:
+        t.add_row("origin/main", "[yellow]yerel ref yok — git fetch origin main[/yellow]")
+        drift = True
+    else:
+        t.add_row("origin/main", origin_main)
+        _, ab = _git_ro(["rev-list", "--left-right", "--count", "origin/main...HEAD"], repo)
+        parts = ab.split()
+        behind, ahead = (parts[0], parts[1]) if len(parts) == 2 else ("?", "?")
+        t.add_row("origin/main gerisinde (behind)", behind)
+        t.add_row("origin/main önünde (ahead)", ahead)
+        converged = bool(head_full) and head_full == om_full
+        t.add_row(
+            "HEAD == origin/main",
+            "[green]EVET (yakınsamış)[/green]" if converged else "[red]HAYIR — SAPMA[/red]",
+        )
+        if not converged:
+            drift = True
+
+    on_main = branch == "main"
+    t.add_row(
+        "Dal == main",
+        "[green]EVET[/green]" if on_main else f"[yellow]HAYIR ({branch})[/yellow]",
+    )
+    if not on_main:
+        drift = True
+
+    _, refs = _git_ro(
+        [
+            "for-each-ref",
+            "--format=%(refname:short)|%(upstream:short)|%(upstream:track)",
+            "refs/heads",
+        ],
+        repo,
+    )
+    unpushed: list[str] = []
+    for line in refs.splitlines():
+        cols = line.split("|")
+        if len(cols) < 3 or not cols[0]:
+            continue
+        name, upstream, track = cols[0], cols[1], cols[2]
+        if not upstream:
+            unpushed.append(f"{name} (upstream yok)")
+        elif "ahead" in track:
+            unpushed.append(f"{name} {track}")
+    t.add_row(
+        "Push'lanmamış yerel dal",
+        ("[yellow]" + ", ".join(unpushed[:8]) + "[/yellow]") if unpushed else "yok",
+    )
+
+    if sys.platform == "win32":
+        for task in ("AchillesWeb", "AchillesUpdate"):
+            matched, detail = _task_path_matches(task, repo)
+            if detail is None:
+                t.add_row(f"Görev {task}", "[yellow]kayıtlı değil[/yellow]")
+            elif matched:
+                t.add_row(f"Görev {task}", "[green]bu repoyu işaret ediyor[/green]")
+            else:
+                t.add_row(f"Görev {task}", f"[red]ÖLÜ/yabancı yol: {detail}[/red]")
+                drift = True
+
+    console.print(t)
+    if drift:
+        console.print(
+            "[yellow]SAPMA saptandı. Otomatik düzeltme YOK — iraksamış dalı merge "
+            "etme; önce `git fetch origin main` çalıştırıp inceleyin.[/yellow]\n"
+            "[yellow]Bu makineyi origin/main'e zorla eşitlemek için: "
+            "update.ps1 -Force (Windows) · ./update.sh --force (mac/Linux)[/yellow]"
+        )
+        raise typer.Exit(2)
+    console.print("[green]Yakınsamış: bu makine origin/main'de ve kurulum tutarlı.[/green]")
+
+
+# --------------------------------------------------------------------------
 # ingestion
 # --------------------------------------------------------------------------
 @app.command()

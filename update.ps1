@@ -1,10 +1,15 @@
 # Achilles Trader AI -- TEK KOMUT guncelleme (KURULU makinede calistir)
 #
-#   .\update.ps1           -- normal: yerel degisiklikleri saklayip GitHub'dan cek
+#   .\update.ps1           -- normal: origin/main'e GUVENLI yakinsama (ff-only)
 #   .\update.ps1 -Force    -- yereli AT, origin/main ile birebir esitle (salt-kopya kurulum)
 #
-# Yapar: web sunucusunu durdur -> GitHub'dan cek -> uv sync --extra web ->
+# Yapar: web sunucusunu durdur -> 'main' dalina yakinsa (origin/main) -> uv sync --extra web ->
 #        web'i yeniden baslat -> saglik kontrolu.  EGITIME DOKUNMAZ.
+#
+# NOT (kok-neden duzeltmesi): Bu betik artik MEVCUT dal ne olursa olsun makineyi
+# 'main' dalina + origin/main'e yakinsatir. Eskiden bir feature dalina parklanmis
+# makinede 'git pull origin main' origin/main'i o dala MERGE ediyor, makine asla
+# main'e gecmiyordu -> "guncelleme oturmuyor". Tani icin:  uv run achilles doctor
 #
 # Tarayicida son halini gormek icin sonunda: Ctrl+Shift+R (sert yenileme).
 
@@ -56,6 +61,98 @@ $null   = New-Item -ItemType Directory -Path $LogDir -Force
 $LogFile = Join-Path $LogDir "update.log"
 "[$(Get-Date -Format 'yyyy-MM-dd HH:mm')] Guncelleme basliyor (Force=$Force)..." | Add-Content $LogFile
 
+# --------------------------------------------------------------------------
+# Yardimci fonksiyonlar (cagrilmadan ONCE tanimli olmali)
+# --------------------------------------------------------------------------
+# 'main' baska bir worktree'de checkout mu? (oyle ise bu kopya main'e gecemez)
+function Test-MainElsewhere {
+    $wt = & $GitPath worktree list --porcelain 2>$null
+    return [bool]($wt | Select-String -Pattern 'branch refs/heads/main$' -Quiet)
+}
+
+# Dal + HEAD + origin/main'e gore ahead/behind raporla (drift gorunur olsun)
+function Show-Drift {
+    $b = (& $GitPath rev-parse --abbrev-ref HEAD 2>$null)
+    if ($b) { $b = $b.Trim() }
+    $h = (& $GitPath rev-parse --short HEAD 2>$null)
+    if ($h) { $h = $h.Trim() }
+    $behind = 0; $ahead = 0
+    $c = (& $GitPath rev-list --left-right --count origin/main...HEAD 2>$null)
+    if ($c -and ($c -match '^\s*(\d+)\s+(\d+)')) { $behind = [int]$matches[1]; $ahead = [int]$matches[2] }
+    $col = if (($b -eq 'main') -and ($ahead -eq 0) -and ($behind -eq 0)) { 'Green' } else { 'Yellow' }
+    Write-Host "[DURUM] dal=$b HEAD=$h | origin/main'e gore: +$ahead / -$behind" -ForegroundColor $col
+    "[$(Get-Date -Format 'yyyy-MM-dd HH:mm')] DURUM dal=$b HEAD=$h ahead=$ahead behind=$behind" | Add-Content $LogFile
+}
+
+# Mevcut dal ne olursa olsun 'main' + origin/main'e DETERMINISTIK yakinsa.
+# Kullanici verisini ASLA atmaz (Force haric); iraksak dali AUTO-MERGE ETMEZ.
+function Sync-ToMain {
+    & $GitPath fetch origin main 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[UYARI] fetch basarisiz (cevrimdisi?) -- yerel ref'lerle devam." -ForegroundColor Yellow
+    }
+
+    $curBranch = (& $GitPath rev-parse --abbrev-ref HEAD 2>$null)
+    if ($curBranch) { $curBranch = $curBranch.Trim() }
+    $dirty = [bool]((& $GitPath status --porcelain 2>$null) | Where-Object { $_ })
+
+    if ($curBranch -ne "main") {
+        Write-Host "[UYARI] Bu makine 'main' DEGIL, '$curBranch' dalinda PARKLANMIS." -ForegroundColor Yellow
+        Write-Host "        origin/main'e yakinsamak icin 'main' dalina geciliyor..." -ForegroundColor Yellow
+        "[$(Get-Date -Format 'yyyy-MM-dd HH:mm')] Parkli dal '$curBranch' -> main gecisi deneniyor." | Add-Content $LogFile
+
+        if ($dirty -and -not $Force) {
+            Write-Host "[HATA] Yerel (commit'lenmemis) degisiklik var; 'main'e guvenle gecemiyorum." -ForegroundColor Red
+            Write-Host "       Cozum: degisiklikleri commit/stash et, ya da yereli ATMAK icin: .\update.ps1 -Force" -ForegroundColor Cyan
+            return
+        }
+        if (Test-MainElsewhere) {
+            Write-Host "[HATA] 'main' baska bir worktree'de checkout -- bu kopya main'e gecemez." -ForegroundColor Red
+            Write-Host "       O worktree'yi kapat ya da 'git worktree' ile duzelt. origin/main'e DOKUNULMADI." -ForegroundColor Cyan
+            return
+        }
+
+        & $GitPath show-ref --verify --quiet refs/heads/main
+        $mainExists = ($LASTEXITCODE -eq 0)
+        if ($Force) {
+            if ($mainExists) { & $GitPath switch -f main 2>&1 | Out-Null }
+            else             { & $GitPath switch -C main --track origin/main 2>&1 | Out-Null }
+        } else {
+            if ($mainExists) { & $GitPath switch main 2>&1 | Out-Null }
+            else             { & $GitPath switch -c main --track origin/main 2>&1 | Out-Null }
+        }
+
+        $now = (& $GitPath rev-parse --abbrev-ref HEAD 2>$null)
+        if ($now) { $now = $now.Trim() }
+        if ($now -ne "main") {
+            Write-Host "[HATA] 'main' dalina gecilemedi -- origin/main'e MERGE EDILMEDI (veri korundu)." -ForegroundColor Red
+            return
+        }
+        Write-Host "[OK] 'main' dalina gecildi." -ForegroundColor Green
+    }
+
+    $remoteHash = (& $GitPath rev-parse origin/main 2>$null)
+    if ($remoteHash) { $remoteHash = $remoteHash.Trim() }
+    $headHash = (& $GitPath rev-parse HEAD 2>$null)
+    if ($headHash) { $headHash = $headHash.Trim() }
+
+    if ($Force) {
+        Write-Host "[!] -Force: yerel kod degisiklikleri ATILIYOR, origin/main'e (HEAD=main) esitleniyor." -ForegroundColor Yellow
+        & $GitPath reset --hard origin/main 2>&1 | Out-Null
+    } elseif (-not $remoteHash) {
+        Write-Host "[UYARI] origin/main yerel ref'i yok (ilk fetch basarisiz olabilir) -- atlandi." -ForegroundColor Yellow
+    } elseif ($headHash -ne $remoteHash) {
+        & $GitPath pull --ff-only origin main 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[HATA] ff-only ilerleyemedi: yerel 'main' ile origin/main IRAKSAK." -ForegroundColor Red
+            Write-Host "       Cozum (yereli ATAR): .\update.ps1 -Force" -ForegroundColor Cyan
+            "[$(Get-Date -Format 'yyyy-MM-dd HH:mm')] ff-only IRAKSAK HATASI." | Add-Content $LogFile
+        }
+    } else {
+        Write-Host "[OK] Kod zaten guncel ($($headHash.Substring(0,7)))." -ForegroundColor Cyan
+    }
+}
+
 # --- 1. Web sunucusunu KESIN durdur (port 8765 + achilles-web). EGITIME dokunma. ---
 function Stop-Web {
     $pidFile = Join-Path $ProjectDir ".web.pid"
@@ -76,30 +173,10 @@ function Stop-Web {
 Stop-Web
 Start-Sleep -Seconds 1
 
-# --- 2. GitHub'dan cek ---
-& $GitPath fetch origin main 2>$null
-$localHash  = (& $GitPath rev-parse HEAD 2>$null).Trim()
-$remoteHash = (& $GitPath rev-parse origin/main 2>$null).Trim()
-
-if ($Force) {
-    Write-Host "[!] -Force: yerel kod degisiklikleri ATILIYOR, origin/main'e esitleniyor." -ForegroundColor Yellow
-    & $GitPath reset --hard origin/main 2>&1 | Out-Null
-} elseif ($localHash -ne $remoteHash) {
-    $stashOut = (& $GitPath stash 2>&1)
-    $didStash = ($stashOut -notmatch "No local changes")
-    $pullOut  = (& $GitPath pull origin main 2>&1)
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "[HATA] git pull basarisiz:" -ForegroundColor Red
-        Write-Host ($pullOut | Out-String) -ForegroundColor Yellow
-        Write-Host "      Cozum: yerel degisiklik engelliyorsa ->  .\update.ps1 -Force" -ForegroundColor Cyan
-        "[$(Get-Date -Format 'yyyy-MM-dd HH:mm')] pull HATASI: $pullOut" | Add-Content $LogFile
-        if ($didStash) { & $GitPath stash pop 2>&1 | Out-Null }
-    } elseif ($didStash) {
-        & $GitPath stash pop 2>&1 | Out-Null
-    }
-} else {
-    Write-Host "[OK] Kod zaten guncel ($($localHash.Substring(0,7)))." -ForegroundColor Cyan
-}
+# --- 2. origin/main'e DETERMINISTIK yakinsama (parklanmis dali zorla main'e al) ---
+$localHash = (& $GitPath rev-parse HEAD 2>$null).Trim()
+Sync-ToMain
+Show-Drift
 
 $newHash = (& $GitPath rev-parse HEAD 2>$null).Trim()
 $updated = ($newHash -ne $localHash)
