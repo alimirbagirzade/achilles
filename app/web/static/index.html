@@ -31,17 +31,20 @@
         <span class="dot dot-idle" id="connDot"></span>
         <span id="connText">bağlanıyor…</span>
         <span class="sep">│</span>
-        <span id="embedMode" class="muted">embed: —</span>
-        <span class="sep">│</span>
         <span id="paperCount" class="muted">papers: —</span>
         <span class="sep">│</span>
-        <span id="ragMastery" class="muted" title="RAG kaç makaleyi içerik kartına dönüştürüp anladı + eğitim hazırlığı">RAG anladı: —</span>
-        <span class="sep">│</span>
-        <span id="objUnderstanding" class="muted clickable" title="Objektif anlama skoru — L3/L4 sınav geçme oranı (LLM gerekir; tıkla hesapla). Kaba öz-değerlendirmenin yerine objektif kanıt.">obj. anlama: tıkla</span>
-        <span class="sep">│</span>
         <span id="trainBadge" class="muted" title="LoRA eğitim durumu (gerçek süreç — web veya detached/CLI)">eğitim: —</span>
-        <span class="sep">│</span>
-        <span id="versionBadge" class="muted" title="Sürüm durumu — bu makine GitHub 'main' ile güncel mi? (geride kalırsa uyarır)">sürüm: —</span>
+        <span id="statusExtra" class="status-extra collapsed">
+          <span class="sep">│</span>
+          <span id="embedMode" class="muted">embed: —</span>
+          <span class="sep">│</span>
+          <span id="ragMastery" class="muted" title="RAG kaç makaleyi içerik kartına dönüştürüp anladı + eğitim hazırlığı">RAG anladı: —</span>
+          <span class="sep">│</span>
+          <span id="objUnderstanding" class="muted clickable" title="Objektif anlama skoru — L3/L4 sınav geçme oranı (LLM gerekir; tıkla hesapla). Kaba öz-değerlendirmenin yerine objektif kanıt.">obj. anlama: tıkla</span>
+          <span class="sep">│</span>
+          <span id="versionBadge" class="muted" title="Sürüm durumu — bu makine GitHub 'main' ile güncel mi? (geride kalırsa uyarır)">sürüm: —</span>
+        </span>
+        <button type="button" id="statusMoreBtn" class="status-more" aria-expanded="false" title="Diğer göstergeleri göster/gizle">⋯ tümü</button>
       </div>
     </header>
 
@@ -50,6 +53,14 @@
       gereken bir <em>hipotezdir</em>. Hiçbir strateji backtest + örneklem-dışı
       doğrulama olmadan "başarılı" sayılmaz.
     </div>
+
+    <nav class="groups" id="groupNav" aria-label="Bölüm grupları">
+      <button class="group-btn active" data-group="kesfet">Keşfet &amp; sor</button>
+      <button class="group-btn" data-group="kutuphane">Kütüphane</button>
+      <button class="group-btn" data-group="trader">Trader &amp; backtest</button>
+      <button class="group-btn" data-group="egitim">Eğitim hattı</button>
+      <button class="group-btn" data-group="izleme">İzleme &amp; sağlık</button>
+    </nav>
 
     <nav class="tabs" id="tabs">
       <button class="tab active" data-tab="research">01 · ARAŞTIRMA</button>
@@ -66,6 +77,11 @@
     </nav>
 
     <main>
+      <div class="next-step" id="nextStep" style="display:none">
+        <span class="next-step-icon" aria-hidden="true">→</span>
+        <span id="nextStepText"></span>
+      </div>
+
       <!-- RESEARCH -->
       <section class="panel active" id="panel-research">
         <div class="hero">
@@ -91,7 +107,7 @@
           ></textarea>
           <div class="ask-row">
             <label class="topk">
-              top_k
+              <span class="jargon" title="Cevap için kaç kaynak parçası (chunk) getirileceği. Yüksek değer = daha çok bağlam ama daha yavaş.">top_k</span>
               <input type="number" id="topk" min="1" max="20" value="6" />
             </label>
             <label class="adapter-select-label">
@@ -286,8 +302,8 @@
         <div class="panel-head">
           <h2>Strateji Backtest</h2>
           <p class="muted">
-            Sentetik <b>veya gerçek OHLCV CSV</b> üzerinde örnek strateji. Motor
-            look-ahead'siz, maliyetli ve örneklem-dışı denetimli. Zayıf strateji
+            Sentetik <b>veya gerçek <span class="jargon" title="Open-High-Low-Close-Volume — her zaman diliminin açılış / en yüksek / en düşük / kapanış (ve hacim) fiyatı; standart fiyat verisi formatı.">OHLCV</span> CSV</b> üzerinde örnek strateji. Motor
+            look-ahead'siz, maliyetli ve <span class="jargon" title="Out-of-sample: stratejinin görmediği veri üzerinde test — ezberi gerçek başarıdan ayırır (overfit denetimi).">örneklem-dışı</span> denetimli. Zayıf strateji
             <b>FAIL</b> alır.
           </p>
         </div>
@@ -367,7 +383,7 @@
       <!-- TRAINING -->
       <section class="panel" id="panel-training">
         <div class="panel-head">
-          <h2>LoRA Eğitimi</h2>
+          <h2><span class="jargon" title="Low-Rank Adaptation — büyük modeli baştan eğitmeden, küçük bir 'adapter' katmanıyla yerel olarak ince ayarlama yöntemi.">LoRA</span> Eğitimi</h2>
           <p class="muted">Butona bas → eğitim başlar, ilerlemeyi canlı izle. Terminal gerekmez.</p>
         </div>
 
@@ -811,7 +827,7 @@
       <!-- 11 · RLM (Recursive/Reasoning LM — çok-adımlı kaynaklı cevap) -->
       <section class="panel" id="panel-rlm">
         <div class="ag-toolbar">
-          <h2 style="margin:0">RLM — Kaynaklı Cevap Koşuları</h2>
+          <h2 style="margin:0"><span class="jargon" title="Recursive/Reasoning LM — çok-adımlı retrieval + iddia-düzeyi kaynak doğrulama; desteklenmeyen iddiayı atar, kaynak yetersizse çekimser kalır.">RLM</span> — Kaynaklı Cevap Koşuları</h2>
           <button class="btn" id="rlmRefreshBtn">↻ Yenile</button>
           <span class="muted small">Çok-adımlı retrieval + iddia-düzeyi doğrulama. Salt-okuma
             görünüm; bir koşuya tıklayınca adımlar + kanıt + doğrulama açılır.</span>
