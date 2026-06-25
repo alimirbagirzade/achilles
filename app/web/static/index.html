@@ -84,6 +84,16 @@
 
       <!-- RESEARCH -->
       <section class="panel active" id="panel-research">
+        <div class="intro-banner" id="introBanner" style="display:none">
+          <button class="intro-close" id="introClose" type="button" aria-label="Bu açıklamayı kapat">✕</button>
+          <h3>Achilles nasıl çalışır? · 3 adım</h3>
+          <ol class="intro-steps">
+            <li><strong>Makale ekle</strong> — <em>Kütüphane</em>'de PDF yükle ya da arXiv'den çek.</li>
+            <li><strong>Soru sor</strong> — <em>Keşfet &amp; sor</em>'da kaynaklı cevap al (kaynak yoksa sistem uydurmaz).</li>
+            <li><strong>Backtest et</strong> — <em>Trader &amp; backtest</em>'te stratejiyi maliyet+slippage dahil, look-ahead'siz sına.</li>
+          </ol>
+          <p class="intro-foot">Araştırma aracıdır, yatırım tavsiyesi değildir. Her panel üstündeki "Sonraki adım" şeridi yol gösterir.</p>
+        </div>
         <div class="hero">
           <img src="/assets/achilles-logo.jpg" alt="Achilles — trading research" />
           <div class="hero-text">
@@ -140,10 +150,10 @@
         </div>
         <div class="toolbar">
           <button class="btn" id="refreshPapers">↻ YENİLE</button>
-          <button class="btn" id="reindexBtn">⟳ TÜMÜNÜ İNDEKSLE</button>
-          <button class="btn" id="batchCardBtn">⚡ TÜM KARTLARI ÜRET</button>
-          <button class="btn" id="batchScoreBtn">🧪 TÜM SKORLARI HESAPLA</button>
-          <button class="btn" id="crossSynthesisBtn">🔗 ÇAPRAZ SENTEZ ÜRET</button>
+          <button class="btn" id="reindexBtn">↻ TÜMÜNÜ İNDEKSLE</button>
+          <button class="btn" id="batchCardBtn">TÜM KARTLARI ÜRET</button>
+          <button class="btn" id="batchScoreBtn">TÜM SKORLARI HESAPLA</button>
+          <button class="btn" id="crossSynthesisBtn">ÇAPRAZ SENTEZ ÜRET</button>
         </div>
         <div id="batchCardResult" class="result hidden"></div>
         <div id="batchScoreResult" class="result hidden"></div>
@@ -164,7 +174,7 @@
           </div>
           <div id="arxivResult" class="result hidden"></div>
           <div class="arxiv-save-row">
-            <button class="btn" id="arxivSaveBtn" title="Mevcut sorguyu kütüphaneye kaydet">📌 Sorguyu Kaydet</button>
+            <button class="btn" id="arxivSaveBtn" title="Mevcut sorguyu kütüphaneye kaydet">Sorguyu Kaydet</button>
           </div>
         </div>
 
@@ -207,7 +217,7 @@
         <div class="training-section">
           <h3>1 · Formül Çıkarımı</h3>
           <p class="muted small">Yüklü makalelerden matematiksel formülleri çıkar ve kavram grafiğini kur.</p>
-          <button class="btn btn-primary" id="extractFormulasBtn">⚗ FORMÜL ÇIKAR</button>
+          <button class="btn btn-primary" id="extractFormulasBtn">FORMÜL ÇIKAR</button>
           <div id="extractResult" class="result hidden"></div>
           <div id="formulasList" class="formulas-list"></div>
         </div>
@@ -225,7 +235,7 @@
               <label>Maksimum iterasyon
                 <input type="number" id="researchIter" min="1" max="5" value="2" />
               </label>
-              <button class="btn btn-primary" id="runResearchBtn">🧠 ARAŞTIR →</button>
+              <button class="btn btn-primary" id="runResearchBtn">ARAŞTIR →</button>
             </div>
           </div>
           <div id="researchResult" class="result hidden"></div>
@@ -258,7 +268,7 @@
                 <span class="jargon" title="Modelin üreteceği en fazla parça (token) sayısı — yaklaşık cevap uzunluğu. Yüksek = daha uzun ama daha yavaş.">maks. token</span>
                 <input type="number" id="loraChatMaxTokens" min="16" max="1024" value="256" />
               </label>
-              <button type="submit" class="btn btn-primary" id="loraChatBtn">💬 SOR →</button>
+              <button type="submit" class="btn btn-primary" id="loraChatBtn">SOR →</button>
             </div>
           </form>
           <div id="loraChatResult" class="result hidden"></div>
@@ -271,7 +281,7 @@
           <label class="filter-btn-label">
             <input type="checkbox" id="onlySuccessful" /> Yalnız başarılı oturumlar
           </label>
-          <button class="btn btn-primary" id="buildChainBtn">⚡ ZİNCİR DATASET OLUŞTUR</button>
+          <button class="btn btn-primary" id="buildChainBtn">ZİNCİR DATASET OLUŞTUR</button>
           <div id="chainResult" class="result hidden"></div>
         </div>
 
@@ -283,7 +293,7 @@
             kaynaklar, formüller, backtest sonuçları, yansıma ve test noktaları.
             İndir → incele → istersen RAG'a geri besle.
           </p>
-          <button class="btn btn-primary" id="genSynthPaperBtn">📄 SENTEZ MAKALESİ ÜRET</button>
+          <button class="btn btn-primary" id="genSynthPaperBtn">SENTEZ MAKALESİ ÜRET</button>
           <button class="btn" id="refreshSynthPapers">↻ LİSTEYİ YENİLE</button>
           <div id="synthPaperResult" class="result hidden"></div>
           <div id="synthPapersList" class="sessions-list"></div>
@@ -529,7 +539,7 @@
             <button class="btn" id="autoLoraCheckBtn">🔍 Gate Kontrolü Başlat</button>
             <button class="btn btn-primary" id="autoLoraTrainBtn" disabled>▶ Eğitimi Onayla &amp; Başlat</button>
             <button class="btn" id="autoLoraPromoteBtn" disabled>⬆ Production'a Terfi Et</button>
-            <button class="btn" id="autoLoraResetBtn">↺ Sıfırla</button>
+            <button class="btn" id="autoLoraResetBtn">↻ Sıfırla</button>
           </div>
           <div class="setting-desc" style="margin-top:8px">
             <strong>Gate Kontrolü:</strong> 9 kalite kapısından geçip geçmediğini denetler (kaynak, şema, domain, kalite, matematik, felsefe, güvenlik, bölme). Tümü geçerse "Eğitimi Onayla" butonu aktif olur. |
