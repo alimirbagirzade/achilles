@@ -879,6 +879,52 @@ input:focus {
   color: var(--ink-dim);
 }
 
+/* ---------- ilk-açılış "nasıl çalışır" şeridi ---------- */
+.intro-banner {
+  position: relative;
+  margin: 0 0 20px;
+  padding: 16px 40px 16px 18px;
+  background: var(--primary-soft);
+  border: 1px solid var(--primary-border, var(--border));
+  border-radius: var(--radius);
+}
+.intro-banner h3 {
+  margin: 0 0 10px;
+  font-family: var(--display);
+  font-size: 17px;
+  color: var(--ink);
+}
+.intro-steps {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.7;
+}
+.intro-steps strong {
+  color: var(--primary);
+}
+.intro-foot {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  color: var(--ink-dim);
+}
+.intro-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  background: none;
+  border: none;
+  color: var(--ink-dim);
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 4px;
+}
+.intro-close:hover {
+  color: var(--ink);
+}
+
 /* ---------- about ---------- */
 .about-grid {
   display: grid;

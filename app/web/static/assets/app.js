@@ -2657,6 +2657,21 @@
   if (setupModalClose) setupModalClose.addEventListener('click', closeSetupModal);
   if (setupModalDismiss) setupModalDismiss.addEventListener('click', closeSetupModal);
 
+  // ---------- ilk-açılış "nasıl çalışır" şeridi (3 adım) ----------
+  var introBanner = document.getElementById("introBanner");
+  var introClose = document.getElementById("introClose");
+  if (introBanner && !localStorage.getItem("achilles_intro_seen")) {
+    introBanner.style.display = "block";
+  }
+  if (introClose) {
+    introClose.addEventListener("click", function () {
+      if (introBanner) introBanner.style.display = "none";
+      try {
+        localStorage.setItem("achilles_intro_seen", "1");
+      } catch (e) {}
+    });
+  }
+
   // ---------- 09 · ÖĞRENME dashboard ----------
 
   function _svgLinePath(points, xScale, yScale, viewW, viewH, padX, padY) {
