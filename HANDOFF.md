@@ -38,7 +38,12 @@ yeni `achilles doctor` ile canlı kanıtlandı):
 - **#55** — `docs/GUNCELLEME_KILAVUZU.md` (yeni-başlayan kullanım kılavuzu) + README tazeleme
   (eski `reset --hard` kurtarma → `update --force`; doctor/-Repair; SSS satırları).
 - **#56·#57** — stranded yerel iş cherry-pick (citation-degenerate guard + rag-chains-work
-  router/abstain/golden-eval, ~+1068). `fix/rlm-hardening-2` OLDUĞU GİBİ MERGE EDİLMEZ.
+  router/abstain/golden-eval, ~+1068; `bm25_corpus` Chroma→SQLite **bilinçli supersede** —
+  Chroma `get_all()` eşzamanlı erişimde BM25'i sessizce öldürüyordu, Kural 7). `fix/rlm-hardening-2`
+  OLDUĞU GİBİ MERGE EDİLMEZ (6428 satır siler) — **ama `git cherry` ile doğrulandı:** ahead
+  commit'lerinin İÇERİĞİ (`ed8a6bb`→#56, §16 `lora_candidate`, Kademe-2 hunt) tümüyle main'de →
+  **değerli-stranded iş KALMADI** (yeniden avlama); rag-chains-work + `achilles-chains` worktree
+  redundant, silinebilir.
 - **#58 (PREVENTİF)** — web header **sürüm/sapma rozeti**: `app/web/version_info.py` (offline
   git) + `GET /api/version` + rozet (yeşil "güncel ✓" / amber "N commit geride — güncelle" /
   "dal X main değil"). **30 dk throttle'lı offline-güvenli `git fetch`** → nightly görev bozuk
@@ -54,7 +59,10 @@ Rozet yeni kod olduğu için her makine bir kez daha `update` edince görünür.
 **GOTCHA:** PR otomasyonu BEHIND dalı kendi "Merge branch main" ile günceller; `gh pr
 update-branch <n>` ile elle tetiklenebilir (ben #58'de yaptım). İzole worktree origin/main'den
 açılınca origin ALTINDAN ilerleyebilir (eşzamanlı PR merge) → two-dot diff sahte "silme"; GitHub
-three-dot kullanır.
+three-dot kullanır. Windows: izole worktree `.venv`'i cockroachdb `cd.cp312-win_amd64.pyd` ile
+kilitlenince `git worktree remove` "Invalid argument" verir → git registry temiz (`prune` +
+merged branch sil) ama fiziksel dizin kilit çözülene (process/oturum bitene) kadar diskte kalır,
+sonra `Remove-Item -Recurse -Force`.
 
 ---
 
