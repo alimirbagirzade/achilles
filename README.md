@@ -2,7 +2,7 @@
 
 > **Yerel-öncelikli AI araştırma sistemi** — macOS · Windows · Linux.
 > Akademik finans makalelerini okur, trade hipotezleri üretir, backtest eder, sonuçtan öğrenir.
-> **Yerel Ollama** (ücretsiz, internetsiz) **veya bulut** (OpenAI · Anthropic · Google) ile çalışır — kurulumda seçersin.
+> **Yerel Ollama** ile çalışır (ücretsiz, internetsiz, API anahtarı gerektirmez — **VARSAYILAN ve önerilen**). Bulut sağlayıcılar (OpenAI · Anthropic · Google) **opsiyoneldir ve bu projede gerekmez** — çalışma-zamanı tamamen yereldir.
 
 > ⚠️ **Bu bir araştırma aracıdır — canlı bot DEĞİLDİR ve yatırım tavsiyesi VERMEZ.**
 > Tüm çıktılar test edilmesi gereken _hipotezlerdir_. Gerçek parayla kullanımın sorumluluğu tamamen size aittir.
