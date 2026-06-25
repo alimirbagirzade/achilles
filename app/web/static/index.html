@@ -31,12 +31,12 @@
         <span class="dot dot-idle" id="connDot"></span>
         <span id="connText">bağlanıyor…</span>
         <span class="sep">│</span>
-        <span id="paperCount" class="muted">papers: —</span>
+        <span id="paperCount" class="muted">makale: —</span>
         <span class="sep">│</span>
         <span id="trainBadge" class="muted" title="LoRA eğitim durumu (gerçek süreç — web veya detached/CLI)">eğitim: —</span>
         <span id="statusExtra" class="status-extra collapsed">
           <span class="sep">│</span>
-          <span id="embedMode" class="muted">embed: —</span>
+          <span id="embedMode" class="muted">gömme: —</span>
           <span class="sep">│</span>
           <span id="ragMastery" class="muted" title="RAG kaç makaleyi içerik kartına dönüştürüp anladı + eğitim hazırlığı">RAG anladı: —</span>
           <span class="sep">│</span>
@@ -255,7 +255,7 @@
                 </select>
               </label>
               <label class="topk">
-                max token
+                <span class="jargon" title="Modelin üreteceği en fazla parça (token) sayısı — yaklaşık cevap uzunluğu. Yüksek = daha uzun ama daha yavaş.">maks. token</span>
                 <input type="number" id="loraChatMaxTokens" min="16" max="1024" value="256" />
               </label>
               <button type="submit" class="btn btn-primary" id="loraChatBtn">💬 SOR →</button>

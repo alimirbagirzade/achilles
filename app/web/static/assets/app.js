@@ -321,8 +321,8 @@
         dot.className = "dot " + (s.ollama_available ? "dot-ok" : "dot-warn");
         txt.className = s.ollama_available ? "conn-ok" : "conn-warn";
         txt.textContent = s.ollama_available ? "ollama bağlı" : "ollama yok (RAG sınırlı)";
-        document.getElementById("embedMode").textContent = "embed: " + s.embedding_mode;
-        document.getElementById("paperCount").textContent = "papers: " + s.n_papers;
+        document.getElementById("embedMode").textContent = "gömme: " + s.embedding_mode;
+        document.getElementById("paperCount").textContent = "makale: " + s.n_papers;
         if (s.max_upload_mb) {
           MAX_UPLOAD_MB = s.max_upload_mb;
           var pdfH = document.getElementById("pdfHint");
@@ -559,7 +559,7 @@
     res.innerHTML =
       '<div class="result-section"><div class="result-label">durum</div>' +
       badge +
-      ' <span class="muted small">embed: ' +
+      ' <span class="muted small">gömme: ' +
       esc(data.embedding_mode) +
       "</span></div>" +
       '<div class="result-section"><div class="result-label">cevap</div>' +
