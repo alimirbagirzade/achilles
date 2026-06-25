@@ -48,8 +48,12 @@ def tr_fold(text: str) -> str:
 # api_key — daraltılmış sezgi (entropi + karakter-sınıfı + bilinen ön-ek)
 # --------------------------------------------------------------------------- #
 
-# 32+ karakter aday token (eski çıplak desenle aynı uzunluk eşiği).
-_API_KEY_CANDIDATE: re.Pattern[str] = re.compile(r"\b[A-Za-z0-9_\-]{32,}\b")
+# 32+ karakter aday token. base64/credential karakterlerini ('+','/','=') de İÇERİR:
+# kanonik AWS secret access key gibi '/'+'+' taşıyan sırlar aksi halde 32-altı parçalara
+# bölünüp entropi/sınıf sezgisini hiç tetiklemeden Gate 7'yi (BLOCKER) ATLIYORDU (FN). \b
+# yok çünkü '+/=' kelime-sınırı değil; çok-sınıf+yüksek-entropi kapısı hex hash/path/
+# tanımlayıcıyı yine eler (yalnız gerçek base64 sır geçer).
+_API_KEY_CANDIDATE: re.Pattern[str] = re.compile(r"[A-Za-z0-9_\-+/]{32,}={0,2}")
 # Gerçek rastgele anahtar bu eşiklerin üstünde; saf hex hash (≤2 sınıf) ve düz
 # tanımlayıcı/LaTeX (düşük entropi) altında kalır.
 _API_KEY_MIN_ENTROPY: float = 3.5
@@ -153,6 +157,57 @@ def _detect_national_id(text: str) -> bool:
     return False
 
 
+# --------------------------------------------------------------------------- #
+# phone — gerçek biçimlendirme iste (çıplak rakam dizisi telefon değil)
+# --------------------------------------------------------------------------- #
+
+# Eski desen tüm ön-ek/ayraçları opsiyonel yaptığından pratikte `\d{10}`'a çöküp
+# ayraçsız HERHANGİ 10/11-haneli sayıyı (Unix epoch, işlem hacmi, veri-kümesi satır
+# sayısı) telefon sanıyordu → national_id'nin (B5) geçirdiği sayıları Gate 7'de yeniden
+# FP'yle blokluyordu. Artık GERÇEK telefon biçimi zorunlu: +90 ön-eki, parantezli alan
+# kodu, ya da rakam grupları arasında AYRAÇ. Ayraçsız çıplak sayı telefon SAYILMAZ.
+_PHONE_FORMATTED: re.Pattern[str] = re.compile(
+    r"\+90[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}"  # +90 5xx xxx xx xx
+    r"|\(0?\d{3}\)[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}"  # (0212) 555 12 34
+    r"|\b0\d{2,3}[\s\-]\d{3}[\s\-]?\d{2}[\s\-]?\d{2}\b"  # 0212 555 12 34 (ayraç zorunlu)
+    r"|\b\d{3}[\s\-]\d{3}[\s\-]\d{2}[\s\-]\d{2}\b"  # 555 123 45 67 (gruplar ayraçlı)
+)
+
+
+# --------------------------------------------------------------------------- #
+# credential_assignment — sonek-toleranslı anahtar + sır-benzeri değer kapısı
+# --------------------------------------------------------------------------- #
+
+# Anahtar kelime ön-ek alır (aws_secret…, client_secret) ve yalnız credential-y sonek
+# bileşenleriyle uzar (secret_access_key) → 'tokenizer'/'token_count'/'max_tokens'/
+# 'password_strength' gibi tanımlayıcılar kelime-sınırı nedeniyle EŞLEŞMEZ. Değer ayrıca
+# sır-benzeri olmalı → proza ':' ardılı ('token: kelime') ve saf-sayı hiperparametre
+# ('token_count=5', 'secret_santa_budget=100000') FP'leri elenir.
+_CREDENTIAL_ASSIGN: re.Pattern[str] = re.compile(
+    r"(?i)\b[\w-]*?(?:password|passwd|secret|token|api[_-]?key|access[_-]?key)"
+    r"(?:[_-](?:key|token|id|secret|value|pwd|pass|access))*\b\s*[=:]\s*(\S+)"
+)
+
+
+def _detect_credential_assignment(text: str) -> bool:
+    """password=/secret:/aws_secret_access_key= gibi sır atamalarını ara (daraltılmış).
+
+    Değer tarafı sır-benzeri olmalı: bilinen sır ön-eki, YA DA ≥6 uzunluk + ≥2 karakter
+    sınıfı + makul entropi. Böylece 'token: kelime' (proza) ve 'token_count=5' / 'max_
+    tokens=512' (saf-sayı hiperparametre) Gate 7'yi kilitlemez; 'password=hunter2' ve
+    'aws_secret_access_key=<base64>' gerçek sırları yakalanır.
+    """
+    for match in _CREDENTIAL_ASSIGN.finditer(text):
+        value = match.group(1).strip("'\"`").rstrip(".,;:)")
+        if not value:
+            continue
+        if any(p.search(value) for p in _SECRET_PREFIX_PATTERNS):
+            return True
+        if len(value) >= 6 and _char_class_count(value) >= 2 and _shannon_entropy(value) >= 2.0:
+            return True
+    return False
+
+
 def _regex_detector(pattern: re.Pattern[str]) -> Callable[[str], bool]:
     """Bir derlenmiş regex'i `text -> bool` dedektörüne sar."""
 
@@ -176,25 +231,17 @@ FORBIDDEN_DETECTORS: list[tuple[str, Callable[[str], bool]]] = [
         "wallet_address",
         _regex_detector(re.compile(r"\b(?:0x[a-fA-F0-9]{40}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})\b")),
     ),
-    # password= / token= / secret= atamaları.
-    (
-        "credential_assignment",
-        _regex_detector(
-            re.compile(r"(?i)\b(?:password|passwd|token|secret|api[_-]?key)\s*[=:]\s*\S+")
-        ),
-    ),
+    # password= / token= / secret= / aws_secret_access_key= atamaları (sonek-toleranslı
+    # anahtar + sır-benzeri değer kapısı; proza ':' ve saf-sayı hiperparametre FP'siz).
+    ("credential_assignment", _detect_credential_assignment),
     # E-posta adresi.
     (
         "email",
         _regex_detector(re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")),
     ),
-    # Telefon numarası (TR / uluslararası kaba desen).
-    (
-        "phone",
-        _regex_detector(
-            re.compile(r"(?:\+90|0)?\s*\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}\b")
-        ),
-    ),
+    # Telefon numarası — GERÇEK biçim (ön-ek/parantez/ayraç) zorunlu; çıplak 10/11-haneli
+    # sayı (hacim/epoch/ID) telefon SAYILMAZ (eski desen \d{10}'a çöküp FP'yle GO kilitliyordu).
+    ("phone", _regex_detector(_PHONE_FORMATTED)),
     # TC kimlik numarası — checksum veya bağlam anahtarı ile daraltıldı.
     ("national_id", _detect_national_id),
 ]

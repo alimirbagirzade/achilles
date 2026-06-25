@@ -106,7 +106,13 @@ class ModelEvaluator:
         rows: list[EvalRowResult] = []
         for item in items:
             try:
-                ans = self.llm.generate(item.question, temperature=0.2, max_tokens=300)
+                # Determinizm (Kural 6): seed + temperature=0.0 → tekrarlanabilir eval skoru.
+                # Diğer eval/draft yolları (adapter_eval greedy, RlmController._draft seed)
+                # zaten determinist; bu klasik yol seed'i atlayıp her koşuda farklı score
+                # üretiyordu (eval tekrarlanamazlığı → Kural 2 dayanağını bozar).
+                ans = self.llm.generate(
+                    item.question, temperature=0.0, max_tokens=300, seed=self.settings.rlm_seed
+                )
             except LLMUnavailable:
                 ans = "[LLM çevrimdışı]"
             rows.append(EvalRowResult(item.question, ans, check_flags(ans, item.must_avoid)))
