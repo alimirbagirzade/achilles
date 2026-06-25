@@ -73,33 +73,135 @@
       .replace(/'/g, "&#39;");
   }
 
-  // ---------- tabs ----------
-  var tabs = document.querySelectorAll(".tab");
-  tabs.forEach(function (tab) {
-    tab.addEventListener("click", function () {
-      var name = tab.getAttribute("data-tab");
-      tabs.forEach(function (t) {
-        t.classList.remove("active");
-      });
-      tab.classList.add("active");
-      document.querySelectorAll(".panel").forEach(function (p) {
-        p.classList.remove("active");
-      });
-      document.getElementById("panel-" + name).classList.add("active");
-      if (name === "papers") loadPapers();
-      if (name === "trader") {
-        loadTraderBrain();
-        loadLoraAdapters();
-      }
-      if (name === "backtest") loadBacktestHistory();
-      if (name === "training") loadTrainingStatus();
-      if (name === "review") loadPendingCards();
-      if (name === "eval") loadEvalSets();
-      if (name === "about") loadSystemStatus();
-      if (name === "agents") loadAgentsDashboard();
-      if (name === "rlm") loadRlmDashboard();
+  // ---------- tabs + gruplar (navigasyon) ----------
+  // 11 sekme 5 mantıklı gruba toplanır. data-tab değerleri ve panel-<name>
+  // ID'leri DEĞİŞMEZ; bu yalnız üst-navigasyon + görünürlük katmanıdır.
+  var TAB_GROUPS = [
+    { key: "kesfet", tabs: ["research", "rlm"] },
+    { key: "kutuphane", tabs: ["papers"] },
+    { key: "trader", tabs: ["trader", "backtest"] },
+    { key: "egitim", tabs: ["review", "training", "eval"] },
+    { key: "izleme", tabs: ["learning", "agents", "about"] },
+  ];
+  var TAB_TO_GROUP = {};
+  TAB_GROUPS.forEach(function (g) {
+    g.tabs.forEach(function (name, i) {
+      TAB_TO_GROUP[name] = { key: g.key, order: i };
     });
   });
+  var ACTIVE_TAB_KEY = "achilles_active_tab";
+  var tabs = document.querySelectorAll(".tab");
+  var groupBtns = document.querySelectorAll(".group-btn");
+
+  function validTab(name) {
+    return !!(name && TAB_TO_GROUP[name] && document.getElementById("panel-" + name));
+  }
+
+  function runTabLoader(name) {
+    if (name === "papers") loadPapers();
+    if (name === "trader") {
+      loadTraderBrain();
+      loadLoraAdapters();
+    }
+    if (name === "backtest") loadBacktestHistory();
+    if (name === "training") loadTrainingStatus();
+    if (name === "review") loadPendingCards();
+    if (name === "eval") loadEvalSets();
+    if (name === "about") loadSystemStatus();
+    if (name === "agents") loadAgentsDashboard();
+    if (name === "rlm") loadRlmDashboard();
+  }
+
+  function showGroupTabs(groupKey) {
+    tabs.forEach(function (t) {
+      var info = TAB_TO_GROUP[t.getAttribute("data-tab")];
+      if (info && info.key === groupKey) {
+        t.style.display = "";
+        t.style.order = String(info.order);
+      } else {
+        t.style.display = "none";
+      }
+    });
+    groupBtns.forEach(function (b) {
+      b.classList.toggle("active", b.getAttribute("data-group") === groupKey);
+    });
+  }
+
+  function setActiveTab(name, opts) {
+    if (!validTab(name)) name = "research";
+    opts = opts || {};
+    showGroupTabs(TAB_TO_GROUP[name].key);
+    tabs.forEach(function (t) {
+      t.classList.toggle("active", t.getAttribute("data-tab") === name);
+    });
+    document.querySelectorAll(".panel").forEach(function (p) {
+      p.classList.remove("active");
+    });
+    document.getElementById("panel-" + name).classList.add("active");
+    if (opts.persist !== false) {
+      try {
+        window.localStorage.setItem(ACTIVE_TAB_KEY, name);
+      } catch (e) {}
+      var target = "#sekme=" + name;
+      if (target !== window.location.hash) {
+        try {
+          window.history.replaceState(null, "", target);
+        } catch (e) {
+          window.location.hash = "sekme=" + name;
+        }
+      }
+    }
+    if (opts.runLoader !== false) runTabLoader(name);
+  }
+
+  tabs.forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      setActiveTab(tab.getAttribute("data-tab"));
+    });
+  });
+
+  groupBtns.forEach(function (gb) {
+    gb.addEventListener("click", function () {
+      var groupKey = gb.getAttribute("data-group");
+      var active = document.querySelector(".tab.active");
+      var info = active ? TAB_TO_GROUP[active.getAttribute("data-tab")] : null;
+      if (info && info.key === groupKey) {
+        showGroupTabs(groupKey); // zaten bu gruptayız; yalnız şeridi göster
+      } else {
+        var grp = TAB_GROUPS.filter(function (g) {
+          return g.key === groupKey;
+        })[0];
+        setActiveTab(grp.tabs[0]);
+      }
+    });
+  });
+
+  function tabFromHash() {
+    var h = window.location.hash || "";
+    var m = h.match(/sekme=([a-z_]+)/i);
+    if (m && validTab(m[1])) return m[1];
+    if (h.length > 1 && validTab(h.slice(1))) return h.slice(1);
+    return null;
+  }
+
+  function restoreActiveTab() {
+    var name = tabFromHash();
+    if (!name) {
+      try {
+        var saved = window.localStorage.getItem(ACTIVE_TAB_KEY);
+        if (validTab(saved)) name = saved;
+      } catch (e) {}
+    }
+    if (!name) name = "research";
+    // 'research' varsayılan zaten aktif; ilk yüklemede onun loader'ı yok.
+    setActiveTab(name, { runLoader: name !== "research" });
+  }
+
+  window.addEventListener("hashchange", function () {
+    var name = tabFromHash();
+    if (name) setActiveTab(name);
+  });
+  setTimeout(restoreActiveTab, 0);
 
   // ---------- adapter listesi (global, status'dan yüklenir) ----------
   var _adapters = [];
