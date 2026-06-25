@@ -88,22 +88,12 @@ class RateLimiter:
     def __init__(self, per_minute: int) -> None:
         self.per_minute = per_minute
         self._hits: dict[str, deque[float]] = defaultdict(deque)
-        self._last_sweep: float = 0.0
 
     def check(self, client_ip: str) -> None:
         if self.per_minute <= 0:
             return
         now = time.monotonic()
         window_start = now - 60.0
-        # Periyodik süpürme: penceresi tamamen boşalmış IP girdilerini sil. Aksi halde ağa
-        # açık bir örnekte saldırgan kaynak IP'sini döndürerek (her istek farklı IP) _hits
-        # sözlüğüne sınırsız anahtar ekletir (yavaş bellek sızıntısı). En çok dakikada bir,
-        # son-isabeti pencere dışına düşmüş IP'leri temizle (O(n) ama nadiren çalışır).
-        if now - self._last_sweep > 60.0:
-            self._last_sweep = now
-            stale = [ip for ip, d in self._hits.items() if not d or d[-1] < window_start]
-            for ip in stale:
-                del self._hits[ip]
         dq = self._hits[client_ip]
         while dq and dq[0] < window_start:
             dq.popleft()
