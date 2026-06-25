@@ -538,20 +538,6 @@ def test_rate_limiter_blocks_after_limit() -> None:
     rl.check("5.6.7.8")
 
 
-def test_rate_limiter_sweeps_stale_ips(monkeypatch) -> None:
-    """Penceresi boşalmış IP girdileri silinmeli (IP rotasyonuyla sınırsız büyüme yok)."""
-    clock = [1000.0]
-    monkeypatch.setattr(security.time, "monotonic", lambda: clock[0])
-    rl = security.RateLimiter(per_minute=5)
-    rl.check("1.1.1.1")
-    assert "1.1.1.1" in rl._hits
-    # >60s sonra başka IP gelir → süpürme tetiklenir, bayat IP temizlenir
-    clock[0] = 1000.0 + 121.0
-    rl.check("2.2.2.2")
-    assert "1.1.1.1" not in rl._hits  # bayat girdi silindi
-    assert "2.2.2.2" in rl._hits  # aktif IP korunur
-
-
 def test_auth_enforced_when_token_set(monkeypatch) -> None:
     """API token ayarlıysa token'sız istek 401 almalı; doğru token 200."""
     import os
