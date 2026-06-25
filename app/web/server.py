@@ -1604,14 +1604,27 @@ def api_cards_pending() -> PendingCardsResponse:
     "/api/card/{card_id}/approve", response_model=ApproveCardResponse, dependencies=[api_auth]
 )
 def api_approve_card(card_id: str) -> ApproveCardResponse:
-    """Kartı onayla: review_status=approved, lora_eligible=1."""
+    """Kartı onayla: review_status=approved, lora_eligible=1.
+
+    ``approve_card`` False dönerse İKİ ayrı sebep olabilir: (a) kart hiç yok, ya da
+    (b) kart var ama içeriksiz/'...' placeholder (içerik guard'ı boş kartı eğitime
+    sokmaz — bkz. ``_card_has_content``). Eskiden ikisi de "Kart bulunamadı" diye
+    raporlanıyordu; kuyruk boş kartlarla doluyken her Onayla bu yanıltıcı mesajı verip
+    ekran "çalışmıyor" görünüyordu. Artık iki durumu ayırıp gerçek sebebi gösteriyoruz.
+    """
     from app.memory.sqlite_store import SqliteStore
 
-    ok = SqliteStore().approve_card(card_id)
-    if not ok:
+    store = SqliteStore()
+    if store.approve_card(card_id):
+        return ApproveCardResponse(
+            card_id=card_id, status="approved", message="Kart onaylandı, LoRA'ya girilebilir"
+        )
+    if store.get_card_by_id(card_id) is None:
         return ApproveCardResponse(card_id=card_id, status="not_found", message="Kart bulunamadı")
     return ApproveCardResponse(
-        card_id=card_id, status="approved", message="Kart onaylandı, LoRA'ya girilebilir"
+        card_id=card_id,
+        status="empty",
+        message="Kart boş/içeriksiz — onaylanamaz. Reddet'e basıp kuyruktan çıkarabilirsin.",
     )
 
 

@@ -374,7 +374,7 @@ class PendingCardsResponse(BaseModel):
 
 class ApproveCardResponse(BaseModel):
     card_id: str
-    status: str  # "approved" | "rejected" | "not_found"
+    status: str  # "approved" | "rejected" | "not_found" | "empty"
     message: str
 
 

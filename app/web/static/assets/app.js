@@ -2383,6 +2383,19 @@
           data.cards.forEach(function (card) {
             var diffPct = Math.round(card.difficulty * 100);
             var stageLabel = card.stage || "—";
+            // Boş/placeholder kart: backend içerik guard'ı bunu onaylamaz (title ve
+            // main_claim alfanümerik taşımıyor → eğitime boş kart sokulmaz). Kullanıcıya
+            // Onayla'nın neden çalışmadığını ÖNCEDEN göster ve butonu devre dışı bırak;
+            // tek geçerli eylem Reddet'tir (kuyruğu temizler).
+            var hasContent = /[0-9A-Za-zÇĞİÖŞÜçğıöşü]/.test(
+              (card.title || "") + " " + (card.main_claim || "")
+            );
+            var emptyBadge = hasContent
+              ? ""
+              : '<span class="badge badge-warning" style="margin-left:4px">boş içerik — onaylanamaz</span>';
+            var approveBtn = hasContent
+              ? '<button class="btn btn-success btn-approve" data-card-id="' + esc(card.card_id) + '" style="padding:4px 12px">✓ Onayla</button>'
+              : '<button class="btn btn-approve" data-card-id="' + esc(card.card_id) + '" style="padding:4px 12px;opacity:.45;cursor:not-allowed" disabled title="Boş/içeriksiz kart onaylanamaz — Reddet ile kuyruktan çıkar">✓ Onayla</button>';
             html +=
               '<div style="border:1px solid var(--border);border-radius:var(--radius);padding:10px;margin-bottom:8px">' +
               '<div style="display:flex;justify-content:space-between;align-items:center">' +
@@ -2390,9 +2403,10 @@
               '<strong>' + esc(card.title || card.paper_id) + "</strong>" +
               '<span class="badge badge-warning" style="margin-left:8px">' + esc(stageLabel) + "</span>" +
               '<span class="badge badge-info" style="margin-left:4px">zorluk %' + diffPct + "</span>" +
+              emptyBadge +
               "</div>" +
               '<div style="display:flex;gap:8px">' +
-              '<button class="btn btn-success btn-approve" data-card-id="' + esc(card.card_id) + '" style="padding:4px 12px">✓ Onayla</button>' +
+              approveBtn +
               '<button class="btn btn-danger btn-reject" data-card-id="' + esc(card.card_id) + '" style="padding:4px 12px">✗ Reddet</button>' +
               "</div></div>" +
               '<p style="color:#94a3b8;margin-top:6px;font-size:12px">' + esc(card.main_claim || "") + "</p>" +

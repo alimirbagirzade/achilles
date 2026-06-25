@@ -351,11 +351,16 @@ def cards_cmd(
         if not card_id:
             console.print("[red]approve için card_id gereklidir.[/red]")
             raise typer.Exit(1)
-        ok = store.approve_card(card_id)
-        if ok:
+        if store.approve_card(card_id):
             console.print(f"[green]Onaylandı:[/green] {card_id}")
-        else:
+        elif store.get_card_by_id(card_id) is None:
             console.print(f"[red]Kart bulunamadı:[/red] {card_id}")
+            raise typer.Exit(1)
+        else:
+            console.print(
+                f"[red]Kart boş/içeriksiz — onaylanamaz:[/red] {card_id} "
+                "(reddet ya da kartı yeniden üret)"
+            )
             raise typer.Exit(1)
 
     elif action == "reject":
