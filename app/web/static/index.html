@@ -31,12 +31,12 @@
         <span class="dot dot-idle" id="connDot"></span>
         <span id="connText">bağlanıyor…</span>
         <span class="sep">│</span>
-        <span id="paperCount" class="muted">papers: —</span>
+        <span id="paperCount" class="muted">makale: —</span>
         <span class="sep">│</span>
         <span id="trainBadge" class="muted" title="LoRA eğitim durumu (gerçek süreç — web veya detached/CLI)">eğitim: —</span>
         <span id="statusExtra" class="status-extra collapsed">
           <span class="sep">│</span>
-          <span id="embedMode" class="muted">embed: —</span>
+          <span id="embedMode" class="muted">gömme: —</span>
           <span class="sep">│</span>
           <span id="ragMastery" class="muted" title="RAG kaç makaleyi içerik kartına dönüştürüp anladı + eğitim hazırlığı">RAG anladı: —</span>
           <span class="sep">│</span>
@@ -214,7 +214,7 @@
 
         <!-- Araştırma Döngüsü -->
         <div class="training-section">
-          <h3>2 · Agentic Araştırma</h3>
+          <h3>2 · <span class="jargon" title="Agentic = kendi kendine adım adım çalışan AI döngüsü: formülleri sentezler → indikatör önerir → backtest eder → sonuca göre kendini iyileştirir.">Agentic</span> Araştırma</h3>
           <p class="muted small">
             LLM tüm formülleri sentezler → yeni indikatör önerir → backtest eder → yansıtır → iyileştirir.
           </p>
@@ -255,7 +255,7 @@
                 </select>
               </label>
               <label class="topk">
-                max token
+                <span class="jargon" title="Modelin üreteceği en fazla parça (token) sayısı — yaklaşık cevap uzunluğu. Yüksek = daha uzun ama daha yavaş.">maks. token</span>
                 <input type="number" id="loraChatMaxTokens" min="16" max="1024" value="256" />
               </label>
               <button type="submit" class="btn btn-primary" id="loraChatBtn">💬 SOR →</button>
@@ -267,7 +267,7 @@
         <!-- Zincir Veri Seti -->
         <div class="training-section">
           <h3>4 · Zincir Veri Seti (LoRA)</h3>
-          <p class="muted small">Araştırma oturumlarını reasoning-chain eğitim verisine çevir.</p>
+          <p class="muted small">Araştırma oturumlarını <span class="jargon" title="Reasoning-chain — modelin 'adım adım nasıl düşündüğünü' gösteren akıl-yürütme zinciri; LoRA'ya bu örneklerle muhakeme öğretilir.">reasoning-chain</span> eğitim verisine çevir.</p>
           <label class="filter-btn-label">
             <input type="checkbox" id="onlySuccessful" /> Yalnız başarılı oturumlar
           </label>
@@ -303,7 +303,7 @@
           <h2>Strateji Backtest</h2>
           <p class="muted">
             Sentetik <b>veya gerçek <span class="jargon" title="Open-High-Low-Close-Volume — her zaman diliminin açılış / en yüksek / en düşük / kapanış (ve hacim) fiyatı; standart fiyat verisi formatı.">OHLCV</span> CSV</b> üzerinde örnek strateji. Motor
-            look-ahead'siz, maliyetli ve <span class="jargon" title="Out-of-sample: stratejinin görmediği veri üzerinde test — ezberi gerçek başarıdan ayırır (overfit denetimi).">örneklem-dışı</span> denetimli. Zayıf strateji
+            <span class="jargon" title="Look-ahead bias — geleceğin verisini yanlışlıkla bugünün kararına sızdırmak. Yasak: pozisyon shift(1) ile gecikmeli uygulanır.">look-ahead'siz</span>, maliyetli ve <span class="jargon" title="Out-of-sample: stratejinin görmediği veri üzerinde test — ezberi gerçek başarıdan ayırır (overfit denetimi).">örneklem-dışı</span> denetimli. Zayıf strateji
             <b>FAIL</b> alır.
           </p>
         </div>
@@ -351,7 +351,7 @@
         <div id="btResult" class="result hidden"></div>
 
         <details class="bt-custom-section">
-          <summary class="bt-custom-toggle">⚙ Özel strateji IR (JSON) ile backtest</summary>
+          <summary class="bt-custom-toggle">⚙ Özel <span class="jargon" title="StrategyIR — stratejinin makineye okunur JSON tarifi (indikatörler, giriş/çıkış kuralları, maliyetler). Kod değil güvenli veri; eval/exec yok.">strateji IR (JSON)</span> ile backtest</summary>
           <div class="bt-custom-body">
             <p class="muted small">
               Geçerli bir StrategyIR JSON'u yapıştır. Boş bırakırsan örnek EMA/RSI stratejisi kullanılır.
@@ -465,7 +465,7 @@
 
         <!-- 5. Adapter'lar -->
         <div class="training-section" id="adaptersSection">
-          <h3>5 · Kayıtlı Adapter'lar</h3>
+          <h3>5 · Kayıtlı <span class="jargon" title="Adapter — LoRA eğitiminin küçük çıktı dosyası; base modele takılıp onu baştan eğitmeden uzmanlaştırır.">Adapter'lar</span></h3>
           <button class="btn" id="refreshAdapters">↻ YENİLE</button>
           <div id="adaptersList" class="adapters-list"></div>
         </div>
@@ -481,7 +481,7 @@
         <div class="training-section" id="autoLoraSection">
           <h3>7 · Otomatik LoRA Pipeline</h3>
           <p class="muted small">
-            Yeterli kart birikince Gate 0-8 otomatik denetlenir.
+            Yeterli kart birikince <span class="jargon" title="Gate 0-8 — eğitim öncesi 9 kalite kapısı (kaynak, şema, domain, matematik, felsefe, güvenlik, bölme…); hepsi geçmeden gerçek eğitim açılmaz.">Gate 0-8</span> otomatik denetlenir.
             <strong>Eğitim ve production terfi kullanıcı onayı gerektirir.</strong>
           </p>
 
@@ -702,7 +702,7 @@
         <div class="card" style="margin-bottom:1rem">
           <div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:center">
             <div><span class="muted small">Makaleler</span><br><strong id="lrn-papers">—</strong></div>
-            <div><span class="muted small">Chunk'lar</span><br><strong id="lrn-chunks">—</strong></div>
+            <div><span class="jargon muted small" title="Chunk — makalenin aramada kullanılan küçük metin parçası; PDF parçalanıp indekslenir, RAG bunları getirir.">Chunk'lar</span><br><strong id="lrn-chunks">—</strong></div>
             <div><span class="muted small">Onaylı Kart</span><br><strong id="lrn-approved">—</strong></div>
             <div><span class="muted small">Bekleyen Kart</span><br><strong id="lrn-pending">—</strong></div>
             <button class="btn btn-sm" id="lrnRefreshBtn" style="margin-left:auto">YENİLE</button>

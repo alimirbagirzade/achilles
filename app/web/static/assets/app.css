@@ -1712,6 +1712,47 @@ code {
   .brand-name {
     font-size: 21px;
   }
+  /* Nav: dar ekranda gizli yatay kaydırma yerine sar — tüm gruplar görünür */
+  .groups,
+  .tabs {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+  /* Formlar: sabit piksel genişlikleri akışkan yap — taşmayı önle */
+  .ask-row {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .ask-row .btn {
+    width: 100%;
+  }
+  .topk,
+  .adapter-select-label {
+    flex: 1 1 auto;
+  }
+  .topk input {
+    width: 100%;
+  }
+  .research-row {
+    flex-wrap: wrap;
+  }
+  .bt-form input,
+  .dry-run-form input[type="text"],
+  .dry-run-form input[type="number"],
+  .research-row input[type="number"],
+  .arxiv-form input[type="search"] {
+    width: 100%;
+    max-width: 100%;
+  }
+  .arxiv-form,
+  .eval-run-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .eval-run-row .eval-select {
+    min-width: 0;
+    width: 100%;
+  }
 }
 
 /* ── Training Progress UI ── */
