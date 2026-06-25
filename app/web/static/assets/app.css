@@ -1,6 +1,8 @@
 /* ACHILLES — trading research · LIGHT, clean, color-blind-safe UI.
-   Açık ve ferah arayüz. CVD-güvenli palet: ana renk MAVİ (azur), pozitif TEAL+✓,
-   negatif KIRMIZI+✕, uyarı AMBER+≈ — anlam asla yalnız renkle verilmez. */
+   CVD-güvenli palet (Okabe-Ito tabanlı): pass SOĞUK bluish-green+✓, fail SICAK
+   vermillion+✕, uyarı amber+≈, birincil mavi. pass↔fail sıcak/soğuk (mavi-sarı)
+   ekseninde ayrılır — kırmızı-yeşil körlüğünden bağımsız; anlam asla yalnız renkle
+   verilmez (✓/✕/≈ + şekil). Tüm metin renkleri WCAG AA doğrulandı. */
 
 :root {
   --bg: #f5f7fb;
@@ -13,26 +15,26 @@
   --ink-dim: #475569; /* slate-600 */
   --muted: #94a3b8; /* slate-400 */
 
-  --primary: #2563eb; /* blue-600 — interaktif/marka (CVD-safe) */
-  --primary-strong: #1d4ed8;
-  --primary-soft: #eff6ff;
+  --primary: #0b6eb3; /* Okabe-Ito blue — interaktif/marka (CVD-safe, AA 5.4) */
+  --primary-strong: #0a5d96;
+  --primary-soft: #eef5fb;
 
-  --pos: #0369a1; /* sky-700 — pozitif/pass — CVD-safe mavi */
-  --pos-soft: #e0f2fe;
-  --pos-border: #7dd3fc;
+  --pos: #0a7d55; /* bluish-green — pozitif/pass — SOĞUK (mavi=85), CVD-safe + ✓ */
+  --pos-soft: #eef8f3;
+  --pos-border: #86ccac;
 
-  --neg: #c2410c; /* orange-700 — negatif/fail — CVD-safe turuncu */
-  --neg-soft: #fff7ed;
-  --neg-border: #fed7aa;
+  --neg: #cf4014; /* vermillion — negatif/fail — SICAK (mavi=20), CVD-safe + ✕ */
+  --neg-soft: #fdf2eb;
+  --neg-border: #f2ad8a;
 
-  --warn: #d97706; /* amber-600 — uyarı/inconclusive (+ ≈) */
-  --warn-soft: #fffbeb;
-  --warn-border: #fde68a;
+  --warn: #9a6a00; /* amber — uyarı/inconclusive (+ ≈); sıcak ama neg'den ayrı */
+  --warn-soft: #fdf7e8;
+  --warn-border: #e8c98a;
 
-  --ok: #0d9488; /* teal-600 — bağlı/olumlu — CVD-safe (YEŞİL DEĞİL; kırmızıyla karışmaz) */
-  --ok-ring: rgba(13, 148, 136, 0.18);
-  --live: #c2410c; /* orange-700 — canlı eğitim — CVD-safe, nabızla pekişir */
-  --live-ring: rgba(194, 65, 12, 0.45);
+  --ok: #2a7d9e; /* cyan-blue — bağlı/olumlu (soğuk, CVD-safe) */
+  --ok-ring: rgba(42, 125, 158, 0.18);
+  --live: #cf4014; /* vermillion — canlı eğitim — nabızla pekişir */
+  --live-ring: rgba(207, 64, 20, 0.45);
 
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --display: "Fraunces", Georgia, serif;
