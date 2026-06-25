@@ -130,6 +130,42 @@
       TAB_TO_GROUP[name] = { key: g.key, order: i };
     });
   });
+  var GROUP_LABELS = {
+    kesfet: "Keşfet & sor",
+    kutuphane: "Kütüphane",
+    trader: "Trader & backtest",
+    egitim: "Eğitim hattı",
+    izleme: "İzleme & sağlık",
+  };
+  var NEXT_STEPS = {
+    research: "Sonuç gelmiyorsa önce Kütüphane'den makale ekle, sonra burada soru sor.",
+    rlm: "Daha titiz, iddia-düzeyi kaynak-doğrulamalı cevap için bir koşuya tıkla.",
+    papers: "PDF sürükle-bırak ya da arXiv'den çek; sonra Keşfet & sor'da soru sor.",
+    trader: "Formül çıkar → agentic araştırma; öneriler otomatik backtest edilir.",
+    backtest: "Sentetik veya CSV ile çalıştır; sonucu PASS/FAIL/INCONCLUSIVE oku.",
+    review: "Bekleyen kartları onayla/reddet; onaylananlar Eğitim dataset'ine girer.",
+    training: "(İleri) Önce Onay'da kart onayla, dataset oluştur, sonra eğit.",
+    eval: "Adapter + eval seti seç; kural ihlali (uydurma/garanti kâr) taranır.",
+    about: "Canlı durum, donanım profili ve disiplin kuralları burada.",
+    learning: "RAG öğrenme döngüsü, loss eğrisi ve objektif anlama geçmişi.",
+    agents: "Görünürlük + onay + STOP_ALL; yeni tehlikeli yetenek yok.",
+  };
+  function updateNextStep(name) {
+    var box = document.getElementById("nextStep");
+    var txt = document.getElementById("nextStepText");
+    if (!box || !txt) return;
+    var hint = NEXT_STEPS[name];
+    if (!hint) {
+      box.style.display = "none";
+      return;
+    }
+    var info = TAB_TO_GROUP[name];
+    var label = info ? GROUP_LABELS[info.key] : "";
+    txt.innerHTML =
+      "<strong>Şu an:</strong> " + esc(label) +
+      " &middot; <strong>Sonraki adım:</strong> " + esc(hint);
+    box.style.display = "flex";
+  }
   var ACTIVE_TAB_KEY = "achilles_active_tab";
   var tabs = document.querySelectorAll(".tab");
   var groupBtns = document.querySelectorAll(".group-btn");
@@ -192,6 +228,7 @@
         }
       }
     }
+    updateNextStep(name);
     if (opts.runLoader !== false) runTabLoader(name);
   }
 
@@ -243,6 +280,17 @@
     if (name) setActiveTab(name);
   });
   setTimeout(restoreActiveTab, 0);
+
+  // ---------- durum çubuğu: ekstra göstergeleri aç/kapat ----------
+  var statusMoreBtn = document.getElementById("statusMoreBtn");
+  var statusExtra = document.getElementById("statusExtra");
+  if (statusMoreBtn && statusExtra) {
+    statusMoreBtn.addEventListener("click", function () {
+      var collapsed = statusExtra.classList.toggle("collapsed");
+      statusMoreBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      statusMoreBtn.textContent = collapsed ? "⋯ tümü" : "× kapat";
+    });
+  }
 
   // ---------- adapter listesi (global, status'dan yüklenir) ----------
   var _adapters = [];

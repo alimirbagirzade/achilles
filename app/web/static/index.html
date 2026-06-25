@@ -31,17 +31,20 @@
         <span class="dot dot-idle" id="connDot"></span>
         <span id="connText">bağlanıyor…</span>
         <span class="sep">│</span>
-        <span id="embedMode" class="muted">embed: —</span>
-        <span class="sep">│</span>
         <span id="paperCount" class="muted">papers: —</span>
         <span class="sep">│</span>
-        <span id="ragMastery" class="muted" title="RAG kaç makaleyi içerik kartına dönüştürüp anladı + eğitim hazırlığı">RAG anladı: —</span>
-        <span class="sep">│</span>
-        <span id="objUnderstanding" class="muted clickable" title="Objektif anlama skoru — L3/L4 sınav geçme oranı (LLM gerekir; tıkla hesapla). Kaba öz-değerlendirmenin yerine objektif kanıt.">obj. anlama: tıkla</span>
-        <span class="sep">│</span>
         <span id="trainBadge" class="muted" title="LoRA eğitim durumu (gerçek süreç — web veya detached/CLI)">eğitim: —</span>
-        <span class="sep">│</span>
-        <span id="versionBadge" class="muted" title="Sürüm durumu — bu makine GitHub 'main' ile güncel mi? (geride kalırsa uyarır)">sürüm: —</span>
+        <span id="statusExtra" class="status-extra collapsed">
+          <span class="sep">│</span>
+          <span id="embedMode" class="muted">embed: —</span>
+          <span class="sep">│</span>
+          <span id="ragMastery" class="muted" title="RAG kaç makaleyi içerik kartına dönüştürüp anladı + eğitim hazırlığı">RAG anladı: —</span>
+          <span class="sep">│</span>
+          <span id="objUnderstanding" class="muted clickable" title="Objektif anlama skoru — L3/L4 sınav geçme oranı (LLM gerekir; tıkla hesapla). Kaba öz-değerlendirmenin yerine objektif kanıt.">obj. anlama: tıkla</span>
+          <span class="sep">│</span>
+          <span id="versionBadge" class="muted" title="Sürüm durumu — bu makine GitHub 'main' ile güncel mi? (geride kalırsa uyarır)">sürüm: —</span>
+        </span>
+        <button type="button" id="statusMoreBtn" class="status-more" aria-expanded="false" title="Diğer göstergeleri göster/gizle">⋯ tümü</button>
       </div>
     </header>
 
@@ -74,6 +77,11 @@
     </nav>
 
     <main>
+      <div class="next-step" id="nextStep" style="display:none">
+        <span class="next-step-icon" aria-hidden="true">→</span>
+        <span id="nextStepText"></span>
+      </div>
+
       <!-- RESEARCH -->
       <section class="panel active" id="panel-research">
         <div class="hero">
