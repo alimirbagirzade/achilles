@@ -3,9 +3,10 @@
 #   .\scripts\start-server.ps1            -- simdi baslat (zaten calisiyorsa DOKUNMAZ)
 #   .\scripts\start-server.ps1 -Restart   -- durdur + tekrar baslat (git pull SONRASI bunu kullan)
 #   .\scripts\start-server.ps1 -Install   -- Windows acilisina ekle + simdi baslat
+#   .\scripts\start-server.ps1 -Repair    -- autostart/03:00 gorev yollarini BU repoya yeniden bagla
 #   .\scripts\start-server.ps1 -Uninstall -- Windows acilisindan kaldir + durdur
 #   .\scripts\start-server.ps1 -Stop      -- durdur
-#   .\scripts\start-server.ps1 -Status    -- durum goster
+#   .\scripts\start-server.ps1 -Status    -- durum goster (gorev yolu bu repoyu mu isaret ediyor?)
 #
 # NOT: Yeni backend rotalari (orn. /api/agents, AGENTS sekmesi) yalniz proses
 # ACILISINDA yuklenir. `git pull` ettikten sonra duz `start-server.ps1` ESKI
@@ -19,6 +20,7 @@ param(
     [switch]$Status,
     [switch]$Stop,
     [switch]$Restart,     # durdur + tekrar baslat (git pull sonrasi yeni kodu uygula)
+    [switch]$Repair,      # autostart/guncelleme gorevlerinin yolunu BU repoya yeniden bagla
     [switch]$SkipVerify   # -Install'da cevrimdisi dogrulama kapisini atla (acil kacis)
 )
 
@@ -169,6 +171,107 @@ function Stop-AchillesServer {
     }
 }
 
+# ---------------------------------------------------------------- self-heal yardimcilari
+# Bir scheduled task'in action'indan gomulu .vbs/.ps1 hedef yolunu cikar (salt-okuma)
+function Get-EmbeddedTaskPath {
+    param([string]$TaskName)
+    $t = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if (-not $t) { return $null }
+    $arg = ($t.Actions | Select-Object -First 1).Arguments
+    if ($arg -and ($arg -match '"([^"]+\.(?:vbs|ps1))"')) { return $matches[1] }
+    return ($t.Actions | Select-Object -First 1).WorkingDirectory
+}
+
+# Gomulu yol bu repoyu mu isaret ediyor? (normalize edilmis, case-insensitive tam yol)
+function Test-PathMatchesRepo {
+    param([string]$Embedded, [string]$Expected)
+    if (-not $Embedded -or -not $Expected) { return $false }
+    try {
+        $e = [System.IO.Path]::GetFullPath($Embedded).TrimEnd('\')
+        $x = [System.IO.Path]::GetFullPath($Expected).TrimEnd('\')
+        return ($e -ieq $x)
+    } catch { return $false }
+}
+
+# VBS + Registry Run + AchillesWeb/AchillesUpdate gorevlerini MEVCUT checkout'a yaz
+# (idempotent kendini-onarma). Cagrildigi $ProjectDir/$ScriptDir'e gomer. git'e DOKUNMAZ.
+# Yukseltilmemis (non-admin) oturumda Register-ScheduledTask basarisiz olabilir; sessiz
+# "[OK]" yerine GERCEK sonucu raporlamak icin $script:AutostartOk izlenir.
+function Sync-Autostart {
+    $script:AutostartOk = $true
+
+    # VBS olustur: uv tam yolunu degil, start-server.ps1'i (PATH-bagimsiz) cagirir
+    $thisScript = Join-Path $ScriptDir "start-server.ps1"
+    $vbsContent = @"
+Dim sh
+Set sh = CreateObject("WScript.Shell")
+sh.Run "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -NonInteractive -File """ & "$($thisScript -replace '"','\"')" & """", 0, False
+Set sh = Nothing
+"@
+    $vbsContent | Out-File -FilePath $VbsFile -Encoding ascii -Force
+
+    # Registry Run anahtari (her login'de otomatik calisir)
+    Set-ItemProperty -Path $RegPath -Name $RegKey -Value "wscript.exe `"$VbsFile`"" -Force
+    Write-Host "  [OK] Windows acilisina eklendi (Registry Run)" -ForegroundColor Green
+    Write-Host "       $VbsFile" -ForegroundColor Gray
+
+    # Task Scheduler (web servisi yedek)
+    $action   = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$VbsFile`"" -WorkingDirectory $ProjectDir
+    $trigger  = New-ScheduledTaskTrigger -AtLogOn
+    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -StartWhenAvailable `
+        -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 2)
+    try {
+        Register-ScheduledTask -TaskName "AchillesWeb" -Action $action `
+            -Trigger $trigger -Settings $settings -RunLevel Highest -Force -ErrorAction Stop | Out-Null
+        Write-Host "  [OK] Gorev Zamanlayici yedegi eklendi" -ForegroundColor Green
+    } catch {
+        $script:AutostartOk = $false
+        Write-Host "  [!] AchillesWeb gorevi KAYDEDILEMEDI (Yonetici PowerShell gerekebilir)." -ForegroundColor Yellow
+    }
+
+    # Gunluk otomatik guncelleme gorevi (her gun 03:00) -- BU repodaki update.ps1
+    $updateScript = Join-Path $ProjectDir "update.ps1"
+    $updateAction = New-ScheduledTaskAction `
+        -Execute "powershell.exe" `
+        -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -NonInteractive -File `"$updateScript`"" `
+        -WorkingDirectory $ProjectDir
+    $updateTrigger  = New-ScheduledTaskTrigger -Daily -At "03:00"
+    $updateSettings = New-ScheduledTaskSettingsSet `
+        -ExecutionTimeLimit (New-TimeSpan -Minutes 10) `
+        -StartWhenAvailable
+    try {
+        Register-ScheduledTask -TaskName "AchillesUpdate" -Action $updateAction `
+            -Trigger $updateTrigger -Settings $updateSettings -RunLevel Highest -Force -ErrorAction Stop | Out-Null
+        Write-Host "  [OK] Gunluk otomatik guncelleme eklendi (her gun 03:00)" -ForegroundColor Green
+    } catch {
+        $script:AutostartOk = $false
+        Write-Host "  [!] AchillesUpdate gorevi KAYDEDILEMEDI (Yonetici PowerShell gerekebilir)." -ForegroundColor Yellow
+    }
+}
+
+# Kayitli gorev/Registry yolu bu repodan farkliysa (veya yoksa) yeniden gom. git'e DOKUNMAZ.
+function Repair-Autostart {
+    $webEmb = Get-EmbeddedTaskPath -TaskName "AchillesWeb"
+    $updEmb = Get-EmbeddedTaskPath -TaskName "AchillesUpdate"
+    $regVal = (Get-ItemProperty -Path $RegPath -Name $RegKey -ErrorAction SilentlyContinue).$RegKey
+    $needs = $false
+    if (-not (Test-PathMatchesRepo $webEmb $VbsFile)) { $needs = $true }
+    if (-not (Test-PathMatchesRepo $updEmb (Join-Path $ProjectDir 'update.ps1'))) { $needs = $true }
+    if (-not $regVal -or ($regVal -notlike "*$VbsFile*")) { $needs = $true }
+    if (-not $needs) {
+        Write-Host "  [OK] Gorevler ve Registry zaten bu repoya isaret ediyor -- onarim gereksiz" -ForegroundColor Green
+        return
+    }
+    Write-Host "  [..] Gorev/Registry yollari bu repoyla uyumsuz -- yeniden gomuluyor" -ForegroundColor Yellow
+    Sync-Autostart
+    if ($script:AutostartOk) {
+        Write-Host "  [OK] Onarildi -- gorevler $ProjectDir konumuna isaret ediyor" -ForegroundColor Green
+        Write-Host "       (dogrulamak icin: .\scripts\start-server.ps1 -Status)" -ForegroundColor Gray
+    } else {
+        Write-Host "  [!] KISMEN onarildi -- bazi gorevler kaydedilemedi (Yonetici olarak tekrar deneyin)." -ForegroundColor Yellow
+    }
+}
+
 # ---------------------------------------------------------------- kurulum
 # Neden Registry + VBS?
 # Task Scheduler PATH'i olmadan calisir -- uv bulunamaz.
@@ -195,43 +298,9 @@ function Install-Autostart {
         }
     }
 
-    # VBS olustur: uv tam yolunu icerir, PATH'e bagimli degil
-    $thisScript = Join-Path $ScriptDir "start-server.ps1"
-    $vbsContent = @"
-Dim sh
-Set sh = CreateObject("WScript.Shell")
-sh.Run "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -NonInteractive -File """ & "$($thisScript -replace '"','\"')" & """", 0, False
-Set sh = Nothing
-"@
-    $vbsContent | Out-File -FilePath $VbsFile -Encoding ascii -Force
-
-    # Registry Run anahtarina ekle (her login'de otomatik calisir)
-    Set-ItemProperty -Path $RegPath -Name $RegKey -Value "wscript.exe `"$VbsFile`"" -Force
-    Write-Host "  [OK] Windows acilisina eklendi (Registry Run)" -ForegroundColor Green
-    Write-Host "       $VbsFile" -ForegroundColor Gray
-
-    # Task Scheduler'a da ekle (web servisi yedek)
-    $action   = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$VbsFile`"" -WorkingDirectory $ProjectDir
-    $trigger  = New-ScheduledTaskTrigger -AtLogOn
-    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -StartWhenAvailable `
-        -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 2)
-    Register-ScheduledTask -TaskName "AchillesWeb" -Action $action `
-        -Trigger $trigger -Settings $settings -RunLevel Highest -Force | Out-Null
-    Write-Host "  [OK] Gorev Zamanlayici yedegi eklendi" -ForegroundColor Green
-
-    # Gunluk otomatik guncelleme gorevini kaydet (her gun 03:00)
-    $updateScript = Join-Path $ProjectDir "update.ps1"
-    $updateAction = New-ScheduledTaskAction `
-        -Execute "powershell.exe" `
-        -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -NonInteractive -File `"$updateScript`"" `
-        -WorkingDirectory $ProjectDir
-    $updateTrigger  = New-ScheduledTaskTrigger -Daily -At "03:00"
-    $updateSettings = New-ScheduledTaskSettingsSet `
-        -ExecutionTimeLimit (New-TimeSpan -Minutes 10) `
-        -StartWhenAvailable
-    Register-ScheduledTask -TaskName "AchillesUpdate" -Action $updateAction `
-        -Trigger $updateTrigger -Settings $updateSettings -RunLevel Highest -Force | Out-Null
-    Write-Host "  [OK] Gunluk otomatik guncelleme eklendi (her gun 03:00)" -ForegroundColor Green
+    # VBS + Registry Run + AchillesWeb/AchillesUpdate gorevlerini BU checkout'a yaz
+    # (tek dogru kaynak; -Install her cagrildiginda mevcut $ProjectDir'e yeniden gomer).
+    Sync-Autostart
 
     # Hemen baslat
     Start-OllamaIfNeeded
@@ -266,12 +335,17 @@ function Show-Status {
     Write-Host "  Zamanlayici: $(if ($task) { $task.State } else { 'kayitli degil' })" -ForegroundColor Gray
     $upd = Get-ScheduledTask -TaskName "AchillesUpdate" -ErrorAction SilentlyContinue
     Write-Host "  Guncelleme : $(if ($upd) { 'kayitli (her gece 03:00)' } else { 'kayitli degil' })" -ForegroundColor Gray
+    # Gomulu gorev yollari BU repoyu mu isaret ediyor? (olu/yabanci yol tespiti)
+    Write-Host "  Web yolu   : $(Format-PathMatch (Get-EmbeddedTaskPath 'AchillesWeb') $VbsFile)" -ForegroundColor Gray
+    Write-Host "  Upd yolu   : $(Format-PathMatch (Get-EmbeddedTaskPath 'AchillesUpdate') (Join-Path $ProjectDir 'update.ps1'))" -ForegroundColor Gray
+    Write-Host "  Bu repo    : $ProjectDir" -ForegroundColor Gray
     Write-Host "  Log        : $LogOut" -ForegroundColor Gray
     Write-Host "  uv yolu    : $UvPath" -ForegroundColor Gray
 }
 
 # ---------------------------------------------------------------- ana
 if ($Install)   { Install-Autostart;   exit 0 }
+if ($Repair)    { Repair-Autostart;    exit 0 }
 if ($Uninstall) { Uninstall-Autostart; exit 0 }
 if ($Stop)      { Stop-AchillesServer; exit 0 }
 if ($Status)    { Show-Status;         exit 0 }
