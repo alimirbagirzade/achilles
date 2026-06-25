@@ -87,6 +87,7 @@ from app.web.schemas import (
     TrainingStartRequest,
     TrainingStartResponse,
     TrainingStatusResponse,
+    VersionResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -223,6 +224,14 @@ def api_status() -> StatusResponse:
         n_chunks=n_chunks,
         max_upload_mb=s.max_upload_mb,
     )
+
+
+@app.get("/api/version", response_model=VersionResponse, dependencies=[api_auth])
+def api_version() -> VersionResponse:
+    """Sürüm/sapma rozeti — bu makine origin/main'e göre güncel mi? (salt-okuma, offline)."""
+    from app.web.version_info import get_version_info
+
+    return VersionResponse(**get_version_info())
 
 
 @app.get("/api/papers", response_model=list[PaperOut], dependencies=[api_auth])
