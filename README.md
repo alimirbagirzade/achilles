@@ -63,7 +63,7 @@ Kurulum açılır ve **18 model seçeneği** sunar:
 şu **tek satırı** kopyala-yapıştır. Achilles klasörünü **kendisi bulur**, girer ve günceller
 (her şeyi düzeltir, verilerin silinmez, izin/`chmod` gerekmez):
 ```bash
-cd "$(find ~ -type d -name achilles 2>/dev/null | head -1)" && git fetch origin main && git reset --hard origin/main && bash update.sh
+cd "$(find ~ -type d -name achilles 2>/dev/null | head -1)" && bash update.sh --force
 ```
 
 ---
@@ -86,7 +86,8 @@ Kurulum başında 18 model seçeneği çıkar — bulut model seçersen Ollama a
 > 🌐 **Uzaktan / kiralık sunucu mu?** `setup.sh` sana **"yerel mi, uzaktan mı erişeceksin?"** diye sorar. **Uzaktan** seçersen web `0.0.0.0`'a açılır + otomatik **API token** (şifre) üretir; kurulum sonunda **doğrulama** (`scripts/verify-install.sh`) ve isteğe bağlı **açılışta otomatik başlatma** (systemd) da yapılır. 8765 portunu sağlayıcının firewall'ında açmayı unutma.
 
 **🔄 Sonradan güncelleme** (kurduğun klasörde): `bash update.sh` (takılırsa
-`bash update.sh --force`). `update.sh` yoksa: `git fetch origin main && git reset --hard origin/main && bash update.sh`. Detay: aşağıdaki **Güncelleme** bölümü.
+`bash update.sh --force` — `main`'e geçip `origin/main`'e eşitler). Makine güncel mi:
+`uv run achilles doctor`. Detay: **[docs/GUNCELLEME_KILAVUZU.md](docs/GUNCELLEME_KILAVUZU.md)**.
 
 ---
 
@@ -125,6 +126,10 @@ Bu komut şunları yapar: web servisi login'de otomatik başlar + her gece **03:
 
 **Güncelleme — KURULU makinede TEK KOMUT** (yeni sürüm yayınlandığında):
 
+> 📘 **Birden fazla bilgisayar mı var, "bir makinede güncel diğerinde değil" mi yaşıyorsun?**
+> Tam adım-adım çözüm: **[docs/GUNCELLEME_KILAVUZU.md](docs/GUNCELLEME_KILAVUZU.md)**
+> (ilk-seferlik onarım · `achilles doctor` teşhisi · Windows otomatik görev onarımı).
+
 **Windows (PowerShell):**
 ```powershell
 cd "$env:USERPROFILE\achilles"
@@ -137,8 +142,10 @@ cd ~/achilles            # Achilles'in kurulu olduğu klasör
 bash update.sh
 ```
 
-Her iki script de şunu yapar: web sunucusunu durdur (port 8765) → `git pull` →
-**`uv sync --extra web`** → web'i yeniden başlat → sağlık kontrolü. **Eğitime dokunmaz.**
+Her iki script de şunu yapar: web sunucusunu durdur (port 8765) → **hangi dalda olursan ol
+`main`'e geçip `origin/main`'e yakınsa** (ff-only; eskiden yapmıyordu, "oturmuyor"un kök sebebi
+buydu) → **`uv sync --extra web`** → web'i yeniden başlat → sağlık kontrolü. **Eğitime dokunmaz.**
+Yerel main GitHub'dan ıraksaksa **otomatik birleştirme yapmaz**; `-Force` ile yereli atıp eşitlersin.
 
 > 🔴 **Güncelledikten sonra tarayıcıda sert yenileme yap:** Windows/Linux **`Ctrl + Shift + R`**,
 > macOS **`Cmd + Shift + R`** — yoksa arayüz eski JS/CSS'i önbellekten gösterir, "değişmemiş" gibi görünür.
@@ -155,6 +162,16 @@ bash update.sh --force      # macOS / Linux — aynısı
 `-Force` yalnız **tracked kod** dosyalarını sıfırlar; verilerin (`data/`, `storage/`, `vector_db/`,
 adapter'lar) git'te izlenmediği için **silinmez**. Salt-kopya kurulumlarda güvenle kullanılır.
 
+**Makinen güncel mi, emin değil misin?** Hiçbir şeyi değiştirmeyen teşhis komutu:
+
+```bash
+uv run achilles doctor   # dal=main mi? origin/main ile aynı mı? (Windows'ta görev yolu doğru mu?)
+```
+
+Sapma varsa ne yapılacağını söyler. **Windows'ta** açılış/gece-03:00 güncelleme görevleri yanlış
+klasörü gösteriyorsa (`doctor` "ÖLÜ/yabancı yol" derse) onar: `.\scripts\start-server.ps1 -Repair`.
+Tam kılavuz: **[docs/GUNCELLEME_KILAVUZU.md](docs/GUNCELLEME_KILAVUZU.md)**.
+
 ### Mac/Linux'ta `update.sh` HENÜZ YOKSA veya `git pull` hiç çalışmıyorsa (ilk seferlik kurtarma)
 
 > Bu komutlar **GitHub sitesinde değil**, Mac'in **Terminal** uygulamasında çalışır.
@@ -162,16 +179,15 @@ adapter'lar) git'te izlenmediği için **silinmez**. Salt-kopya kurulumlarda gü
 
 ```bash
 cd ~/achilles                  # Achilles klasörü (başka yerdeyse oraya gir)
-git fetch origin main
-git reset --hard origin/main   # son hale eşitle — yalnız KOD; verilerin SİLİNMEZ
-bash update.sh                 # bundan sonra her güncellemede sadece bunu çalıştır
+bash update.sh --force         # main'e geç + GitHub'a eşitle (yalnız KOD; verilerin SİLİNMEZ)
+                               # bundan sonra her güncellemede sadece: bash update.sh
 ```
 
 **`cd ~/achilles` "no such file or directory" diyorsa** (klasör başka yerde) — şu **tek satır**
 klasörü kendisi bulur, girer ve günceller (kopyala-yapıştır, izin/`chmod` gerekmez):
 
 ```bash
-cd "$(find ~ -type d -name achilles 2>/dev/null | head -1)" && git fetch origin main && git reset --hard origin/main && bash update.sh
+cd "$(find ~ -type d -name achilles 2>/dev/null | head -1)" && bash update.sh --force
 ```
 
 Eğer `not a git repository` veya `no such file or directory` hatası alırsan, o klasör git deposu
@@ -990,6 +1006,9 @@ uv run achilles train --run               # macOS Apple Silicon gerekli
 | 50 MB az geldi | `.env` → `ACHILLES_MAX_UPLOAD_MB=200` → sunucuyu yeniden başlat |
 | "Yetkisiz" hatası | Token ayarlıysa **08 SİSTEM** → token gir → KAYDET bas |
 | Backtest FAIL ama getiri pozitif | OOS kısmı başarısız — bu kasıtlı, overfit koruması |
+| **Güncelledim ama yeni özellik gelmedi** | Yanlış dalda parklanma → `bash update.sh --force` (Win: `.\update.ps1 -Force`), sonra `uv run achilles doctor`. Kılavuz: [GUNCELLEME_KILAVUZU](docs/GUNCELLEME_KILAVUZU.md) |
+| **Diğer makinede eski sürüm / gece güncellemesi çalışmıyor** (Win) | Görev ölü yola bağlı → `.\scripts\start-server.ps1 -Repair`, sonra `-Status` ile **[ESLESIYOR]** doğrula |
+| **"Bu makine güncel mi?" emin değilim** | `uv run achilles doctor` — dal/HEAD vs origin/main + Windows görev yolu (sapma varsa exit 2) |
 
 ---
 
