@@ -337,13 +337,19 @@ class CrossPaperSynthesizer:
         top3 = sorted(valid_cats, key=lambda c: -len(by_cat[c]))[:3]
         if len(top3) == 3:
             triple = [by_cat[c][0] for c in top3]
-            ex_id = _example_id([f["formula_id"] for f in triple])
-            if force or not self._exists(ex_id):
-                example = self._build(triple, frozenset(top3))
-                if example:
-                    self._save(ex_id, example)
-                    total += 1
-                    logger.info("Sentez: [%s] → %s", "×".join(top3), ex_id)
+            # "cross-paper" sözleşmesi üçlüde de geçerli: ikili yol _select_cross_paper ile
+            # ≥2 FARKLI makaleyi zorlar; üçlü körlemesine her kategoriden ilk formülü alır.
+            # Tek makale 3 kategoride formüle sahipse üçlü tek makaleye çöker → 'farklı
+            # akademik makalelerden' iddiası YANLIŞ olur (uydurma provenans, Kural 7) ve
+            # eğitim verisine sızar. En az 2 farklı paper_id şartı koy (yoksa atla).
+            if len({f.get("paper_id", "") for f in triple}) >= 2:
+                ex_id = _example_id([f["formula_id"] for f in triple])
+                if force or not self._exists(ex_id):
+                    example = self._build(triple, frozenset(top3))
+                    if example:
+                        self._save(ex_id, example)
+                        total += 1
+                        logger.info("Sentez: [%s] → %s", "×".join(top3), ex_id)
 
         logger.info("CrossPaperSynthesizer: %d yeni örnek.", total)
         return total

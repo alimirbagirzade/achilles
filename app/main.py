@@ -1286,7 +1286,7 @@ def risk_analyze(
     from sqlalchemy import select
 
     from app.memory.sqlite_store import Backtest, SqliteStore, Strategy
-    from app.trading.backtester import _compute_columns, _position_series
+    from app.trading.backtester import _compute_columns, _net_returns, _position_series
     from app.trading.market_data_loader import generate_synthetic_ohlcv
     from app.trading.risk_manager import analyze_risk
     from app.trading.strategy_ir import StrategyIR
@@ -1307,7 +1307,9 @@ def risk_analyze(
     enriched = _compute_columns(df, ir)
     position = _position_series(enriched, ir)
     bar_ret = enriched["close"].pct_change().fillna(0.0)
-    net_ret = position.shift(1).fillna(0.0) * bar_ret
+    # Kanonik maliyet-dahil seri (komisyon+slippage, cost-timing hizalı). Eski hâl
+    # maliyetsiz getiriden Kelly/drawdown üretip pozisyonu fazla-iyimser ölçüyordu (Kural 3).
+    net_ret = _net_returns(position, bar_ret, ir.costs.commission + ir.costs.slippage)
     equity_curve = (1 + net_ret).cumprod()
 
     report = analyze_risk(

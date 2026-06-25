@@ -94,31 +94,56 @@ def _any(patterns: tuple[re.Pattern[str], ...], text: str) -> bool:
     return any(p.search(text) for p in patterns)
 
 
-# Olumsuzlama-bilinçli advice taraması (gates.gate_6 ile aynı ilke). Bir kesinlik
-# kelimesinin yakınında (±pencere) olumsuzlama varsa eşleşme ALÇAKGÖNÜLLÜ ifadedir,
-# tavsiye DEĞİL: "risksiz değildir" / "garanti yok" / "not guaranteed" / "no strategy
-# is risk-free" reddi TETİKLEMEZ; "garanti kazanç sağlar" tetikler. (Ekli olumsuzlama
-# '-maz/-mez' kapsanmaz — gate_6'daki gibi bilinçli, dar sınır; yanlış-pozitif düşürür.)
-_ADVICE_NEGATION: re.Pattern[str] = re.compile(
-    r"(?i)(?:\bde[ğg]il\w*|\byok\w*|\bolma[zd]\w*|\bhi[çc]\w*|\basla\b"
-    r"|\bnot\b|\bno\b|\bnever\b|\bwithout\b|\bcannot\b|\bcan'?t\b)"
+# Olumsuzlama-bilinçli advice taraması (gates.gate_6 ile aynı ilke). Bir kesinlik kelimesi
+# olumsuzlanmışsa eşleşme ALÇAKGÖNÜLLÜ ifadedir, tavsiye DEĞİL: "risksiz değildir" / "garanti
+# yok" / "not guaranteed" / "no strategy is risk-free" reddi TETİKLEMEZ. ANCAK olumsuzlama
+# yalnız eşleşmeyle AYNI CÜMLECİKTE bastırır — aksi hâlde ayrı cümle/komuttaki olumsuzlama
+# ("Garanti kâr. Şüphe yok." / "Kesinlikle al, asla satma.") gerçek tavsiyeyi kör edip kapıdan
+# geçiriyordu (Kural 1 sahte-PASS). Sonra-olumsuzlama yalnız Türkçe son-ektir: İngilizce sonrası
+# 'never/no' ("risk-free and never fails") olumsuzlama değil üstünlük iddiasıdır.
+_CLAUSE_BOUND_RE: re.Pattern[str] = re.compile(
+    r"[.;:!?,]|\b(?:ama|fakat|ancak|but|however|yet)\b", re.IGNORECASE
 )
-_ADVICE_NEG_WINDOW: int = 20
+_ADVICE_NEG_BEFORE: re.Pattern[str] = re.compile(
+    r"(?i)\b(?:de[ğg]il\w*|yok\w*|olma[zd]\w*|hi[çc]bir|hi[çc]\w*|asla"
+    r"|not|no|never|non|without|cannot|can'?t|hardly|isn'?t|aren'?t)\b"
+)
+_ADVICE_NEG_AFTER: re.Pattern[str] = re.compile(r"(?i)\b(?:de[ğg]il\w*|yok\w*|olma[zd]\w*)\b")
+_ADVICE_NEG_WINDOW: int = 24
+
+
+def _clause_before(text: str, start: int) -> str:
+    """``start`` öncesi, pencere içindeki SON cümlecik sınırından sonrası (sınırı aşmaz)."""
+    seg = text[max(0, start - _ADVICE_NEG_WINDOW) : start]
+    last_end = 0
+    for m in _CLAUSE_BOUND_RE.finditer(seg):
+        last_end = m.end()
+    return seg[last_end:]
+
+
+def _clause_after(text: str, end: int) -> str:
+    """``end`` sonrası, pencere içindeki İLK cümlecik sınırına kadar (sınırı aşmaz)."""
+    seg = text[end : end + _ADVICE_NEG_WINDOW]
+    m = _CLAUSE_BOUND_RE.search(seg)
+    return seg[: m.start()] if m else seg
 
 
 def _advice_present(text: str) -> bool:
-    """Kesinlik/tavsiye dili VAR mı — olumsuzlanmış (alçakgönüllü) kullanımları atlayarak.
+    """Kesinlik/tavsiye dili VAR mı — yalnız AYNI CÜMLECİKTEKİ olumsuzlamayı alçakgönüllü
+    sayıp atlayarak.
 
     Kural 1: çıktı alçakgönüllü _hipotez_ olmalı. Naif kelime-eşleşmesi "risksiz değildir"
-    gibi DOĞRU (olumsuz) ifadeleri tavsiye sanıp mükemmel hipotezleri HARD-reddediyordu.
-    Artık eşleşmenin ±``_ADVICE_NEG_WINDOW`` krk komşuluğunda olumsuzlama varsa atlanır.
+    gibi olumsuz ifadeleri tavsiye sanıp iyi hipotezleri reddediyordu; eski ±pencere düzeltmesi
+    ise ANCHOR'suz olduğu için ayrı cümledeki/komuttaki olumsuzlamayı gerçek tavsiyeyi BASTIRMAK
+    için kullanıp tavsiyeyi kapıdan geçiriyordu. Artık olumsuzlama yalnız eşleşmeyle aynı
+    cümlecikteyse (sınır: ``.;:!?,`` + bağlaç) bastırır; sonra-olumsuzlama yalnız Türkçe son-ek.
     """
     for pat in _ADVICE_PATTERNS:
         for m in pat.finditer(text):
-            before = text[max(0, m.start() - _ADVICE_NEG_WINDOW) : m.start()]
-            after = text[m.end() : m.end() + _ADVICE_NEG_WINDOW]
-            if _ADVICE_NEGATION.search(before) or _ADVICE_NEGATION.search(after):
-                continue  # olumsuzlanmış → alçakgönüllü, tavsiye değil
+            before = _clause_before(text, m.start())
+            after = _clause_after(text, m.end())
+            if _ADVICE_NEG_BEFORE.search(before) or _ADVICE_NEG_AFTER.search(after):
+                continue  # aynı cümlecikte olumsuzlanmış → alçakgönüllü, tavsiye değil
             return True
     return False
 
