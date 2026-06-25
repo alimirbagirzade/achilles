@@ -36,6 +36,9 @@
   --live: #cf4014; /* vermillion — canlı eğitim — nabızla pekişir */
   --live-ring: rgba(207, 64, 20, 0.45);
 
+  --bronze: #9c6b3a; /* DEKORATİF klasik aksan — semantik DEĞİL (durum/verdict renklerinden bağımsız) */
+  --bronze-deep: #7a5226;
+
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --display: "Fraunces", Georgia, serif;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -74,6 +77,7 @@ body {
   justify-content: space-between;
   padding: 14px 28px;
   background: var(--surface);
+  border-top: 3px solid var(--bronze);
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
@@ -106,7 +110,7 @@ body {
   color: var(--ink);
 }
 .brand-sub {
-  color: var(--muted);
+  color: var(--bronze-deep);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.18em;
@@ -229,6 +233,28 @@ body {
 .disclaimer em {
   font-style: italic;
   font-weight: 600;
+}
+
+/* ---------- klasik aksanlar (DEKORATİF — semantik/CVD palete dokunmaz) ---------- */
+.frieze {
+  background: var(--surface);
+  line-height: 0;
+}
+.frieze svg {
+  display: block;
+  width: 100%;
+}
+.achilles-heel {
+  margin: 10px 0 0;
+  font-family: var(--display);
+  font-size: 14px;
+  font-style: italic;
+  color: var(--bronze-deep);
+}
+.footer-laurel {
+  display: block;
+  margin: 0 auto 8px;
+  opacity: 0.85;
 }
 
 /* ---------- tabs ---------- */
