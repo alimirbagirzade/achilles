@@ -1,7 +1,7 @@
 # HANDOFF — Achilles Trader AI
 
 _Son güncelleme: 2026-06-25 · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
-_Açık PR: yok — çok-makine senkron yakınsama (#54·#55·#56·#57·#58) hepsi MERGED._
+_Açık PR: yok — web UI redesign (#61·#62·#63·#64·#65) hepsi MERGED; 8765'te canlı._
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
@@ -18,7 +18,30 @@ RLM `backend="anthropic"` (API) yolu OPSİYONEL + KAPALI kalır (`rlm_alexzhang_
 `provider=native`); varsayılan/zorunlu YAPILMAZ. Yeni özelliklerde bulut API'sini varsayılan
 bağımlılık yapma → opt-in + native fallback şart. Bkz memory [[no-api-local-subscription-only]].
 
-### 🆕 EN SON İŞ (2026-06-25) — Çok-makine güncelleme yakınsama protokolü + sürüm rozeti
+### 🆕 EN SON İŞ (2026-06-25 akşam) — Web UI redesign TAMAMLANDI (5 PR) + EĞİTİM-ÖNCESİ HATIRLATMA
+
+Kullanıcı "web'i güzel ve rahat anlaşılır kıl, mimariyi BOZMA" → 10 sunum-increment, **5 PR MERGED**,
+hepsi saf `index.html`+`app.css`+`app.js`, CI-yeşil + kendim merge ettim, **8765'te canlı** (static
+diskten okunduğu için RESTART'sız; asset-hash her istekte yeniden):
+- **#61** 5-grup nav + derin-link (hash/localStorage) · jargon tooltip + insani hata (`humanError`) + CTA hiyerarşisi · sade durum çubuğu (katlanır) + sonraki-adım şeridi
+- **#62** mobil/responsive (nav-wrap, akışkan form) · tam Türkçe etiket (embed→gömme, papers→makale) · jargon tooltip yayma (13 terim/6 panel)
+- **#63** tutarlı ikon dili (dekoratif emoji kaldır, refresh→↻) · backtest verdict disiplini ("maliyet+slippage dahil" + aday≠hazır, Kural 1-3) · ilk-açılış 3-adım onboarding
+- **#64** renk-körü-güvenli palet (Okabe-Ito): pass SOĞUK bluish-green `#0a7d55` / fail SICAK vermillion `#cf4014` (mavi-sarı ekseni → kırmızı-yeşil körlüğünden bağımsız) + ✓/✕/≈ + WCAG AA (Python ile ölçüldü)
+- **#65** kalan İngilizce etiket bitiş (agents formu agent_id/requires_approval, Train/Val Loss → Türkçe)
+
+KORUNDU: `/api` kontratı + pydantic alanları · `data-tab`/`panel-<ad>` ID'leri · CSP `script-src self` · asset içerik-hash · 8 mutlak kural.
+Detay + gotcha'lar: memory [[web-ui-redesign-2026-06-25]] · merge yetkisi [[pr-merge-authority]].
+
+**⚠️ SONRAKİ: EĞİTİM (kullanıcı BAŞKA CHAT'te başlatacak) — ZORUNLU SIRA:**
+1. **Kademe-2 derin adversarial av** — CLAUDE.md: HER eğitimden ÖNCE ZORUNLU (v5 regresyonu bu yüzden olmuştu).
+   Alt-sistem başına paralel finder → 2-oylu adversarial doğrulama (şüpheci, varsayılan çürütülmüş) → yalnız onaylananı düzelt → Kademe-0 kapısı → push.
+2. Veri kapısı: `pretrain-gate` (GO/NO-GO) + `lora-readiness` (≥1000 örnek).
+3. `train` önce **dry-run** (önizleme); gerçek eğitim yalnız açık `--run` (Kural 8). Model Qwen2.5-1.5B, profil `discipline_safe_local`.
+Bkz memory [[bug-avi-kadansi]], [[lora-loop-guvenlik-verdicti]], [[local-small-model-training-pivot]].
+
+---
+
+### EN SON İŞ (2026-06-25) — Çok-makine güncelleme yakınsama protokolü + sürüm rozeti
 
 **SORUN (kullanıcı):** "2 W10 + 1 Mac'te sadece bu makinede güncel sürüm var; diğerlerinde
 güncelleme/sıfırdan kurulum tam oturmuyor." → **üç katmanlı sessiz yakınsama çöküşü** (hepsi
