@@ -187,6 +187,39 @@
           ") — tıkla: tazele + kaydet\nSeviyeler: " + levelBreakdown(r.by_level);
       })
       .catch(function () {});
+    // Sürüm/sapma rozeti — bu makine GitHub main ile güncel mi? (sessiz drift'i görünür kıl)
+    api("/version", { method: "GET" })
+      .then(function (v) {
+        var el = document.getElementById("versionBadge");
+        if (!el) return;
+        var cmd = "update.ps1 -Force (Win) · ./update.sh --force (mac/Linux)";
+        if (!v.git) {
+          el.className = "muted";
+          el.textContent = "sürüm: git yok";
+          el.title = "git deposu bulunamadı";
+        } else if (v.converged) {
+          el.className = "conn-ok";
+          el.textContent = "sürüm: güncel ✓";
+          el.title = "main · " + (v.head || "") + " — GitHub origin/main ile aynı" +
+            (v.last_update ? "\nson güncelleme: " + v.last_update : "");
+        } else if (!v.on_main) {
+          el.className = "conn-warn";
+          el.textContent = "sürüm: ⚠ dal " + (v.branch || "?") + " (main değil)";
+          el.title = "Bu makine 'main' dalında değil → güncellemeler oturmaz.\nÇözüm: " + cmd;
+        } else if (v.behind > 0) {
+          el.className = "conn-warn";
+          el.textContent = "sürüm: ⚠ " + v.behind + " commit geride — güncelle";
+          el.title = "Bu makine GitHub main'in " + v.behind +
+            " commit gerisinde.\nÇözüm: " + cmd +
+            (v.last_update ? "\nson güncelleme: " + v.last_update : "");
+        } else {
+          el.className = "muted";
+          el.textContent = "sürüm: main +" + v.ahead + " (yerel)";
+          el.title = "Yerel main, origin/main'in " + v.ahead +
+            " commit önünde (henüz push edilmemiş).";
+        }
+      })
+      .catch(function () {});
   }
 
   // ---------- ask (RAG) ----------

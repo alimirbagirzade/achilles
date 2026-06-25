@@ -16,6 +16,20 @@ class StatusResponse(BaseModel):
     max_upload_mb: int = 100
 
 
+class VersionResponse(BaseModel):
+    """Sürüm/sapma rozeti — origin/main'e göre (salt-okuma, offline)."""
+
+    git: bool
+    branch: str | None = None
+    head: str | None = None
+    origin_main: str | None = None
+    behind: int = 0
+    ahead: int = 0
+    on_main: bool = False
+    converged: bool = False
+    last_update: str | None = None
+
+
 class PaperOut(BaseModel):
     paper_id: str
     title: str | None = None
