@@ -1,7 +1,7 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-06-25 · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
-_Açık PR: yok — web UI redesign (#61·#62·#63·#64·#65) hepsi MERGED; 8765'te canlı._
+_Son güncelleme: 2026-06-26 (gece otonom loop) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Açık PR: yok — gece PR'ları #66·#67·#69 hepsi MERGED. İlk 1.5B LoRA adapter eğitildi+ACCEPT._
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
@@ -18,7 +18,35 @@ RLM `backend="anthropic"` (API) yolu OPSİYONEL + KAPALI kalır (`rlm_alexzhang_
 `provider=native`); varsayılan/zorunlu YAPILMAZ. Yeni özelliklerde bulut API'sini varsayılan
 bağımlılık yapma → opt-in + native fallback şart. Bkz memory [[no-api-local-subscription-only]].
 
-### 🆕 EN SON İŞ (2026-06-25 akşam) — Web UI redesign TAMAMLANDI (5 PR) + EĞİTİM-ÖNCESİ HATIRLATMA
+### 🆕 EN SON İŞ (2026-06-26 GECE) — İLK 1.5B LoRA EĞİTİMİ BAŞARIYLA TAMAMLANDI + RAG genişledi
+
+Kullanıcı gece "tam yetki, eğitimi durdurma, 1.5B eğit, sabah rapor ver" dedi → otonom loop:
+
+**1) Kademe-2 zorunlu derin av** (eğitim-öncesi): 8-finder + 2-oylu adversarial → 4 fix (maliyet×2 /
+çapraz-makale provenans / tavsiye-dili olumsuzlama-bypass) → **PR #67 MERGED**. Kart-Onay bug
+(boş kart approve→yanıltıcı "bulunamadı") → **PR #66 MERGED**. API-öneren doküman temizliği
+(.env.example+README local-first) → **PR #69 MERGED**.
+
+**2) Model → 1.5B** (yerel `.env`, reversible): `llm_model=qwen2.5:1.5b` + `peft_base_model=
+Qwen/Qwen2.5-1.5B-Instruct`. Ollama'ya qwen2.5:1.5b çekildi. Web restart → "Canlı Durum" **1.5B**
+gösteriyor (kullanıcı isteği). torch 2.12+cpu+transformers+peft kuruldu (YEREL lib, API DEĞİL).
+
+**3) 🎯 GERÇEK 1.5B LoRA EĞİTİMİ** (`achilles_lora_15b_v1`): discipline_safe_local, 400 örnek ×
+2 epoch = **400 adım/~4h** (~35.8s/adım CPU), assistant_only_loss maskeleme AKTİF (v5-fix),
+loss 2.63→1.54, cosine LR düzgün kapandı. **EVAL (dürüst, adapter'ı yükler): base 0.125 (14 ihlal)
+→ adapter 1.0 (0 ihlal) → VERDICT ACCEPT.** v5'in TERSİ: disiplin ÖĞRENİLDİ. Adapter ADAY
+(production terfisi İNSAN onayı bekler — Kural 8). models/adapters/achilles_lora_15b_v1.
+
+**4) RAG**: enrichment denendi (50 kartsız makale, ama 4b CPU'da ~8dk/kart + kısmen etkisiz →
+1 kart zenginleşti, kesildi). 8-konu workflow → **71 arXiv makalesi indirildi** (Gerekli kaynaklar/
+arxiv-batch-2026-06-26) → RAG'a ingest edildi (171→~242 makale). Carding sonraki seans (yavaş).
+
+**KALAN/NOT:** AchillesWeb/Update scheduled-task'leri admin gerektirdi (Registry-Run autostart
+onarıldı; scheduled-task `start-server.ps1 -Repair` Yönetici-PS ile tekrar). Adapter Ollama'da
+çalıştırmak için 1.5B GGUF dönüşümü gerekebilir (şimdilik transformers/PEFT ile yüklenir).
+Bkz memory [[loop-training-session-2026-06-25]].
+
+### EN SON İŞ (2026-06-25 akşam) — Web UI redesign TAMAMLANDI (5 PR) + EĞİTİM-ÖNCESİ HATIRLATMA
 
 Kullanıcı "web'i güzel ve rahat anlaşılır kıl, mimariyi BOZMA" → 10 sunum-increment, **5 PR MERGED**,
 hepsi saf `index.html`+`app.css`+`app.js`, CI-yeşil + kendim merge ettim, **8765'te canlı** (static
