@@ -33,7 +33,7 @@ _ALLOWED_CSV_SUFFIX = ".csv"
 _CSV_REQUIRED_COLS = ("open", "high", "low", "close")
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
-# Güvenlik başlıkları. CSP yalnız kendi kaynaklarımıza + Google Fonts'a izin verir.
+# Güvenlik başlıkları. CSP yalnız kendi kaynaklarımıza izin verir (fontlar self-host).
 SECURITY_HEADERS: dict[str, str] = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
@@ -43,8 +43,8 @@ SECURITY_HEADERS: dict[str, str] = {
     "Content-Security-Policy": (
         "default-src 'self'; "
         "script-src 'self'; "
-        "style-src 'self' https://fonts.googleapis.com; "
-        "font-src 'self' https://fonts.gstatic.com; "
+        "style-src 'self'; "
+        "font-src 'self'; "
         "img-src 'self' data:; "
         "connect-src 'self'; "
         "object-src 'none'; "

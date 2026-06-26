@@ -1,19 +1,117 @@
-/* ACHILLES — trading research · LIGHT, clean, color-blind-safe UI.
-   CVD-güvenli palet (Okabe-Ito tabanlı): pass SOĞUK bluish-green+✓, fail SICAK
-   vermillion+✕, uyarı amber+≈, birincil mavi. pass↔fail sıcak/soğuk (mavi-sarı)
-   ekseninde ayrılır — kırmızı-yeşil körlüğünden bağımsız; anlam asla yalnız renkle
-   verilmez (✓/✕/≈ + şekil). Tüm metin renkleri WCAG AA doğrulandı. */
+/* ACHILLES — trading research · "Bronz Defter" tasarım: Spectral serif başlık,
+   Plus Jakarta Sans gövde, sıcak parşömen zemin, heritage yalnız tipografi
+   karakterinde (bölüm numaraları bronz serif). CVD-güvenli Okabe-Ito semantik
+   palet korundu: pass SOĞUK bluish-green+✓, fail SICAK vermillion+✕.
+   Fontlar self-host woff2 — harici CDN yok (CSP clean). */
+
+/* ── @font-face: self-hosted woff2 ── */
+@font-face {
+  font-family: 'Spectral';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(/assets/fonts/spectral-400-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Spectral';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(/assets/fonts/spectral-400-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Spectral';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url(/assets/fonts/spectral-400i-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Spectral';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url(/assets/fonts/spectral-400i-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Spectral';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(/assets/fonts/spectral-600-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Spectral';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(/assets/fonts/spectral-600-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Spectral';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(/assets/fonts/spectral-700-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Spectral';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(/assets/fonts/spectral-700-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url(/assets/fonts/jakarta-sans-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url(/assets/fonts/jakarta-sans-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url(/assets/fonts/jetbrains-mono-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url(/assets/fonts/jetbrains-mono-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
 :root {
-  --bg: #f5f7fb;
+  --bg: #faf7f1;
   --surface: #ffffff;
-  --surface-2: #f1f5f9;
-  --border: #e3e8ef;
-  --border-strong: #cbd5e1;
+  --surface-2: #f5f2ec;
+  --border: #e7e2d8;
+  --border-strong: #d4ccbe;
 
-  --ink: #0f172a; /* slate-900 */
-  --ink-dim: #475569; /* slate-600 */
-  --muted: #94a3b8; /* slate-400 */
+  --ink: #252019;
+  --ink-dim: #5c5549;
+  --muted: #9a948a;
 
   --primary: #0b6eb3; /* Okabe-Ito blue — interaktif/marka (CVD-safe, AA 5.4) */
   --primary-strong: #0a5d96;
@@ -36,15 +134,15 @@
   --live: #cf4014; /* vermillion — canlı eğitim — nabızla pekişir */
   --live-ring: rgba(207, 64, 20, 0.45);
 
-  --bronze: #9c6b3a; /* DEKORATİF klasik aksan — semantik DEĞİL (durum/verdict renklerinden bağımsız) */
+  --bronze: #9c6b3a; /* DEKORATİF heritage aksanı — yalnız bölüm numaraları + brand-sub */
   --bronze-deep: #7a5226;
 
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --display: "Fraunces", Georgia, serif;
-  --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --display: "Spectral", Georgia, "Times New Roman", serif;
+  --sans: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --radius: 10px;
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.05);
-  --shadow: 0 8px 28px rgba(15, 23, 42, 0.1);
+  --shadow-sm: 0 1px 2px rgba(37, 32, 25, 0.05), 0 1px 3px rgba(37, 32, 25, 0.04);
+  --shadow: 0 4px 16px rgba(37, 32, 25, 0.07), 0 8px 28px rgba(37, 32, 25, 0.05);
 }
 
 * {
@@ -77,7 +175,6 @@ body {
   justify-content: space-between;
   padding: 14px 28px;
   background: var(--surface);
-  border-top: 3px solid var(--bronze);
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
@@ -235,15 +332,7 @@ body {
   font-weight: 600;
 }
 
-/* ---------- klasik aksanlar (DEKORATİF — semantik/CVD palete dokunmaz) ---------- */
-.frieze {
-  background: var(--surface);
-  line-height: 0;
-}
-.frieze svg {
-  display: block;
-  width: 100%;
-}
+/* ---------- heritage aksan: yalnız tipografi karakteri ---------- */
 .achilles-heel {
   margin: 10px 0 0;
   font-family: var(--display);
@@ -251,10 +340,11 @@ body {
   font-style: italic;
   color: var(--bronze-deep);
 }
-.footer-laurel {
-  display: block;
-  margin: 0 auto 8px;
-  opacity: 0.85;
+.tab-num {
+  font-family: var(--display);
+  color: var(--bronze);
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 /* ---------- tabs ---------- */
