@@ -4,12 +4,6 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ACHILLES — Trading Research Terminal</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,900&display=swap"
-      rel="stylesheet"
-    />
     <link rel="stylesheet" href="/assets/app.css?v=4" />
     <link rel="stylesheet" href="/assets/canli-badge.css?v=1" />
   </head>
@@ -54,17 +48,6 @@
       doğrulama olmadan "başarılı" sayılmaz.
     </div>
 
-    <div class="frieze" aria-hidden="true">
-      <svg width="100%" height="14" viewBox="0 0 616 14" preserveAspectRatio="xMidYMid slice">
-        <defs>
-          <pattern id="greekKey" width="28" height="14" patternUnits="userSpaceOnUse">
-            <path d="M1,13 V1 H26 V13 H5 V5 H21 V10 H11 V8" fill="none" stroke="#9c6b3a" stroke-width="1.2" />
-          </pattern>
-        </defs>
-        <rect width="616" height="14" fill="url(#greekKey)" opacity="0.5" />
-      </svg>
-    </div>
-
     <nav class="groups" id="groupNav" aria-label="Bölüm grupları">
       <button class="group-btn active" data-group="kesfet">Keşfet &amp; sor</button>
       <button class="group-btn" data-group="kutuphane">Kütüphane</button>
@@ -74,17 +57,17 @@
     </nav>
 
     <nav class="tabs" id="tabs">
-      <button class="tab active" data-tab="research">01 · ARAŞTIRMA</button>
-      <button class="tab" data-tab="papers">02 · MAKALELER</button>
-      <button class="tab" data-tab="trader">03 · TRADER BEYİN</button>
-      <button class="tab" data-tab="backtest">04 · BACKTEST</button>
-      <button class="tab" data-tab="training">05 · EĞİTİM</button>
-      <button class="tab" data-tab="review">06 · ONAY</button>
-      <button class="tab" data-tab="eval">07 · DEĞERLENDİRME</button>
-      <button class="tab" data-tab="about">08 · SİSTEM</button>
-      <button class="tab" data-tab="learning">09 · ÖĞRENME</button>
-      <button class="tab" data-tab="agents">10 · AGENTS / OTOMASYON</button>
-      <button class="tab" data-tab="rlm">11 · RLM</button>
+      <button class="tab active" data-tab="research"><span class="tab-num">01</span> · ARAŞTIRMA</button>
+      <button class="tab" data-tab="papers"><span class="tab-num">02</span> · MAKALELER</button>
+      <button class="tab" data-tab="trader"><span class="tab-num">03</span> · TRADER BEYİN</button>
+      <button class="tab" data-tab="backtest"><span class="tab-num">04</span> · BACKTEST</button>
+      <button class="tab" data-tab="training"><span class="tab-num">05</span> · EĞİTİM</button>
+      <button class="tab" data-tab="review"><span class="tab-num">06</span> · ONAY</button>
+      <button class="tab" data-tab="eval"><span class="tab-num">07</span> · DEĞERLENDİRME</button>
+      <button class="tab" data-tab="about"><span class="tab-num">08</span> · SİSTEM</button>
+      <button class="tab" data-tab="learning"><span class="tab-num">09</span> · ÖĞRENME</button>
+      <button class="tab" data-tab="agents"><span class="tab-num">10</span> · AGENTS / OTOMASYON</button>
+      <button class="tab" data-tab="rlm"><span class="tab-num">11</span> · RLM</button>
     </nav>
 
     <main>
@@ -867,21 +850,7 @@
     </main>
 
     <footer class="footer">
-      <svg class="footer-laurel" width="22" height="22" viewBox="0 0 28 28" aria-hidden="true">
-        <path d="M14,25 C7,22 5,14 8,6" fill="none" stroke="#9c6b3a" stroke-width="1.4" stroke-linecap="round" />
-        <path d="M14,25 C21,22 23,14 20,6" fill="none" stroke="#9c6b3a" stroke-width="1.4" stroke-linecap="round" />
-        <g fill="#9c6b3a">
-          <ellipse cx="8.5" cy="9" rx="2.4" ry="1.1" transform="rotate(-50 8.5 9)" />
-          <ellipse cx="7.6" cy="14" rx="2.4" ry="1.1" transform="rotate(-30 7.6 14)" />
-          <ellipse cx="8.6" cy="19" rx="2.4" ry="1.1" transform="rotate(-12 8.6 19)" />
-          <ellipse cx="19.5" cy="9" rx="2.4" ry="1.1" transform="rotate(50 19.5 9)" />
-          <ellipse cx="20.4" cy="14" rx="2.4" ry="1.1" transform="rotate(30 20.4 14)" />
-          <ellipse cx="19.4" cy="19" rx="2.4" ry="1.1" transform="rotate(12 19.4 19)" />
-        </g>
-      </svg>
-      <span class="muted small"
-        >achilles-trader-ai · local-first · not financial advice</span
-      >
+      <span class="muted small">achilles-trader-ai · local-first · not financial advice</span>
     </footer>
 
     <div id="toast" class="toast hidden"></div>
