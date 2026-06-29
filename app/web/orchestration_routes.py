@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.web.security import require_auth
@@ -116,3 +116,47 @@ def orchestration_recover(req: OrchestrationRecoverRequest) -> dict[str, Any]:
     """Panic recovery — kalp atışı durmuş 'running' aşamaları failed'a çevir."""
     orch = _orchestrator()
     return {"recovered": orch.recover_stale(timeout_min=req.timeout_min)}
+
+
+class OrchestrationAutodriveRequest(BaseModel):
+    execute: bool = False  # True → gerçek `claude -p` spawn (abonelik); False → dry-run komut
+
+
+def _run_autodrive_bg(run_id: str) -> None:
+    """Arka plan: gerçek otonom sürüş (uzun sürer). Olaylar timeline'a yazılır."""
+    from app.orchestration.driver import AutoDriver
+
+    AutoDriver().drive(run_id, execute=True)
+
+
+@router.post("/autodrive/{run_id}")
+def orchestration_autodrive(
+    run_id: str, req: OrchestrationAutodriveRequest, background: BackgroundTasks
+) -> dict[str, Any]:
+    """deep-hunt'ı headless `claude -p` (abonelik) ile OTONOM sür → onay kapısına ilerlet.
+
+    `execute=false` (varsayılan): DRY-RUN — çalıştırılacak komutu döner, spawn YOK.
+    `execute=true`: gerçek sürüş ARKA PLANDA başlar (timeline'dan izlenir); yanıt hemen döner.
+    Gerçek eğitim yine TAZE insan onayı bekler (Kural 8 — onayda durur).
+    """
+    from app.orchestration.driver import AutoDriver, claude_available
+
+    orch = _orchestrator()
+    if orch.store.get_run(run_id) is None:
+        raise HTTPException(status_code=404, detail=f"Koşu bulunamadı: {run_id}")
+
+    if not req.execute:
+        return AutoDriver(orchestrator=orch).drive(run_id, execute=False)
+
+    if not claude_available():
+        raise HTTPException(
+            status_code=503,
+            detail="`claude` CLI bulunamadı — abonelikli Claude Code kurulu olmalı.",
+        )
+    background.add_task(_run_autodrive_bg, run_id)
+    return {
+        "ok": True,
+        "status": "autodrive_started",
+        "message": "Otonom sürüş arka planda başladı; ilerlemeyi timeline'dan izle.",
+        "run_id": run_id,
+    }

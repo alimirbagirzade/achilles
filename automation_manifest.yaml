@@ -74,6 +74,34 @@ agents:
       - "panic-recovery yoksa detached çöküşünde aşama 'running' asılı kalabilir"
       - "data-gate NO-GO veya veri yoksa blocked/failed (eğitim ilerlemez)"
 
+  - agent_id: orchestration-autodrive
+    name: Orchestration AutoDriver (claude -p)
+    file: app/orchestration/driver.py
+    entrypoint: AutoDriver.drive
+    trigger: "CLI `orchestrate-autodrive` + web POST /api/orchestration/autodrive/{run_id}"
+    autonomy: requires_approval
+    dangerous: false  # deep-hunt'ı sürer; gerçek eğitim onay kapısında DURUR (Kural 8)
+    default_enabled: false
+    writes:
+      - "sqlite: orchestration_events (otonom sürüş olayları)"
+      - "sqlite: orchestration_runs (hunt_ack=true, PASS sonrası)"
+    reads:
+      - "subprocess: claude -p (abonelik CLI; API key DEĞİL)"
+    safety_gates:
+      - "execute=False varsayılan: spawn YOK, yalnız komut döner (Kural 8 deseni)"
+      - "spawn yalnız execute=True + `claude` PATH'te (claude_available)"
+      - "claude -p promptu SALT-RAPOR (kod/git/eğitim YASAK); weekly-bug-scan deseni"
+      - "deep-hunt PASS → onay kapısına ilerletir ve DURUR; gerçek eğitim TAZE insan onayı bekler"
+      - "FAIL/belirsiz verdict → deep-hunt bloklu kalır (eğitim ilerlemez)"
+      - "argv listesi (shell=False) → kabuk enjeksiyonu yok; adapter/profile regex-kalıplı"
+    approval_required: true
+    stop_method: "—; sürüş onay kapısında doğal durur; koşu cancel(run_id) ile iptal"
+    status_location: "sqlite: orchestration_runs / orchestration_events"
+    known_failure_modes:
+      - "claude PATH'te yoksa 503/early-return (spawn yok)"
+      - "spawn/timeout istisnası → deep-hunt bloklu kalır, koşu çökmez"
+      - "verdict satırı yoksa güvenli tarafta FAIL"
+
   - agent_id: echo-feedback
     name: Echo Feedback Loop
     file: app/feedback/echo.py

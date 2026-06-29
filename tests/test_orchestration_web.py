@@ -101,3 +101,25 @@ def test_resume_with_hunt_ack_advances(client: TestClient) -> None:
     assert by_name["deep-hunt"]["status"] == "completed"
     # train yine de gözetimsiz çalışmaz
     assert by_name["train"]["status"] != "completed"
+
+
+def test_autodrive_dry_run_returns_command(client: TestClient) -> None:
+    """Otonom sürüş DRY-RUN: spawn yok, deep-hunt'taki koşu için claude -p komutu döner."""
+    run_id = client.post(
+        "/api/orchestration/start",
+        json={"adapter_name": "web_drive", "hunt_ack": False, "auto_run": True},
+    ).json()["run_id"]
+    r = client.post(f"/api/orchestration/autodrive/{run_id}", json={"execute": False})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body.get("dry_run") is True
+    assert body["command"][0] == "claude"
+    # gerçek eğitim aşaması asla completed değil
+    by_name = {s["name"]: s for s in body["stages"]}
+    assert by_name["train"]["status"] != "completed"
+
+
+def test_autodrive_unknown_run_404(client: TestClient) -> None:
+    r = client.post("/api/orchestration/autodrive/orc_yok", json={"execute": False})
+    assert r.status_code == 404
