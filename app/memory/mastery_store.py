@@ -13,10 +13,26 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import Float, Integer, String, Text, create_engine, select
+from sqlalchemy import Float, Integer, String, Text, create_engine, event, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from app.config import get_settings
+
+
+def _sqlite_pragmas(dbapi_conn: object, _record: object) -> None:
+    """Her bağlantıda WAL + busy_timeout. Aynı SQLite dosyası RAG öğrenme döngüsü
+    (SqliteStore), RLM koşuları (RlmStore) ve diğer store'larla paylaşıldığından
+    eşzamanlı yazımda 'database is locked' riski var; WAL eşzamanlı okur+tek-yazıcıya
+    izin verir, busy_timeout kilit beklemesini 30sn'ye çıkarır (yavaş CPU'da kart
+    yazımı sürerken mastery testi düşmesin). WAL kalıcı/per-veritabanı; busy_timeout
+    per-bağlantı olduğundan TÜM yazıcılar açmalı — bu yüzden mastery_store da açar
+    (rlm_store._sqlite_pragmas ile birebir aynı desen)."""
+    cur = dbapi_conn.cursor()  # type: ignore[attr-defined]
+    try:
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA busy_timeout=30000")
+    finally:
+        cur.close()
 
 
 def _utcnow() -> str:
@@ -130,7 +146,10 @@ class MasteryStore:
         path = db_path or get_settings().sqlite_file
         self.db_path = Path(path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._engine = create_engine(f"sqlite:///{self.db_path}", echo=False)
+        self._engine = create_engine(
+            f"sqlite:///{self.db_path}", echo=False, connect_args={"timeout": 30.0}
+        )
+        event.listen(self._engine, "connect", _sqlite_pragmas)
         MasteryBase.metadata.create_all(self._engine)
         self._Session = sessionmaker(self._engine, expire_on_commit=False)
 
