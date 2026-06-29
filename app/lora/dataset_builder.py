@@ -27,11 +27,23 @@ class LoRAExample:
     metadata: dict = field(default_factory=dict)
 
     def to_jsonl_line(self) -> str:
-        """JSONL satırı olarak serileştir (messages + opsiyonel metadata)."""
+        """JSONL satırı olarak serileştir (messages + opsiyonel metadata).
+
+        `json.dumps(ensure_ascii=False)` Unicode satır ayırıcılarını (U+2028 LINE
+        SEPARATOR, U+2029 PARAGRAPH SEPARATOR, U+0085 NEXT LINE) HAM bırakır. Bunlar
+        `json.loads` için satır sonu DEĞİL ama `str.splitlines()` için satır sonudur →
+        downstream lora-split / sft_assembly `.splitlines()` ile tek geçerli kaydı İKİ
+        geçersiz parçaya böler (trainer çöker / sessiz bozuk veri). Bu üç karakteri
+        `\\uXXXX` kaçışına çevir: JSON anlamı korunur (loads aynı string'i üretir), satır
+        bütünlüğü bozulmaz. Kart + feedback yollarını tek noktada korur (Kademe-2 av)."""
         data: dict = {"messages": self.messages}
         if self.metadata:
             data["metadata"] = self.metadata
-        return json.dumps(data, ensure_ascii=False)
+        line = json.dumps(data, ensure_ascii=False)
+        # U+2028/U+2029/U+0085: json.dumps'in ham bıraktığı, splitlines'ı bölen ayırıcılar.
+        for ch, esc in ((chr(0x2028), "\\u2028"), (chr(0x2029), "\\u2029"), (chr(0x85), "\\u0085")):
+            line = line.replace(ch, esc)
+        return line
 
 
 def _build_answer(card_json: dict) -> str:
