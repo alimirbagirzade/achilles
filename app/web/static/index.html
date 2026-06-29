@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ACHILLES — Trading Research Terminal</title>
-    <link rel="stylesheet" href="/assets/app.css?v=5" />
+    <link rel="stylesheet" href="/assets/app.css?v=6" />
     <link rel="stylesheet" href="/assets/canli-badge.css?v=1" />
   </head>
   <body>
@@ -69,6 +69,7 @@
       <button class="tab" data-tab="agents"><span class="tab-num">10</span> · AGENTS / OTOMASYON</button>
       <button class="tab" data-tab="rlm"><span class="tab-num">11</span> · RLM</button>
       <button class="tab" data-tab="orchestration"><span class="tab-num">12</span> · ORKESTRASYON</button>
+      <button class="tab" data-tab="feedback"><span class="tab-num">13</span> · GERİ BİLDİRİM</button>
     </nav>
 
     <main>
@@ -901,6 +902,55 @@
           <div id="orcRuns"><span class="muted small">—</span></div>
         </div>
       </section>
+
+      <!-- 13 · GERİ BİLDİRİM (Echo — kullanıcı düzeltmesi → sentetik SFT adayı) -->
+      <section class="panel" id="panel-feedback">
+        <div class="panel-head">
+          <h2>Geri Bildirim — Echo Döngüsü</h2>
+          <p class="muted">
+            Bir cevap yanlışsa <strong>doğrusunu</strong> yaz → Echo onu lora_sft formatında
+            <strong>aday</strong> eğitim örneğine çevirir. <span class="jargon"
+            title="Garanti/kesinlik dili (Kural 1 zehiri) içeren düzeltmeler ANINDA reddedilir; eğitim verisine sızmaz.">Güvenlik
+            filtresi</span> + insan onayı sonrası export edilir. <strong>Eğitim asla
+            otomatik başlamaz</strong> (Kural 8) — aday yine veri kapısından geçer.
+          </p>
+        </div>
+
+        <div class="card">
+          <h3>Düzeltme Ekle</h3>
+          <div class="orc-form">
+            <label style="flex:1 1 100%">Soru / bağlam
+              <input id="fbQuestion" type="text" placeholder="Hangi soruya/cevaba dair?" />
+            </label>
+            <label style="flex:1 1 100%">Yanlış cevap <span class="muted small">(opsiyonel)</span>
+              <input id="fbBad" type="text" placeholder="Neyi düzeltiyorsun?" />
+            </label>
+            <label style="flex:1 1 100%">Doğru / düzeltilmiş cevap
+              <textarea id="fbCorrection" rows="3" placeholder="Doğrusu nedir?"></textarea>
+            </label>
+            <label>Tür
+              <select id="fbType">
+                <option value="claim_correction">İddia düzeltme</option>
+                <option value="missing_caveat">Eksik uyarı</option>
+                <option value="wrong_number">Hatalı sayı</option>
+                <option value="advice_language_removed">Tavsiye dili giderildi</option>
+                <option value="other">Diğer</option>
+              </select>
+            </label>
+            <button class="btn btn-primary" id="fbSubmitBtn">+ DÜZELTME KAYDET</button>
+          </div>
+          <div class="orc-actions">
+            <button class="btn" id="fbExportBtn">⬇ Onaylananları export et</button>
+            <button class="btn" id="fbRefreshBtn">↻ Yenile</button>
+            <span class="muted small" id="fbSummary"></span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Düzeltmeler <span class="muted small">(bekleyen → onayla/reddet)</span></h3>
+          <div id="fbList"><span class="muted small">—</span></div>
+        </div>
+      </section>
     </main>
 
     <footer class="footer">
@@ -935,7 +985,7 @@
       </div>
     </div>
 
-    <script src="/assets/app.js?v=3"></script>
+    <script src="/assets/app.js?v=4"></script>
     <script src="/assets/canli-badge.js?v=1"></script>
   </body>
 </html>

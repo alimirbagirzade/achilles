@@ -3701,6 +3701,147 @@ def orchestrate_recover_cmd(
 
 
 # --------------------------------------------------------------------------
+# Echo — feedback döngüsü (kullanıcı düzeltmesi → sentetik SFT adayı)
+# --------------------------------------------------------------------------
+@app.command("feedback-add")
+def feedback_add_cmd(
+    correction: str = typer.Option(..., "--correction", help="Doğru/düzeltilmiş cevap."),
+    question: str = typer.Option("", "--question", help="Orijinal soru/bağlam."),
+    bad_answer: str = typer.Option("", "--bad-answer", help="Yanlış olan cevap."),
+    source: str = typer.Option("manual", "--source", help="rlm/eval/backtest/manual/<run_id>."),
+    correction_type: str = typer.Option(
+        "other",
+        "--type",
+        help="claim_correction|missing_caveat|wrong_number|advice_language_removed|other.",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Makine-okunabilir JSON çıktı."),
+) -> None:
+    """Bir cevap düzeltmesini kaydet (Echo). Garanti/kesinlik dili → ANINDA reddedilir (Kural 1).
+
+    Eğitim BAŞLATMAZ; yalnız aday üretir. Onaylanan düzeltmeler `feedback-export` ile AYRI
+    aday SFT dosyasına yazılır (kanonik veriye dokunmaz, Kural 8).
+    """
+    from app.feedback import EchoCollector
+
+    rec = EchoCollector().record(
+        source=source,
+        question=question,
+        bad_answer=bad_answer,
+        correction=correction,
+        correction_type=correction_type,
+    )
+    if as_json:
+        console.print_json(json.dumps(rec, ensure_ascii=False))
+        return
+    color = "green" if rec["status"] == "pending" else "red"
+    console.print(f"[{color}]{rec['status'].upper()}[/{color}] {rec['correction_id']}")
+    if rec["reject_reason"]:
+        console.print(f"[red]Gerekçe:[/red] {rec['reject_reason']}")
+
+
+@app.command("feedback-list")
+def feedback_list_cmd(
+    status: str = typer.Option(
+        "", "--status", help="pending|approved|rejected|exported (boş=hepsi)."
+    ),
+    limit: int = typer.Option(30, "--limit"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Feedback düzeltmelerini listele."""
+    from app.feedback import EchoCollector
+
+    items = EchoCollector().store.list(status=status or None, limit=limit)
+    if as_json:
+        console.print_json(json.dumps(items, ensure_ascii=False))
+        return
+    table = Table(title="Feedback düzeltmeleri")
+    table.add_column("id")
+    table.add_column("durum")
+    table.add_column("tip")
+    table.add_column("düzeltme", overflow="fold")
+    for it in items:
+        table.add_row(
+            it["correction_id"], it["status"], it["correction_type"], (it["correction"] or "")[:80]
+        )
+    console.print(table)
+
+
+@app.command("feedback-approve")
+def feedback_approve_cmd(
+    correction_id: str = typer.Argument(..., help="Onaylanacak düzeltme kimliği."),
+) -> None:
+    """Bir düzeltmeyi onayla (export'a aday). Onay anında güvenlik tekrar kontrol edilir."""
+    from app.feedback import EchoCollector
+
+    ok = EchoCollector().approve(correction_id)
+    if ok:
+        console.print(f"[green]Onaylandı:[/green] {correction_id}")
+    else:
+        console.print(
+            f"[red]Onaylanamadı[/red] (bulunamadı / boş / Kural-1 zehiri): {correction_id}"
+        )
+        raise typer.Exit(1)
+
+
+@app.command("feedback-reject")
+def feedback_reject_cmd(
+    correction_id: str = typer.Argument(..., help="Reddedilecek düzeltme kimliği."),
+    reason: str = typer.Option("", "--reason"),
+) -> None:
+    """Bir düzeltmeyi reddet."""
+    from app.feedback import EchoCollector
+
+    ok = EchoCollector().reject(correction_id, reason)
+    console.print(
+        f"[yellow]Reddedildi:[/yellow] {correction_id}"
+        if ok
+        else f"[red]Bulunamadı:[/red] {correction_id}"
+    )
+
+
+@app.command("feedback-export")
+def feedback_export_cmd(
+    out: str = typer.Option(
+        "", "--out", help="Aday SFT dosyası (boş=data/feedback/feedback_sft.jsonl)."
+    ),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Onaylanan düzeltmeleri AYRI aday SFT dosyasına export et (kanonik veriye dokunmaz).
+
+    EĞİTİM BAŞLATMAZ (Kural 8). Aday yine pretrain-gate + dataset audit'ten geçmelidir.
+    """
+    from app.feedback import EchoCollector
+
+    res = EchoCollector().export_approved(out_path=out or None)
+    if as_json:
+        console.print_json(json.dumps(res, ensure_ascii=False))
+        return
+    console.print(
+        f"[green]{res['n_exported']} aday[/green] → {res['path']} "
+        f"(yeni işaretlenen: {res['newly_marked']})"
+    )
+    console.print(
+        "[dim]Bu yalnız ADAY veri; eğitime girmeden önce pretrain-gate + audit "
+        "gerekir (Kural 8).[/dim]"
+    )
+
+
+@app.command("feedback-status")
+def feedback_status_cmd(as_json: bool = typer.Option(False, "--json")) -> None:
+    """Feedback özet sayıları (pending/approved/rejected/exported)."""
+    from app.feedback import EchoCollector
+
+    s = EchoCollector().summary()
+    if as_json:
+        console.print_json(json.dumps(s, ensure_ascii=False))
+        return
+    console.print(
+        f"bekleyen={s['pending']} onaylı={s['approved']} "
+        f"reddedilen={s['rejected']} export={s['exported']}"
+    )
+
+
+# --------------------------------------------------------------------------
 # Agent runtime — task queue + approvals + supervisor (Phase 2)
 # --------------------------------------------------------------------------
 @app.command("task-create")

@@ -121,7 +121,7 @@
     { key: "kesfet", tabs: ["research", "rlm"] },
     { key: "kutuphane", tabs: ["papers"] },
     { key: "trader", tabs: ["trader", "backtest"] },
-    { key: "egitim", tabs: ["review", "training", "eval", "orchestration"] },
+    { key: "egitim", tabs: ["review", "training", "eval", "orchestration", "feedback"] },
     { key: "izleme", tabs: ["learning", "agents", "about"] },
   ];
   var TAB_TO_GROUP = {};
@@ -152,6 +152,9 @@
     orchestration:
       "Tek tık başlat; salt-okuma aşamaları çalışır, insan kapısında durur. " +
       "Derin av + onay sonrası 'Sürdür' ile kaldığı yerden devam eder.",
+    feedback:
+      "Yanlış cevabın doğrusunu yaz → aday eğitim örneği. Onayla → export. " +
+      "Eğitim otomatik başlamaz; aday yine veri kapısından geçer.",
   };
   function updateNextStep(name) {
     var box = document.getElementById("nextStep");
@@ -191,6 +194,7 @@
     if (name === "agents") loadAgentsDashboard();
     if (name === "rlm") loadRlmDashboard();
     if (name === "orchestration") loadOrchestration();
+    if (name === "feedback") loadFeedback();
   }
 
   function showGroupTabs(groupKey) {
@@ -3955,6 +3959,144 @@
         if (orcCurrentRun) orcRefreshStatus(orcCurrentRun);
       });
     }
+  }
+
+  // ---------- Geri bildirim (Echo) ----------
+  var FB_STATUS_CLS = {
+    pending: "warning",
+    approved: "",
+    rejected: "error",
+    exported: "",
+  };
+
+  function fbRenderSummary(s) {
+    var el = document.getElementById("fbSummary");
+    if (!el || !s) return;
+    el.textContent =
+      "bekleyen " + (s.pending || 0) +
+      " · onaylı " + (s.approved || 0) +
+      " · reddedilen " + (s.rejected || 0) +
+      " · export " + (s.exported || 0);
+  }
+
+  function fbRenderList(items) {
+    var el = document.getElementById("fbList");
+    if (!el) return;
+    if (!items || !items.length) {
+      el.innerHTML = '<span class="muted small">Henüz düzeltme yok.</span>';
+      return;
+    }
+    el.innerHTML = items
+      .map(function (c) {
+        var cls = FB_STATUS_CLS[c.status] || "";
+        var actions =
+          c.status === "pending"
+            ? '<button class="btn btn-sm" data-fb-approve="' + esc(c.correction_id) + '">✓ Onayla</button>' +
+              '<button class="btn btn-sm" data-fb-reject="' + esc(c.correction_id) + '">✕ Reddet</button>'
+            : "";
+        var reason = c.reject_reason
+          ? ' <span class="ev ' + cls + '">(' + esc(c.reject_reason) + ")</span>"
+          : "";
+        return (
+          '<div class="orc-run-row">' +
+          "<strong>" + esc(c.status) + "</strong> · " + esc(c.correction_type) + " · " +
+          esc((c.correction || "").slice(0, 90)) + reason +
+          ' <span style="float:right">' + actions + "</span></div>"
+        );
+      })
+      .join("");
+    el.querySelectorAll("[data-fb-approve]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        fbAct("approve", b.getAttribute("data-fb-approve"));
+      });
+    });
+    el.querySelectorAll("[data-fb-reject]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        fbAct("reject", b.getAttribute("data-fb-reject"));
+      });
+    });
+  }
+
+  function loadFeedback() {
+    api("/feedback/summary")
+      .then(fbRenderSummary)
+      .catch(function () {});
+    api("/feedback/list?limit=50")
+      .then(function (d) {
+        fbRenderList(d.items);
+      })
+      .catch(function () {});
+    var sb = document.getElementById("fbSubmitBtn");
+    if (sb && !sb._wired) {
+      sb._wired = true;
+      sb.addEventListener("click", submitFeedback);
+      document.getElementById("fbExportBtn").addEventListener("click", exportFeedback);
+      document.getElementById("fbRefreshBtn").addEventListener("click", loadFeedback);
+    }
+  }
+
+  function submitFeedback() {
+    var correction = (document.getElementById("fbCorrection") || {}).value || "";
+    if (!correction.trim()) {
+      toast("Düzeltme metni boş olamaz", true);
+      return;
+    }
+    var body = {
+      correction: correction,
+      question: (document.getElementById("fbQuestion") || {}).value || "",
+      bad_answer: (document.getElementById("fbBad") || {}).value || "",
+      correction_type: (document.getElementById("fbType") || {}).value || "other",
+      source: "manual",
+    };
+    api("/feedback/submit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+      .then(function (rec) {
+        if (rec.status === "rejected") {
+          toast("Reddedildi: " + (rec.reject_reason || "Kural-1 zehiri"), true);
+        } else {
+          toast("Kaydedildi (" + rec.status + ")");
+          document.getElementById("fbCorrection").value = "";
+        }
+        loadFeedback();
+      })
+      .catch(function (e) {
+        toast("Kaydedilemedi: " + e.message, true);
+      });
+  }
+
+  function fbAct(action, id) {
+    api("/feedback/" + action + "/" + encodeURIComponent(id), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    })
+      .then(function (d) {
+        if (action === "approve" && d.ok === false) {
+          toast("Onaylanamadı: " + (d.reason || ""), true);
+        }
+        loadFeedback();
+      })
+      .catch(function (e) {
+        toast("İşlem hatası: " + e.message, true);
+      });
+  }
+
+  function exportFeedback() {
+    api("/feedback/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    })
+      .then(function (d) {
+        toast(d.n_exported + " aday export edildi (eğitim başlamaz — Kural 8)");
+        loadFeedback();
+      })
+      .catch(function (e) {
+        toast("Export hatası: " + e.message, true);
+      });
   }
 
   // ---------- init ----------
