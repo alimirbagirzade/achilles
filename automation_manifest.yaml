@@ -74,6 +74,31 @@ agents:
       - "panic-recovery yoksa detached çöküşünde aşama 'running' asılı kalabilir"
       - "data-gate NO-GO veya veri yoksa blocked/failed (eğitim ilerlemez)"
 
+  - agent_id: echo-feedback
+    name: Echo Feedback Loop
+    file: app/feedback/echo.py
+    entrypoint: EchoCollector.record / approve / export_approved
+    trigger: "CLI `feedback-*` + web /api/feedback/*"
+    autonomy: semi_auto
+    dangerous: false  # yalnız ADAY üretir; eğitim başlatmaz, kanonik veriye dokunmaz
+    default_enabled: false
+    writes:
+      - "sqlite: feedback_corrections"
+      - data/feedback/feedback_sft.jsonl  # AYRI aday dosya (lora_sft.jsonl DEĞİL)
+    reads:
+      - "sqlite: feedback_corrections"
+    safety_gates:
+      - "submit'te Kural-1 zehir filtresi (garanti/kesinlik dili → anında reddedilir)"
+      - "onay anında güvenlik tekrar kontrol (kayıt sonrası düzenleme savunması)"
+      - "export AYRI aday dosyaya yazar; kanonik lora_sft.jsonl'e OTO-MERGE YOK (Kural 8)"
+      - "boş soru/düzeltme reddedilir (sahte 'kabul' yok)"
+    approval_required: false
+    stop_method: "—; salt aday üretir (eğitim ayrı, onay-kapılı)"
+    status_location: "sqlite: feedback_corrections"
+    known_failure_modes:
+      - "düzeltme zehri submit/approve'da reddedilir → exported'a geçmez"
+      - "export aday dosyası yine pretrain-gate + audit'ten geçmeli (oto-eğitim yok)"
+
   - agent_id: rag-learning-loop
     name: RAG Learning Loop
     file: app/research/rag_learning_loop.py
