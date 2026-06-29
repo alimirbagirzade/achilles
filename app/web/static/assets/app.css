@@ -2342,3 +2342,25 @@ code {
 .orc-run-row:hover {
   background: var(--warn-soft);
 }
+
+/* ====================== Geri bildirim (13) ====================== */
+.orc-form textarea {
+  padding: 7px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  width: 100%;
+  resize: vertical;
+}
+.orc-form select {
+  padding: 7px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+.btn-sm {
+  padding: 3px 9px;
+  font-size: 0.72rem;
+  margin-left: 5px;
+}
