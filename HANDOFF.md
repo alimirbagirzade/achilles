@@ -1,7 +1,7 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-06-29 (ajan-sistem 3-faz) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
-_Açık PR: yok — ajan-sistem PR'ları #72·#74·#79 + sertleştirme #75·#76·#77 hepsi MERGED._
+_Son güncelleme: 2026-06-29 (ajan-sistem 3-faz + Kademe-2 eğitim-öncesi av) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Açık PR: yok — ajan-sistem #72·#74·#79 + Kademe-2 av/sertleştirme #73·#75·#76·#77·#78·#82 hepsi MERGED. Eğitim-öncesi kapı temiz; carding/RLM/eğitim ANA ortamda (worktree izole)._
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
@@ -18,7 +18,29 @@ RLM `backend="anthropic"` (API) yolu OPSİYONEL + KAPALI kalır (`rlm_alexzhang_
 `provider=native`); varsayılan/zorunlu YAPILMAZ. Yeni özelliklerde bulut API'sini varsayılan
 bağımlılık yapma → opt-in + native fallback şart. Bkz memory [[no-api-local-subscription-only]].
 
-### 🆕 EN SON İŞ (2026-06-29) — AJAN ORKESTRASYON SİSTEMİ (3 FAZ, hepsi MERGED)
+### ▶️ SIRADAKİ ADIM — EĞİTİME HAZIRLIK (HANDOFF, ana ortamda yapılmalı)
+
+**Kademe-2 eğitim-öncesi ZORUNLU kapı bu seansta KAPSAMLI biçimde kapatıldı** (orchestration +
+Echo feedback alt sistemleri derin-avlandı; 6 PR merged — aşağıda). Yani disiplin/güvenlik
+açısından bir sonraki eğitim için kapı temiz.
+
+**⚠️ KRİTİK YAPI GERÇEĞİ:** Bu seans **izole worktree**'de çalıştı; worktree'nin KENDİ boş
+datası var (`root`/`sqlite_file` worktree içine işaret eder; lora_sft yalnız ~5 satır) ve
+**torch/transformers/peft worktree venv'inde KURULU DEĞİL**. Bu yüzden **carding / RLM aday
+üretimi / LoRA eğitimi bu worktree'den KOŞTURULAMAZ** — hepsi **ANA ortamda**
+(`C:\Users\sevinc\Development\achilles`, gerçek data + vector_db + torch kurulu) yapılmalı.
+
+**Plana göre sıradaki adımlar (ANA ortam, RAG→RLM→LoRA sırası, [[loop-sequence-rlm-step]]):**
+1. **Carding** — 2026-06-26'da ingest edilen 71 yeni arXiv makalesini kartla (yavaş; Ollama açık olmalı).
+2. **RLM aday üretimi** — `RlmController().answer` → `rlm-lora-candidates` (§16); RLM adımı ATLANMAZ.
+3. **LoRA eğitimi** — Kural-8 gated: `train` varsayılan dry-run; gerçek eğitim YALNIZ açık onay +
+   **detached** (`scripts/start-train.ps1`, harness `run_in_background` oturum kapanınca ÖLÜR —
+   [[detached-training-survives-teardown]]). 1.5B adapter zaten ADAY/ACCEPT; production terfisi
+   İNSAN onayı bekler.
+- Orkestrasyon sistemi (web **12·ORKESTRASYON** / `orchestrate-autodrive`) salt-okuma aşamalarını
+  otonom yürütüp **approval** kapısında durur → eğitim hazırlığını ölçmek için kullan.
+
+### 🆕 EN SON İŞ (2026-06-29) — AJAN ORKESTRASYON SİSTEMİ (3 FAZ) + KADEME-2 EĞİTİM-ÖNCESİ AV
 
 Kullanıcı "tek tuşla Claude aboneliğiyle eğitimi devreye sok + ajanların birbiriyle etkileşimini
 arayüzde gör + eksik ajanları konuş" dedi → plana göre 3 faz, hepsi CI-yeşil self-merge,
@@ -47,10 +69,22 @@ varsayılan (spawn yok, komut döner); spawn yalnız `execute=True`+`claude` PAT
 prompt SALT-RAPOR. CLI `orchestrate-autodrive [--execute]`, web `/api/orchestration/autodrive/{id}`
 (BackgroundTasks), **🤖 Otonom Sürüş** butonu (deep-hunt'ta blocked iken etkin).
 
+**KADEME-2 EĞİTİM-ÖNCESİ DERİN AV (zorunlu kapı, bu seans):** İki alt sistem çok-ajan workflow
+(finder × 3-lens adversarial: repro/by-design/severity, ≥2-oy onaylı) ile avlandı:
+- **Orchestration (PR#72):** 17→12 onaylı/5 latent-red → **#75/#76/#77** (yukarıda) + rapor **#78**.
+- **Echo feedback (PR#74, eğitim-VERİSİ üretir):** 5/5 onaylı → **#82**: ECHO-POISON-01 (HIGH —
+  zehir filtresi yalnız `guaranteed_profit` taranıyordu; advice/risk-free/canlı-sinyal/kesinlik
+  dili SFT adayına sızıyordu → geniş `safety_scanner` + feedback'e özel direktifler), POISON-02
+  (export yazmadan önce yeniden tarar), JSONL-001 (U+2028/2029/0085 `\u`-kaçışı → `splitlines`
+  bölmez), +Kural-6 determinizm + reject-penceresi. **dataset_quality.audit BİLİNÇLİ değiştirilmedi**
+  (curated set FP/NO-GO riski; kartlar zaten Gate-7'den geçer).
+
 **KALAN PLAN (eksik ajanlar):** Faz-4 **Smoke Test Runner** (gerçek Ollama uçtan-uca — "stub≠
 runtime" dersi), Faz-5 **Regression Blocker** + **Collision Detector**. + Faz-3 driver'a ileride
-alt-sistem Kademe-2 av (Faz-1 gibi). Memory: [[orchestration-system-2026-06-29]],
-[[echo-feedback-2026-06-29]], [[orchestration-autodrive-2026-06-29]].
+alt-sistem Kademe-2 av (Faz-1 gibi). + flag'lenen BM25 cache content-fingerprint (latent, ölç-sonra-fix).
+Memory: [[orchestration-system-2026-06-29]], [[echo-feedback-2026-06-29]],
+[[orchestration-autodrive-2026-06-29]], [[orchestration-kademe2-hunt-2026-06-29]],
+[[sqlite-shared-file-wal-pragmas]].
 
 ### 🆕 EN SON İŞ (2026-06-26 GECE) — İLK 1.5B LoRA EĞİTİMİ BAŞARIYLA TAMAMLANDI + RAG genişledi
 
