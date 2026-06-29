@@ -1,7 +1,7 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-06-26 (gece otonom loop) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
-_Açık PR: yok — gece PR'ları #66·#67·#69 hepsi MERGED. İlk 1.5B LoRA adapter eğitildi+ACCEPT._
+_Son güncelleme: 2026-06-29 (ajan-sistem 3-faz) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Açık PR: yok — ajan-sistem PR'ları #72·#74·#79 + sertleştirme #75·#76·#77 hepsi MERGED._
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
@@ -17,6 +17,40 @@ araçlarla (Claude Code, Codex vb.) — API anahtarı/faturalı endpoint DEĞİL
 RLM `backend="anthropic"` (API) yolu OPSİYONEL + KAPALI kalır (`rlm_alexzhang_enabled=False`,
 `provider=native`); varsayılan/zorunlu YAPILMAZ. Yeni özelliklerde bulut API'sini varsayılan
 bağımlılık yapma → opt-in + native fallback şart. Bkz memory [[no-api-local-subscription-only]].
+
+### 🆕 EN SON İŞ (2026-06-29) — AJAN ORKESTRASYON SİSTEMİ (3 FAZ, hepsi MERGED)
+
+Kullanıcı "tek tuşla Claude aboneliğiyle eğitimi devreye sok + ajanların birbiriyle etkileşimini
+arayüzde gör + eksik ajanları konuş" dedi → plana göre 3 faz, hepsi CI-yeşil self-merge,
+adversarial-review/test'li, mevcut mimariyi BOZMADAN (auto_pipeline/detached korundu):
+
+**FAZ-1 — Dayanıklı Orkestrasyon (PR #72):** `app/orchestration/` — saf 9-aşama hattı
+(preflight→deep-hunt→data-gate→curriculum→dry-run→approval→train→evaluate→registry) + SQLite/WAL
+store (run/stage/event) + durum makinesi (step/run_until_blocked/recover_stale) + savunmacı
+delegeler. CLI `orchestrate-*`, web `/api/orchestration/*`, **12·ORKESTRASYON** sekmesi (canlı
+aşama grafiği + timeline + tek-tık/sürdür/recovery). Kural-8: salt-okuma aşamaları otonom,
+deep-hunt/approval insan kapısı, train HANDOFF. checkpoint/resume → session-limit'e dayanıklı.
+Eşzamanlı oturum Kademe-2 av ile sertleştirdi: **#75** (SqliteStore WAL), **#76** (CAS-claim/
+cancel-race/recover-clobber/profile-pattern), **#77** (rlm degenerate).
+
+**FAZ-2 — Echo Feedback (PR #74):** `app/feedback/` — kullanıcı düzeltmesi → güvenli sentetik
+SFT ADAYI (lora_sft formatı). Kural-1 zehir filtresi TÜM alanlarda (soru SFT'de user-turn→
+sızabilir, review buldu); export AYRI aday dosyaya (oto-merge YOK, eğitim oto-tetiklemez).
+CLI `feedback-*`, web `/api/feedback/*`, **13·GERİ BİLDİRİM** sekmesi. Adversarial review 4/4
+gerçek fix. **CI DERSİ:** global RateLimiter cross-test birikimi (CI hızlı→tek 60s pencere→120
+aşımı→alakasız test 429) → `tests/conftest.py` autouse fixture her testte `_hits` temizler.
+
+**FAZ-3 — AutoDriver (PR #79):** `app/orchestration/driver.py` — kullanıcının ASIL isteği:
+deep-hunt'ı headless `claude -p` (ABONELİK CLI, API-key DEĞİL) ile OTONOM sürer → PASS ise
+onaya ilerletir + DURUR (Kural 8: gerçek eğitim TAZE insan onayı bekler). `execute=False`
+varsayılan (spawn yok, komut döner); spawn yalnız `execute=True`+`claude` PATH'te; shell=False;
+prompt SALT-RAPOR. CLI `orchestrate-autodrive [--execute]`, web `/api/orchestration/autodrive/{id}`
+(BackgroundTasks), **🤖 Otonom Sürüş** butonu (deep-hunt'ta blocked iken etkin).
+
+**KALAN PLAN (eksik ajanlar):** Faz-4 **Smoke Test Runner** (gerçek Ollama uçtan-uca — "stub≠
+runtime" dersi), Faz-5 **Regression Blocker** + **Collision Detector**. + Faz-3 driver'a ileride
+alt-sistem Kademe-2 av (Faz-1 gibi). Memory: [[orchestration-system-2026-06-29]],
+[[echo-feedback-2026-06-29]], [[orchestration-autodrive-2026-06-29]].
 
 ### 🆕 EN SON İŞ (2026-06-26 GECE) — İLK 1.5B LoRA EĞİTİMİ BAŞARIYLA TAMAMLANDI + RAG genişledi
 

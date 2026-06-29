@@ -3700,6 +3700,52 @@ def orchestrate_recover_cmd(
         console.print(f"[yellow]Kurtarıldı:[/yellow] {item['run_id']} / {item['stage']} → failed")
 
 
+@app.command("orchestrate-autodrive")
+def orchestrate_autodrive_cmd(
+    run_id: str = typer.Argument(..., help="Otonom sürülecek koşu kimliği."),
+    execute: bool = typer.Option(
+        False,
+        "--execute/--dry-run",
+        help="GERÇEK `claude -p` spawn et (abonelik). Varsayılan dry-run: yalnız komutu gösterir.",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Makine-okunabilir JSON çıktı."),
+) -> None:
+    """deep-hunt aşamasını headless `claude -p` ile OTONOM sür → onay kapısına kadar ilerlet.
+
+    Kullanıcının "tek tuş → Claude aboneliğiyle devreye soksun" akışının CLI'si. Varsayılan
+    DRY-RUN (spawn yok; çalıştırılacak komutu gösterir). `--execute`: gerçek `claude -p` koşar
+    (abonelikli Claude Code PATH'te olmalı; API key DEĞİL). Derin av PASS → hunt_ack + onay
+    kapısına ilerletir; GERÇEK EĞİTİM yine TAZE insan onayı bekler (Kural 8 — onayda DURUR).
+    """
+    from app.orchestration.driver import AutoDriver
+
+    res = AutoDriver().drive(run_id, execute=execute)
+    if as_json:
+        console.print_json(json.dumps(res, ensure_ascii=False))
+        return
+    if not res.get("ok"):
+        console.print(f"[red]Hata:[/red] {res.get('reason')}")
+        raise typer.Exit(1)
+    if res.get("dry_run"):
+        console.print("[bold]DRY-RUN[/bold] — çalıştırılacak komut:")
+        console.print(f'  [cyan]{" ".join(res["command"][:2])} "<derin-av-promptu>"[/cyan]')
+        console.print(
+            f"[dim]Gerçek çalıştırmak için: achilles orchestrate-autodrive {run_id} --execute[/dim]"
+        )
+        return
+    if res.get("hunt_passed"):
+        console.print(
+            f"[green]Derin av PASS[/green] → onay kapısına ilerletildi "
+            f"(durum: {res['run']['status']} @ {res['run']['current_stage']})."
+        )
+        console.print("[dim]Gerçek eğitim TAZE onay bekler (Kural 8).[/dim]")
+    elif res.get("drove"):
+        v = res.get("verdict", {})
+        console.print(f"[yellow]Derin av {v.get('verdict')}[/yellow] → deep-hunt bloklu kaldı.")
+    else:
+        console.print(f"[dim]{res.get('reason')}[/dim]")
+
+
 # --------------------------------------------------------------------------
 # Echo — feedback döngüsü (kullanıcı düzeltmesi → sentetik SFT adayı)
 # --------------------------------------------------------------------------

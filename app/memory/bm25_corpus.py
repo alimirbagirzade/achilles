@@ -1,11 +1,17 @@
-"""Korpus geneli BM25 indeksi — Chroma'dan lazy kurulur, chunk sayısına göre cache'lenir.
+"""Korpus geneli BM25 indeksi — SQLite'tan lazy kurulur, içerik imzasına göre cache'lenir.
 
 Hibrit retrieval (Faz A3) için: dense (semantik) aday havuzunu keyword (BM25)
 eşleşmeleriyle genişletir. `BM25Index` yazılıydı ama hiç doldurulmuyordu; bu modül
-onu ingestion'a dokunmadan canlı yola alır (Chroma zaten tüm chunk metnini tutar).
+onu ingestion'a dokunmadan canlı yola alır (SQLite zaten tüm chunk metnini tutar).
 
-Cache, koleksiyon chunk sayısı değişince yeniden kurulur (yeni makale eklenince).
-Chroma boş/erişilemezse `(None, {})` döner → çağıran dense-only'e geçer (graceful).
+Cache, korpus İÇERİK İMZASI (chunk sayısı + toplam karakter) değişince yeniden kurulur.
+Yalnız chunk SAYISI yetmezdi: eşit-sayıda içerik değişiminde (force re-index aynı sayıda
+chunk üretir / chunk yerinde yeniden yazılırsa count sabit kalır) indeks SESSİZCE bayatlar
+ve eski sonuç dönerdi (Kural 7 ihlali). İmza, sıcak-yolda zaten yüklü satırlar üzerinden
+hesaplanır → ek DB turu YOK (ölçüm: ~94k chunk'ta ~6.6ms ≈ list_all_chunks ~234ms yükünün
+%3'ü; tam metin-hash'i ~18ms ÖLÇÜLEREK reddedildi). reset_cache() yine otoritatif geçersiz-
+leştirmedir (aynı-uzunlukta içerik değişimi imzayı kaçırabilir; mutasyon yolları çağırmalı).
+SQLite boş/erişilemezse `(None, {})` döner → çağıran dense-only'e geçer (graceful).
 """
 
 from __future__ import annotations
@@ -20,8 +26,8 @@ if TYPE_CHECKING:
     from app.memory.chroma_store import ChromaStore
     from app.memory.sqlite_store import SqliteStore
 
-# Modül düzeyi cache (process ömrü). Anahtar: chunk sayısı.
-_cache: dict[str, object] = {"count": -1, "bm25": None, "chunks": {}}
+# Modül düzeyi cache (process ömrü). Anahtar: korpus içerik imzası (count, toplam_char).
+_cache: dict[str, object] = {"sig": None, "bm25": None, "chunks": {}}
 # Build kilidi: 94k chunk tokenizasyonu ~170s sürer. Eşzamanlı ilk-sorgular (warm-up +
 # kullanıcı) kilitsiz HER BİRİ ayrı build başlatırdı (thundering herd → CPU boğulması).
 # Kilit + çift-kontrol → yalnız BİR build, diğerleri bekleyip cache'i kullanır.
@@ -65,9 +71,17 @@ def get_corpus_bm25(
     if count == 0:
         return None, {}
 
-    if _cache["count"] != count:
+    # İçerik imzası: yalnız chunk SAYISI değil toplam karakter de. Eşit-sayıda içerik
+    # değişiminde (force re-index aynı sayıda chunk üretir / chunk yerinde yeniden yazılır)
+    # count sabit kalır ama toplam karakter değişir → bayat indeks otomatik yeniden kurulur.
+    # char_count kolonu chunk'lama anında len(text) ile yazılır; yoksa (test stub) len(text)'e
+    # düşer. Satırlar zaten yüklü → yalnız O(n) bellek-içi toplam (~6.6ms/94k chunk, ölçüldü).
+    total_chars = sum(getattr(ch, "char_count", None) or len(ch.text or "") for ch in rows)
+    sig = (count, total_chars)
+
+    if _cache["sig"] != sig:
         with _build_lock:
-            if _cache["count"] != count:  # çift-kontrol: başka thread bu arada kurmuş olabilir
+            if _cache["sig"] != sig:  # çift-kontrol: başka thread bu arada kurmuş olabilir
                 titles = {p.paper_id: p.title for p in st.list_papers()}
                 bm25 = BM25Index()
                 chunks: dict[str, RetrievedChunk] = {}
@@ -85,13 +99,18 @@ def get_corpus_bm25(
                         title=titles.get(ch.paper_id),
                         distance=None,  # BM25 kaynaklı; reranker semantiği nötr (0.5) sayar
                     )
-                _cache.update(count=count, bm25=bm25, chunks=chunks)
+                _cache.update(sig=sig, bm25=bm25, chunks=chunks)
 
     return _cache["bm25"], _cache["chunks"]  # type: ignore[return-value]
 
 
 def reset_cache() -> None:
-    """Cache'i sıfırla (test izolasyonu / yeniden ingest sonrası)."""
+    """Cache'i sıfırla (test izolasyonu / yeniden ingest sonrası).
+
+    İçerik imzası (count + toplam karakter) aynı-uzunlukta içerik değişimini yakalamaz;
+    bu yüzden chunk mutasyonu yapan TÜM yollar (şu an yalnız PaperIndexer.ingest_one)
+    bu fonksiyonu çağırmalı — otoritatif geçersizleştirme budur.
+    """
     global _shared_store
-    _cache.update(count=-1, bm25=None, chunks={})
+    _cache.update(sig=None, bm25=None, chunks={})
     _shared_store = None
