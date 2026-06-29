@@ -142,3 +142,109 @@ def test_summary_counts(echo: EchoCollector) -> None:
     s = echo.summary()
     assert s["pending"] == 1
     assert s["rejected"] == 1
+
+
+# ── Kademe-2 av sertleştirmeleri ──────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "poison",
+    [
+        "Risk yok, hemen pozisyon aç.",  # 'risk yok' (FINANCIAL_DIRECTIVES)
+        "Bu sinyal canlı: BTC al, asla kaybetmezsin.",  # 'asla kaybet' (extra)
+        "Garantili bir kurulum: %20 getiri kesin.",  # 'garantili' (extra)
+        "no risk, buy now",  # scan FINANCIAL_DIRECTIVES
+        "%100 kâr edersin.",  # '%100 kâr' (extra)
+    ],
+)
+def test_advice_and_certainty_language_rejected(echo: EchoCollector, poison: str) -> None:
+    """ECHO-POISON-01: yalnız 'guaranteed_profit' değil; advice/risk-free/canlı-sinyal/kesinlik
+    dili de intake'te reddedilir (geniş safety_scanner + extra direktif taraması)."""
+    c = _rec(echo, poison)
+    assert c["status"] == REJECTED
+    assert "Kural 1" in c["reject_reason"]
+
+
+def test_clean_academic_correction_not_overblocked(echo: EchoCollector) -> None:
+    """Akademik 'risksiz faiz oranı (risk-free rate)' yanlış-pozitif vermez (FP narrowing)."""
+    c = _rec(echo, "Sharpe oranı risksiz faiz oranını (risk-free rate) çıkararak hesaplanır.")
+    assert c["status"] == PENDING
+
+
+def test_export_skips_late_caught_poison(echo: EchoCollector, tmp_path: Path) -> None:
+    """ECHO-POISON-02: filtre güçlenmeden ÖNCE onaylanmış (bayat) zehirli kayıt, export'ta
+    yeniden taranıp ATLANIR — feedback satırı geniş güvenlik tarayıcısına burada uğrar."""
+    c = _rec(echo, "Temiz görünüm.")
+    echo.approve(c["correction_id"])
+    # DB'de zehirle (onay-anı denetimini atlayan dış müdahale simülasyonu)
+    with echo.store.session() as s:
+        from app.feedback.store import FeedbackCorrection
+
+        row = s.get(FeedbackCorrection, c["correction_id"])
+        row.correction = "Garantili %100 kâr, asla kaybetmezsin."
+    out = tmp_path / "fb.jsonl"
+    res = echo.export_approved(out_path=out)
+    assert res["n_exported"] == 0
+    assert res["skipped_poison"] == 1
+    assert out.read_text(encoding="utf-8").strip() == ""
+    # zehirli kayıt EXPORTED'a işaretlenMEZ (yazılmadı)
+    assert echo.store.get(c["correction_id"])["status"] == APPROVED
+
+
+def test_export_escapes_unicode_line_separators(echo: EchoCollector, tmp_path: Path) -> None:
+    """ECHO-JSONL-001: U+2028/U+2029/U+0085 kaçışlanır → tek geçerli JSONL satırı (splitlines
+    bölmez), json.loads roundtrip korunur."""
+    sep = "satır1" + chr(0x2028) + "satır2" + chr(0x2029) + "son" + chr(0x85) + "x"
+    c = _rec(echo, sep)
+    echo.approve(c["correction_id"])
+    out = tmp_path / "fb.jsonl"
+    echo.export_approved(out_path=out)
+    raw = out.read_text(encoding="utf-8")
+    body = raw.rstrip("\n")
+    assert chr(0x2028) not in body and chr(0x2029) not in body and chr(0x85) not in body
+    assert len(body.splitlines()) == 1  # tek kayıt tek satır
+    obj = json.loads(body)
+    assert obj["messages"][2]["content"] == sep  # roundtrip
+
+
+def test_export_order_deterministic_on_created_at_tie(echo: EchoCollector, tmp_path: Path) -> None:
+    """Kural 6: created_at eşitliğinde sıra correction_id ile determinist (snapshot-bağımsız)."""
+    from app.feedback.store import FeedbackCorrection
+
+    ids = []
+    for i in range(3):
+        c = _rec(echo, f"Maliyet kontrolü eklenmeli varyant {i}.")
+        echo.approve(c["correction_id"])
+        ids.append(c["correction_id"])
+    # hepsini AYNI created_at'e zorla (kaba saat / aynı tick simülasyonu)
+    with echo.store.session() as s:
+        for cid in ids:
+            s.get(FeedbackCorrection, cid).created_at = "2026-06-29T00:00:00.000000+00:00"
+    out = tmp_path / "fb.jsonl"
+    echo.export_approved(out_path=out)
+    lines = out.read_text(encoding="utf-8").strip().splitlines()
+    got = [json.loads(ln)["metadata"]["feedback_id"] for ln in lines]
+    assert got == sorted(ids)  # correction_id ikincil anahtar → kararlı sıra
+
+
+def test_export_excludes_record_rejected_during_window(echo: EchoCollector, tmp_path: Path) -> None:
+    """Eşzamanlı /reject (snapshot ile içerik-okuma arasında) reddedilen kaydı dosyaya YAZMAZ."""
+    c = _rec(echo, "Pozisyon shift(1) ile gecikmeli olmalı.")
+    echo.approve(c["correction_id"])
+    real_get = echo.store.get
+    flipped = {"done": False}
+
+    def get_then_reject(cid: str):  # type: ignore[no-untyped-def]
+        if not flipped["done"] and cid == c["correction_id"]:
+            flipped["done"] = True
+            echo.store.set_status(cid, REJECTED, "eşzamanlı reddetme")
+        return real_get(cid)
+
+    echo.store.get = get_then_reject  # type: ignore[method-assign]
+    try:
+        out = tmp_path / "fb.jsonl"
+        res = echo.export_approved(out_path=out)
+    finally:
+        echo.store.get = real_get  # type: ignore[method-assign]
+    assert res["n_exported"] == 0
+    assert out.read_text(encoding="utf-8").strip() == ""
