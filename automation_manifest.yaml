@@ -46,6 +46,34 @@ agents:
       - "detached eğitim ölürse → TRAIN_FAILED"
       - "state dosyası bozuksa sessiz IDLE"
 
+  - agent_id: training-orchestrator
+    name: Training Orchestrator
+    file: app/orchestration/orchestrator.py
+    entrypoint: TrainingOrchestrator.start / step / run_until_blocked / recover_stale
+    trigger: "CLI `orchestrate-*` + (Phase 2) web /api/orchestration/*"
+    autonomy: requires_approval
+    dangerous: false  # koordinatör salt-okuma yürütür; gerçek eğitim auto-lora'ya delege
+    default_enabled: false
+    writes:
+      - "sqlite: orchestration_runs / orchestration_stages / orchestration_events"
+    reads:
+      - data/lora_sft/lora_sft.jsonl
+      - "sqlite: approvals (taze onay durumu)"
+      - storage/STOP_ALL
+    safety_gates:
+      - "deep-hunt aşaması hunt_ack olmadan blocked (Kademe-2 ZORUNLU — CLAUDE.md)"
+      - "approval aşaması TAZE insan onayı ister (Kural 8); onaysız blocked"
+      - "train/evaluate/registry varsayılan HANDOFF — gözetimsiz gerçek eğitim YOK"
+      - "STOP_ALL aktifken preflight/approval blocked"
+      - "checkpoint+resume: tamamlanan aşama tekrar koşmaz (session-limit'e dayanıklı)"
+    approval_required: true
+    stop_method: "achilles orchestrate-recover (stale running → failed); cancel(run_id)"
+    status_location: "sqlite: orchestration_runs"
+    known_failure_modes:
+      - "delege istisnası → aşama failed + koşu failed (sessiz yutma yok)"
+      - "panic-recovery yoksa detached çöküşünde aşama 'running' asılı kalabilir"
+      - "data-gate NO-GO veya veri yoksa blocked/failed (eğitim ilerlemez)"
+
   - agent_id: rag-learning-loop
     name: RAG Learning Loop
     file: app/research/rag_learning_loop.py

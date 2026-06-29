@@ -3521,6 +3521,188 @@ def local_training_postcheck_cmd(
 
 
 # --------------------------------------------------------------------------
+# Orkestrasyon — dayanıklı eğitim hattı (checkpoint + resume + panic-recovery)
+# --------------------------------------------------------------------------
+_STAGE_GLYPH = {
+    "completed": "[green]✓[/green]",
+    "skipped": "[dim]–[/dim]",
+    "running": "[cyan]▶[/cyan]",
+    "blocked": "[yellow]⏸[/yellow]",
+    "failed": "[red]✕[/red]",
+    "pending": "[dim]·[/dim]",
+}
+
+
+def _render_orchestration(snap: dict) -> None:
+    """Koşu + aşamaları Rich tablo olarak yaz."""
+    run = snap.get("run") or {}
+    table = Table(title=f"Orkestrasyon — {run.get('run_id', '?')} ({run.get('status', '?')})")
+    table.add_column("#", justify="right", style="dim")
+    table.add_column("Aşama")
+    table.add_column("Durum")
+    table.add_column("Mesaj", overflow="fold")
+    for st in snap.get("stages") or []:
+        glyph = _STAGE_GLYPH.get(st["status"], st["status"])
+        table.add_row(str(st["order"]), st["name"], glyph, st.get("message", ""))
+    console.print(table)
+    if run.get("error"):
+        console.print(f"[red]Hata:[/red] {run['error']}")
+
+
+@app.command("orchestrate-start")
+def orchestrate_start_cmd(
+    model: str = typer.Option("", "--model", help="LLM/base model (boşsa ayardan)."),
+    profile: str = typer.Option("discipline_safe_local", "--profile", help="LoRA profili."),
+    adapter: str = typer.Option("achilles_lora", "--adapter", help="Adapter adı."),
+    iters: int = typer.Option(300, "--iters", help="Eğitim adım sayısı (öneri/önizleme)."),
+    hunt_ack: bool = typer.Option(
+        False,
+        "--hunt-ack",
+        help="Kademe-2 derin av TAMAMLANDI olarak işaretle (ZORUNLU gate).",
+    ),
+    run: bool = typer.Option(
+        True, "--run/--no-run", help="Başlattıktan sonra blocked olana dek ilerlet."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Makine-okunabilir JSON çıktı."),
+) -> None:
+    """Dayanıklı eğitim orkestrasyonu BAŞLAT — checkpoint'li, resume edilebilir.
+
+    Salt-okuma aşamalarını (ön kontrol/veri-kapısı/müfredat/kuru-çalıştırma) gözetimsiz
+    yürütür; insan kapılarında (derin-av onayı, eğitim onayı) DURUR. Gerçek eğitim ASLA
+    gözetimsiz başlamaz (Kural 8). İlerlemeyi `orchestrate-status <run_id>` ile izle.
+    """
+    from app.orchestration.orchestrator import TrainingOrchestrator
+
+    model_name = model or getattr(get_settings(), "peft_base_model", "")
+    orch = TrainingOrchestrator()
+    run_id = orch.start(
+        model=model_name,
+        profile=profile,
+        adapter_name=adapter,
+        params={"iters": iters, "hunt_ack": hunt_ack},
+    )
+    snap = orch.run_until_blocked(run_id) if run else orch.status(run_id)
+    if as_json:
+        console.print_json(json.dumps(snap, ensure_ascii=False))
+    else:
+        console.print(f"[bold]Koşu:[/bold] {run_id}")
+        _render_orchestration(snap)
+        console.print(
+            "[dim]Sürdür: achilles orchestrate-resume "
+            f"{run_id} --hunt-ack (gerektiğinde onay sonrası)[/dim]"
+        )
+
+
+@app.command("orchestrate-status")
+def orchestrate_status_cmd(
+    run_id: str = typer.Argument(..., help="Koşu kimliği (orc_...)."),
+    timeline: bool = typer.Option(False, "--timeline", help="Olay zaman çizelgesini de göster."),
+    as_json: bool = typer.Option(False, "--json", help="Makine-okunabilir JSON çıktı."),
+) -> None:
+    """Bir orkestrasyon koşusunun aşama durumunu (+isteğe bağlı timeline) göster."""
+    from app.orchestration.orchestrator import TrainingOrchestrator
+
+    orch = TrainingOrchestrator()
+    snap = orch.status(run_id)
+    if snap.get("run") is None:
+        console.print(f"[red]Koşu bulunamadı:[/red] {run_id}")
+        raise typer.Exit(1)
+    if as_json:
+        payload = dict(snap)
+        if timeline:
+            payload["events"] = orch.timeline(run_id)
+        console.print_json(json.dumps(payload, ensure_ascii=False))
+        return
+    _render_orchestration(snap)
+    if timeline:
+        for ev in orch.timeline(run_id):
+            console.print(f"[dim]{ev['created_at']}[/dim] [{ev['level']}] {ev['message']}")
+
+
+@app.command("orchestrate-resume")
+def orchestrate_resume_cmd(
+    run_id: str = typer.Argument(..., help="Sürdürülecek koşu kimliği."),
+    hunt_ack: bool = typer.Option(
+        False, "--hunt-ack", help="Derin av tamamlandı işaretle (blocked deep-hunt'ı geçer)."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Makine-okunabilir JSON çıktı."),
+) -> None:
+    """Bloke/başarısız bir koşuyu SÜRDÜR — tamamlanan aşamalar atlanır (checkpoint).
+
+    `--hunt-ack` verilirse koşu parametresi güncellenir (derin av onayı). Onay kapısı
+    için önce `achilles approval-approve <id>` çalıştırın; sonra bu komutla sürdürün.
+    """
+    from app.orchestration.orchestrator import TrainingOrchestrator
+
+    orch = TrainingOrchestrator()
+    run = orch.store.get_run(run_id)
+    if run is None:
+        console.print(f"[red]Koşu bulunamadı:[/red] {run_id}")
+        raise typer.Exit(1)
+    if hunt_ack:
+        params = dict(run.get("params") or {})
+        params["hunt_ack"] = True
+        orch.store.update_run(run_id, params_json=json.dumps(params, ensure_ascii=False))
+    snap = orch.run_until_blocked(run_id)
+    if as_json:
+        console.print_json(json.dumps(snap, ensure_ascii=False))
+    else:
+        _render_orchestration(snap)
+
+
+@app.command("orchestrate-list")
+def orchestrate_list_cmd(
+    limit: int = typer.Option(20, "--limit", help="Gösterilecek koşu sayısı."),
+    as_json: bool = typer.Option(False, "--json", help="Makine-okunabilir JSON çıktı."),
+) -> None:
+    """Son orkestrasyon koşularını listele."""
+    from app.orchestration.orchestrator import TrainingOrchestrator
+
+    orch = TrainingOrchestrator()
+    runs = orch.list_runs(limit=limit)
+    if as_json:
+        console.print_json(json.dumps(runs, ensure_ascii=False))
+        return
+    table = Table(title="Orkestrasyon koşuları")
+    table.add_column("run_id")
+    table.add_column("model")
+    table.add_column("durum")
+    table.add_column("aşama")
+    table.add_column("oluşturma", style="dim")
+    for r in runs:
+        table.add_row(
+            r["run_id"], r["model"], r["status"], r["current_stage"], r["created_at"]
+        )
+    console.print(table)
+
+
+@app.command("orchestrate-recover")
+def orchestrate_recover_cmd(
+    timeout_min: float = typer.Option(
+        30.0, "--timeout-min", help="Kalp atışı bu kadar dakikadan eskiyse stale say."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Makine-okunabilir JSON çıktı."),
+) -> None:
+    """Panic recovery — kalp atışı durmuş 'running' aşamaları failed'a çevir.
+
+    Detached eğitim/işlem çökünce 'running' aşama sonsuza dek asılı kalmasın diye; sonuç
+    failed koşular `orchestrate-resume` ile sürdürülebilir (tamamlanan aşamalar atlanır).
+    """
+    from app.orchestration.orchestrator import TrainingOrchestrator
+
+    orch = TrainingOrchestrator()
+    recovered = orch.recover_stale(timeout_min=timeout_min)
+    if as_json:
+        console.print_json(json.dumps(recovered, ensure_ascii=False))
+        return
+    if not recovered:
+        console.print("[green]Stale (asılı) aşama yok.[/green]")
+        return
+    for item in recovered:
+        console.print(f"[yellow]Kurtarıldı:[/yellow] {item['run_id']} / {item['stage']} → failed")
+
+
+# --------------------------------------------------------------------------
 # Agent runtime — task queue + approvals + supervisor (Phase 2)
 # --------------------------------------------------------------------------
 @app.command("task-create")

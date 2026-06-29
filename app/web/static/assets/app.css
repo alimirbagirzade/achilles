@@ -2238,3 +2238,107 @@ code {
   font-size: 0.82rem;
   color: var(--ink-dim);
 }
+
+/* ====================== Orkestrasyon (12) ====================== */
+.orc-form {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin-bottom: 12px;
+}
+.orc-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.orc-form input[type="text"],
+.orc-form input[type="number"] {
+  padding: 7px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+}
+.orc-check {
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 7px !important;
+  cursor: pointer;
+}
+.orc-actions {
+  display: flex;
+  gap: 9px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.orc-graph {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+.orc-stage {
+  border: 2px solid var(--border-strong);
+  border-radius: 9px;
+  padding: 9px 11px;
+  min-width: 124px;
+  max-width: 240px;
+  background: rgba(255, 255, 255, 0.35);
+}
+.orc-stage .orc-st-name {
+  font-weight: 700;
+  font-size: 0.84rem;
+  font-family: var(--mono);
+}
+.orc-stage .orc-st-msg {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 4px;
+  line-height: 1.35;
+}
+.orc-stage.completed {
+  border-color: var(--ok);
+}
+.orc-stage.running {
+  border-color: var(--live);
+  animation: orcPulse 1.4s ease-in-out infinite;
+}
+.orc-stage.blocked {
+  border-color: var(--warn);
+}
+.orc-stage.failed {
+  border-color: var(--neg);
+}
+.orc-stage.skipped,
+.orc-stage.pending {
+  border-color: var(--border);
+  opacity: 0.55;
+}
+@keyframes orcPulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--live-ring); }
+  50% { box-shadow: 0 0 0 5px transparent; }
+}
+.orc-timeline {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  max-height: 220px;
+  overflow: auto;
+  line-height: 1.5;
+}
+.orc-timeline .ev.error {
+  color: var(--neg);
+}
+.orc-timeline .ev.warning {
+  color: var(--warn);
+}
+.orc-run-row {
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+.orc-run-row:hover {
+  background: var(--warn-soft);
+}
