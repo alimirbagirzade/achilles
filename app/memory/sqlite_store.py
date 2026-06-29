@@ -31,6 +31,7 @@ from sqlalchemy import (
     UniqueConstraint,
     create_engine,
     delete,
+    event,
     select,
     text,
     update,
@@ -818,6 +819,24 @@ class PaperIngestionRun(Base):
 _PRUNE_CHUNK = 500
 
 
+def _sqlite_pragmas(dbapi_conn: object, _record: object) -> None:
+    """Her bağlantıda WAL + busy_timeout. SqliteStore aynı `sqlite_file` dosyasını
+    OrchestrationStore / MasteryStore / RlmStore ile paylaşır ve en yoğun yazan taraftır
+    (knowledge_cards, agent_runs/agent_events, approval_requests, tool_runs...). Diğer üç
+    store zaten bu listener'ı açıyor; SqliteStore eksikti → iki gerçek risk: (a) busy_timeout
+    PER-BAĞLANTI olduğundan SqliteStore bağlantıları yalnız pysqlite varsayılanı (~5sn) kadar
+    kilit beklerdi (diğerleri 30sn); (b) DB'yi İLK açan SqliteStore olursa WAL hiç set edilmez
+    ve rollback-journal modunda kalır → eşzamanlı okuyucu+yazıcı bile bloklanır. Yavaş CPU'da
+    uzun kart-yazma transaction'ı sürerken eşzamanlı yazım 'database is locked' fırlatırdı.
+    (rlm_store / mastery_store / orchestration store ile birebir aynı desen.)"""
+    cur = dbapi_conn.cursor()  # type: ignore[attr-defined]
+    try:
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA busy_timeout=30000")
+    finally:
+        cur.close()
+
+
 class SqliteStore:
     """Thin wrapper around a SQLAlchemy engine + session factory."""
 
@@ -830,11 +849,14 @@ class SqliteStore:
         # check_same_thread=False yalnız çok-thread'li yazıcılar (agent tracker —
         # asyncio.to_thread içinden de yazabilir) için gevşetilir. Varsayılan True →
         # mevcut tüm çağıranlar için davranış BİREBİR korunur.
+        # timeout=30.0: pysqlite busy_timeout'u 30sn'ye çeker (diğer store'larla hizalı);
+        # ek olarak _sqlite_pragmas her bağlantıda WAL + busy_timeout=30000 uygular.
         self.engine = create_engine(
             f"sqlite:///{self.db_path}",
             future=True,
-            connect_args={"check_same_thread": check_same_thread},
+            connect_args={"check_same_thread": check_same_thread, "timeout": 30.0},
         )
+        event.listen(self.engine, "connect", _sqlite_pragmas)
         self._Session = sessionmaker(bind=self.engine, expire_on_commit=False, future=True)
         self.create_all()
         self._migrate()

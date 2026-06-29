@@ -1,4 +1,19 @@
+from sqlalchemy import text
+
 from app.memory.sqlite_store import Base
+
+
+def test_engine_opens_wal_and_busy_timeout(store):
+    """Paylaşılan SQLite dosyasında eşzamanlı yazım için WAL + busy_timeout açık olmalı.
+
+    SqliteStore aynı dosyayı OrchestrationStore/MasteryStore/RlmStore ile paylaşır;
+    busy_timeout per-bağlantı olduğundan SqliteStore'un da her bağlantıda açması gerekir.
+    """
+    with store.engine.connect() as conn:
+        journal_mode = conn.execute(text("PRAGMA journal_mode")).scalar()
+        busy_timeout = conn.execute(text("PRAGMA busy_timeout")).scalar()
+    assert str(journal_mode).lower() == "wal"
+    assert int(busy_timeout) == 30000
 
 
 def test_schema_has_expected_tables(store):
