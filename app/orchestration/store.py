@@ -17,9 +17,9 @@ import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import Integer, String, Text, create_engine, event, select
+from sqlalchemy import Integer, String, Text, create_engine, event, select, update
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from app.config import get_settings
@@ -239,18 +239,67 @@ class OrchestrationStore:
                     setattr(row, k, v)
 
     def touch_heartbeat(self, run_id: str, name: str) -> None:
-        """Çalışan bir aşamanın kalp atışını günceller (panic-recovery için)."""
+        """Çalışan bir aşamanın kalp atışını günceller (panic-recovery için).
+
+        NOT: Varsayılan delegeler senkron + hızlı (salt-okuma) ve tehlikeli train/eval/
+        registry aşamaları handoff olduğundan bugün HİÇBİR çağıran yok. İleride inline,
+        uzun-süren (timeout_min'i aşan) bir "yürüten delege" bağlanırsa, o delege bunu
+        periyodik çağırmalı; aksi halde recover_stale onu yanlışlıkla stale sayabilir.
+        """
         self.update_stage(run_id, name, heartbeat_at=utcnow())
 
+    def claim_stage_running(self, run_id: str, name: str) -> bool:
+        """Aşamayı atomik (CAS) olarak 'running'e al; yalnız status pending/blocked/failed
+        ise günceller. rowcount==1 → bu çağrı sahiplendi (True); 0 → başka bir eşzamanlı
+        step() (FastAPI sync uçları threadpool'da koşar) zaten kapmış → çift-delege önlenir.
+        consume_fresh_approval / claim_automation_task ile aynı koşullu-UPDATE deseni."""
+        now = utcnow()
+        with self.session() as s:
+            res = s.execute(
+                update(OrchestrationStage)
+                .where(
+                    OrchestrationStage.run_id == run_id,
+                    OrchestrationStage.name == name,
+                    OrchestrationStage.status.in_(
+                        [
+                            StageStatus.pending.value,
+                            StageStatus.blocked.value,
+                            StageStatus.failed.value,
+                        ]
+                    ),
+                )
+                .values(
+                    status=StageStatus.running.value,
+                    started_at=now,
+                    heartbeat_at=now,
+                    message="",
+                    finished_at="",
+                )
+                .execution_options(synchronize_session=False)
+            )
+            return cast("Any", res).rowcount == 1
+
     def find_stale_running_stages(self, cutoff_iso: str) -> list[tuple[str, str]]:
-        """heartbeat_at < cutoff olan 'running' aşamaları (run_id, name) döner."""
+        """heartbeat_at < cutoff olan 'running' aşamaları (run_id, name) döner.
+
+        Koşusu zaten terminal (completed/cancelled) olan aşamalar HARİÇ tutulur: yoksa
+        kullanıcı bilinçle iptal ettiği (cancelled) bir koşunun asılı kalmış 'running'
+        aşaması, sonraki recover çağrısında koşuyu sessizce 'cancelled'→'failed' clobber
+        ederdi (eşzamanlı cancel + recover yarışı)."""
+        final = [RunStatus.completed.value, RunStatus.cancelled.value]
         with self.session() as s:
             rows = (
                 s.execute(
-                    select(OrchestrationStage).where(
+                    select(OrchestrationStage)
+                    .join(
+                        OrchestrationRun,
+                        OrchestrationRun.run_id == OrchestrationStage.run_id,
+                    )
+                    .where(
                         OrchestrationStage.status == StageStatus.running.value,
                         OrchestrationStage.heartbeat_at != "",
                         OrchestrationStage.heartbeat_at < cutoff_iso,
+                        OrchestrationRun.status.notin_(final),
                     )
                 )
                 .scalars()

@@ -167,7 +167,17 @@ def dry_run(ctx: RunContext) -> StageResult:
 
 
 def approval(ctx: RunContext) -> StageResult:
-    """Gerçek eğitim için TAZE insan onayı (Kural 8). Onaysız blocked."""
+    """Gerçek eğitim için TAZE onay kapısı (Kural 8) — onayı TÜKETMEZ, yalnız gözler.
+
+    Varsayılan `train` delegesi handoff'tur (gerçek eğitimi inline başlatmaz). Onayı burada
+    `require_fresh_approval` ile TÜKETMEK iki sorun doğururdu: (1) hiçbir gerçek eğitime
+    karşılık gelmeyen onayı boşa harcardı (tek-kullanımlık onay sözleşmesi ihlali) ve mesaj
+    "eğitim yetkili" diyerek yanıltırdı; (2) taze onay yokken her başarısız resume YENİ bir
+    PENDING onay üretip biriktirirdi. Bunun yerine gerçek `train --run` yolunun kullandığı
+    AYNI anahtarı (lora-trainer/train_run) TÜKETMEDEN gözler (`has_fresh_approval`): onay o
+    yolda oluşturulup gerçek eğitim noktasında tüketilir. Böylece tek onay her iki yolu da
+    yetkilendirir ve onay hiçbir zaman boşa harcanmaz.
+    """
     try:
         from app.agents.runtime import approvals, supervisor
     except Exception as exc:
@@ -178,27 +188,20 @@ def approval(ctx: RunContext) -> StageResult:
             StageStatus.blocked, "STOP_ALL aktif — onay alınamaz.", {"blocked_by": "stop_all"}
         )
 
-    adapter = ctx.run.get("adapter_name", "") or "achilles_lora"
-    iters = int(ctx.params.get("iters", 300) or 300)
-    decision = approvals.require_fresh_approval(
-        "training-orchestrator",
-        "orchestrate_train_run",
-        "critical",
-        f"Orkestrasyonlu gerçek eğitim: {adapter} ({iters} adım)",
-    )
-    if decision.authorized:
+    if approvals.has_fresh_approval("lora-trainer", "train_run"):
         return _result(
             StageStatus.completed,
-            "Taze onay tüketildi — eğitim yetkili.",
-            {"approval_id": decision.approval_id},
+            "Taze eğitim onayı mevcut (lora-trainer/train_run) — train aşaması devralabilir.",
+            {"has_fresh_approval": True, "approval_key": "lora-trainer/train_run"},
         )
     return _result(
         StageStatus.blocked,
         (
-            "Gerçek eğitim TAZE onay gerektirir (Kural 8). Onayla: "
-            f"achilles approval-approve {decision.approval_id} — sonra sürdür."
+            "Gerçek eğitim TAZE onay gerektirir (Kural 8). Onay akışını 'achilles train --run' "
+            "başlatır (lora-trainer/train_run onayı oluşturur ve gerçek eğitim noktasında "
+            "tüketir); onaylandıktan sonra orkestrasyonu sürdür."
         ),
-        {"approval_id": decision.approval_id, "needs_approval": True},
+        {"needs_approval": True, "approval_key": "lora-trainer/train_run"},
     )
 
 

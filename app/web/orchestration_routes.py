@@ -24,7 +24,9 @@ router = APIRouter(
 
 class OrchestrationStartRequest(BaseModel):
     model: str = Field(default="", max_length=128)  # boş → ayardan (peft_base_model)
-    profile: str = Field(default="discipline_safe_local", max_length=64)
+    # profile de adapter_name ile aynı disiplinde kalıplı: dry-run komut dizesine gömülür,
+    # serbest-metin (boşluk/shell metakarakteri) yaniltici/kopyalaninca zararli olmasin.
+    profile: str = Field(default="discipline_safe_local", pattern=r"^[A-Za-z0-9_-]{1,64}$")
     # adapter_name detached_launch._ADAPTER_RE ile aynı kalıp (yol-geçişi savunması, erken ret)
     adapter_name: str = Field(default="achilles_lora", pattern=r"^[A-Za-z0-9_-]{1,64}$")
     iters: int = Field(default=300, ge=1, le=100000)  # üst sınır: anlamsız dev değerleri ele

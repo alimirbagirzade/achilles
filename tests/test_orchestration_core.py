@@ -210,6 +210,91 @@ def test_max_steps_truncation_leaves_resumable_run(store: OrchestrationStore) ->
     assert final["run"]["status"] == RunStatus.completed.value
 
 
+# ── eşzamanlılık sertleştirme (Kademe-2 av) ──────────────────────────────────
+
+
+def test_claim_stage_running_is_atomic_cas(store: OrchestrationStore) -> None:
+    """claim_stage_running yalnız pending/blocked/failed aşamayı 'running'e alır (CAS)."""
+    run_id = store.create_run(model="m", profile="p", adapter_name="a")
+    assert store.claim_stage_running(run_id, "preflight") is True
+    assert store.get_stage(run_id, "preflight")["status"] == StageStatus.running.value
+    # zaten 'running' → ikinci claim başarısız (başka eşzamanlı step kapamaz)
+    assert store.claim_stage_running(run_id, "preflight") is False
+
+
+def test_step_noop_when_stage_already_claimed(store: OrchestrationStore) -> None:
+    """Aşama başka bir 'thread'ce kapılmışsa step() delegeyi ÇALIŞTIRMAZ (çift-delege yok)."""
+    calls: list[str] = []
+    orch = TrainingOrchestrator(store=store, delegates=_all_complete_delegates(calls))
+    run_id = orch.start(model="m", profile="p", adapter_name="a")
+    store.claim_stage_running(run_id, "preflight")  # eşzamanlı step simülasyonu
+    snap = orch.step(run_id)
+    assert snap["note"] == "stage already claimed"
+    assert calls == []
+
+
+def test_step_does_not_clobber_concurrent_cancel(store: OrchestrationStore) -> None:
+    """Delege sürerken araya giren cancel, step()'in sonuç yazımıyla clobber edilmez."""
+
+    def cancel_mid(ctx: RunContext) -> StageResult:
+        ctx.store.update_run(ctx.run_id, status=RunStatus.cancelled.value, error="araya iptal")
+        return StageResult(StageStatus.completed, "ok", {})
+
+    orch = TrainingOrchestrator(store=store, delegates={"preflight": cancel_mid})
+    run_id = orch.start(model="m", profile="p", adapter_name="a")
+    snap = orch.step(run_id)
+    assert snap["run"]["status"] == RunStatus.cancelled.value  # 'completed' ile ezilmedi
+    assert snap["note"] == "run finalized during stage"
+    # kapılan aşama zombi 'running' kalmaz → skipped olarak temizlenir
+    assert store.get_stage(run_id, "preflight")["status"] == StageStatus.skipped.value
+
+
+def test_recover_stale_does_not_clobber_cancelled_run(store: OrchestrationStore) -> None:
+    """cancelled koşunun asılı aşaması recover_stale tarafından 'failed'a clobber EDİLMEZ."""
+    orch = TrainingOrchestrator(store=store, delegates={})
+    run_id = orch.start(model="m", profile="p", adapter_name="a")
+    old = (dt.datetime.now(dt.UTC) - dt.timedelta(minutes=120)).isoformat()
+    store.update_stage(run_id, "preflight", status=StageStatus.running.value, heartbeat_at=old)
+    orch.cancel(run_id, reason="elle iptal")
+    # cancel çalışan aşamayı terminalize etti → recover hiçbir şey bulmamalı
+    recovered = orch.recover_stale(timeout_min=30.0)
+    assert all(r["run_id"] != run_id for r in recovered)
+    assert store.get_run(run_id)["status"] == RunStatus.cancelled.value  # failed DEĞİL
+
+
+def test_approval_delegate_peeks_not_consumes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Orchestrate approval delegesi onayı TÜKETMEZ; yalnız lora-trainer/train_run gözler."""
+    import app.agents.runtime.approvals as approvals_mod
+    import app.agents.runtime.supervisor as supervisor_mod
+    from app.orchestration import delegates
+
+    monkeypatch.setattr(supervisor_mod, "is_stop_all_active", lambda *a, **k: False)
+
+    def _no_consume(*a: object, **k: object) -> None:
+        raise AssertionError("approval delegesi onayı TÜKETMEMELİ (require_fresh_approval)")
+
+    monkeypatch.setattr(approvals_mod, "require_fresh_approval", _no_consume)
+
+    seen: list[tuple[str, str]] = []
+
+    def _peek(agent_id: str, action: str, store: object = None) -> bool:
+        seen.append((agent_id, action))
+        return False
+
+    monkeypatch.setattr(approvals_mod, "has_fresh_approval", _peek)
+    ctx = RunContext(run_id="r", stage="approval", run={"adapter_name": "a"}, params={}, store=None)  # type: ignore[arg-type]
+    res = delegates.approval(ctx)
+    assert res.status == StageStatus.blocked
+    assert res.output.get("needs_approval") is True
+    assert seen == [("lora-trainer", "train_run")]  # train --run ile AYNI anahtar
+
+    # taze onay mevcutsa → completed (yine tüketmeden)
+    monkeypatch.setattr(approvals_mod, "has_fresh_approval", lambda *a, **k: True)
+    res2 = delegates.approval(ctx)
+    assert res2.status == StageStatus.completed
+    assert res2.output.get("has_fresh_approval") is True
+
+
 def test_default_delegates_halt_at_human_gate_offline(store: OrchestrationStore) -> None:
     """Gerçek varsayılan delegelerle çevrimdışı: import temiz + insan-kapısında durur.
 

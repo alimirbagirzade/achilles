@@ -81,6 +81,12 @@ def test_start_rejects_path_traversal_adapter_name(client: TestClient) -> None:
     assert r.status_code == 422
 
 
+def test_start_rejects_unsafe_profile(client: TestClient) -> None:
+    """profile artık adapter_name ile aynı kalıplı — shell metakarakteri/boşluk reddedilir."""
+    r = client.post("/api/orchestration/start", json={"profile": "x; rm -rf /"})
+    assert r.status_code == 422
+
+
 def test_resume_with_hunt_ack_advances(client: TestClient) -> None:
     """hunt_ack ile resume deep-hunt'ı geçirir (checkpoint: preflight tekrar koşmaz)."""
     run_id = client.post(

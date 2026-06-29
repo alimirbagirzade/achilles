@@ -138,16 +138,11 @@ class TrainingOrchestrator:
         sdef = PIPELINE_BY_NAME.get(name)
         title = sdef.title if sdef else name
 
-        now = utcnow()
-        self.store.update_stage(
-            run_id,
-            name,
-            status=StageStatus.running.value,
-            started_at=now,
-            heartbeat_at=now,
-            message="",
-            finished_at="",
-        )
+        if not self.store.claim_stage_running(run_id, name):
+            # Aşamayı başka bir eşzamanlı step() (FastAPI threadpool) zaten 'running'e
+            # almış → çift-delege etme; no-op anlık görüntü dön (atomik CAS-claim ile yarış
+            # kapatıldı). run_until_blocked döngüsü bunu max_steps sınırında doğal bırakır.
+            return self._snapshot(run_id, note="stage already claimed")
         self.store.update_run(run_id, status=RunStatus.running.value, current_stage=name, error="")
         self.store.add_event(run_id, name, "info", f"{title} başladı")
 
@@ -173,6 +168,19 @@ class TrainingOrchestrator:
             self.store.update_run(run_id, status=RunStatus.failed.value, error=f"{name}: {exc}")
             self.store.add_event(run_id, name, "error", f"{title} hata: {exc}")
             return self._snapshot(run_id)
+
+        # Delege sürerken koşu eşzamanlı cancel/finalize edilmiş olabilir (threadpool yarışı).
+        # Sonucu yazıp iptali/tamamlanmayı clobber etme; kapılan aşamayı temizleyip çık.
+        run_now = self.store.get_run(run_id)
+        if run_now is not None and run_now["status"] in _FINAL_RUN_VALUES:
+            self.store.update_stage(
+                run_id,
+                name,
+                status=StageStatus.skipped.value,
+                finished_at=utcnow(),
+                message="koşu sonlandı (iptal/tamamlandı) — aşama atlandı",
+            )
+            return self._snapshot(run_id, note="run finalized during stage")
 
         self.store.update_stage(
             run_id,
@@ -249,6 +257,18 @@ class TrainingOrchestrator:
         return recovered
 
     def cancel(self, run_id: str, reason: str = "") -> dict[str, Any]:
+        # Asılı kalmış 'running' aşamayı terminal duruma (skipped) çek → recover_stale onu
+        # 'failed'a çevirip iptali clobber edemesin + zombi 'running' aşama kalmasın.
+        note = f"koşu iptal edildi: {reason}" if reason else "koşu iptal edildi"
+        for st in self.store.get_stages(run_id):
+            if st["status"] == StageStatus.running.value:
+                self.store.update_stage(
+                    run_id,
+                    st["name"],
+                    status=StageStatus.skipped.value,
+                    finished_at=utcnow(),
+                    message=note,
+                )
         self.store.update_run(run_id, status=RunStatus.cancelled.value, error=reason)
         self.store.add_event(run_id, "", "warning", f"Koşu iptal edildi: {reason}")
         return self._snapshot(run_id)
