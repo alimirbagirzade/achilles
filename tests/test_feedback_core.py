@@ -68,11 +68,15 @@ def test_guarantee_language_in_bad_answer_rejected(echo: EchoCollector) -> None:
 
 
 def test_export_rejects_path_traversal(echo: EchoCollector) -> None:
-    """out_path izinli kök (proje/temp) dışına çıkamaz (yol-geçişi savunması)."""
+    """out_path izinli kök (proje + depo dizini) dışına çıkamaz (yol-geçişi savunması).
+
+    Cross-platform 'dışarı' yol: proje kökünün üst dizini (Windows'ta da Linux'ta da kök
+    veya depo dizini altında DEĞİL)."""
+    from app.config import get_settings
+
+    outside = get_settings().root.parent / "achilles_escape_test.jsonl"
     with pytest.raises(ValueError):
-        echo.export_approved(out_path="/etc/passwd")
-    with pytest.raises(ValueError):
-        echo.export_approved(out_path="C:/Windows/System32/x.jsonl")
+        echo.export_approved(out_path=str(outside))
 
 
 def test_empty_correction_rejected(echo: EchoCollector) -> None:
