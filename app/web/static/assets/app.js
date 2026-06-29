@@ -121,7 +121,7 @@
     { key: "kesfet", tabs: ["research", "rlm"] },
     { key: "kutuphane", tabs: ["papers"] },
     { key: "trader", tabs: ["trader", "backtest"] },
-    { key: "egitim", tabs: ["review", "training", "eval"] },
+    { key: "egitim", tabs: ["review", "training", "eval", "orchestration"] },
     { key: "izleme", tabs: ["learning", "agents", "about"] },
   ];
   var TAB_TO_GROUP = {};
@@ -149,6 +149,9 @@
     about: "Canlı durum, donanım profili ve disiplin kuralları burada.",
     learning: "RAG öğrenme döngüsü, loss eğrisi ve objektif anlama geçmişi.",
     agents: "Görünürlük + onay + STOP_ALL; yeni tehlikeli yetenek yok.",
+    orchestration:
+      "Tek tık başlat; salt-okuma aşamaları çalışır, insan kapısında durur. " +
+      "Derin av + onay sonrası 'Sürdür' ile kaldığı yerden devam eder.",
   };
   function updateNextStep(name) {
     var box = document.getElementById("nextStep");
@@ -187,6 +190,7 @@
     if (name === "about") loadSystemStatus();
     if (name === "agents") loadAgentsDashboard();
     if (name === "rlm") loadRlmDashboard();
+    if (name === "orchestration") loadOrchestration();
   }
 
   function showGroupTabs(groupKey) {
@@ -3758,6 +3762,200 @@
       if (runId) return loadRlmRunDetail(runId);
     });
   })();
+
+  // ---------- Orkestrasyon (dayanıklı eğitim hattı) ----------
+  var ORC_GLYPH = {
+    completed: "✓",
+    running: "▶",
+    blocked: "⏸",
+    failed: "✕",
+    skipped: "–",
+    pending: "·",
+  };
+  var orcCurrentRun = null;
+
+  function orcShortTs(ts) {
+    return (ts || "").replace("T", " ").slice(0, 19);
+  }
+
+  function orcRenderGraph(snap) {
+    var el = document.getElementById("orcGraph");
+    if (!el) return;
+    var stages = (snap && snap.stages) || [];
+    if (!stages.length) {
+      el.innerHTML = '<span class="muted small">Koşu başlatın…</span>';
+      return;
+    }
+    el.innerHTML = stages
+      .map(function (s) {
+        return (
+          '<div class="orc-stage ' + esc(s.status) + '">' +
+          '<div class="orc-st-name">' + (ORC_GLYPH[s.status] || "") + " " + esc(s.name) + "</div>" +
+          '<div class="orc-st-msg">' + esc(s.message || "") + "</div></div>"
+        );
+      })
+      .join("");
+    var run = (snap && snap.run) || {};
+    var lbl = document.getElementById("orcRunLabel");
+    if (lbl) lbl.textContent = run.run_id ? run.run_id + " — " + run.status : "";
+    var resumeBtn = document.getElementById("orcResumeBtn");
+    if (resumeBtn) resumeBtn.disabled = !(run.status === "blocked" || run.status === "failed");
+  }
+
+  function orcRenderTimeline(events) {
+    var el = document.getElementById("orcTimeline");
+    if (!el) return;
+    if (!events || !events.length) {
+      el.innerHTML = '<span class="muted small">—</span>';
+      return;
+    }
+    el.innerHTML = events
+      .map(function (e) {
+        return (
+          '<div class="ev ' + esc(e.level) + '">' +
+          esc(orcShortTs(e.created_at)) + " · [" + esc(e.stage || "-") + "] " + esc(e.message) +
+          "</div>"
+        );
+      })
+      .join("");
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function orcLoadTimeline(runId) {
+    if (!runId) return;
+    api("/orchestration/timeline/" + encodeURIComponent(runId))
+      .then(function (d) {
+        orcRenderTimeline(d.events);
+      })
+      .catch(function () {});
+  }
+
+  function orcRefreshStatus(runId) {
+    if (!runId) return;
+    api("/orchestration/status/" + encodeURIComponent(runId))
+      .then(function (snap) {
+        orcRenderGraph(snap);
+        orcLoadTimeline(runId);
+      })
+      .catch(function () {});
+  }
+
+  function startOrchestration() {
+    var adapter = (document.getElementById("orcAdapter") || {}).value || "achilles_lora";
+    var iters = parseInt((document.getElementById("orcIters") || {}).value, 10) || 300;
+    var huntAck = !!(document.getElementById("orcHuntAck") || {}).checked;
+    var btn = document.getElementById("orcStartBtn");
+    if (btn) btn.disabled = true;
+    api("/orchestration/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        adapter_name: adapter,
+        iters: iters,
+        hunt_ack: huntAck,
+        auto_run: true,
+      }),
+    })
+      .then(function (snap) {
+        orcCurrentRun = snap.run_id;
+        orcRenderGraph(snap);
+        orcLoadTimeline(orcCurrentRun);
+        loadOrchestrationRuns();
+        toast("Koşu başladı: " + snap.run_id);
+      })
+      .catch(function (e) {
+        toast("Başlatılamadı: " + e.message, true);
+      })
+      .finally(function () {
+        if (btn) btn.disabled = false;
+      });
+  }
+
+  function resumeOrchestration() {
+    if (!orcCurrentRun) {
+      toast("Önce bir koşu başlat ya da listeden seç", true);
+      return;
+    }
+    var huntAck = !!(document.getElementById("orcHuntAck") || {}).checked;
+    api("/orchestration/resume/" + encodeURIComponent(orcCurrentRun), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hunt_ack: huntAck }),
+    })
+      .then(function (snap) {
+        orcRenderGraph(snap);
+        orcLoadTimeline(orcCurrentRun);
+        loadOrchestrationRuns();
+      })
+      .catch(function (e) {
+        toast("Sürdürülemedi: " + e.message, true);
+      });
+  }
+
+  function recoverOrchestration() {
+    api("/orchestration/recover", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timeout_min: 30 }),
+    })
+      .then(function (d) {
+        toast((d.recovered || []).length + " stale aşama kurtarıldı");
+        loadOrchestrationRuns();
+        if (orcCurrentRun) orcRefreshStatus(orcCurrentRun);
+      })
+      .catch(function (e) {
+        toast("Recovery hatası: " + e.message, true);
+      });
+  }
+
+  function loadOrchestrationRuns() {
+    var el = document.getElementById("orcRuns");
+    api("/orchestration/runs?limit=10")
+      .then(function (d) {
+        var runs = d.runs || [];
+        if (!runs.length) {
+          if (el) el.innerHTML = '<span class="muted small">Henüz koşu yok.</span>';
+          return;
+        }
+        if (el)
+          el.innerHTML = runs
+            .map(function (r) {
+              return (
+                '<div class="orc-run-row" data-run="' + esc(r.run_id) + '">' +
+                "<code>" + esc(r.run_id) + "</code> · " + esc(r.status) + " · " +
+                esc(r.current_stage || "-") +
+                ' <span class="muted small">' + esc(orcShortTs(r.created_at)) + "</span></div>"
+              );
+            })
+            .join("");
+        if (el)
+          el.querySelectorAll(".orc-run-row").forEach(function (row) {
+            row.addEventListener("click", function () {
+              orcCurrentRun = row.getAttribute("data-run");
+              orcRefreshStatus(orcCurrentRun);
+            });
+          });
+      })
+      .catch(function () {
+        if (el) el.innerHTML = '<span class="muted small">Yüklenemedi.</span>';
+      });
+  }
+
+  function loadOrchestration() {
+    loadOrchestrationRuns();
+    if (orcCurrentRun) orcRefreshStatus(orcCurrentRun);
+    var sb = document.getElementById("orcStartBtn");
+    if (sb && !sb._wired) {
+      sb._wired = true;
+      sb.addEventListener("click", startOrchestration);
+      document.getElementById("orcResumeBtn").addEventListener("click", resumeOrchestration);
+      document.getElementById("orcRecoverBtn").addEventListener("click", recoverOrchestration);
+      document.getElementById("orcRefreshBtn").addEventListener("click", function () {
+        loadOrchestrationRuns();
+        if (orcCurrentRun) orcRefreshStatus(orcCurrentRun);
+      });
+    }
+  }
 
   // ---------- init ----------
   refreshStatus();

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ACHILLES — Trading Research Terminal</title>
-    <link rel="stylesheet" href="/assets/app.css?v=4" />
+    <link rel="stylesheet" href="/assets/app.css?v=5" />
     <link rel="stylesheet" href="/assets/canli-badge.css?v=1" />
   </head>
   <body>
@@ -68,6 +68,7 @@
       <button class="tab" data-tab="learning"><span class="tab-num">09</span> · ÖĞRENME</button>
       <button class="tab" data-tab="agents"><span class="tab-num">10</span> · AGENTS / OTOMASYON</button>
       <button class="tab" data-tab="rlm"><span class="tab-num">11</span> · RLM</button>
+      <button class="tab" data-tab="orchestration"><span class="tab-num">12</span> · ORKESTRASYON</button>
     </nav>
 
     <main>
@@ -847,6 +848,59 @@
         </div>
         <div class="card hidden" id="rlmDetail"></div>
       </section>
+
+      <!-- 12 · ORKESTRASYON (dayanıklı eğitim hattı — tek-tık + canlı izleme) -->
+      <section class="panel" id="panel-orchestration">
+        <div class="panel-head">
+          <h2>Orkestrasyon — Dayanıklı Eğitim Hattı</h2>
+          <p class="muted">
+            Tek tık: ön kontrol → veri kapısı → müfredat → kuru çalıştırma
+            <strong>gözetimsiz</strong> çalışır; insan kapılarında (<span class="jargon"
+            title="Eğitim öncesi ZORUNLU Kademe-2 adversarial bug-avı — CLAUDE.md. v5 regresyonu bu yüzden olmuştu.">derin
+            av</span>, <span class="jargon" title="Gerçek eğitim için TEK KULLANIMLIK taze insan onayı — CLAUDE.md Kural 8.">onay</span>)
+            DURUR. Gerçek eğitim <strong>asla gözetimsiz başlamaz</strong>. Bitince
+            kaldığı yerden sürdürülebilir (checkpoint) — oturum kesilse bile.
+          </p>
+        </div>
+
+        <div class="card">
+          <h3>Yeni Koşu</h3>
+          <div class="orc-form">
+            <label>Adapter adı
+              <input id="orcAdapter" type="text" value="achilles_lora" />
+            </label>
+            <label>Adım sayısı
+              <input id="orcIters" type="number" value="300" min="1" />
+            </label>
+            <label class="orc-check">
+              <input id="orcHuntAck" type="checkbox" />
+              <span class="jargon" title="Kademe-2 derin av tamamlandı olarak işaretle. İşaretlenmezse derin-av aşamasında güvenle durur.">Derin av tamamlandı</span>
+            </label>
+            <button class="btn btn-primary" id="orcStartBtn">⚡ ORKESTRASYONU BAŞLAT</button>
+          </div>
+          <div class="orc-actions">
+            <button class="btn" id="orcResumeBtn" disabled>▶ Sürdür</button>
+            <button class="btn" id="orcRecoverBtn">⛑ Panic Recovery</button>
+            <button class="btn" id="orcRefreshBtn">↻ Yenile</button>
+            <span class="muted small" id="orcRunLabel"></span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Aşama Akışı</h3>
+          <div id="orcGraph" class="orc-graph"><span class="muted small">Koşu başlatın…</span></div>
+        </div>
+
+        <div class="card">
+          <h3>Zaman Çizelgesi</h3>
+          <div id="orcTimeline" class="orc-timeline"><span class="muted small">—</span></div>
+        </div>
+
+        <div class="card">
+          <h3>Son Koşular <span class="muted small">(tıkla → yükle)</span></h3>
+          <div id="orcRuns"><span class="muted small">—</span></div>
+        </div>
+      </section>
     </main>
 
     <footer class="footer">
@@ -881,7 +935,7 @@
       </div>
     </div>
 
-    <script src="/assets/app.js?v=2"></script>
+    <script src="/assets/app.js?v=3"></script>
     <script src="/assets/canli-badge.js?v=1"></script>
   </body>
 </html>

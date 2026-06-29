@@ -194,9 +194,11 @@ api_auth = Depends(security.require_auth)
 # router'da tutulur → server.py minimal dokunulur (çakışma yüzeyi küçük). Salt-okuma/hesap.
 from app.web.ai_brain_routes import router as _ai_brain_router  # noqa: E402
 from app.web.ai_brain_routes import ui_router as _ai_brain_ui_router  # noqa: E402
+from app.web.orchestration_routes import router as _orchestration_router  # noqa: E402
 
 app.include_router(_ai_brain_router)
 app.include_router(_ai_brain_ui_router)
+app.include_router(_orchestration_router)
 
 
 @app.get("/api/status", response_model=StatusResponse, dependencies=[api_auth])
