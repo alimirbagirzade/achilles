@@ -85,6 +85,31 @@ def test_alexzhang_answer_abstains_when_no_supported_claims():
     assert "Güven seviyesi: Low" in body
 
 
+def test_alexzhang_citation_only_claim_does_not_degenerate():
+    # FIX (kural 7 + degenerate): yalnız UYDURMA atıftan ibaret bir 'destekli' iddia, atıf
+    # temizliği sonrası '.'e boşalır. ESKİ `s.strip()` filtresi bunu truthy tutup gövdeyi
+    # "Kısa cevap:\n." yapardı (native df3ba4e'de kapatılmış, alexzhang yolunda eksikti).
+    # `_has_content` (alfanümerik şartı) onu eler → çekimser metin döner.
+    from app.memory.retrieval_service import RetrievedChunk
+    from app.rlm.answer_pipeline import _rebuild_from_supported
+
+    chunks = [
+        RetrievedChunk(
+            chunk_id="c1",
+            paper_id="p1",
+            text="x",
+            page_number=1,
+            section_name="S",
+            title="T",
+            distance=0.1,
+        )
+    ]
+    # tek 'destekli' iddia: yalnız getirilmeyen (uydurma) chunk'a atıf + noktalama
+    body = _rebuild_from_supported(["[p9:c9]."], chunks, status="grounded")
+    assert "Kısa cevap:\n." not in body  # gövde noktaya çökmedi
+    assert "desteklenen güvenilir bir cevap üretilemedi" in body  # çekimser
+
+
 def test_chunk_support_levels_strong_partial_weak():
     # §13: kaynak support_level — supported→strong, partially→partial, diğeri→weak.
     from app.rlm.answer_pipeline import _chunk_support_levels

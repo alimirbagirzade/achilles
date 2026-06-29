@@ -415,12 +415,14 @@ def _rebuild_from_supported(supported: list[str], chunks: list[Any], status: str
     Gövdeye giren cümlelerdeki uydurma satır-içi atıflar (getirilen sette olmayan
     [paper:chunk]) çıkarılır (kural 7). Desteklenen iddia yoksa çekimser metin döner.
     """
-    from app.rlm.rlm_controller import _sanitize_citations
+    from app.rlm.rlm_controller import _has_content, _sanitize_citations
 
     valid_ids = {c.chunk_id for c in chunks}
     # Uydurma atıf çıkarıldıktan SONRA boşalan iddialar (yalnız sahte atıftan ibaret olanlar)
-    # gerçek dayanak içermez → tamamen elenir (gövde 'Kısa cevap: .'a çökmesin).
-    safe = [s for s in (_sanitize_citations(c, valid_ids) for c in supported) if s.strip()]
+    # gerçek dayanak içermez → tamamen elenir (gövde 'Kısa cevap: .'a çökmesin). Native
+    # _build_envelope ile AYNI semantik: s.strip() truthy ('.' gibi salt-noktalama tutardı) →
+    # _has_content (alfanümerik şartı). df3ba4e native'i kapatmıştı; alexzhang yolu eksikti.
+    safe = [s for s in (_sanitize_citations(c, valid_ids) for c in supported) if _has_content(s)]
     if not safe:
         return (
             "Kısa cevap:\n"
