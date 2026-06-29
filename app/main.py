@@ -3670,9 +3670,7 @@ def orchestrate_list_cmd(
     table.add_column("aşama")
     table.add_column("oluşturma", style="dim")
     for r in runs:
-        table.add_row(
-            r["run_id"], r["model"], r["status"], r["current_stage"], r["created_at"]
-        )
+        table.add_row(r["run_id"], r["model"], r["status"], r["current_stage"], r["created_at"])
     console.print(table)
 
 
