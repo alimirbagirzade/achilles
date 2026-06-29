@@ -3804,6 +3804,9 @@
     if (lbl) lbl.textContent = run.run_id ? run.run_id + " — " + run.status : "";
     var resumeBtn = document.getElementById("orcResumeBtn");
     if (resumeBtn) resumeBtn.disabled = !(run.status === "blocked" || run.status === "failed");
+    var autoBtn = document.getElementById("orcAutodriveBtn");
+    if (autoBtn)
+      autoBtn.disabled = !(run.status === "blocked" && run.current_stage === "deep-hunt");
   }
 
   function orcRenderTimeline(events) {
@@ -3896,6 +3899,38 @@
       });
   }
 
+  function autodriveOrchestration() {
+    if (!orcCurrentRun) {
+      toast("Önce bir koşu başlat ya da listeden seç", true);
+      return;
+    }
+    if (
+      !window.confirm(
+        "Otonom sürüş: deep-hunt aşamasını abonelikli `claude -p` ile çalıştıracak " +
+          "(dakikalar sürebilir). Gerçek eğitim yine onay bekler (Kural 8). Başlatılsın mı?"
+      )
+    )
+      return;
+    api("/orchestration/autodrive/" + encodeURIComponent(orcCurrentRun), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ execute: true }),
+    })
+      .then(function (d) {
+        if (d.status === "autodrive_started") {
+          toast("Otonom sürüş başladı — timeline'ı izle.");
+        } else if (d.dry_run) {
+          toast("DRY-RUN: claude -p komutu hazır (execute kapalı).");
+        } else {
+          toast("Sürüş yanıtı: " + (d.reason || JSON.stringify(d).slice(0, 80)), !d.ok);
+        }
+        if (orcCurrentRun) orcRefreshStatus(orcCurrentRun);
+      })
+      .catch(function (e) {
+        toast("Otonom sürüş hatası: " + e.message, true);
+      });
+  }
+
   function recoverOrchestration() {
     api("/orchestration/recover", {
       method: "POST",
@@ -3953,6 +3988,7 @@
       sb._wired = true;
       sb.addEventListener("click", startOrchestration);
       document.getElementById("orcResumeBtn").addEventListener("click", resumeOrchestration);
+      document.getElementById("orcAutodriveBtn").addEventListener("click", autodriveOrchestration);
       document.getElementById("orcRecoverBtn").addEventListener("click", recoverOrchestration);
       document.getElementById("orcRefreshBtn").addEventListener("click", function () {
         loadOrchestrationRuns();
