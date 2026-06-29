@@ -74,6 +74,39 @@ def test_get_corpus_bm25_builds_and_searches() -> None:
     reset_cache()
 
 
+def test_get_corpus_bm25_rebuilds_on_equal_count_content_change() -> None:
+    # REGRESYON (Kademe-2 bulgusu): cache yalnız chunk SAYISINA göre geçersizleşseydi,
+    # eşit-sayıda içerik değişimi (chunk yerinde yeniden indekslenir / aynı sayıda chunk
+    # üreten force re-index) SESSİZCE bayat indeks bırakır, eski sonuç dönerdi (Kural 7).
+    # İçerik imzası (count + toplam karakter) bunu reset_cache OLMADAN da yakalamalı.
+    reset_cache()
+    store_v1 = _FakeStore(
+        [
+            _dbchunk("p_c0", "ATR average true range volatility"),
+            _dbchunk("p_c1", "Sharpe ratio risk adjusted return"),
+        ]
+    )
+    bm25_v1, _ = get_corpus_bm25(store=store_v1)
+    assert bm25_v1 is not None
+    hits_v1 = bm25_v1.search("Sharpe", top_k=2)
+    assert hits_v1 and hits_v1[0][0] == "p_c1"  # ilk indeks: Sharpe eşleşir
+
+    # AYNI chunk SAYISI (2), FARKLI içerik (farklı toplam karakter) → reset_cache YOK.
+    # İmza tek başına bayatlığı yakalayıp indeksi yeniden kurmalı.
+    store_v2 = _FakeStore(
+        [
+            _dbchunk("p_c0", "Kalman filter recursive state estimation for noisy series"),
+            _dbchunk("p_c1", "Markov regime switching detection model with hidden states"),
+        ]
+    )
+    bm25_v2, chunks_v2 = get_corpus_bm25(store=store_v2)
+    assert chunks_v2["p_c1"].text.startswith("Markov")  # taze metin chunk haritasında
+    hits_kalman = bm25_v2.search("Kalman", top_k=2)
+    assert hits_kalman and hits_kalman[0][0] == "p_c0"  # yeni içerik indekslendi
+    assert bm25_v2.search("Sharpe", top_k=2) == []  # eski (bayat) içerik artık eşleşmez
+    reset_cache()
+
+
 def test_hybrid_retriever_topk_filled_with_text_chunks() -> None:
     # HybridRetriever: BM25-only id'ler (metinsiz) top_k slotunu ÇALMAMALI; top_k
     # gerçek-metinli (semantik) chunk'larla dolmalı (eski kod kesimi filtreden önce yapardı).
