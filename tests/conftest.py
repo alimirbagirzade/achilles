@@ -38,6 +38,29 @@ def _isolate_storage(tmp_path_factory):
     yield
 
 
+@pytest.fixture(autouse=True)
+def _reset_web_rate_limiter():
+    """Her testten ÖNCE global hız sınırlayıcı pencerelerini temizle.
+
+    TestClient tüm web testlerinde aynı IP'den ("testclient") vurur ve global
+    `_rate_limiter` (120/dk, 60s kayan pencere) süreç-boyu paylaşılır. CI suite'i
+    ~26s'de bitince TÜM web istekleri tek 60s penceresine paketlenir; toplam 120'yi
+    aşınca geç çalışan alakasız testler 429 alır (örn. test_web_training_gate KeyError
+    'ok'). Yerelde (yavaş) pencere kendiliğinden sıfırlandığı için gizliydi. Çözüm:
+    her teste taze pencere → test-izolasyonu. Yalnız server zaten import edilmişse
+    dokunur (import yan etkisi yok). Dedicated rate-limit testi kendi RateLimiter
+    örneğini kurar → etkilenmez."""
+    import sys
+
+    mod = sys.modules.get("app.web.server")
+    if mod is not None:
+        for attr in ("_rate_limiter", "_upload_rate_limiter"):
+            limiter = getattr(mod, attr, None)
+            if limiter is not None:
+                limiter._hits.clear()
+    yield
+
+
 @pytest.fixture
 def store():
     from app.memory.sqlite_store import SqliteStore
