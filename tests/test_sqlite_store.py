@@ -79,6 +79,28 @@ def test_delete_chunks_for_paper(store) -> None:
     assert len(store.list_chunks("paper_e")) == 1  # diğer makale etkilenmedi
 
 
+def test_has_embedded_chunks(store) -> None:
+    # Yarım ingest tespiti (Kademe-2 av MEDIUM-2): paper satırı + embedded=0 chunk varsa
+    # has_embedded_chunks False döner (Chroma'ya yazılmamış → onarım gerekir); başarılı
+    # mark_chunks_embedded sonrası True.
+    store.upsert_paper(paper_id="paper_emb", file_hash="h_emb", source_path="x")
+    assert store.has_embedded_chunks("paper_emb") is False  # hiç chunk yok
+    store.add_chunks(
+        [
+            {
+                "chunk_id": "paper_emb_c0000",
+                "paper_id": "paper_emb",
+                "chunk_index": 0,
+                "text": "abc",
+                "embedded": 0,
+            }
+        ]
+    )
+    assert store.has_embedded_chunks("paper_emb") is False  # chunk var ama embedded=0 (yarım)
+    store.mark_chunks_embedded(["paper_emb_c0000"])
+    assert store.has_embedded_chunks("paper_emb") is True  # gömüldü → tam
+
+
 def test_risk_reports_table_exists(store) -> None:
     assert "risk_reports" in Base.metadata.tables
 
