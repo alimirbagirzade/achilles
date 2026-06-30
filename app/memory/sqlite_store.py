@@ -1621,6 +1621,23 @@ class SqliteStore:
                 )
             )
 
+    def has_embedded_chunks(self, paper_id: str) -> bool:
+        """Bir makalenin Chroma'ya gömülmüş (embedded=1) en az bir chunk'ı var mı?
+
+        Yarım kalmış ingest tespiti için: upsert_paper kendi transaction'ında önce commit
+        edilir; embed/chroma.add adımı çökerse (Ollama timeout, chromadb hatası, process kill)
+        paper satırı kalır ama chunk'lar embedded=0'da takılır (Chroma'da YOK). Bu kontrol,
+        force'suz re-ingest'in yarım makaleyi onarmasını sağlar (Kural 7 + ingestion idempotent
+        sözleşmesi). LIMIT 1 → ucuz varlık kontrolü (paper_id indeksli; tüm satırları çekmez).
+        """
+        with self.session() as s:
+            row = s.scalar(
+                select(Chunk.chunk_id)
+                .where(Chunk.paper_id == paper_id, Chunk.embedded == 1)
+                .limit(1)
+            )
+            return row is not None
+
     def list_all_chunks(self) -> list[Chunk]:
         """TÜM chunk'ları döndür (BM25 korpus indeksi için — sağlam kaynak).
 

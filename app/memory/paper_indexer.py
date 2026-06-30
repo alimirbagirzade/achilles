@@ -63,13 +63,26 @@ class PaperIndexer:
     def ingest_one(self, disc: DiscoveredPaper, *, force: bool = False) -> IngestResult:
         existing = self.store.get_paper_by_hash(disc.file_hash)
         if existing and not force:
-            logger.info("Zaten var, atlanıyor: %s", disc.path.name)
-            return IngestResult(
-                paper_id=existing.paper_id,
-                title=existing.title,
-                n_chunks=0,
-                skipped=True,
-                notes=["already ingested"],
+            # Yarım kalmış ingest onarımı (Kural 7 + ingestion idempotent sözleşmesi):
+            # upsert_paper kendi transaction'ında önce commit edilir; embed/chroma.add adımı
+            # çökerse (Ollama timeout, chromadb hatası, process/oturum kill) paper satırı kalır
+            # ama chunk'lar embedded=0'da takılır (Chroma'da YOK). Yalnız "paper satırı var" diye
+            # atlarsak makale RAG'a KALICI olarak hiç girmez: file_hash sabit olduğundan her
+            # force'suz re-run aynı noktada atlar, retrieval'da sessizce eksik kalır. Bu yüzden
+            # "gömülü chunk var mı" kontrol et; yoksa force gibi yeniden işle (aşağıdaki
+            # delete_chunks_for_paper + chroma.delete_by_paper idempotent temizler → çift ingest
+            # üretmez; aynı paper_id=hash → başlık-dedup da bloklamaz).
+            if self.store.has_embedded_chunks(existing.paper_id):
+                logger.info("Zaten var, atlanıyor: %s", disc.path.name)
+                return IngestResult(
+                    paper_id=existing.paper_id,
+                    title=existing.title,
+                    n_chunks=0,
+                    skipped=True,
+                    notes=["already ingested"],
+                )
+            logger.warning(
+                "Yarım kalmış ingest (gömülü chunk yok) — yeniden işleniyor: %s", disc.path.name
             )
 
         parsed = parse_pdf(disc.path)
