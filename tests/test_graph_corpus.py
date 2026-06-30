@@ -61,6 +61,27 @@ def test_empty_corpus_returns_none() -> None:
     reset_cache()
 
 
+def test_reset_cache_acquires_build_lock() -> None:
+    # MEDIUM-1 (Kademe-2 av): reset_cache() _build_lock ALTINDA çalışmalı — yoksa sürmekte olan
+    # bir build'in (get_all + build_graph, saniyeler) son _cache.update'i reset'i EZER
+    # (lost-update) → ingest sonrası bayat graf sessizce sunulur (Kural 7). Build'i taklit etmek
+    # için kilit dışarıda tutulurken reset ilerleyememeli.
+    import threading
+
+    reset_cache()
+    assert graph_corpus._build_lock.acquire(timeout=2)  # "in-flight build" taklidi
+    done = threading.Event()
+    t = threading.Thread(target=lambda: (reset_cache(), done.set()))
+    t.start()
+    try:
+        assert not done.wait(0.3)  # kilit tutulurken reset BLOKLANIR (kilidi alıyor)
+    finally:
+        graph_corpus._build_lock.release()
+    assert done.wait(2)  # kilit bırakılınca reset tamamlanır
+    t.join(2)
+    reset_cache()
+
+
 def test_same_count_content_change_requires_reset() -> None:
     # graph_corpus imzası YALNIZ chunk SAYISIdır (deferred-get_all tasarımı). Aynı-sayıda
     # içerik değişimini (force re-index / iyileşen parser / delete+add) imza yakalayamaz →

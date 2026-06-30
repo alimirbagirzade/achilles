@@ -27,7 +27,11 @@ if TYPE_CHECKING:
     from app.memory.sqlite_store import SqliteStore
 
 # Modül düzeyi cache (process ömrü). Anahtar: korpus içerik imzası (count, toplam_char).
-_cache: dict[str, object] = {"sig": None, "bm25": None, "chunks": {}}
+# bm25+chunks TEK anahtarda ("pair") demet olarak tutulur → sıcak-yol dönüşü tek atomik
+# subscript okumasıdır. Ayrı iki okuma (`_cache["bm25"]` SONRA `_cache["chunks"]`) arasına
+# reset/build girerse okuyucu dolu bm25 + boş chunks yakalar → lexical isabetler sessizce
+# düşer, hibrit o sorguda fark ettirmeden dense-only'e geriler (Kural 6/7). Demet bunu önler.
+_cache: dict[str, object] = {"sig": None, "pair": (None, {})}
 # Build kilidi: 94k chunk tokenizasyonu ~170s sürer. Eşzamanlı ilk-sorgular (warm-up +
 # kullanıcı) kilitsiz HER BİRİ ayrı build başlatırdı (thundering herd → CPU boğulması).
 # Kilit + çift-kontrol → yalnız BİR build, diğerleri bekleyip cache'i kullanır.
@@ -64,7 +68,11 @@ def get_corpus_bm25(
     del chroma  # geriye-uyum imzası; kaynak artık SQLite
     st = store or _corpus_store()
     try:
-        rows = st.list_all_chunks()
+        # embedded=0 chunk'ları DIŞLA: bunlar Chroma'ya yazılamamış (yarım/başarısız ingest);
+        # dense yol onları zaten görmez. BM25'e alınsalardı hibrit/RRF/router'da keyword adayı
+        # olur, dense-erişilemez metni alıntılardık → BUG-M6 koruması asimetrik kalırdı (Kural 7).
+        # embedded kolonu olmayan test stub'ları varsayılan 1 ile korunur (davranış değişmez).
+        rows = [ch for ch in st.list_all_chunks() if getattr(ch, "embedded", 1)]
     except Exception:
         return None, {}
     count = len(rows)
@@ -76,6 +84,8 @@ def get_corpus_bm25(
     # count sabit kalır ama toplam karakter değişir → bayat indeks otomatik yeniden kurulur.
     # char_count kolonu chunk'lama anında len(text) ile yazılır; yoksa (test stub) len(text)'e
     # düşer. Satırlar zaten yüklü → yalnız O(n) bellek-içi toplam (~6.6ms/94k chunk, ölçüldü).
+    # İmza FİLTRELENMİŞ (embedded) küme üzerinden → sonraki mark_chunks_embedded (0→1) imzayı
+    # değiştirir, böylece reset_cache atlanırsa bile doğru rebuild tetiklenir.
     total_chars = sum(getattr(ch, "char_count", None) or len(ch.text or "") for ch in rows)
     sig = (count, total_chars)
 
@@ -99,9 +109,9 @@ def get_corpus_bm25(
                         title=titles.get(ch.paper_id),
                         distance=None,  # BM25 kaynaklı; reranker semantiği nötr (0.5) sayar
                     )
-                _cache.update(sig=sig, bm25=bm25, chunks=chunks)
+                _cache.update(sig=sig, pair=(bm25, chunks))
 
-    return _cache["bm25"], _cache["chunks"]  # type: ignore[return-value]
+    return _cache["pair"]  # type: ignore[return-value]
 
 
 def reset_cache() -> None:
@@ -110,7 +120,14 @@ def reset_cache() -> None:
     İçerik imzası (count + toplam karakter) aynı-uzunlukta içerik değişimini yakalamaz;
     bu yüzden chunk mutasyonu yapan TÜM yollar (şu an yalnız PaperIndexer.ingest_one)
     bu fonksiyonu çağırmalı — otoritatif geçersizleştirme budur.
+
+    `_build_lock` ALTINDA çalışır: aksi halde sürmekte olan bir build'in (warm-up ~170s)
+    son `_cache.update`'i bu reset'i EZER (lost-update) → ingest sonrası eski korpus sessizce
+    sunulurdu. Kilit, reset'i in-flight build TAMAMLANDIKTAN sonra serileştirir → sonraki sorgu
+    kesin yeniden kurar. Reset yalnız ingestion thread'inden çağrılır (get_corpus_bm25 aynı
+    çağrı yığınında değil) → reentrancy/deadlock yok.
     """
     global _shared_store
-    _cache.update(sig=None, bm25=None, chunks={})
-    _shared_store = None
+    with _build_lock:
+        _cache.update(sig=None, pair=(None, {}))
+        _shared_store = None
