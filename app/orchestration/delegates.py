@@ -84,6 +84,31 @@ def preflight(ctx: RunContext) -> StageResult:
     return _result(StageStatus.completed, out.get("ready_label", "ön kontrol tamam"), out)
 
 
+def collision(ctx: RunContext) -> StageResult:
+    """Eşzamanlı oturum/worktree çakışması taraması (git durumu) — salt-okuma.
+
+    git yoksa skipped (hat durmaz); kirli ağaç → completed (uyarı event'i); aktif lock /
+    aynı-branch worktree / HEAD kayması → blocked (insan çözmeli, Kural 8). Çakışma 'fail'i
+    failed DEĞİL blocked'a eşlenir: kurtarılabilir (commit/stash/çöz → resume).
+    """
+    try:
+        from app.orchestration.collision import CollisionDetector
+    except Exception as exc:  # modül yüklenemese bile koşu çökmesin
+        return _result(StageStatus.skipped, f"Çakışma modülü yüklenemedi: {exc}", {})
+
+    baseline_head = str(ctx.params.get("baseline_head", "") or "")
+    result = CollisionDetector(baseline_head=baseline_head or None).run()
+    status_map = {
+        "pass": StageStatus.completed,
+        "warn": StageStatus.completed,  # uyarı hattı durdurmaz
+        "skip": StageStatus.skipped,
+        "fail": StageStatus.blocked,  # çakışma insan eylemi bekler (kurtarılabilir)
+    }
+    return _result(
+        status_map.get(result.verdict, StageStatus.skipped), result.summary, result.to_dict()
+    )
+
+
 def smoke(ctx: RunContext) -> StageResult:
     """Gerçek runtime uçtan-uca duman testi ("stub≠runtime").
 
@@ -188,6 +213,29 @@ def dry_run(ctx: RunContext) -> StageResult:
     return _result(StageStatus.completed, f"Komut hazır: {cmd}", out)
 
 
+def regression(ctx: RunContext) -> StageResult:
+    """Eğitim/onay öncesi gerileme kapısı (v5 dersi) — salt-okuma.
+
+    Mevcut aday veri setinin v5-ilgili kalite sinyallerini son GEÇEN baseline ile kıyaslar.
+    Baseline yoksa skipped (ilk koşu, kıyas yok); gerileme yoksa completed; gerileme varsa
+    blocked (insan araştırmadan eğitim ilerlemesin). Baseline oto-güncellenmez (--commit ile).
+    """
+    try:
+        from app.orchestration.regression import RegressionGuard
+    except Exception as exc:  # modül yüklenemese bile koşu çökmesin
+        return _result(StageStatus.skipped, f"Gerileme modülü yüklenemedi: {exc}", {})
+
+    result = RegressionGuard().run()
+    status_map = {
+        "pass": StageStatus.completed,
+        "skip": StageStatus.skipped,
+        "fail": StageStatus.blocked,  # gerileme insan araştırması bekler (Kural 8)
+    }
+    return _result(
+        status_map.get(result.verdict, StageStatus.skipped), result.summary, result.to_dict()
+    )
+
+
 def approval(ctx: RunContext) -> StageResult:
     """Gerçek eğitim için TAZE onay kapısı (Kural 8) — onayı TÜKETMEZ, yalnız gözler.
 
@@ -264,11 +312,13 @@ def default_delegates() -> dict[str, StageDelegate]:
     """Üretim varsayılanı: salt-okuma aşamaları gerçek; tehlikeli tail handoff."""
     return {
         "preflight": preflight,
+        "collision": collision,
         "smoke": smoke,
         "deep-hunt": deep_hunt,
         "data-gate": data_gate,
         "curriculum": curriculum,
         "dry-run": dry_run,
+        "regression": regression,
         "approval": approval,
         "train": train_handoff,
         "evaluate": eval_handoff,

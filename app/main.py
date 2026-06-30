@@ -3775,6 +3775,82 @@ def orchestrate_smoke_cmd(
         raise typer.Exit(2)
 
 
+@app.command("orchestrate-collision")
+def orchestrate_collision_cmd(
+    baseline_head: str = typer.Option(
+        "", "--baseline-head", help="Beklenen HEAD sha; mevcut HEAD kaymışsa çakışma BLOK."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Makine-okunabilir JSON çıktı."),
+) -> None:
+    """Eşzamanlı oturum/worktree ÇAKIŞMASI taraması (git durumu) — salt-okuma.
+
+    Paylaşılan working tree'de başka oturumun `git add -A`'i uncommitted fix'leri süpürebilir
+    ya da HEAD altımdan kayabilir. git deposu değilse atlanır (skip). Çıkış kodu: pass/warn→0,
+    skip→0, fail→2 (aktif lock / aynı-branch worktree / HEAD kayması — çözülmeli). Aynı yoklama
+    orkestrasyon hattının 'collision' aşamasında da koşar.
+    """
+    from app.orchestration.collision import CollisionDetector
+
+    result = CollisionDetector(baseline_head=baseline_head or None).run()
+    if as_json:
+        console.print_json(json.dumps(result.to_dict(), ensure_ascii=False))
+    else:
+        color = {"pass": "green", "skip": "yellow", "warn": "yellow", "fail": "red"}.get(
+            result.verdict, "white"
+        )
+        console.print(f"[{color}]Çakışma: {result.verdict.upper()}[/{color}] — {result.summary}")
+        for f in result.findings:
+            mark = {"block": "✕", "warn": "≈", "info": "·"}.get(f.severity, "?")
+            console.print(f"  {mark} [dim]{f.name}[/dim]: {f.detail}")
+    if result.verdict == "fail":
+        raise typer.Exit(2)
+
+
+@app.command("orchestrate-regression")
+def orchestrate_regression_cmd(
+    commit: bool = typer.Option(
+        False, "--commit", help="Mevcut metrikleri YENİ baseline olarak kaydet (explicit)."
+    ),
+    note: str = typer.Option("", "--note", help="--commit ile kaydedilecek not."),
+    as_json: bool = typer.Option(False, "--json", help="Makine-okunabilir JSON çıktı."),
+) -> None:
+    """Eğitim/onay öncesi GERİLEME denetimi (v5 dersi) — mevcut veri vs son geçen baseline.
+
+    Aday veri setinin v5-ilgili sinyallerini (açılış ezberi, zehir, sızıntı, disiplin kapsamı)
+    baseline ile kıyaslar. Baseline yoksa atlanır (skip, ilk koşu); gerileme varsa fail.
+    `--commit` mevcut metrikleri yeni baseline yapar (oto-terfi YOK — Kural 8 ruhu). Çıkış kodu:
+    pass/skip→0, fail→2. Aynı yoklama hattın 'regression' aşamasında da koşar.
+    """
+    from app.orchestration.regression import RegressionGuard
+
+    guard = RegressionGuard()
+    if commit:
+        metrics = guard.commit_baseline(note=note)
+        if as_json:
+            console.print_json(json.dumps({"committed": metrics}, ensure_ascii=False))
+        elif metrics:
+            console.print("[green]Baseline kaydedildi[/green] — mevcut metrikler:")
+            for k, v in metrics.items():
+                console.print(f"  [dim]{k}[/dim]: {v:g}")
+        else:
+            console.print(
+                "[yellow]Metrik hesaplanamadı (veri yok) — baseline kaydedilmedi.[/yellow]"
+            )
+        return
+
+    result = guard.run()
+    if as_json:
+        console.print_json(json.dumps(result.to_dict(), ensure_ascii=False))
+    else:
+        color = {"pass": "green", "skip": "yellow", "fail": "red"}.get(result.verdict, "white")
+        console.print(f"[{color}]Gerileme: {result.verdict.upper()}[/{color}] — {result.summary}")
+        for f in result.findings:
+            mark = {"regressed": "✕", "improved": "↑", "stable": "=", "new": "·"}.get(f.status, "?")
+            console.print(f"  {mark} [dim]{f.name}[/dim]: {f.detail}")
+    if result.verdict == "fail":
+        raise typer.Exit(2)
+
+
 # --------------------------------------------------------------------------
 # Echo — feedback döngüsü (kullanıcı düzeltmesi → sentetik SFT adayı)
 # --------------------------------------------------------------------------

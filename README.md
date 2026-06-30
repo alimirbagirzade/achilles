@@ -886,7 +886,9 @@ uv run achilles local-training-postcheck # eğitim-SONRASI READ-ONLY denetim —
 
 # Dayanıklı eğitim orkestrasyonu (checkpoint/resume; insan-kapılı, Kural 8)
 uv run achilles orchestrate-start          # tek-tık hattı başlat → insan kapısında durur
+uv run achilles orchestrate-collision      # eşzamanlı oturum/worktree ÇAKIŞMASI taraması (git durumu)
 uv run achilles orchestrate-smoke          # gerçek runtime DUMAN TESTİ (Ollama+RAG+LLM canlı mı; "stub≠runtime")
+uv run achilles orchestrate-regression     # GERİLEME denetimi: aday veri vs son geçen baseline (--commit ile baseline kur)
 uv run achilles orchestrate-status <id>    # koşu aşama durumu (+--timeline)
 uv run achilles orchestrate-resume <id>    # bloke/başarısız koşuyu sürdür (tamamlanan aşamalar atlanır)
 uv run achilles orchestrate-autodrive <id> # deep-hunt'ı headless claude -p ile otonom sür (--execute)
