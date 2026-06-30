@@ -84,6 +84,28 @@ def preflight(ctx: RunContext) -> StageResult:
     return _result(StageStatus.completed, out.get("ready_label", "ön kontrol tamam"), out)
 
 
+def smoke(ctx: RunContext) -> StageResult:
+    """Gerçek runtime uçtan-uca duman testi ("stub≠runtime").
+
+    Çevrimdışıysa skipped (hat durmaz; sonraki insan kapısına geçer), canlı+sağlıklıysa
+    completed, canlı ama üretim boş/degenere/hata ise failed. Salt-okuma (üretim atılır).
+    """
+    try:
+        from app.orchestration.smoke import SmokeRunner
+    except Exception as exc:  # modül yüklenemese bile koşu çökmesin
+        return _result(StageStatus.skipped, f"Smoke modülü yüklenemedi: {exc}", {})
+
+    result = SmokeRunner().run()
+    status_map = {
+        "pass": StageStatus.completed,
+        "skip": StageStatus.skipped,
+        "fail": StageStatus.failed,
+    }
+    return _result(
+        status_map.get(result.verdict, StageStatus.skipped), result.summary, result.to_dict()
+    )
+
+
 def deep_hunt(ctx: RunContext) -> StageResult:
     """Eğitim öncesi ZORUNLU Kademe-2 derin av (CLAUDE.md). hunt_ack olmadan blocked."""
     if bool(ctx.params.get("hunt_ack")):
@@ -242,6 +264,7 @@ def default_delegates() -> dict[str, StageDelegate]:
     """Üretim varsayılanı: salt-okuma aşamaları gerçek; tehlikeli tail handoff."""
     return {
         "preflight": preflight,
+        "smoke": smoke,
         "deep-hunt": deep_hunt,
         "data-gate": data_gate,
         "curriculum": curriculum,

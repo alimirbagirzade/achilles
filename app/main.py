@@ -3746,6 +3746,35 @@ def orchestrate_autodrive_cmd(
         console.print(f"[dim]{res.get('reason')}[/dim]")
 
 
+@app.command("orchestrate-smoke")
+def orchestrate_smoke_cmd(
+    as_json: bool = typer.Option(False, "--json", help="Makine-okunabilir JSON çıktı."),
+) -> None:
+    """Gerçek runtime uçtan-uca DUMAN TESTİ ("stub≠runtime") — Ollama+RAG+LLM canlı mı.
+
+    Birim testleri stub'la geçse de canlı hat bozuk olabilir. Bu komut yapılandırılmış
+    LLM backend'ini (yerel-öncelikli Ollama) gerçek küçük bir üretim + RAG retrieval ile
+    yoklar. Salt-okuma (üretim atılır); eğitim BAŞLATMAZ. Çıkış kodu: pass→0, skip→0,
+    fail→2 (canlı ama üretim boş/degenere — düzeltilmeli). Aynı yoklama orkestrasyon
+    hattının 'smoke' aşamasında da koşar.
+    """
+    from app.orchestration.smoke import SmokeRunner
+
+    result = SmokeRunner().run()
+    if as_json:
+        console.print_json(json.dumps(result.to_dict(), ensure_ascii=False))
+    else:
+        color = {"pass": "green", "skip": "yellow", "fail": "red"}.get(result.verdict, "white")
+        console.print(
+            f"[{color}]Duman testi: {result.verdict.upper()}[/{color}] — {result.summary}"
+        )
+        for c in result.checks:
+            mark = {"pass": "✓", "fail": "✕", "warn": "≈", "skip": "·"}.get(c.status, "?")
+            console.print(f"  {mark} [dim]{c.name}[/dim]: {c.detail}")
+    if result.verdict == "fail":
+        raise typer.Exit(2)
+
+
 # --------------------------------------------------------------------------
 # Echo — feedback döngüsü (kullanıcı düzeltmesi → sentetik SFT adayı)
 # --------------------------------------------------------------------------
