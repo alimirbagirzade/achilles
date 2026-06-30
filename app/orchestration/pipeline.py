@@ -4,7 +4,8 @@ Yan etkisi olmayan veri (frozen dataclass) → birim test için ideal. Orchestra
 bu sırayı yürütür; her aşamanın bir delege fonksiyonu vardır (orchestrator.py).
 
 Aşama sırası KANONİKTİR — CLAUDE.md eğitim yaşam döngüsünü yansıtır:
-  preflight → deep-hunt → data-gate → curriculum → dry-run → approval → train → eval → registry
+  preflight → smoke → deep-hunt → data-gate → curriculum → dry-run → approval
+  → train → eval → registry
 
 `autonomous` bayrağı: True ise orchestrator aşamayı gözetimsiz yürütebilir (salt-okuma
 güvenli). False ise insan eylemi/onayı gerekir → orchestrator burada DURUR (Kural 8).
@@ -20,6 +21,7 @@ class StageKind(StrEnum):
     """Bir aşamanın türü — delege seçimini ve güvenlik sınıfını belirler."""
 
     preflight = "preflight"  # sistem durumu (STOP_ALL, veri, bağımlılık) — salt-okuma
+    smoke = "smoke"  # gerçek runtime uçtan-uca duman testi (Ollama+RAG+LLM) — salt-okuma
     hunt = "hunt"  # Kademe-2 zorunlu derin av — denetimli tetik
     data_gate = "data_gate"  # pretrain-gate GO/NO-GO + readiness — salt-okuma
     curriculum = "curriculum"  # kart L0-L4 sınıflama — salt-okuma
@@ -81,6 +83,17 @@ PIPELINE: tuple[StageDef, ...] = (
         title="Ön kontrol",
         autonomous=True,
         description=("STOP_ALL, veri sayımı, eğitim bağımlılıkları ve sistem durumu — salt-okuma."),
+    ),
+    StageDef(
+        name="smoke",
+        kind=StageKind.smoke,
+        title="Duman testi",
+        autonomous=True,
+        description=(
+            "Gerçek runtime uçtan-uca duman testi (Ollama+RAG+LLM) — 'stub≠runtime' dersi: "
+            "birim testleri stub'la geçse de canlı hat bozuk olabilir. Runtime çevrimdışıysa "
+            "atlanır (skip, hat durmaz); canlı ama üretim boş/degenere ise BAŞARISIZ."
+        ),
     ),
     StageDef(
         name="deep-hunt",

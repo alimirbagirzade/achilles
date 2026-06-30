@@ -202,7 +202,7 @@ def test_max_steps_truncation_leaves_resumable_run(store: OrchestrationStore) ->
     calls: list[str] = []
     orch = TrainingOrchestrator(store=store, delegates=_all_complete_delegates(calls))
     run_id = orch.start(model="m", profile="p", adapter_name="a")
-    snap = orch.run_until_blocked(run_id, max_steps=2)  # 9 aşama, 2 adım → tükenir
+    snap = orch.run_until_blocked(run_id, max_steps=2)  # 10 aşama, 2 adım → tükenir
     assert snap["run"]["status"] == RunStatus.running.value
     assert snap["note"] == "max_steps reached"
     # resume tamamlar
@@ -295,18 +295,27 @@ def test_approval_delegate_peeks_not_consumes(monkeypatch: pytest.MonkeyPatch) -
     assert res2.output.get("has_fresh_approval") is True
 
 
-def test_default_delegates_halt_at_human_gate_offline(store: OrchestrationStore) -> None:
+def test_default_delegates_halt_at_human_gate_offline(
+    store: OrchestrationStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Gerçek varsayılan delegelerle çevrimdışı: import temiz + insan-kapısında durur.
 
-    preflight/data-gate gerçek çalışır; deep-hunt (hunt_ack yok) blocked olur →
-    gerçek eğitim ASLA gözetimsiz başlamaz (Kural 8). Hiçbir aşama 'completed' train'e
-    ulaşmaz.
+    preflight gerçek çalışır; smoke runtime erişilemez → skip (hat durmaz); deep-hunt
+    (hunt_ack yok) blocked olur → gerçek eğitim ASLA gözetimsiz başlamaz (Kural 8).
+    Runtime'ı erişilemez gösteririz ki test çevrimdışı + deterministik kalsın (smoke ağ vurmaz).
     """
+    import app.brain.local_llm as llm_mod
+
+    monkeypatch.setattr(llm_mod.LocalLLM, "active_backend", lambda self: "none")
+    monkeypatch.setattr(llm_mod.LocalLLM, "available", lambda self: False)
+
     orch = TrainingOrchestrator(store=store)  # default_delegates()
     run_id = orch.start(model="qwen2.5:1.5b", profile="discipline_safe_local", adapter_name="a")
     snap = orch.run_until_blocked(run_id)
     assert snap["run"]["status"] in {RunStatus.blocked.value, RunStatus.failed.value}
-    # train aşaması ASLA completed olmamalı (gözetimsiz eğitim yok)
     by_name = {s["name"]: s for s in snap["stages"]}
+    # smoke runtime yokken atlanır (kusur değil, "şimdi test edilemez")
+    assert by_name["smoke"]["status"] == StageStatus.skipped.value
+    # train aşaması ASLA completed olmamalı (gözetimsiz eğitim yok)
     assert by_name["train"]["status"] != StageStatus.completed.value
     assert by_name["evaluate"]["status"] != StageStatus.completed.value

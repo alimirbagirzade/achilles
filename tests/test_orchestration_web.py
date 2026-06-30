@@ -20,6 +20,18 @@ def client() -> TestClient:
     return TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def _offline_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+    """'smoke' aşaması gerçek Ollama ister; web testleri çevrimdışı + deterministik kalmalı
+    (CLAUDE.md: testler çevrimdışı). Runtime'ı erişilemez göster → smoke skip eder ve hat
+    eskisi gibi insan kapısında (deep-hunt) durur. Smoke'un kendi testi: test_orchestration_smoke.
+    """
+    import app.brain.local_llm as llm_mod
+
+    monkeypatch.setattr(llm_mod.LocalLLM, "active_backend", lambda self: "none")
+    monkeypatch.setattr(llm_mod.LocalLLM, "available", lambda self: False)
+
+
 def test_start_halts_at_human_gate(client: TestClient) -> None:
     r = client.post(
         "/api/orchestration/start",
