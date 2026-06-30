@@ -86,5 +86,13 @@ def reset_cache() -> None:
     Chunk SAYISI anahtarı aynı-sayıda içerik değişimini yakalamaz (force re-index / iyileşen
     parser / delete+add); bu yüzden chunk mutasyonu yapan TÜM yollar (şu an yalnız
     PaperIndexer.ingest_one) bu fonksiyonu çağırmalı — otoritatif geçersizleştirme budur.
+
+    `_build_lock` ALTINDA çalışır: build dalı (get_all + build_graph, saniyeler) kilidi tutarak
+    sonunda `_cache.update` yazar. Reset kilitsiz olsaydı, bir build sürerken çağrıldığında
+    build'in son update'i reset'i EZER (lost-update) → cache build başında okunan ESKİ chunk
+    kümesiyle geri yazılır, ingest sonrası bayat graf sessizce sunulurdu (Kural 7). Kilit, reset'i
+    in-flight build TAMAMLANDIKTAN sonra serileştirir. Reset yalnız ingestion thread'inden
+    çağrılır (get_corpus_graph aynı çağrı yığınında değil) → reentrancy/deadlock yok.
     """
-    _cache.update(count=-1, graph=None, chunks={})
+    with _build_lock:
+        _cache.update(count=-1, graph=None, chunks={})

@@ -26,10 +26,16 @@ def _chunk(cid: str, text: str, distance: float | None) -> RetrievedChunk:
     )
 
 
-def _dbchunk(cid: str, text: str, pid: str = "p"):
+def _dbchunk(cid: str, text: str, pid: str = "p", embedded: int = 1):
     """SQLite Chunk-benzeri (BM25 korpusu artık SQLite'tan kurulur)."""
     return SimpleNamespace(
-        chunk_id=cid, paper_id=pid, chunk_index=0, section_name="results", page_number=1, text=text
+        chunk_id=cid,
+        paper_id=pid,
+        chunk_index=0,
+        section_name="results",
+        page_number=1,
+        text=text,
+        embedded=embedded,
     )
 
 
@@ -104,6 +110,48 @@ def test_get_corpus_bm25_rebuilds_on_equal_count_content_change() -> None:
     hits_kalman = bm25_v2.search("Kalman", top_k=2)
     assert hits_kalman and hits_kalman[0][0] == "p_c0"  # yeni içerik indekslendi
     assert bm25_v2.search("Sharpe", top_k=2) == []  # eski (bayat) içerik artık eşleşmez
+    reset_cache()
+
+
+def test_get_corpus_bm25_excludes_unembedded_chunks() -> None:
+    # LOW-2 (Kademe-2 av): embedded=0 chunk (Chroma'ya yazılamamış — yarım/başarısız ingest)
+    # BM25 korpusuna ALINMAMALI. Aksi halde dense yolun görmediği metni hibrit/RRF/router'da
+    # keyword adayı olarak alıntılardık → BUG-M6 koruması asimetrik kalır (Kural 7).
+    reset_cache()
+    store = _FakeStore(
+        [
+            _dbchunk("p_c0", "Sharpe ratio risk adjusted return", embedded=1),
+            _dbchunk("p_c1", "Kalman filter unembedded ghost chunk", embedded=0),
+        ]
+    )
+    bm25, chunks = get_corpus_bm25(store=store)
+    assert bm25 is not None
+    assert set(chunks) == {"p_c0"}  # yalnız gömülü chunk korpusta
+    assert bm25.search("Sharpe", top_k=2)  # gömülü içerik aranabilir
+    assert bm25.search("ghost", top_k=2) == []  # gömülmemiş hayalet chunk aranamaz
+    reset_cache()
+
+
+def test_reset_cache_acquires_build_lock() -> None:
+    # MEDIUM-1 (Kademe-2 av): reset_cache() _build_lock ALTINDA çalışmalı — yoksa sürmekte olan
+    # bir build'in (warm-up ~170s) son _cache.update'i reset'i EZER (lost-update) → ingest
+    # sonrası eski korpus sessizce sunulur (Kural 7). Bu test reset'in kilidi gerçekten aldığını
+    # doğrular: build'i taklit etmek için kilit dışarıda tutulurken reset ilerleyemez.
+    import threading
+
+    from app.memory import bm25_corpus
+
+    reset_cache()
+    assert bm25_corpus._build_lock.acquire(timeout=2)  # "in-flight build" taklidi
+    done = threading.Event()
+    t = threading.Thread(target=lambda: (reset_cache(), done.set()))
+    t.start()
+    try:
+        assert not done.wait(0.3)  # kilit tutulurken reset BLOKLANIR (kilidi alıyor)
+    finally:
+        bm25_corpus._build_lock.release()
+    assert done.wait(2)  # kilit bırakılınca reset tamamlanır
+    t.join(2)
     reset_cache()
 
 
