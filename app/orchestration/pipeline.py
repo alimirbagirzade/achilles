@@ -4,8 +4,8 @@ Yan etkisi olmayan veri (frozen dataclass) → birim test için ideal. Orchestra
 bu sırayı yürütür; her aşamanın bir delege fonksiyonu vardır (orchestrator.py).
 
 Aşama sırası KANONİKTİR — CLAUDE.md eğitim yaşam döngüsünü yansıtır:
-  preflight → smoke → deep-hunt → data-gate → curriculum → dry-run → approval
-  → train → eval → registry
+  preflight → collision → smoke → deep-hunt → data-gate → curriculum → dry-run
+  → regression → approval → train → eval → registry
 
 `autonomous` bayrağı: True ise orchestrator aşamayı gözetimsiz yürütebilir (salt-okuma
 güvenli). False ise insan eylemi/onayı gerekir → orchestrator burada DURUR (Kural 8).
@@ -21,11 +21,13 @@ class StageKind(StrEnum):
     """Bir aşamanın türü — delege seçimini ve güvenlik sınıfını belirler."""
 
     preflight = "preflight"  # sistem durumu (STOP_ALL, veri, bağımlılık) — salt-okuma
+    collision = "collision"  # eşzamanlı oturum/worktree çakışması (git durumu) — salt-okuma
     smoke = "smoke"  # gerçek runtime uçtan-uca duman testi (Ollama+RAG+LLM) — salt-okuma
     hunt = "hunt"  # Kademe-2 zorunlu derin av — denetimli tetik
     data_gate = "data_gate"  # pretrain-gate GO/NO-GO + readiness — salt-okuma
     curriculum = "curriculum"  # kart L0-L4 sınıflama — salt-okuma
     dry_run = "dry_run"  # eğitim komutu önizleme — yürütme yok
+    regression = "regression"  # baseline'a göre gerileme (v5 dersi) — salt-okuma
     approval = "approval"  # TAZE insan onayı sınırı (Kural 8)
     train = "train"  # gerçek LoRA eğitimi — delege, onaylıysa
     evaluate = "evaluate"  # adapter eval (base ile kıyas)
@@ -85,6 +87,18 @@ PIPELINE: tuple[StageDef, ...] = (
         description=("STOP_ALL, veri sayımı, eğitim bağımlılıkları ve sistem durumu — salt-okuma."),
     ),
     StageDef(
+        name="collision",
+        kind=StageKind.collision,
+        title="Çakışma denetimi",
+        autonomous=True,
+        description=(
+            "Eşzamanlı oturum/worktree çakışması taraması (git durumu) — başka bir oturumun "
+            "`git add -A`'i uncommitted fix'leri süpürebilir ya da HEAD altımdan kayabilir. "
+            "git yoksa atlanır (skip); kirli ağaç UYARI; aktif lock / aynı-branch worktree / "
+            "HEAD kayması BLOK (insan çözmeli). Salt-okuma."
+        ),
+    ),
+    StageDef(
         name="smoke",
         kind=StageKind.smoke,
         title="Duman testi",
@@ -125,6 +139,18 @@ PIPELINE: tuple[StageDef, ...] = (
         title="Kuru çalıştırma",
         autonomous=True,
         description="Eğitim komutu + örnek sayısı önizleme — gerçek yürütme YOK.",
+    ),
+    StageDef(
+        name="regression",
+        kind=StageKind.regression,
+        title="Gerileme denetimi",
+        autonomous=True,
+        description=(
+            "Eğitim/onay öncesi: mevcut aday veri setinin v5-ilgili kalite sinyallerini "
+            "(açılış ezberi, zehir, sızıntı, disiplin kapsamı) son GEÇEN baseline ile kıyasla. "
+            "Baseline yoksa atlanır (skip, ilk koşu); gerileme varsa BLOK (v5 dersi — eğitim "
+            "ilerlemez). Baseline yalnız explicit --commit ile güncellenir. Salt-okuma."
+        ),
     ),
     StageDef(
         name="approval",
