@@ -182,7 +182,7 @@ class PaperIndexer:
         # Chroma başarılıysa embedded=1 olarak işaretle
         self.store.mark_chunks_embedded([c.chunk_id for c in chunks])
 
-        # BM25 korpus cache'i (chunk-sayısı anahtarlı) içerik değişince bayatlar —
+        # BM25 korpus cache'i (içerik-imzası anahtarlı) içerik değişince bayatlar —
         # ingestion sonrası sıfırla ki hibrit retrieval taze metni görsün.
         try:
             from app.memory import bm25_corpus
@@ -190,6 +190,16 @@ class PaperIndexer:
             bm25_corpus.reset_cache()
         except Exception:  # pragma: no cover — cache reset hatası ingestion'ı bloklamamalı
             logger.debug("BM25 cache sıfırlanamadı")
+
+        # Graf korpus cache'i yalnız chunk-SAYISI anahtarlı; aynı-sayıda içerik değişimini
+        # (force re-index / iyileşen parser / delete+add) imza yakalayamaz → otoritatif reset
+        # budur. Ayrı try/except ki graf reset hatası ingestion'ı bloklamasın (Kural 7).
+        try:
+            from app.memory import graph_corpus
+
+            graph_corpus.reset_cache()
+        except Exception:  # pragma: no cover — cache reset hatası ingestion'ı bloklamamalı
+            logger.debug("Graf korpus cache sıfırlanamadı")
 
         notes: list[str] = [f"embedding_mode={self.embedder.mode}"]
 
