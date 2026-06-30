@@ -1,7 +1,7 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-06-29 (ajan-sistem 3-faz + Kademe-2 eğitim-öncesi av) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
-_Açık PR: yok — ajan-sistem #72·#74·#79 + Kademe-2 av/sertleştirme #73·#75·#76·#77·#78·#82 hepsi MERGED. Eğitim-öncesi kapı temiz; carding/RLM/eğitim ANA ortamda (worktree izole)._
+_Son güncelleme: 2026-06-30 (Faz-4 Smoke Test Runner) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Açık PR: yok — ajan-sistem #72·#74·#79 + Kademe-2 av/sertleştirme #73·#75·#76·#77·#78·#82 + Faz-4 smoke hepsi MERGED. Eğitim-öncesi kapı temiz; carding/RLM/eğitim ANA ortamda (worktree izole)._
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
@@ -39,6 +39,34 @@ datası var (`root`/`sqlite_file` worktree içine işaret eder; lora_sft yalnız
    İNSAN onayı bekler.
 - Orkestrasyon sistemi (web **12·ORKESTRASYON** / `orchestrate-autodrive`) salt-okuma aşamalarını
   otonom yürütüp **approval** kapısında durur → eğitim hazırlığını ölçmek için kullan.
+
+### 🆕 EN SON İŞ (2026-06-30) — FAZ-4 SMOKE TEST RUNNER ("stub≠runtime")
+
+Kullanıcı "kalınan yerde devam et" → plana göre Faz-4: eksik ajan **Smoke Test Runner**.
+Çekirdek ders ([[rlm-controller-entegrasyon]]): birim testleri stub'la geçse de canlı
+Ollama+RAG+LLM hattı bozuk olabilir (RLM'de gerçek Ollama smoke 3 açık bulmuştu). Mimariyi
+BOZMADAN additive:
+
+- **`app/orchestration/smoke.py`** — `SmokeRunner` (enjekte edilebilir `llm`/`retriever`) +
+  `SmokeResult`/`SmokeCheck`. Yoklamalar: backend canlı mı → gerçek küçük üretim (seed'li,
+  boş/degenere değil; `adapter_eval._is_degenerate` yeniden kullanılır) → gerçek RAG retrieval
+  (≥1 chunk; boşsa **warn**, kritik değil). Salt-okuma (üretim atılır).
+- **Verdict semantiği (kilit karar):** runtime ÇEVRİMDIŞI → **skip** (kusur DEĞİL; hat DURMAZ,
+  sonraki insan kapısına geçer); canlı+sağlıklı → **pass**; canlı ama boş/degenere/hata → **fail**
+  (asıl yakalanacak kusur, ör. Ollama açık ama model çekilmemiş). Skip-when-offline sayesinde
+  CI/çevrimdışı testler etkilenmez (eski akış deep-hunt'ta durur).
+- **Hat:** `StageKind.smoke` + yeni **`smoke`** aşaması (preflight→**smoke**→deep-hunt, autonomous
+  salt-okuma). `create_run` aşamaları per-run snapshot'ladığından mevcut koşular etkilenmez
+  (resume güvenli). CLI **`orchestrate-smoke`** (pass/skip→0, fail→2) + README orkestrasyon bloğu.
+- **13 yeni offline test** (enjekte fake'ler) + web/core testleri çevrimdışı-deterministik fixture.
+  Kapı yeşil: ruff+mypy (226 dosya)+pytest tümü. **Canlı doğrulama:** `orchestrate-smoke` gerçek
+  Ollama'ya vurdu (backend✓ generation✓ retrieval≈boş-korpus-warn) → PASS, exit 0.
+- **YAN BULGU (Kademe-2 refleksi, doğrulandı):** `graph_corpus.py` aynı count-only cache zaafına
+  sahip — `bm25_corpus`'tan DAHA kötü (ne içerik-imzası ne ingest-reset; `paper_indexer` yalnız
+  bm25'i resetler). 4-lens adversarial workflow ONAYLADI (skeptik dahil; idempotency=dosya-hash,
+  parse-sonucu değil → same-count-content tetiklenebilir). Opt-in/OFF (rag_graph=False) → latent.
+  Doğru fix: `graph_corpus.reset_cache()`'i ingest'e bağla + build-lock (imza DEĞİL — get_all'ı
+  her çağrıda zorlardı). Ayrı görev olarak işaretlendi (chip).
 
 ### 🆕 EN SON İŞ (2026-06-29) — AJAN ORKESTRASYON SİSTEMİ (3 FAZ) + KADEME-2 EĞİTİM-ÖNCESİ AV
 
@@ -79,9 +107,10 @@ prompt SALT-RAPOR. CLI `orchestrate-autodrive [--execute]`, web `/api/orchestrat
   bölmez), +Kural-6 determinizm + reject-penceresi. **dataset_quality.audit BİLİNÇLİ değiştirilmedi**
   (curated set FP/NO-GO riski; kartlar zaten Gate-7'den geçer).
 
-**KALAN PLAN (eksik ajanlar):** Faz-4 **Smoke Test Runner** (gerçek Ollama uçtan-uca — "stub≠
-runtime" dersi), Faz-5 **Regression Blocker** + **Collision Detector**. + Faz-3 driver'a ileride
-alt-sistem Kademe-2 av (Faz-1 gibi). + flag'lenen BM25 cache content-fingerprint (latent, ölç-sonra-fix).
+**KALAN PLAN (eksik ajanlar):** ~~Faz-4 Smoke Test Runner~~ ✅ (2026-06-30, yukarıda). Sıradaki:
+Faz-5 **Regression Blocker** + **Collision Detector**. + Faz-3 driver'a ileride alt-sistem Kademe-2
+av (Faz-1 gibi). + **`graph_corpus` count-only cache staleness fix** (chip görevi; bm25 paterni
+ingest-reset + build-lock ile aynalanmalı — imza DEĞİL) ve flag'lenen BM25 content-fingerprint (latent).
 Memory: [[orchestration-system-2026-06-29]], [[echo-feedback-2026-06-29]],
 [[orchestration-autodrive-2026-06-29]], [[orchestration-kademe2-hunt-2026-06-29]],
 [[sqlite-shared-file-wal-pragmas]].

@@ -883,6 +883,13 @@ uv run achilles local-training-request  # onay-kapılı eğitim İSTEĞİ — on
 uv run achilles local-training-dry-run  # onaylı isteği READ-ONLY simüle et — eğitim/onay-tüketimi YOK (5C)
 uv run achilles local-training-handoff  # insan-kapılı handoff — gerçek eğitim komutunu YAZDIRIR, çalıştırmaz (5D)
 uv run achilles local-training-postcheck # eğitim-SONRASI READ-ONLY denetim — terfi YOK, human_review_required (5E)
+
+# Dayanıklı eğitim orkestrasyonu (checkpoint/resume; insan-kapılı, Kural 8)
+uv run achilles orchestrate-start          # tek-tık hattı başlat → insan kapısında durur
+uv run achilles orchestrate-smoke          # gerçek runtime DUMAN TESTİ (Ollama+RAG+LLM canlı mı; "stub≠runtime")
+uv run achilles orchestrate-status <id>    # koşu aşama durumu (+--timeline)
+uv run achilles orchestrate-resume <id>    # bloke/başarısız koşuyu sürdür (tamamlanan aşamalar atlanır)
+uv run achilles orchestrate-autodrive <id> # deep-hunt'ı headless claude -p ile otonom sür (--execute)
 ```
 
 ### Anlama Doğrulama (L3/L4/L5 — objektif sınav)
