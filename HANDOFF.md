@@ -1,7 +1,7 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-06-30 (Faz-4 Smoke Test Runner) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
-_Açık PR: yok — ajan-sistem #72·#74·#79 + Kademe-2 av/sertleştirme #73·#75·#76·#77·#78·#82 + Faz-4 smoke hepsi MERGED. Eğitim-öncesi kapı temiz; carding/RLM/eğitim ANA ortamda (worktree izole)._
+_Son güncelleme: 2026-06-30 (Faz-5 Collision Detector + Regression Blocker) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Açık PR: yok — ajan-sistem #72·#74·#79 + Kademe-2 av/sertleştirme #73·#75·#76·#77·#78·#82 + Faz-4 smoke #84 + graph_corpus #85 + Faz-5 #86 hepsi MERGED. **Ajan-orkestrasyon Faz-1..5 TAMAMLANDI.** Eğitim-öncesi kapı temiz; carding/RLM/eğitim ANA ortamda (worktree izole)._
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
@@ -40,7 +40,33 @@ datası var (`root`/`sqlite_file` worktree içine işaret eder; lora_sft yalnız
 - Orkestrasyon sistemi (web **12·ORKESTRASYON** / `orchestrate-autodrive`) salt-okuma aşamalarını
   otonom yürütüp **approval** kapısında durur → eğitim hazırlığını ölçmek için kullan.
 
-### 🆕 EN SON İŞ (2026-06-30) — FAZ-4 SMOKE TEST RUNNER ("stub≠runtime")
+### 🆕 EN SON İŞ (2026-06-30) — FAZ-5 COLLISION DETECTOR + REGRESSION BLOCKER (Faz-1..5 TAMAM)
+
+Plana göre son iki eksik ajan, Faz-1..4 desenini izleyerek **PR #86 MERGED** (additive,
+enjekte-edilebilir, offline-testli, Kural-8 gated; mimari BOZULMADI). Bununla ajan-orkestrasyon
+Faz-1..5 **TAMAMLANDI**. Yeni hat:
+`preflight → collision → smoke → deep-hunt → data-gate → curriculum → dry-run → regression → approval → train → evaluate → registry`
+(`create_run` aşamaları per-run snapshot'lar → mevcut koşular etkilenmez, resume güvenli).
+
+- **`app/orchestration/collision.py` — Collision Detector:** eşzamanlı oturum/worktree
+  çakışmasını git durumundan salt-okuma tespit eder (enjekte `git_runner` → offline test).
+  `.git/index.lock` (aktif git) / aynı-branch çoklu worktree / **HEAD-drift** → **BLOK**;
+  kirli izlenen ağaç → **UYARI** (başka oturum `git add -A` ile uncommitted fix'i süpürebilir —
+  [[concurrent-session-worktree-collision]]); git yok → skip. Delege `fail→blocked` (kurtarılabilir:
+  commit/stash → resume). `baseline_head` ctx.params'tan iletilir.
+- **`app/orchestration/regression.py` — Regression Blocker:** eğitim/onay öncesi v5 ağı. Aday
+  setin **v5-ilgili sinyalleri** (`top_opening_share` = v5'in TAM mekanizması, garanti vaadi,
+  sızıntı, maliyet-körü, disiplin kapsamı, GO/NO-GO) son GEÇEN baseline ile kıyaslanır; yön+tolerans
+  dışı kötüleşme → **BLOK** ([[v5-adapter-regression]]). baseline yok → skip (ilk koşu); baseline
+  **yalnız explicit `--commit`** ile güncellenir (oto-terfi YOK — kötü set sessizce baseline olup
+  gerilemeyi normalleştirmesin). `BaselineStore`(JSON)+`metrics_provider` enjekte; saf
+  `evaluate_regression` çekirdeği. metrik kaynağı = `audit_dataset` (data_gate ile aynı).
+- **Bağlama:** `StageKind.collision/regression` + 2 `StageDef` + 2 delege; CLI
+  `orchestrate-collision` / `orchestrate-regression --commit` (pass/skip/warn→0, fail→2) + README.
+- **31 yeni offline test** (12 collision + 19 regression). Kapı yeşil: ruff+mypy(228 dosya)+pytest.
+  Canlı CLI duman-testi: collision bu worktree'de WARN (3 modified-tracked); regression skip(baseline yok).
+
+### EN SON İŞ (2026-06-30) — FAZ-4 SMOKE TEST RUNNER ("stub≠runtime")
 
 Kullanıcı "kalınan yerde devam et" → plana göre Faz-4: eksik ajan **Smoke Test Runner**.
 Çekirdek ders ([[rlm-controller-entegrasyon]]): birim testleri stub'la geçse de canlı
