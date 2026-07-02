@@ -27,9 +27,12 @@ Bu dosya **iki işlevi** birden görür:
 
 ## Elenen adaylar (dedup anahtarı — yeniden derin-araştırma YOK)
 
-`LoRA-GA` (PEFT-native değil) · `VeRA` · `MiLoRA` · `LoRA-FA` (param-azaltma, v5-ilgisiz) ·
+`LoRA-GA` (PEFT-native değil — ⚠️ 2026-07-02'de PEFT docs'ta `lora_ga_config` görüldü → weekly-deep'te
+native-durum YENİDEN doğrulanacak) · `VeRA` · `MiLoRA` · `LoRA-FA` (param-azaltma, v5-ilgisiz) ·
 `O-LoRA/orthogonal-subspace-CL` · `CLoRA` · `EWCLoRA` · `FIP` (continual-learning, native değil) ·
-`DFT loss_type=dft` · `OPLoRA` · `SC-LoRA` · `AILoRA` · `D²LoRA` · `all-linear` (zaten hizalı)
+`DFT loss_type=dft` · `OPLoRA` · `SC-LoRA` · `AILoRA` · `D²LoRA` · `all-linear` (zaten hizalı) ·
+`OFT/BEFT/Lily` (image-gen odaklı, disiplin/v5-ilgisiz) · `aLoRA/alora_invocation_tokens` ·
+`MonteCLoRA` · `QALoRA` · `BDLoRA` · `VeLoRA` · `Arrow-routing` (2026-07-02 günlük; v5-ilgisiz)
 
 ## Kapsanan kaynaklar (arXiv ID / URL)
 
@@ -42,6 +45,47 @@ Bu dosya **iki işlevi** birden görür:
 - github.com/NVlabs/DoRA · github.com/neelsjain/NEFTune · github.com/yxli2123/LoftQ
 - huggingface.co/docs/peft/main/en/developer_guides/lora (orthogonal/eva/gaussian init listesi)
 - arXiv 2407.05000 (LoRA-GA) · github.com/huggingface/peft/issues/2927 (LoRA-GA PEFT'e EKLENMEDİ)
+- huggingface.co/docs/peft/main/package_reference/lora (`ensure_weight_tying` + yeni init/config alanları) ·
+  huggingface.co/blog/peft-beyond-lora (2026-06-18 "Beyond LoRA": OFT/BEFT/Lily) ·
+  unsloth.ai/docs/models/qwen3.5/fine-tune (Qwen3.5 + alpha=r default ablasyonu)
+
+---
+
+## Günlük tarama — 2026-07-02 (daily-light — zamanlı görev)
+
+**Tetikleyici:** Zamanlı görev `lora-arastirma-gunluk-tarama` (daily-light). `lora-arastirma`
+alt-ajan tipi bu ortamda YOK → protokol (`docs/PROTOKOL_LORA_ARASTIRMA.md`, daily-light) doğrudan
+uygulandı. Hafif tarama (tam sweep YOK): arXiv (LoRA/PEFT/forgetting), HF PEFT docs/blog, Unsloth
+Qwen3. CLAUDE.md Kural 2/7/8'e uyuldu; eğitim BAŞLATILMADI.
+
+**Sonuç: YENİ, doğrulanmış, PEFT-native, v5-ilgili ENTEGRE edilebilir teknik BULUNAMADI → PR YOK.**
+Yalnız dedup defteri güncellendi (bu doküman) + 1 durum-değişikliği bayrağı (LoRA-GA) weekly-deep'e
+devredildi. Doküman-yalnız değişiklik → `main`'e push (kod/reçete dokunulmadı).
+
+**Taranan ve elenen/ertelenen adaylar:**
+
+| Aday / gözlem | Karar | Gerekçe |
+|---------------|-------|---------|
+| Forgetting makaleleri: arXiv 2603.09684 (survey), 2606.06920 (sub-1B math), 2503.02659 (init) | ⏭️ İLGİSİZ | Survey/analiz veya PEFT-native-DEĞİL yöntemler (LoRETTA tensör-ayrışım, WeGeFT). Entegre edilebilir aday değil. |
+| EWCLoRA / FIP / Hierarchical (arXiv 2501.13669) | ✅ ZATEN ELENDİ | Dedup defterinde mevcut; yeniden derin-araştırılmadı. |
+| Instruction-data karışımı %5–20 (forgetting azaltma) | ✅ ZATEN VAR | `replay/rehearsal` olarak kapsanan teknikte. |
+| **"Beyond LoRA" (HF blog, 2026-06-18): OFT / BEFT / Lily** | ❌ ELE | PEFT-native ama blog açıkça **image-generation** odaklı (OFT "strictly dominates on image metrics"); disiplin/forgetting için üstünlük gösterilmemiş. v5-ilgisiz. |
+| **PEFT `ensure_weight_tying=True`** (LoraConfig, native) | 🟡 FARKINDALIK | GERÇEK + Achilles GGUF-güvenlik tasarımıyla doğrudan ilgili: bağlı `embed_tokens`/`lm_head` katmanlarında adapter'ların da bağlı kalmasını garanti eder. Achilles bu katmanları `target_modules`'e KOYMADIĞINDAN şu an **no-op** → entegrasyon gerekmez. Ancak ileride embed/lm_head eğitilirse native mekanizma budur. Log'a farkındalık notu. |
+| **PEFT `lora_ga_config`** (docs'ta görüldü) | ⚠️ DURUM-DEĞİŞİKLİĞİ | Defter LoRA-GA'yı "PEFT-native değil" (issue #2927) kaydetmişti; artık docs/API'de gradient-tahminli init callback'i görünüyor. Kesin merge PR'ı bu turda doğrulanamadı (Kural 7 → overclaim yok) → **weekly-deep'te native-durum yeniden doğrulanacak**. |
+| Yeni native config alanları: `alora_invocation_tokens`, `monteclora_config`, `use_qalora`, `use_bdlora`, `velora_config`, `arrow_config` | ⏭️ ERTELENDİ | Daily-light kapsamında derin-değerlendirme YOK; "Elenen adaylar"a işlendi (çoğu param-verimlilik/routing, v5-forgetting-ilgisiz). Gerekirse weekly-deep bakar. |
+| Unsloth 2026 ablasyonu: `alpha=r` "temiz varsayılan" | 🟡 NOT | Reçete önerisi; Kural 2 gereği bulut eğitim + `adapter_eval` gate'i olmadan "daha iyi" DENMEZ. Yalnız not; reçete değişmedi. |
+
+**NOT (Kural 2):** Hiçbir reçete/kod değişikliği yapılmadı; yukarıdakiler hipotez/gözlem.
+Bulut eğitim koşusu + `adapter_eval` gate'i ile doğrulanmadan "daha iyi" denmez.
+
+### Kaynaklar (Günlük tarama 2026-07-02)
+
+| Teknik / Konu | Kaynak |
+|---------------|--------|
+| PEFT `ensure_weight_tying` + yeni config alanları | <https://huggingface.co/docs/peft/main/package_reference/lora> |
+| "Beyond LoRA" (OFT/BEFT/Lily) | <https://huggingface.co/blog/peft-beyond-lora> |
+| Forgetting survey / sub-1B / init | arXiv 2603.09684 · arXiv 2606.06920 · arXiv 2503.02659 |
+| Unsloth Qwen3.5 (alpha=r default) | <https://unsloth.ai/docs/models/qwen3.5/fine-tune> |
 
 ---
 
