@@ -18,6 +18,17 @@ RLM `backend="anthropic"` (API) yolu OPSİYONEL + KAPALI kalır (`rlm_alexzhang_
 `provider=native`); varsayılan/zorunlu YAPILMAZ. Yeni özelliklerde bulut API'sini varsayılan
 bağımlılık yapma → opt-in + native fallback şart. Bkz memory [[no-api-local-subscription-only]].
 
+### ⚠️ KRİTİK — WORKTREE ORPHAN HAZARD (git ANA repo'yu etkileyebilir)
+Bir oturumun cwd'si `.claude/worktrees/<ad>` GÖRÜNÜR ama GERÇEK worktree OLMAYABİLİR
+(pruned/orphan: `.git` yok, `git rev-parse --show-toplevel` ANA repo'yu verir, `.claude/worktrees`
+gitignore'da → dosyalar commit edilemez, git komutları ANA checkout'un dalını DEĞİŞTİRİR).
+2026-07-03'te tam bu yaşandı: `git checkout -b` ana checkout'u eşzamanlı oturumun parklı dalından
+kopardı (kurtarıldı). **BAŞLARKEN kontrol:** `git rev-parse --show-toplevel` cwd'ni vermiyorsa
+GERÇEK izole worktree kur: `cd C:/Users/sevinc/Development/achilles && git worktree add
+"…/achilles-<iş>" -b <branch> origin/main` → orada `uv sync --extra dev` + gate + commit + PR +
+`git worktree remove --force` + `git worktree prune`. Ana repo'da checkout-dance yapma;
+`git add -A`/`git clean` ASLA (eşzamanlı oturum WIP'ini süpürür). Bkz [[worktree-orphan-hazard-2026-07-03]].
+
 ### ▶️ SIRADAKİ ADIM — LoRA EĞİTİMİ (Kural-8 kapılı, insan onayı bekliyor)
 
 **Tamamlanan veri hattı adımları:**
