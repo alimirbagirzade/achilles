@@ -1,7 +1,7 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-06-30 (Faz-5 Collision Detector + Regression Blocker) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
-_Açık PR: yok — ajan-sistem #72·#74·#79 + Kademe-2 av/sertleştirme #73·#75·#76·#77·#78·#82 + Faz-4 smoke #84 + graph_corpus #85 + Faz-5 #86 hepsi MERGED. **Ajan-orkestrasyon Faz-1..5 TAMAMLANDI.** Eğitim-öncesi kapı temiz; carding/RLM/eğitim ANA ortamda (worktree izole)._
+_Son güncelleme: 2026-07-03 (Faz-6 Sentinel sağlık monitörü) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Açık PR: yok — ajan-sistem #72·#74·#79 + av/sertleştirme #73·#75·#76·#77·#78·#82·#85·#88·#89 + Faz-4 smoke #84 + Faz-5 #86 + **Faz-6 Sentinel #90** hepsi MERGED. **Ajan-orkestrasyon Faz-1..6 TAMAMLANDI.** Eğitim-öncesi kapı temiz; carding/RLM/eğitim ANA ortamda (worktree izole)._
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
@@ -40,7 +40,29 @@ datası var (`root`/`sqlite_file` worktree içine işaret eder; lora_sft yalnız
 - Orkestrasyon sistemi (web **12·ORKESTRASYON** / `orchestrate-autodrive`) salt-okuma aşamalarını
   otonom yürütüp **approval** kapısında durur → eğitim hazırlığını ölçmek için kullan.
 
-### 🆕 EN SON İŞ (2026-06-30) — FAZ-5 COLLISION DETECTOR + REGRESSION BLOCKER (Faz-1..5 TAMAM)
+### 🆕 EN SON İŞ (2026-07-03) — FAZ-6 SENTINEL (NÖBETÇİ) SAĞLIK MONİTÖRÜ (PR #90 MERGED)
+
+"Birbirini denetleyen sistem" katmanının kapanış taşı (Layer 8 — Monitor & Alert):
+**`app/monitoring/`** — Sentinel, 9 enjekte-edilebilir **SALT-OKUMA** probe ile tüm ajan/
+altsistemleri tek bakışta izler: llm (Ollama) · web · training · orchestration (stale aşama)
+· stop_all · disk · sqlite (quick_check) · feedback (bekleyen kuyruk) · **contention**
+(= plandaki Resource Negotiator, DANIŞMAN modda: CPU çekişmesini raporlar, eğitimi
+DURAKLAMAZ — detached PEFT'te güvenli resume yok). Agregasyon fail>warn>ok; geçmiş SQLite
+(`sentinel_checks`, WAL, keep_last budamalı). Hiçbir şeyi durdurmaz/başlatmaz — öneri metni
+verir (`orchestrate-recover`, `clear-stop-all`), eylem insanın.
+
+Arayüzler: CLI `achilles sentinel [--history]` (fail→exit 2) · web `/api/sentinel/*` ·
+**14·NÖBETÇİ** sekmesi (İzleme grubu, 🩺 ŞİMDİ YOKLA → probe kartları + geçmiş) · manifest
+`sentinel-monitor` (semi_auto, dangerous=false). 16 offline test; canlı doğrulandı (CLI
+gerçek ortamda 9/9 ✓, tarayıcıda buton akışı). Adversarial review 4/4 gerçek fix
+(busy_timeout; prune same-timestamp tie `<=`→`<`+offset; overall normalize; decode-log).
+
+**KALAN AJAN ADAYLARI (opsiyonel, plan tartışmasından):** in-repo Bug Finder/Live Inspector
+(weekly-bug-scan.ps1 kısmen kapsıyor), Contradiction Broker (LLM-ağır), Artemis RAG-drift.
+**Öncelik önerisi: artık ajan değil — yukarıdaki "SIRADAKİ ADIM" (ANA ortamda carding →
+RLM → eğitim döngüsü).** Bkz memory [[sentinel-monitor-2026-07-03]].
+
+### EN SON İŞ (2026-06-30) — FAZ-5 COLLISION DETECTOR + REGRESSION BLOCKER (Faz-1..5 TAMAM)
 
 Plana göre son iki eksik ajan, Faz-1..4 desenini izleyerek **PR #86 MERGED** (additive,
 enjekte-edilebilir, offline-testli, Kural-8 gated; mimari BOZULMADI). Bununla ajan-orkestrasyon
