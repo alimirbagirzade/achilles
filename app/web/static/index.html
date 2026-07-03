@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ACHILLES — Trading Research Terminal</title>
-    <link rel="stylesheet" href="/assets/app.css?v=6" />
+    <link rel="stylesheet" href="/assets/app.css?v=7" />
     <link rel="stylesheet" href="/assets/canli-badge.css?v=1" />
   </head>
   <body>
@@ -71,6 +71,7 @@
       <button class="tab" data-tab="orchestration"><span class="tab-num">12</span> · ORKESTRASYON</button>
       <button class="tab" data-tab="feedback"><span class="tab-num">13</span> · GERİ BİLDİRİM</button>
       <button class="tab" data-tab="sentinel"><span class="tab-num">14</span> · NÖBETÇİ</button>
+      <button class="tab" data-tab="agentmap"><span class="tab-num">15</span> · AJAN HARİTASI</button>
     </nav>
 
     <main>
@@ -985,6 +986,59 @@
           <div id="senHistory" class="orc-timeline"><span class="muted small">—</span></div>
         </div>
       </section>
+
+      <section class="panel" id="panel-agentmap">
+        <div class="panel-head">
+          <h2>Ajan Haritası — Canlı Işıklı Yol</h2>
+          <p class="muted">
+            Ajanlar birbirini nasıl <strong>devreye sokar</strong> görünür: <strong>düz ok</strong>
+            akış zinciri (ordan buraya gider), <strong>ince kesik çizgi</strong> veri bağı
+            (kim kimle ilişkili). Çalışan ajan <em>yanar</em> (nabız) ve yolu <em>ışıklı akar</em>.
+            Ana ajan (büyük yeşil, <code>claude -p</code>) diğerlerini devreye sokar.
+            <strong>Salt-okuma</strong> — harita hiçbir şeyi kendisi başlatmaz; tetik senin
+            onayınla ve onay kapısında durur (Kural 8).
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="orc-actions">
+            <button class="btn btn-primary am-trigger" id="amTriggerBtn">⚡ EĞİTİMİ DEVREYE SOK</button>
+            <button class="btn" id="amRefreshBtn">↻ Yenile</button>
+            <span class="muted small" id="amStatusLine">Yükleniyor…</span>
+          </div>
+          <div id="amDryRun" class="am-dryrun" hidden>
+            <div class="muted small am-dryrun-head">
+              KURU-ÇALIŞTIRMA — çalıştırılacak <code>claude -p</code> komutu (spawn YOK):
+            </div>
+            <pre class="am-dryrun-cmd"><code id="amDryRunCmd"></code></pre>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="am-legend" id="amLegend">
+            <span class="am-lg"><span class="am-lg-dot lg-idle"></span>boşta</span>
+            <span class="am-lg"><span class="am-lg-dot lg-running"></span>çalışıyor</span>
+            <span class="am-lg"><span class="am-lg-dot lg-blocked"></span>onay bekliyor</span>
+            <span class="am-lg"><span class="am-lg-dot lg-error"></span>hata</span>
+            <span class="am-lg"><span class="am-lg-dot lg-main"></span>ana ajan</span>
+            <span class="am-lg"><span class="am-lg-ring lg-danger"></span>tehlikeli (onay şart)</span>
+            <span class="am-lg"><span class="am-lg-line lg-chain"></span>zincir (akış)</span>
+            <span class="am-lg"><span class="am-lg-line lg-data"></span>veri bağı</span>
+          </div>
+          <div class="am-canvas-wrap" id="amCanvasWrap">
+            <div id="amCanvas" class="am-canvas"><span class="muted small">Harita yükleniyor…</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Ajan ayrıntısı</h3>
+          <div id="amDetail" class="am-detail">
+            <span class="muted small">
+              Bir ajana tıkla — tetikleyici, ne okur/yazar, güvenlik kapıları ve canlı durum burada.
+            </span>
+          </div>
+        </div>
+      </section>
     </main>
 
     <footer class="footer">
@@ -1019,7 +1073,7 @@
       </div>
     </div>
 
-    <script src="/assets/app.js?v=6"></script>
+    <script src="/assets/app.js?v=7"></script>
     <script src="/assets/canli-badge.js?v=1"></script>
   </body>
 </html>
