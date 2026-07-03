@@ -225,22 +225,24 @@ def test_kl_reg_beta_shows_in_recipe_summary() -> None:
 
 
 def test_make_trainer_cls_beta_zero_returns_plain_trainer() -> None:
-    from transformers import Trainer
+    # transformers yalnız train-cpu/dev extra'sında kurulu olabilir (CI'da yok) —
+    # importorskip ile bu test o ortamda sessizce atlanır (skip != fail).
+    transformers = pytest.importorskip("transformers")
 
     from app.training.peft_lora_train import _make_trainer_cls
 
-    assert _make_trainer_cls(0.0) is Trainer
-    assert _make_trainer_cls(-1.0) is Trainer
+    assert _make_trainer_cls(0.0) is transformers.Trainer
+    assert _make_trainer_cls(-1.0) is transformers.Trainer
 
 
 def test_make_trainer_cls_beta_positive_returns_subclass() -> None:
-    from transformers import Trainer
+    transformers = pytest.importorskip("transformers")
 
     from app.training.peft_lora_train import _make_trainer_cls
 
     cls = _make_trainer_cls(0.01)
-    assert issubclass(cls, Trainer)
-    assert cls is not Trainer
+    assert issubclass(cls, transformers.Trainer)
+    assert cls is not transformers.Trainer
     assert cls.kl_reg_beta == 0.01
 
 
