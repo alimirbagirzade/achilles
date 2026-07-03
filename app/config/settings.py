@@ -145,7 +145,7 @@ class Settings(BaseSettings):
     # 600s: CPU-only i7'de qwen3:4b draft+doğrulama ~5-6dk sürer; 300s sistematik timeout'a
     # düşürüyordu (tüm sorular no_llm). GPU varsa env ile düşürülebilir.
     rlm_draft_max_tokens: int = 900  # üretim uzunluğu tavanı (yapısal cevap için yeterli)
-    rlm_draft_timeout_s: int = 600  # LLM çağrı süre tavanı; aşılırsa LLMUnavailable → graceful no_llm
+    rlm_draft_timeout_s: int = 600  # süre tavanı; aşılırsa LLMUnavailable → no_llm
 
     # --- RLM engine adapter (opsiyonel alexzhang13/rlm — talimat) ---
     # Çekirdek RLM Controller (native) VARSAYILANDIR. alexzhang adapter opsiyoneldir;
