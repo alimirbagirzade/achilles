@@ -1,7 +1,7 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-07-03 (Faz-6 Sentinel sağlık monitörü) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
-_Açık PR: yok — ajan-sistem #72·#74·#79 + av/sertleştirme #73·#75·#76·#77·#78·#82·#85·#88·#89 + Faz-4 smoke #84 + Faz-5 #86 + **Faz-6 Sentinel #90** hepsi MERGED. **Ajan-orkestrasyon Faz-1..6 TAMAMLANDI.** Eğitim-öncesi kapı temiz; carding/RLM/eğitim ANA ortamda (worktree izole)._
+_Son güncelleme: 2026-07-03 (eğitim-öncesi Kademe-2 av → 3 v5-sınıfı fix, PR#95) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Açık PR: yok — ajan-sistem #72·#74·#79 + av/sertleştirme #73·#75·#76·#77·#78·#82·#85·#88·#89 + Faz-4 smoke #84 + Faz-5 #86 + **Faz-6 Sentinel #90** + **eğitim-öncesi av #95** hepsi MERGED. **Ajan-orkestrasyon Faz-1..6 TAMAMLANDI.** ⚠️ **Eğitim-öncesi kapı ARTIK "temiz" DEĞİL: Kademe-2 av 3 v5-sınıfı bug yakaladı (PR#95 ile main'e onarıldı) — EĞİTİM BLOKLU** (aşağı bak); carding/RLM/eğitim ANA ortamda (worktree izole)._
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
@@ -18,11 +18,24 @@ RLM `backend="anthropic"` (API) yolu OPSİYONEL + KAPALI kalır (`rlm_alexzhang_
 `provider=native`); varsayılan/zorunlu YAPILMAZ. Yeni özelliklerde bulut API'sini varsayılan
 bağımlılık yapma → opt-in + native fallback şart. Bkz memory [[no-api-local-subscription-only]].
 
-### ▶️ SIRADAKİ ADIM — EĞİTİME HAZIRLIK (HANDOFF, ana ortamda yapılmalı)
+### ▶️ SIRADAKİ ADIM — LoRA EĞİTİMİ (BLOKLU; 3 karar kullanıcıda)
 
-**Kademe-2 eğitim-öncesi ZORUNLU kapı bu seansta KAPSAMLI biçimde kapatıldı** (orchestration +
-Echo feedback alt sistemleri derin-avlandı; 6 PR merged — aşağıda). Yani disiplin/güvenlik
-açısından bir sonraki eğitim için kapı temiz.
+**2026-07-03 eğitim-öncesi ZORUNLU Kademe-2 av (Opus, 6 finder + 2-oylu adversarial) 3 v5-sınıfı
+bug yakaladı** — PR#95 ile main'e onarıldı (aşağı bak). Gerçek eğitim BAŞLATILMADI. Eğitimin
+başlaması için 3 şey gerekli (hiçbiri koddan çözülemez — kullanıcı/eş-zamanlı oturum alanı):
+
+1. **Fix eğitim dalına ulaşmalı** — eğitim ANA checkout'tan koşar; ANA checkout 2026-07-03 itibariyle
+   `feat/kl-regularized-sft-lora-arastirma-tur3` dalında **+ aktif başka oturum** (WIP notebook +
+   `lora_sft.jsonl.bak-*` yedeği). Fix `main`'de (PR#95); o dala `main` merge edilmeli VEYA eğitim
+   `main`'den koşulmalı. WIP'e/branch'e DOKUNMA (Kural: `git add -A`/reset/branch-değiştir ASLA).
+2. **Örnek sayısı kararı** — `discipline_safe_local` profili `max_examples=300` (1980'den; CPU'da
+   ~5.8h @ ~35s/adım × 600 adım = 2 epoch). Tam 1980 × 2 epoch ~38h (pratik değil). Daha geniş
+   alt-küme istenirse `--max-examples 600` (~11.6h) vb.
+3. **Taze onay** — `uv run achilles approval-approve <id>` (ONAYSIZ EĞİTİM ASLA — Kural 8).
+
+Çözülünce: `orchestrate-resume <run_id> --hunt-ack` + approval → **detached** eğitim
+(`start-train.ps1` artık `-Profile discipline_safe_local` VARSAYILANLI → maskeleme aktif).
+Eğitim-sonrası: `evaluate_adapter` (min_n≥5, artık boş-cevap veto'lu) + registry ADAY (terfi İNSAN onayı).
 
 **⚠️ KRİTİK YAPI GERÇEĞİ:** Bu seans **izole worktree**'de çalıştı; worktree'nin KENDİ boş
 datası var (`root`/`sqlite_file` worktree içine işaret eder; lora_sft yalnız ~5 satır) ve
@@ -40,7 +53,33 @@ datası var (`root`/`sqlite_file` worktree içine işaret eder; lora_sft yalnız
 - Orkestrasyon sistemi (web **12·ORKESTRASYON** / `orchestrate-autodrive`) salt-okuma aşamalarını
   otonom yürütüp **approval** kapısında durur → eğitim hazırlığını ölçmek için kullan.
 
-### 🆕 EN SON İŞ (2026-07-03) — FAZ-6 SENTINEL (NÖBETÇİ) SAĞLIK MONİTÖRÜ (PR #90 MERGED)
+### 🆕 EN SON İŞ (2026-07-03) — EĞİTİM-ÖNCESİ KADEME-2 AV: 3 v5-SINIFI FIX (PR #95 MERGED)
+
+LoRA eğitim-öncesi ZORUNLU derin av (CLAUDE.md "her eğitimden önce"; v5 regresyonu bunun
+atlanmasındandı). Opus'la 6 finder + 2-oylu şüpheci doğrulama; 14 ham bulgudan **3'ü onaylandı,
+hepsi v5-sınıfı**. Kural 8 gereği eğitimden ÖNCE onarıldı; gerçek eğitim başlatılmadı.
+
+- 🔴 **profile-drop (CRITICAL):** `detached_launch.launch()` varsayılanı `profile=None` idi →
+  web `/api/training/run` · `auto_pipeline` · `start-train.ps1` yollarının HİÇBİRİ `--profile`
+  geçmiyordu → spawn edilen `train --run` VANİLYA (assistant_only_loss=False, NEFTune=0, lr=2e-4)
+  koşuyordu = tam v5 maskesiz reçetesi. FIX: `launch()`+`start-train.ps1 -Profile` varsayılanı
+  → `discipline_safe_local` (`profile=""` ile bilinçli vanilya kaçışı korunur). Komut kurulumu
+  test edilebilir `_build_train_cmd` helper'ına çıkarıldı.
+- 🔴 **eval boş-cevap sahte-kabul (CRITICAL):** `adapter_eval._flags_for` boş/whitespace cevabı
+  0 red-flag → skor 1.0 → çökmüş adapter base'i geçip `accept` alıyordu. FIX: boş→`empty_answer`
+  flag + kategorik veto (dejenerasyonla aynı sınıf; meşru çekimserlik non-empty → Kural 7 korunur).
+- 🟠 **anlama-merdiveni elmayla-armut (MAJOR):** `auto_pipeline` base bacağı `llm=None`→Ollama
+  qwen3:**4B**, adapter bacağı **1.5B**+adapter → 1.5B L3/L4 sayısal sınavlarda sistematik kaybeder
+  → kalıcı SAHTE-gerileme → iyi adapter bile bloklanır. FIX: `peft_llm_shim.load_base_of()`
+  (adapter'ın KENDİ base'i, adaptersiz); base bacağını yükle→koş→serbest→adapter (CPU bellek-güvenli).
+
+Kademe-0 kapısı: format+lint+mypy temiz, testler yeşil (yerel + CI). Yeni: `test_detached_launch_profile.py`;
+genişletilen: `test_adapter_eval_degenerate.py` (empty_answer) · `test_peft_llm_shim.py` (`load_base_of`).
+**Çürütülen:** data-gate-stale (2/2 oy — orkestrasyon salt-danışman). **Doğrulanamayan** (session-limit
+10pm): KL-yön/NEFTune (β=0 dormant), pretrain-gate `'pasaj'da'` öneki, ps1 CIM-filtresi/false-success
+— düşük öncelik, ayrı takip. Bkz memory [[pretrain-hunt-profile-drop-2026-07-03]] · [[v5-adapter-regression]].
+
+### 🆕 ÖNCEKİ İŞ (2026-07-03) — FAZ-6 SENTINEL (NÖBETÇİ) SAĞLIK MONİTÖRÜ (PR #90 MERGED)
 
 "Birbirini denetleyen sistem" katmanının kapanış taşı (Layer 8 — Monitor & Alert):
 **`app/monitoring/`** — Sentinel, 9 enjekte-edilebilir **SALT-OKUMA** probe ile tüm ajan/
