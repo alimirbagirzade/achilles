@@ -61,10 +61,12 @@ def test_panel_has_all_sections() -> None:
         assert f'id="{el_id}"' in html, f"panel eksik öğe: {el_id}"
 
 
-def test_assets_cache_busted_to_v7() -> None:
+def test_assets_cache_busted() -> None:
+    # Versiyona-DUYARSIZ: asset'ler cache-bust query'siyle sunuluyor mu (tam numara pinlenmez —
+    # her UI değişikliğinde ?v artar; sabit "v7" beklemek kırılgandı, görsel sadeleştirmeyi kırdı).
     html = _index()
-    assert "app.js?v=7" in html
-    assert "app.css?v=7" in html
+    assert "app.js?v=" in html
+    assert "app.css?v=" in html
 
 
 # ── app.js kablolaması ───────────────────────────────────────────────────────
