@@ -122,7 +122,7 @@
     { key: "kutuphane", tabs: ["papers"] },
     { key: "trader", tabs: ["trader", "backtest"] },
     { key: "egitim", tabs: ["review", "training", "eval", "orchestration", "feedback"] },
-    { key: "izleme", tabs: ["learning", "agents", "about"] },
+    { key: "izleme", tabs: ["learning", "agents", "sentinel", "about"] },
   ];
   var TAB_TO_GROUP = {};
   TAB_GROUPS.forEach(function (g) {
@@ -155,6 +155,9 @@
     feedback:
       "Yanlış cevabın doğrusunu yaz → aday eğitim örneği. Onayla → export. " +
       "Eğitim otomatik başlamaz; aday yine veri kapısından geçer.",
+    sentinel:
+      "Tüm ajanların sağlığını tek bakışta gör. Uyarı/kritik varsa öneri " +
+      "metnindeki adımı uygula; nöbetçi hiçbir şeyi kendisi durdurmaz.",
   };
   function updateNextStep(name) {
     var box = document.getElementById("nextStep");
@@ -195,6 +198,7 @@
     if (name === "rlm") loadRlmDashboard();
     if (name === "orchestration") loadOrchestration();
     if (name === "feedback") loadFeedback();
+    if (name === "sentinel") loadSentinel();
   }
 
   function showGroupTabs(groupKey) {
@@ -4133,6 +4137,87 @@
       .catch(function (e) {
         toast("Export hatası: " + e.message, true);
       });
+  }
+
+  // ---------- Nöbetçi (Sentinel — sağlık monitörü) ----------
+  // Probe kartları orc-stage stilini yeniden kullanır (yeni CSS gerekmez):
+  var SEN_CLS = { ok: "completed", warn: "blocked", fail: "failed", skip: "pending" };
+  var SEN_GLYPH = { ok: "✓", warn: "≈", fail: "✕", skip: "–" };
+
+  function senRenderReport(report) {
+    var overallEl = document.getElementById("senOverall");
+    if (overallEl && report) {
+      overallEl.textContent = (report.overall || "?").toUpperCase() + " — " + (report.summary || "");
+    }
+    var el = document.getElementById("senProbes");
+    if (!el) return;
+    var probes = (report && report.probes) || [];
+    if (!probes.length) {
+      el.innerHTML = '<span class="muted small">Yoklama yok.</span>';
+      return;
+    }
+    el.innerHTML = probes
+      .map(function (p) {
+        var advice = p.advice
+          ? '<div class="orc-st-msg"><strong>Öneri:</strong> ' + esc(p.advice) + "</div>"
+          : "";
+        return (
+          '<div class="orc-stage ' + (SEN_CLS[p.status] || "pending") + '">' +
+          '<div class="orc-st-name">' + (SEN_GLYPH[p.status] || "?") + " " + esc(p.name) + "</div>" +
+          '<div class="orc-st-msg">' + esc(p.detail || "") + "</div>" + advice + "</div>"
+        );
+      })
+      .join("");
+  }
+
+  function senRenderHistory(items) {
+    var el = document.getElementById("senHistory");
+    if (!el) return;
+    if (!items || !items.length) {
+      el.innerHTML = '<span class="muted small">—</span>';
+      return;
+    }
+    el.innerHTML = items
+      .map(function (h) {
+        var cls = h.overall === "fail" ? "error" : h.overall === "warn" ? "warning" : "";
+        return (
+          '<div class="ev ' + cls + '">' +
+          esc((h.created_at || "").replace("T", " ").slice(0, 19)) +
+          " · " + esc(h.overall) + " — " + esc(h.summary || "") + "</div>"
+        );
+      })
+      .join("");
+  }
+
+  function runSentinel() {
+    var btn = document.getElementById("senRunBtn");
+    if (btn) btn.disabled = true;
+    api("/sentinel/overview")
+      .then(function (d) {
+        senRenderReport(d.report);
+        senRenderHistory(d.history);
+      })
+      .catch(function (e) {
+        toast("Nöbetçi koşulamadı: " + e.message, true);
+      })
+      .finally(function () {
+        if (btn) btn.disabled = false;
+      });
+  }
+
+  function loadSentinel() {
+    var rb = document.getElementById("senRunBtn");
+    if (rb && !rb._wired) {
+      rb._wired = true;
+      rb.addEventListener("click", runSentinel);
+      document.getElementById("senRefreshBtn").addEventListener("click", runSentinel);
+    }
+    // sekme açılınca geçmişi göster (canlı koşu butonla — sekme gezinmesi probe koşturmasın)
+    api("/sentinel/history?limit=10")
+      .then(function (d) {
+        senRenderHistory(d.history);
+      })
+      .catch(function () {});
   }
 
   // ---------- init ----------

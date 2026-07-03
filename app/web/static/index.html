@@ -70,6 +70,7 @@
       <button class="tab" data-tab="rlm"><span class="tab-num">11</span> · RLM</button>
       <button class="tab" data-tab="orchestration"><span class="tab-num">12</span> · ORKESTRASYON</button>
       <button class="tab" data-tab="feedback"><span class="tab-num">13</span> · GERİ BİLDİRİM</button>
+      <button class="tab" data-tab="sentinel"><span class="tab-num">14</span> · NÖBETÇİ</button>
     </nav>
 
     <main>
@@ -952,6 +953,38 @@
           <div id="fbList"><span class="muted small">—</span></div>
         </div>
       </section>
+
+      <!-- 14 · NÖBETÇİ (Sentinel — tüm ajan/altsistemleri izleyen sağlık monitörü) -->
+      <section class="panel" id="panel-sentinel">
+        <div class="panel-head">
+          <h2>Nöbetçi — Sistem Sağlık Monitörü</h2>
+          <p class="muted">
+            Tüm ajan ve altsistemleri tek bakışta izler: Ollama, web, eğitim, orkestrasyon,
+            STOP_ALL, disk, veritabanı, geri bildirim kuyruğu ve
+            <span class="jargon" title="Danışman Resource Negotiator: CPU-only makinede eğitim sürerken sorguların yavaşlayacağını raporlar; eğitimi DURAKLAMAZ (yalnız öneri).">CPU çekişmesi</span>.
+            <strong>Salt rapor</strong> — hiçbir şeyi durdurmaz/başlatmaz; öneriler metin olarak
+            gösterilir, eylem sizindir.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="orc-actions">
+            <button class="btn btn-primary" id="senRunBtn">🩺 ŞİMDİ YOKLA</button>
+            <button class="btn" id="senRefreshBtn">↻ Yenile</button>
+            <span class="muted small" id="senOverall"></span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Yoklamalar</h3>
+          <div id="senProbes" class="orc-graph"><span class="muted small">"Şimdi yokla" ile başlat…</span></div>
+        </div>
+
+        <div class="card">
+          <h3>Geçmiş <span class="muted small">(son koşular)</span></h3>
+          <div id="senHistory" class="orc-timeline"><span class="muted small">—</span></div>
+        </div>
+      </section>
     </main>
 
     <footer class="footer">
@@ -986,7 +1019,7 @@
       </div>
     </div>
 
-    <script src="/assets/app.js?v=5"></script>
+    <script src="/assets/app.js?v=6"></script>
     <script src="/assets/canli-badge.js?v=1"></script>
   </body>
 </html>
