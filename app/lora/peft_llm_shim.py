@@ -73,7 +73,25 @@ class PeftAdapterLLMShim:
 
     @classmethod
     def load(cls, adapter_dir: Path | str) -> PeftAdapterLLMShim | None:
-        """Adapter dizininden model yükle; bağımlılık yoksa None döner."""
+        """Adapter dizininden base+adapter model yükle; bağımlılık yoksa None döner."""
+        return cls._load(adapter_dir, with_adapter=True)
+
+    @classmethod
+    def load_base_of(cls, adapter_dir: Path | str) -> PeftAdapterLLMShim | None:
+        """Adapter'ın KENDİ base modelini (adapter YÜKLEMEDEN) shim olarak döndür.
+
+        Anlama-merdiveni base bacağı için ZORUNLU: base vs adapter kıyası AYNI model
+        ailesi / boyut / runtime ile yapılmalı. Aksi halde base bacağı `llm=None` →
+        LocalLLM (Ollama `settings.llm_model`, örn. qwen3:4b) olur ve 4B base, 1.5B+adapter
+        ile kıyaslanır (elmayla-armut); L3/L4 sayısal sınavlarda 1.5B sistematik kaybeder →
+        kalıcı SAHTE-gerileme → iyi adapter bile terfi bloklanır (Kademe-2 av bulgusu).
+        Bu factory ile base bacağı adapter'ın 1.5B base'ini adapter'sız koşar → elmayla-elma.
+        """
+        return cls._load(adapter_dir, with_adapter=False)
+
+    @classmethod
+    def _load(cls, adapter_dir: Path | str, *, with_adapter: bool) -> PeftAdapterLLMShim | None:
+        """Ortak yükleyici: base modeli çöz+yükle, `with_adapter` ise PEFT adapter'ı da bindir."""
         try:
             import torch
             from peft import PeftModel
@@ -99,14 +117,20 @@ class PeftAdapterLLMShim:
             # ile aynı çözüm (tutarlı base çözümleme).
             base_model_id = _resolve_base_model(adapter_dir) or settings.peft_base_model
 
-            log.info("PeftAdapterLLMShim: %s üzerine %s yükleniyor…", base_model_id, adapter_dir)
+            what = "base+adapter" if with_adapter else "base-only"
+            log.info(
+                "PeftAdapterLLMShim(%s): %s üzerine %s yükleniyor…",
+                what,
+                base_model_id,
+                adapter_dir,
+            )
             tokenizer = AutoTokenizer.from_pretrained(base_model_id)
             base = AutoModelForCausalLM.from_pretrained(
                 base_model_id,
                 torch_dtype=torch.float32,
                 device_map="cpu",
             )
-            model = PeftModel.from_pretrained(base, str(adapter_dir))
+            model = PeftModel.from_pretrained(base, str(adapter_dir)) if with_adapter else base
             model.eval()
             return cls(model, tokenizer)
         except Exception as exc:

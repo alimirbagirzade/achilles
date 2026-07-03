@@ -15,6 +15,11 @@ param(
     [string]$Adapter = "achilles_lora_v5",
     [int]$Iterations = 1203,
     [string]$Dtype = "bf16",
+    # LoRA recete profili. VARSAYILAN discipline_safe_local (assistant_only_loss maskeleme +
+    # NEFTune). --profile GECMEZSEK `train --run` vanilya varsayilanla (maskesiz, lr=2e-4)
+    # kosar -> prompt kalibi ezberlenir = v5 disiplin-regresyon recetesi (Kademe-2 av bulgusu).
+    # Profili tamamen atlamak icin -Profile "" ver.
+    [string]$Profile = "discipline_safe_local",
     [switch]$Stop,
     [switch]$Status
 )
@@ -75,9 +80,12 @@ $null = New-Item -ItemType Directory -Path (Split-Path $LogOut) -Force
 $env:ACHILLES_TRAIN_DTYPE = $Dtype
 # Egitim verisi: lora_sft.jsonl -> train/valid (clobber-proof; bos train.jsonl onarilir)
 & $uv run --project "$ProjectDir" achilles lora-split | Out-Null
+# Temel argumanlar + (profil verildiyse) --profile. Profil bos ise EKLENMEZ (vanilya).
+$trainArgs = @("run", "--project", "`"$ProjectDir`"", "achilles", "train", "--run",
+               "--backend", "peft", "--adapter-name", $Adapter, "--iterations", "$Iterations")
+if ($Profile -and $Profile.Trim() -ne "") { $trainArgs += @("--profile", $Profile) }
 Start-Process -FilePath $uv `
-    -ArgumentList "run", "--project", "`"$ProjectDir`"", "achilles", "train", "--run", `
-                  "--backend", "peft", "--adapter-name", $Adapter, "--iterations", "$Iterations" `
+    -ArgumentList $trainArgs `
     -WorkingDirectory $ProjectDir `
     -RedirectStandardOutput $LogOut `
     -RedirectStandardError $LogErr `
@@ -86,6 +94,7 @@ Start-Process -FilePath $uv `
 $null = New-Item -ItemType Directory -Path (Split-Path $StatusFile) -Force
 ('{"adapter":"' + $Adapter + '","dtype":"' + $Dtype + '","iterations":' + $Iterations + '}') |
     Out-File -FilePath $StatusFile -Encoding ascii -Force
-Write-Host "  [OK] Egitim DETACHED baslatildi (dtype=$Dtype, adapter=$Adapter, iters=$Iterations)." -ForegroundColor Green
+$profLabel = if ($Profile -and $Profile.Trim() -ne "") { $Profile } else { "(vanilya)" }
+Write-Host "  [OK] Egitim DETACHED baslatildi (dtype=$Dtype, adapter=$Adapter, iters=$Iterations, profil=$profLabel)." -ForegroundColor Green
 Write-Host "       Claude Code/terminal kapansa da surer. PC acik + oturum acik kalmali." -ForegroundColor Cyan
 Write-Host "       Ilerleme: logs\train-full-err.log" -ForegroundColor Gray

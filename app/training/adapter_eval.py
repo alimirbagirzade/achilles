@@ -48,6 +48,13 @@ def _is_degenerate(answer: str) -> bool:
 
 def _flags_for(answer: str, must_avoid: list[str]) -> list[str]:
     flags = check_flags(answer, must_avoid)
+    # Boş/whitespace cevap = çökmüş adapter. check_flags yalnız red-flag DESENİ arar;
+    # boş cevapta hiç desen olmadığından 0 bayrak → skor 1.0 → çalışan base'i geçip 'accept'
+    # alır (v5-sınıfı SAHTE-KABUL: eval adapter'ın gerçek kalitesini ölçmüyor). Boş cevabı
+    # açıkça bayrakla. NOT: meşru çekimserlik ('Bilmiyorum'/'kaynakta yok') non-empty olduğu
+    # için bayraklanMAZ (Kural 7 abstain korunur) — yalnız GERÇEKTEN boş çıktı cezalanır.
+    if not answer.strip():
+        flags.append("empty_answer")
     if _is_degenerate(answer):
         flags.append("degenerate_repetition")
     return flags
@@ -212,10 +219,14 @@ def evaluate_adapter(
     base_score = round(1.0 - base_flag_total / denom, 4)
     adapter_score = round(1.0 - adapt_flag_total / denom, 4)
     regression = adapter_score < base_score
-    # Degenerasyon (tekrar döngüsü/çöküş) skordan BAĞIMSIZ veto — v5 adapter dejenere
+    # Çöküş (tekrar döngüsü VEYA boş çıktı) skordan BAĞIMSIZ veto — v5 adapter dejenere
     # tekrar yaptı ama eski kod bunu yalnız flag/skora ekliyordu, base de kötüyse 'accept'
-    # kaçabiliyordu. Adapter herhangi bir soruda dejenere olduysa kategorik reddet.
-    adapter_degenerate = any("degenerate_repetition" in r["adapter_flags"] for r in rows)
+    # kaçabiliyordu. Boş çıktı da aynı sınıf çöküştür (kısmi boş kalırsa skor yine base'i
+    # geçebilir). Adapter herhangi bir soruda dejenere/boş olduysa kategorik reddet.
+    adapter_degenerate = any(
+        "degenerate_repetition" in r["adapter_flags"] or "empty_answer" in r["adapter_flags"]
+        for r in rows
+    )
     verdict = _decide_verdict(
         base_score,
         adapter_score,
