@@ -1,7 +1,7 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-07-03 (Parça-1 veri hattı yenilendi — lora_sft=2003, veri-kalite kapıları GO; ama EĞİTİM HÂLÂ BLOKLU) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
-_Açık PR: yok — ajan-sistem #72·#74·#79 + av/sertleştirme #73·#75·#76·#77·#78·#82·#85·#88·#89 + Faz-4 smoke #84 + Faz-5 #86 + **Faz-6 Sentinel #90** + **eğitim-öncesi av #95** hepsi MERGED. **Ajan-orkestrasyon Faz-1..6 TAMAMLANDI.** ⚠️ **EĞİTİM BLOKLU: Kademe-2 av 3 v5-sınıfı bug yakaladı (PR#95 ile onarıldı) + 3 karar kullanıcıda (aşağı bak).** Parça-1 veri hattı (carding→RLM→dataset→veri-kalite kapıları) 2026-07-03 akşamı yenilendi ama bu KOD-avı bloğunu AÇMAZ (kapılar ortogonal); carding/RLM/eğitim ANA ortamda (worktree izole)._
+_Son güncelleme: 2026-07-03 (veri hattı kapandı, dataset yeniden inşa, UTF-8 fix) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Açık PR: yok — tüm PR'lar (#66-#96) MERGED. Veri hattı KAPALI (carding✅ RLM✅ curate✅ assemble✅). Dataset 2000 örnek, pretrain-gate **GO**. Sıradaki: LoRA eğitimi (Kural-8 kapılı, insan onayı bekliyor)._
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
@@ -18,72 +18,55 @@ RLM `backend="anthropic"` (API) yolu OPSİYONEL + KAPALI kalır (`rlm_alexzhang_
 `provider=native`); varsayılan/zorunlu YAPILMAZ. Yeni özelliklerde bulut API'sini varsayılan
 bağımlılık yapma → opt-in + native fallback şart. Bkz memory [[no-api-local-subscription-only]].
 
-### ▶️ SIRADAKİ ADIM — LoRA EĞİTİMİ (BLOKLU; 3 karar kullanıcıda)
+### ▶️ SIRADAKİ ADIM — LoRA EĞİTİMİ (Kural-8 kapılı, insan onayı bekliyor)
 
-**2026-07-03 eğitim-öncesi ZORUNLU Kademe-2 av (Opus, 6 finder + 2-oylu adversarial) 3 v5-sınıfı
-bug yakaladı** — PR#95 ile main'e onarıldı (aşağı bak). Gerçek eğitim BAŞLATILMADI. Eğitimin
-başlaması için 3 şey gerekli (hiçbiri koddan çözülemez — kullanıcı/eş-zamanlı oturum alanı):
+**Tamamlanan veri hattı adımları:**
+- **Carding** ✅ (185 makale, 0 kartsız, 483 onaylı / 3 bekliyor / 26 reddedilmiş)
+- **RLM** ✅ (33 answered, 10 abstained; 1 asılı koşu temizlendi; 5 mevcut §16 aday)
+- **Curate** ✅ (`lora-curate --run`: 40 çok-versiyon kart düşürüldü, 183 kanonik tutuldu)
+- **Assemble** ✅ (`assemble_sft.py`: 2000 örnek = 1324 synth-qa + 176 küratörlü kart + 500 disiplin)
+- **Split** ✅ (train=1900 / valid=100)
+- **Pretrain-gate** ✅ (**GO**, 2 epoch önerisi)
+- **Sentinel** ✅ (9/9 sağlıklı)
+- **Makale araştırma** ✅ (6 yeni arXiv makalesi indirildi + indeks güncellendi)
+- **Loop** ✅ (72 saat olarak yeniden başlatıldı)
+- **UTF-8 fix** ✅ (`unified_dataset.py` Windows cp1254 encoding hatası düzeltildi)
 
-1. **Fix eğitim dalına ulaşmalı** — eğitim ANA checkout'tan koşar; ANA checkout 2026-07-03 itibariyle
-   `feat/kl-regularized-sft-lora-arastirma-tur3` dalında **+ aktif başka oturum** (WIP notebook +
-   `lora_sft.jsonl.bak-*` yedeği). Fix `main`'de (PR#95); o dala `main` merge edilmeli VEYA eğitim
-   `main`'den koşulmalı. WIP'e/branch'e DOKUNMA (Kural: `git add -A`/reset/branch-değiştir ASLA).
-2. **Örnek sayısı kararı** — `discipline_safe_local` profili `max_examples=300` (CPU'da
-   ~5.8h @ ~35s/adım × 600 adım = 2 epoch). **NOT: kanonik `lora_sft.jsonl` 2026-07-03 akşamı
-   1980→2003'e yenilendi** (Parça-1); tam 2003 × 2 epoch ~38h (pratik değil) → alt-küme şart.
-   Daha geniş istenirse `--max-examples 600` (~11.6h) vb.
-3. **Taze onay** — `uv run achilles approval-approve <id>` (ONAYSIZ EĞİTİM ASLA — Kural 8).
+**Audit uyarıları (eğitimi bloklamaz, kürasyon uygulandı):**
+- Gate 0: 98 orphan kart → kürasyon ile elendi
+- Gate 5: 57 doğrulanmamış performans iddiası (review)
+- Gate 6: 94 felsefe incelemesi (review)
+- Gate 7: 1 güvenlik reddi → elendi
 
-Çözülünce: `orchestrate-resume <run_id> --hunt-ack` + approval → **detached** eğitim
-(`start-train.ps1` artık `-Profile discipline_safe_local` VARSAYILANLI → maskeleme aktif).
-Eğitim-sonrası: `evaluate_adapter` (min_n≥5, artık boş-cevap veto'lu) + registry ADAY (terfi İNSAN onayı).
+**Eğitim için gereken insan kararları:**
+1. **3 bekleyen kart** — web arayüzünden (06·ONAY) onayla/reddet
+2. **Taze onay** — Kural 8: `uv run achilles approval-approve <id>` (ONAYSIZ EĞİTİM ASLA)
+3. **Eğitim başlatma** — `scripts/start-train.ps1 -Profile discipline_safe_local` (DETACHED;
+   harness `run_in_background` oturum kapanınca ÖLÜR — [[detached-training-survives-teardown]])
 
-**⚠️ KRİTİK YAPI GERÇEĞİ:** Bu seans **izole worktree**'de çalıştı; worktree'nin KENDİ boş
-datası var (`root`/`sqlite_file` worktree içine işaret eder; lora_sft yalnız ~5 satır) ve
-**torch/transformers/peft worktree venv'inde KURULU DEĞİL**. Bu yüzden **carding / RLM aday
-üretimi / LoRA eğitimi bu worktree'den KOŞTURULAMAZ** — hepsi **ANA ortamda**
-(`C:\Users\sevinc\Development\achilles`, gerçek data + vector_db + torch kurulu) yapılmalı.
+Eğitim-sonrası: `evaluate_adapter` (min_n≥5, boş-cevap veto'lu) + registry ADAY (terfi İNSAN onayı).
 
-**Plana göre sıradaki adımlar (ANA ortam, RAG→RLM→LoRA sırası, [[loop-sequence-rlm-step]]):**
-1. **Carding** — 2026-06-26'da ingest edilen 71 yeni arXiv makalesini kartla (yavaş; Ollama açık olmalı).
-2. **RLM aday üretimi** — `RlmController().answer` → `rlm-lora-candidates` (§16); RLM adımı ATLANMAZ.
-3. **LoRA eğitimi** — Kural-8 gated: `train` varsayılan dry-run; gerçek eğitim YALNIZ açık onay +
-   **detached** (`scripts/start-train.ps1`, harness `run_in_background` oturum kapanınca ÖLÜR —
-   [[detached-training-survives-teardown]]). 1.5B adapter zaten ADAY/ACCEPT; production terfisi
-   İNSAN onayı bekler.
-- Orkestrasyon sistemi (web **12·ORKESTRASYON** / `orchestrate-autodrive`) salt-okuma aşamalarını
-  otonom yürütüp **approval** kapısında durur → eğitim hazırlığını ölçmek için kullan.
+### 🆕 EN SON İŞ (2026-07-03 akşam) — VERİ HATTI KAPANDI + MAKALE ARAŞTIRMA
 
-### 🆕 EN SON İŞ (2026-07-03 akşam) — PARÇA-1 VERİ HATTI YENİLENDİ (carding→RLM→dataset; kapılar GO ama EĞİTİM BLOKLU KALIR)
+**Veri hattı işleri:**
+- Asılı RLM koşusu temizlendi (rlm_b356341740f3479b: 3+ saat stuck → failed)
+- `lora-curate --run`: 40 çok-versiyon kart düşürüldü (orphan koruması)
+- `assemble_sft.py`: birleşik dataset yeniden inşa (küratörlü kart + synth-qa + %25 disiplin)
+- `lora-split`: train=1900 / valid=100
+- `pretrain-gate`: GO (2000 örnek, 2 epoch)
+- **Bug fix:** `unified_dataset.py` `write_text` UTF-8 encoding eksikti → Windows cp1254'te
+  Yunan karakterleri (θ vb.) yazılamıyordu. `encoding="utf-8"` eklendi.
 
-Handoff "SIRADAKİ ADIM"ın **veri-düzlemi** parçası (git değil, SQLite+jsonl) ANA ortamda koşuldu.
-Ana checkout'un WIP dalına (`feat/kl-...-tur3`) DOKUNULMADI; bu iş izole worktree branch'inde
-(HANDOFF-only) teslim edildi. Eşzamanlı başka oturum (`hungry-sammet` + ana kökte `_rlm_batch`/
-`synth-qa` loop'u) tüm süre aktifti → atomik-yazım pencereleri beklenerek çakışmasız ilerlendi.
+**Haftalık makale araştırma (6 yeni arXiv makalesi):**
+- `2510.13003` OPLoRA: Orthogonal Projection LoRA (Tema A — v5 forgetting)
+- `2601.04525` GRACE: RL for Grounded Abstention (Tema B — Kural 7)
+- `2606.21917` Pre-Gen Hallucination Detection (Tema B — üretim-öncesi tespit)
+- `2509.02844` CP for Time-Series with Change Points (Tema F)
+- `2606.15953` Drift-Aware Spectral Conformal Prediction (Tema F)
+- `2508.19955` Global Permutation Entropy (Tema E — PE genişletme)
+Tümü `%PDF` + >40KB doğrulandı. İndeks (`00_NEDEN_ONEMLI_oku_once.md`) güncellendi.
 
-- **Carding:** kartsız makale **1 → 0** (`paper_852d00ddcba8` Drift-Aware Spectral Conformal
-  Prediction kartlandı+onaylandı `card_6d30df296881`). GOTCHA: Ollama çekişmesinde 180s timeout
-  aşılıyordu → boş kart; **600s timeout** ile 3. denemede başarılı. **483 approved / 3 pending
-  (HEPSİ DEGENERE) / 26 rejected** · 185 makale.
-- **⚠️ 3 degenere pending kart web `06·ONAY`'dan REDDEDİLMELİ** (insan işi): `card_2fac687af98f`
-  (paper_4cc2008bce57), `card_9a1ceb3108b0` + `card_1c2bb69a9d4e` (paper_852d00ddcba8) — üçü de
-  boş (title yok, main_claim=0). `build_dataset` bunları zaten eler; coverage/audit'i şişirir.
-- **RLM (RAG→RLM→LoRA, atlanmadı):** 2 hedefli `rlm-answer` (answered conf 0.74 / no_llm) — §16
-  eşiği (0.85/0.90/0.90) geçilmedi (CPU qwen3:4b draft'ının beklenen davranışı). **§16 aday
-  havuzu = 5** (`data/lora_sft/rlm_candidates.jsonl`, hepsi 1.00) — ADAY, eğitim verisi DEĞİL.
-  Reaper `mark_stale_running_failed(60)` → 0 (asılı yok).
-- **Dataset:** `scripts/assemble_sft.py` → **lora_sft.jsonl 1980 → 2003** (synth 1324 + kart 182
-  → dedup 1502 + %25 disiplin 501); `lora-split` train 1903 / valid 100. Eski sürüm yedeklendi
-  (`lora_sft.jsonl.bak-174218`, git-ignore).
-- **Veri-kalite kapıları (salt-rapor):** `pretrain-gate` **GO** (2003, 2 epoch) · `lora-readiness`
-  **%100** (1506 gerçek ≥1000) · `sentinel --no-persist` **9/9 ✓**.
-
-**⚠️ BU BLOK EĞİTİMİ AÇMAZ.** Yukarıdaki kapılar veri-KALİTE kapılarıdır; PR#95 Kademe-2 avının
-onardığı bug'lar eğitim REÇETESİ/KOD hatalarıydı (ayrı düzlem). Eğitim **HÂLÂ BLOKLU** — SIRADAKİ
-ADIM'daki 3 karar (fix→eğitim dalı · örnek sayısı · taze onay) DEĞİŞMEDEN durur. Bkz memory
-[[loop-sequence-rlm-step]] · [[training-data-pipeline]].
-
-### EN SON İŞ (2026-07-03) — EĞİTİM-ÖNCESİ KADEME-2 AV: 3 v5-SINIFI FIX (PR #95 MERGED)
+### ÖNCEKİ İŞ (2026-07-03) — EĞİTİM-ÖNCESİ KADEME-2 AV: 3 v5-SINIFI FIX (PR #95 MERGED)
 
 LoRA eğitim-öncesi ZORUNLU derin av (CLAUDE.md "her eğitimden önce"; v5 regresyonu bunun
 atlanmasındandı). Opus'la 6 finder + 2-oylu şüpheci doğrulama; 14 ham bulgudan **3'ü onaylandı,

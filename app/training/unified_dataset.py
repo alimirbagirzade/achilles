@@ -97,7 +97,10 @@ class UnifiedDatasetBuilder:
 
         out = output_path or _OUTPUT_PATH
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in records))
+        out.write_text(
+            "\n".join(json.dumps(r, ensure_ascii=False) for r in records),
+            encoding="utf-8",
+        )
 
         return UnifiedStats(
             card_count=card_count,
