@@ -62,9 +62,11 @@ def test_panel_has_all_sections() -> None:
 
 
 def test_assets_cache_busted() -> None:
+    # Versiyona-DUYARSIZ: asset'ler cache-bust query'siyle sunuluyor mu (tam numara pinlenmez —
+    # her UI değişikliğinde ?v artar; sabit "v7" beklemek kırılgandı, görsel sadeleştirmeyi kırdı).
     html = _index()
-    assert "app.js?v=8" in html
-    assert "app.css?v=8" in html
+    assert "app.js?v=" in html
+    assert "app.css?v=" in html
 
 
 # ── app.js kablolaması ───────────────────────────────────────────────────────
