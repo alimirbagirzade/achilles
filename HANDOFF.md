@@ -1,7 +1,7 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-07-03 (veri hattı kapandı, dataset yeniden inşa, UTF-8 fix) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
-_Açık PR: yok — tüm PR'lar (#66-#96) MERGED. Veri hattı KAPALI (carding✅ RLM✅ curate✅ assemble✅). Dataset 2000 örnek, pretrain-gate **GO**. Sıradaki: LoRA eğitimi (Kural-8 kapılı, insan onayı bekliyor)._
+_Son güncelleme: 2026-07-04 (ajan haritası frontend #101 + worktree-hazard #102 + UI declutter #103) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Açık PR: yok — tüm PR'lar (#66-#103) MERGED. Veri hattı KAPALI (carding✅ RLM✅ curate✅ assemble✅). Dataset 2000 örnek, pretrain-gate **GO**. Sıradaki: LoRA eğitimi (Kural-8 kapılı, insan onayı bekliyor). Devam eden eşzamanlı iş: agent-map KART yeniden-tasarımı (`claude/agent-map-cards` worktree — o oturumun işi, dokunma)._
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
@@ -56,6 +56,27 @@ GERÇEK izole worktree kur: `cd C:/Users/sevinc/Development/achilles && git work
    harness `run_in_background` oturum kapanınca ÖLÜR — [[detached-training-survives-teardown]])
 
 Eğitim-sonrası: `evaluate_adapter` (min_n≥5, boş-cevap veto'lu) + registry ADAY (terfi İNSAN onayı).
+
+### 🆕 EN SON İŞ (2026-07-04) — AJAN HARİTASI FRONTEND + UI DECLUTTER
+
+Kullanıcı en baştan istediği "ışıklı yol" ajan etkileşim haritasını + web arayüz sadeleştirmesini
+istedi. Üç PR MERGED (hepsi GERÇEK izole worktree ile — [[worktree-orphan-hazard-2026-07-03]] şartı):
+
+- **PR #101 (MERGED) — 15·AJAN HARİTASI frontend:** İzleme grubunda yeni sekme. `/api/agents/graph`
+  (backend PR#96) → SVG ışıklı-yol: gruba-göre lane, chain=düz ok / data=ince kesik, kaynak
+  `running`→kenar AKAR (am-flow) + düğüm nabzı, 7sn poll (sekme kapanınca durur), düğüm-tıkla→ayrıntı,
+  ⚡ EĞİTİMİ DEVREYE SOK = onaylıysa autodrive / onaysızsa `execute:false` DRY-RUN komutu (spawn YOK,
+  Kural 8). CSP-güvenli (sınıf+SVG geometri). 10 çevrimdışı test.
+- **PR #102 (MERGED) — worktree-orphan-hazard uyarısı** HANDOFF'a eklendi (yukarıdaki ⚠️ bölüm).
+- **PR #103 (MERGED) — UI declutter:** `index.html`+`app.css`'ten dekoratif `scanlines` CRT overlay
+  (zaten display:none, ölü) + `FATE FAVORS THE FOCUSED` hero banner kaldırıldı (net −64 satır).
+  `app.css?v=7`→`v=8`. Bump, PR#101'in tam-versiyon pinleyen testini kırdı → test versiyona-DUYARSIZ
+  yapıldı (`assert "app.css?v=" in html`; DERS: UI asset testi `?v=N` numarası pinlememeli).
+
+**⏳ DEVAM EDEN EŞZAMANLI İŞ (BAŞKA OTURUM — DOKUNMA):** kullanıcı agent-map "derli toplu" KART-tabanlı
+yeniden-tasarımını "öteki oturum yapsın" dedi → `claude/agent-map-cards` (worktree `gracious-darwin-ec236d`)
+sürdürüyor. Kart layout spec: sütun-hizalı eşit-boy kartlar / dik-açı oklar / durum=sol-kenar-renk /
+ana ajan alt-şerit yeşil buton. Bkz [[agent-graph-map-2026-07-03]], [[ui-declutter-2026-07-04]].
 
 ### 🆕 EN SON İŞ (2026-07-03 akşam) — VERİ HATTI KAPANDI + MAKALE ARAŞTIRMA
 
