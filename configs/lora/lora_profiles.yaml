@@ -17,6 +17,14 @@
 #                          bunu ZATEN unsloth train_on_responses_only ile uyguluyor → bayrak
 #                          TRL-native alternatif; reçetede niyet/izlenebilirlik içindir, tek
 #                          başına eğitim davranışını değiştirmez (yerel yolda etkisiz).
+#   kl_reg_beta          : base-model'e göre KL cezası katsayısı (0=kapalı). Kaynak: arXiv
+#                          2512.22337 (IBM Research) — Qwen2.5-Instruct'ta LoRA SFT'nin ciddi
+#                          forgetting yarattığını, β=0.001-0.01'in bunu (plastisiteyi büyük
+#                          ölçüde koruyarak) büyük ölçüde azalttığını gösterir. YEREL trainer
+#                          bunu build_masked_labels gibi GERÇEKTEN uygular (_KLRegTrainer,
+#                          model.disable_adapter() ile ek model kopyası GEREKMEDEN). Bulut
+#                          notebook'a henüz EKLENMEDİ (Unsloth/TRL SFTTrainer subclass'ı ayrı
+#                          iş — bkz. LORA_ARASTIRMA_LOG.md Tur 3). OPT-IN, hipotez (Kural 2).
 
 small_smoke_test:
   r: 8
@@ -100,3 +108,29 @@ discipline_safe_local:
   max_examples: 300          # CPU'da makul süre; artırılabilir
   target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
   note: "YEREL CPU eğitimi (Kaggle yok). assistant_only_loss yerelde maskeleme yapar; max_examples ile süre sınırlı. Küçük model (≤1.5B) ile."
+
+# YEREL — discipline_safe_local + KL-regularized SFT (araştırma turu 3, 2026-07-03).
+# Kaynak: arXiv:2512.22337 (Riemer ve ark., IBM Research). Fark: kl_reg_beta=0.01
+# (makalenin "forgetting virtually eliminated, mild plasticity düşüşü" bulduğu değer —
+# β=0.001 daha az forgetting-azaltımı ama plastisiteyi tam korur; ikisi de hipotez).
+# DENEYSEL — bulut eğitim + adapter_eval gate'i olmadan "daha iyi" DENMEZ (Kural 2).
+# _KLRegTrainer ek model kopyası YÜKLEMEZ (disable_adapter) → CPU'da ek bellek maliyeti yok,
+# yalnız ikinci forward-pass (~1.5-2x hesaplama; makalenin LoRA-sinerji bulgusu).
+discipline_safe_kl:
+  r: 16
+  alpha: 32
+  dropout: 0.1
+  epochs: 1
+  max_seq_length: 1024
+  learning_rate: 0.0001
+  use_rslora: false
+  neftune_noise_alpha: 5
+  weight_decay: 0.01
+  warmup_ratio: 0.05
+  lr_scheduler_type: cosine
+  max_grad_norm: 1.0
+  assistant_only_loss: true
+  kl_reg_beta: 0.01
+  max_examples: 300
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+  note: "DENEYSEL — discipline_safe_local + KL-regularized SFT (arXiv:2512.22337, β=0.01). Base-model'e karşı KL cezası forgetting'i azaltır (makale bulgusu); Achilles'te henüz bulut eğitim + adapter_eval gate'iyle DOĞRULANMADI. Kural 2: hipotez."

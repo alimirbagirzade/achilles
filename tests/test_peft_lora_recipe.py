@@ -209,6 +209,50 @@ def test_load_profile_unknown_raises() -> None:
         load_lora_profile("yok_boyle_profil")
 
 
+# --- kl_reg_beta (araştırma turu 3 — arXiv:2512.22337, KL-regularized SFT) ---
+
+
+def test_kl_reg_beta_default_off() -> None:
+    """Varsayılan 0.0 — recipe_summary'de görünmez, davranış değişmez (opt-in)."""
+    assert _cfg().kl_reg_beta == 0.0
+    assert all("kl_reg" not in t for t in recipe_summary(_cfg())["advanced_techniques"])
+
+
+def test_kl_reg_beta_shows_in_recipe_summary() -> None:
+    joined = " ".join(recipe_summary(_cfg(kl_reg_beta=0.01))["advanced_techniques"])
+    assert "kl_reg" in joined
+    assert "0.01" in joined
+
+
+def test_make_trainer_cls_beta_zero_returns_plain_trainer() -> None:
+    from transformers import Trainer
+
+    from app.training.peft_lora_train import _make_trainer_cls
+
+    assert _make_trainer_cls(0.0) is Trainer
+    assert _make_trainer_cls(-1.0) is Trainer
+
+
+def test_make_trainer_cls_beta_positive_returns_subclass() -> None:
+    from transformers import Trainer
+
+    from app.training.peft_lora_train import _make_trainer_cls
+
+    cls = _make_trainer_cls(0.01)
+    assert issubclass(cls, Trainer)
+    assert cls is not Trainer
+    assert cls.kl_reg_beta == 0.01
+
+
+def test_load_profile_discipline_safe_kl() -> None:
+    """discipline_safe_kl: discipline_safe_local + kl_reg_beta=0.01 (DENEYSEL profil)."""
+    prof = load_lora_profile("discipline_safe_kl")
+    assert prof["kl_reg_beta"] == 0.01
+    assert prof["assistant_only_loss"] is True
+    assert prof["learning_rate"] == 0.0001
+    assert prof["neftune_noise_alpha"] == 5
+
+
 def test_high_capacity_uses_rslora() -> None:
     prof = load_lora_profile("high_capacity_reasoning")
     assert prof["use_rslora"] is True
