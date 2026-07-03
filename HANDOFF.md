@@ -1,7 +1,7 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-07-03 (RLM batch tamamlandı + timeout fix) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
-_Açık PR: yok — tüm PR'lar (#66-#96) MERGED. RLM 18-soru batch koşuldu (11 answered, yeni §16 aday yok — grounding düşük). Dataset 1980 örnek, pretrain-gate **GO**. Sıradaki: LoRA eğitimi (Kural-8 kapılı)._
+_Son güncelleme: 2026-07-03 (eğitim-öncesi Kademe-2 av → 3 v5-sınıfı fix, PR#95) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Açık PR: yok — ajan-sistem #72·#74·#79 + av/sertleştirme #73·#75·#76·#77·#78·#82·#85·#88·#89 + Faz-4 smoke #84 + Faz-5 #86 + **Faz-6 Sentinel #90** + **eğitim-öncesi av #95** hepsi MERGED. **Ajan-orkestrasyon Faz-1..6 TAMAMLANDI.** ⚠️ **Eğitim-öncesi kapı ARTIK "temiz" DEĞİL: Kademe-2 av 3 v5-sınıfı bug yakaladı (PR#95 ile main'e onarıldı) — EĞİTİM BLOKLU** (aşağı bak); carding/RLM/eğitim ANA ortamda (worktree izole)._
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
@@ -18,46 +18,68 @@ RLM `backend="anthropic"` (API) yolu OPSİYONEL + KAPALI kalır (`rlm_alexzhang_
 `provider=native`); varsayılan/zorunlu YAPILMAZ. Yeni özelliklerde bulut API'sini varsayılan
 bağımlılık yapma → opt-in + native fallback şart. Bkz memory [[no-api-local-subscription-only]].
 
-### ▶️ SIRADAKİ ADIM — LoRA EĞİTİMİ (Kural-8 kapılı)
+### ▶️ SIRADAKİ ADIM — LoRA EĞİTİMİ (BLOKLU; 3 karar kullanıcıda)
 
-**Carding** ✅ (71 makale kartlandı) · **RLM batch** ✅ (18 soru koşuldu, 11 answered, 6 no_llm,
-1 abstained; yeni §16 aday YOK — grounding skorları 0.50-0.60, eşik 0.90; mevcut 5 aday korunuyor).
-**Dataset** ✅ (1980 örnek = 175 kart + 1313 synth-qa + 495 disiplin; train=1881, valid=99).
-**Pretrain-gate** ✅ (**GO**, 2 epoch önerisi). **Kademe-2 av** ✅ (kapı temiz).
+**2026-07-03 eğitim-öncesi ZORUNLU Kademe-2 av (Opus, 6 finder + 2-oylu adversarial) 3 v5-sınıfı
+bug yakaladı** — PR#95 ile main'e onarıldı (aşağı bak). Gerçek eğitim BAŞLATILMADI. Eğitimin
+başlaması için 3 şey gerekli (hiçbiri koddan çözülemez — kullanıcı/eş-zamanlı oturum alanı):
 
-**Sıradaki: LoRA eğitimi** — Kural-8 gated: `train` varsayılan dry-run; gerçek eğitim YALNIZ
-açık onay + **detached** (`scripts/start-train.ps1`; harness `run_in_background` oturum
-kapanınca ÖLÜR — [[detached-training-survives-teardown]]). 1.5B adapter v1 zaten ACCEPT;
-bu koşu güncel 1980-örneklik dataset ile yeni adapter üretecek. Production terfisi İNSAN
-onayı bekler.
+1. **Fix eğitim dalına ulaşmalı** — eğitim ANA checkout'tan koşar; ANA checkout 2026-07-03 itibariyle
+   `feat/kl-regularized-sft-lora-arastirma-tur3` dalında **+ aktif başka oturum** (WIP notebook +
+   `lora_sft.jsonl.bak-*` yedeği). Fix `main`'de (PR#95); o dala `main` merge edilmeli VEYA eğitim
+   `main`'den koşulmalı. WIP'e/branch'e DOKUNMA (Kural: `git add -A`/reset/branch-değiştir ASLA).
+2. **Örnek sayısı kararı** — `discipline_safe_local` profili `max_examples=300` (1980'den; CPU'da
+   ~5.8h @ ~35s/adım × 600 adım = 2 epoch). Tam 1980 × 2 epoch ~38h (pratik değil). Daha geniş
+   alt-küme istenirse `--max-examples 600` (~11.6h) vb.
+3. **Taze onay** — `uv run achilles approval-approve <id>` (ONAYSIZ EĞİTİM ASLA — Kural 8).
 
-**RLM batch detayları (CPU-only qwen3:4b, 600s timeout):**
-- Güven ≥0.85 olanlar (4): Q1(0.86), Q3(0.86), Q10(0.88), Q16(0.87) — ama grounding <0.90
-- Timeout fix: `rlm_draft_timeout_s` 300→600s (PR#94 MERGED) — CPU-only'de 300s sistematik
-  `no_llm` üretiyordu
-- KL-regularized SFT: PR#91 MERGED (opt-in `kl_reg_beta`; v5 forgetting adayı)
+Çözülünce: `orchestrate-resume <run_id> --hunt-ack` + approval → **detached** eğitim
+(`start-train.ps1` artık `-Profile discipline_safe_local` VARSAYILANLI → maskeleme aktif).
+Eğitim-sonrası: `evaluate_adapter` (min_n≥5, artık boş-cevap veto'lu) + registry ADAY (terfi İNSAN onayı).
 
-**Alternatif:** Orkestrasyon sistemi (web **12·ORKESTRASYON** / `orchestrate-autodrive`)
-salt-okuma aşamalarını otonom yürütüp **approval** kapısında durur.
+**⚠️ KRİTİK YAPI GERÇEĞİ:** Bu seans **izole worktree**'de çalıştı; worktree'nin KENDİ boş
+datası var (`root`/`sqlite_file` worktree içine işaret eder; lora_sft yalnız ~5 satır) ve
+**torch/transformers/peft worktree venv'inde KURULU DEĞİL**. Bu yüzden **carding / RLM aday
+üretimi / LoRA eğitimi bu worktree'den KOŞTURULAMAZ** — hepsi **ANA ortamda**
+(`C:\Users\sevinc\Development\achilles`, gerçek data + vector_db + torch kurulu) yapılmalı.
 
-### 🆕 EN SON İŞ (2026-07-03) — RLM BATCH + KL-REG SFT + TIMEOUT FIX
+**Plana göre sıradaki adımlar (ANA ortam, RAG→RLM→LoRA sırası, [[loop-sequence-rlm-step]]):**
+1. **Carding** — 2026-06-26'da ingest edilen 71 yeni arXiv makalesini kartla (yavaş; Ollama açık olmalı).
+2. **RLM aday üretimi** — `RlmController().answer` → `rlm-lora-candidates` (§16); RLM adımı ATLANMAZ.
+3. **LoRA eğitimi** — Kural-8 gated: `train` varsayılan dry-run; gerçek eğitim YALNIZ açık onay +
+   **detached** (`scripts/start-train.ps1`, harness `run_in_background` oturum kapanınca ÖLÜR —
+   [[detached-training-survives-teardown]]). 1.5B adapter zaten ADAY/ACCEPT; production terfisi
+   İNSAN onayı bekler.
+- Orkestrasyon sistemi (web **12·ORKESTRASYON** / `orchestrate-autodrive`) salt-okuma aşamalarını
+  otonom yürütüp **approval** kapısında durur → eğitim hazırlığını ölçmek için kullan.
 
-**RLM batch (18 trading sorusu, qwen3:4b CPU-only):** `_rlm_batch.py` ile 18 soru koşuldu
-(~135dk). Sonuç: 11 `answered` (güven 0.76-0.88), 6 `no_llm` (600s timeout), 1 `abstained`.
-§16 eşiklerini (güven≥0.85, citation≥0.90, grounding≥0.90) geçen YENİ aday yok — citation
-skorları mükemmel (1.00) ama grounding 0.50-0.60 aralığında (CPU-only 4B modelin hallüsinasyon
-eğilimi). Mevcut 5 aday (önceki oturumlardan, mükemmel skorlarla) korunuyor.
+### 🆕 EN SON İŞ (2026-07-03) — EĞİTİM-ÖNCESİ KADEME-2 AV: 3 v5-SINIFI FIX (PR #95 MERGED)
 
-**PR#91 (MERGED):** KL-regularized SFT opt-in (`kl_reg_beta` parametresi). v5 forgetting
-sorununa karşı KL-divergence cezası; varsayılan kapalı, isteğe bağlı etkinleştirilir.
-**PR#93 (MERGED):** KL-reg testlerinde transformers importorskip düzeltmesi.
-**PR#94 (MERGED):** `rlm_draft_timeout_s` 300→600s — CPU-only i7'de qwen3:4b 300s'de
-sistematik timeout veriyordu; 600s ile çoğu soru cevaplanabildi.
+LoRA eğitim-öncesi ZORUNLU derin av (CLAUDE.md "her eğitimden önce"; v5 regresyonu bunun
+atlanmasındandı). Opus'la 6 finder + 2-oylu şüpheci doğrulama; 14 ham bulgudan **3'ü onaylandı,
+hepsi v5-sınıfı**. Kural 8 gereği eğitimden ÖNCE onarıldı; gerçek eğitim başlatılmadı.
 
-**Dataset durumu:** `data/lora_sft/lora_sft.jsonl` 1980 örnek (175 kart + 1313 synth-qa +
-495 disiplin). `pretrain-gate` **GO**, 2 epoch önerisi. Train=1881, valid=99.
+- 🔴 **profile-drop (CRITICAL):** `detached_launch.launch()` varsayılanı `profile=None` idi →
+  web `/api/training/run` · `auto_pipeline` · `start-train.ps1` yollarının HİÇBİRİ `--profile`
+  geçmiyordu → spawn edilen `train --run` VANİLYA (assistant_only_loss=False, NEFTune=0, lr=2e-4)
+  koşuyordu = tam v5 maskesiz reçetesi. FIX: `launch()`+`start-train.ps1 -Profile` varsayılanı
+  → `discipline_safe_local` (`profile=""` ile bilinçli vanilya kaçışı korunur). Komut kurulumu
+  test edilebilir `_build_train_cmd` helper'ına çıkarıldı.
+- 🔴 **eval boş-cevap sahte-kabul (CRITICAL):** `adapter_eval._flags_for` boş/whitespace cevabı
+  0 red-flag → skor 1.0 → çökmüş adapter base'i geçip `accept` alıyordu. FIX: boş→`empty_answer`
+  flag + kategorik veto (dejenerasyonla aynı sınıf; meşru çekimserlik non-empty → Kural 7 korunur).
+- 🟠 **anlama-merdiveni elmayla-armut (MAJOR):** `auto_pipeline` base bacağı `llm=None`→Ollama
+  qwen3:**4B**, adapter bacağı **1.5B**+adapter → 1.5B L3/L4 sayısal sınavlarda sistematik kaybeder
+  → kalıcı SAHTE-gerileme → iyi adapter bile bloklanır. FIX: `peft_llm_shim.load_base_of()`
+  (adapter'ın KENDİ base'i, adaptersiz); base bacağını yükle→koş→serbest→adapter (CPU bellek-güvenli).
 
-### EN SON İŞ (2026-07-03 erken) — FAZ-6 SENTINEL (NÖBETÇİ) SAĞLIK MONİTÖRÜ (PR #90 MERGED)
+Kademe-0 kapısı: format+lint+mypy temiz, testler yeşil (yerel + CI). Yeni: `test_detached_launch_profile.py`;
+genişletilen: `test_adapter_eval_degenerate.py` (empty_answer) · `test_peft_llm_shim.py` (`load_base_of`).
+**Çürütülen:** data-gate-stale (2/2 oy — orkestrasyon salt-danışman). **Doğrulanamayan** (session-limit
+10pm): KL-yön/NEFTune (β=0 dormant), pretrain-gate `'pasaj'da'` öneki, ps1 CIM-filtresi/false-success
+— düşük öncelik, ayrı takip. Bkz memory [[pretrain-hunt-profile-drop-2026-07-03]] · [[v5-adapter-regression]].
+
+### 🆕 ÖNCEKİ İŞ (2026-07-03) — FAZ-6 SENTINEL (NÖBETÇİ) SAĞLIK MONİTÖRÜ (PR #90 MERGED)
 
 "Birbirini denetleyen sistem" katmanının kapanış taşı (Layer 8 — Monitor & Alert):
 **`app/monitoring/`** — Sentinel, 9 enjekte-edilebilir **SALT-OKUMA** probe ile tüm ajan/
