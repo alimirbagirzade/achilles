@@ -127,6 +127,37 @@ agents:
       - "düzeltme zehri submit/approve'da reddedilir → exported'a geçmez"
       - "export aday dosyası yine pretrain-gate + audit'ten geçmeli (oto-eğitim yok)"
 
+  - agent_id: sentinel-monitor
+    name: Sentinel (Nöbetçi) — Sağlık Monitörü
+    file: app/monitoring/sentinel.py
+    entrypoint: Sentinel.run / history
+    trigger: "CLI `sentinel` + web /api/sentinel/* (14·NÖBETÇİ sekmesi)"
+    autonomy: semi_auto
+    dangerous: false  # SALT-OKUMA rapor; hiçbir şeyi durdurmaz/başlatmaz/mutasyona uğratmaz
+    default_enabled: false
+    writes:
+      - "sqlite: sentinel_checks (geçmiş; keep_last=1000 budamalı)"
+    reads:
+      - "Ollama /api/tags (LocalLLM.available)"
+      - "http://127.0.0.1:8765/ (web canlılık)"
+      - storage/train_status.json + logs/train-full-err.log (eğitim durumu)
+      - "sqlite: orchestration_stages (stale-peek, MUTASYONSUZ)"
+      - storage/STOP_ALL
+      - "disk kullanımı + PRAGMA quick_check + feedback pending sayısı"
+    safety_gates:
+      - "tüm probe'lar salt-okuma; recover/stop/start ASLA çağrılmaz (yalnız öneri metni)"
+      - "probe istisnası skip'e düşer (nöbetçi düşmez; sessiz yutma yok — detayda hata)"
+      - "contention probe'u DANIŞMAN Resource Negotiator: eğitimi DURAKLAMAZ (detached
+        PEFT'te güvenli resume yok), yalnız CPU çekişmesini raporlar"
+      - "geçmiş yazılamazsa canlı rapor yine döner (best-effort persist)"
+    approval_required: false
+    stop_method: "—; anlık rapor (arka plan döngüsü yok, UI/CLI çağrısıyla koşar)"
+    status_location: "sqlite: sentinel_checks"
+    known_failure_modes:
+      - "Ollama kapalıyken llm=fail (normal sinyal, nöbetçi hatası değil)"
+      - "web sunucu kapalıyken web=warn (CLI onsuz çalışır)"
+      - "modül import edilemezse ilgili probe skip"
+
   - agent_id: rag-learning-loop
     name: RAG Learning Loop
     file: app/research/rag_learning_loop.py

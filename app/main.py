@@ -3852,6 +3852,62 @@ def orchestrate_regression_cmd(
 
 
 # --------------------------------------------------------------------------
+# Sentinel (Nöbetçi) — tüm ajan/altsistemleri izleyen sağlık monitörü
+# --------------------------------------------------------------------------
+_SENTINEL_GLYPH = {
+    "ok": "[green]✓[/green]",
+    "warn": "[yellow]≈[/yellow]",
+    "fail": "[red]✕[/red]",
+    "skip": "[dim]–[/dim]",
+}
+
+
+@app.command("sentinel")
+def sentinel_cmd(
+    history: int = typer.Option(0, "--history", help="Son N geçmiş kaydı da göster (0=yok)."),
+    no_persist: bool = typer.Option(
+        False, "--no-persist", help="Sonucu geçmişe YAZMA (yalnız canlı bak)."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Makine-okunabilir JSON çıktı."),
+) -> None:
+    """Sentinel (Nöbetçi) — sistem sağlığını uçtan-uca yokla; SALT RAPOR.
+
+    Ollama/web/eğitim/orkestrasyon/STOP_ALL/disk/SQLite/feedback + CPU-çekişmesi
+    (danışman Resource Negotiator) yoklanır; hiçbir şey durdurulmaz/başlatılmaz.
+    Verdict: ok/warn/fail/skip. Çıkış kodu: fail→2, diğerleri→0.
+    """
+    from app.monitoring import Sentinel
+
+    sentinel = Sentinel()
+    report = sentinel.run(persist=not no_persist)
+
+    if as_json:
+        payload: dict = report.to_dict()
+        if history > 0:
+            payload["history"] = sentinel.history(limit=history)
+        console.print_json(json.dumps(payload, ensure_ascii=False))
+    else:
+        color = {"ok": "green", "warn": "yellow", "fail": "red"}.get(report.overall, "white")
+        console.print(
+            f"[bold {color}]NÖBETÇİ: {report.overall.upper()}[/bold {color}] — {report.summary}"
+        )
+        table = Table(show_header=True)
+        table.add_column("yoklama")
+        table.add_column("durum", justify="center")
+        table.add_column("detay", overflow="fold")
+        table.add_column("öneri", overflow="fold", style="dim")
+        for p in report.probes:
+            table.add_row(p.name, _SENTINEL_GLYPH.get(p.status, p.status), p.detail, p.advice)
+        console.print(table)
+        if history > 0:
+            for h in sentinel.history(limit=history):
+                console.print(f"[dim]{h['created_at'][:19]}[/dim] {h['overall']} — {h['summary']}")
+
+    if report.overall == "fail":
+        raise typer.Exit(2)
+
+
+# --------------------------------------------------------------------------
 # Echo — feedback döngüsü (kullanıcı düzeltmesi → sentetik SFT adayı)
 # --------------------------------------------------------------------------
 @app.command("feedback-add")
