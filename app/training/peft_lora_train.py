@@ -470,18 +470,18 @@ def _make_trainer_cls(kl_reg_beta: float) -> type:
     """``kl_reg_beta>0`` ise KL-regularized Trainer sınıfı, aksi halde düz Trainer döner.
 
     torch/transformers import'u burada (fonksiyon-içi) yapılır — modül top-level'ı
-    torch'suz ortamda (yalnız ``--extra dev`` testleri) import edilebilir kalır.
+    torch'suz ortamda (yalnız ``--extra dev`` testleri) import edilebilir kalır. Sınıf
+    ``type()`` ile RUNTIME'da kurulur (statik ``class X(A, B):`` bildirimi DEĞİL) — mypy
+    sürümüne/ortamına göre değişen çoklu-miras ``[misc]`` uyarısını (Windows'ta gerekli,
+    CI/Linux'ta "unused ignore") her iki ortamda da hiç TETİKLEMEZ.
     """
     from transformers import Trainer
 
     if kl_reg_beta <= 0:
         return Trainer
 
-    class _Trainer(_KLRegTrainer, Trainer):  # type: ignore[misc]
-        pass
-
-    _Trainer.kl_reg_beta = kl_reg_beta
-    return _Trainer
+    trainer_cls = type("_KLRegTrainerImpl", (_KLRegTrainer, Trainer), {"kl_reg_beta": kl_reg_beta})
+    return trainer_cls
 
 
 def train(cfg: PeftTrainConfig) -> dict:
