@@ -117,6 +117,21 @@ class PeftTrainConfig:
     # `train_on_responses_only` ile uyguluyor → notebook'a TRL bayrağı EKLENMEZ (çift-maskeleme).
     # Bkz docs/egitim/LORA_ARASTIRMA_LOG.md 2026-06-22.
     assistant_only_loss: bool = False
+    # --- KL-regularized fine-tuning (araştırma turu 3, 2026-07-03) ---
+    # Kaynak: Riemer ve ark. (IBM Research), "The Effectiveness of Approximate Regularized
+    # Replay for Efficient SFT of LLMs", arXiv:2512.22337 — Qwen2.5-Instruct (1.5B/3B/7B/14B)
+    # üzerinde LoRA ile ölçüldü: standart LoRA SFT bile ciddi catastrophic forgetting
+    # yaratıyor (β=0 satırı); β>0 KL cezası bunu büyük ölçüde ortadan kaldırıyor
+    # (β=0.01: forgetting ~kaybolur, plasticity hafif düşer; β=0.001: plasticity KORUNUR
+    # + forgetting ortalama >7× azalır — replay ile birlikte). v5 regresyonuyla DOĞRUDAN
+    # ilgili: adapter'ın base'den KL-sapması cezalandırılınca disiplin/refusal davranışı
+    # ezberden daha az etkileniyor. LoRA ile hesaplama/bellek sinerjisi VAR: base-model
+    # forward-pass'i `model.disable_adapter()` ile AYNI ağırlıklar üzerinden alınır — ikinci
+    # kopya modele gerek yok (makalenin ana bulgusu: LoRA'da ek bellek maliyeti sıfır).
+    # PEFT/TRL'de NATIVE bayrak YOK (yalnız RLHF/DPO trainer'larında KL var, SFT'de değil) →
+    # Trainer.compute_loss override'ı (_KLRegTrainer) ile uygulanır. GGUF-güvenli: yalnız
+    # eğitim-zamanı ek loss terimi; mimari/ağırlık şekli değişmez. OPT-IN (0.0=kapalı).
+    kl_reg_beta: float = 0.0
     seed: int = 42
     # max_examples: yalnız N örnekle eğit (0 = hepsi). CPU'da makul süre için ZORUNLU
     # kaldıraç — 4B/1.5B'de tam set (~2000) tek epoch'ta bile saatlerce sürer; bu yüzden
@@ -206,6 +221,8 @@ def recipe_summary(cfg: PeftTrainConfig) -> dict:
         techniques.append(f"NEFTune (alpha={cfg.neftune_noise_alpha})")
     if cfg.assistant_only_loss:
         techniques.append("assistant_only_loss (yalnız asistan token kaybı — yerelde aktif)")
+    if cfg.kl_reg_beta and cfg.kl_reg_beta > 0:
+        techniques.append(f"kl_reg (β={cfg.kl_reg_beta}, base'e KL cezası — forgetting azaltma)")
     return {
         "r": cfg.lora_r,
         "alpha": cfg.lora_alpha,
@@ -253,6 +270,7 @@ def load_lora_profile(name: str, profiles_path: Path | None = None) -> dict:
         "max_grad_norm": "max_grad_norm",
         "neftune_noise_alpha": "neftune_noise_alpha",
         "assistant_only_loss": "assistant_only_loss",
+        "kl_reg_beta": "kl_reg_beta",
     }
     out: dict = {}
     for yaml_key, cfg_field in field_map.items():
@@ -395,6 +413,77 @@ class _MaskedDataCollator:
         return {k: torch.tensor(v, dtype=torch.long) for k, v in out.items()}
 
 
+class _KLRegTrainer:  # transformers.Trainer alt sınıfı; import torch/transformers gerektirir.
+    """``compute_loss``'a base-model'e karşı KL cezası ekleyen Trainer mixin'i.
+
+    Kaynak: arXiv:2512.22337 (Riemer ve ark., IBM Research) — "approximate regularized
+    replay". Bu sınıf yalnız KL-regularizasyon parçasını uygular (replay/corpus karışımı
+    KAPSAM DIŞI — ayrı veri hattı gerektirir, bu turda entegre edilmedi; bkz.
+    docs/egitim/LORA_ARASTIRMA_LOG.md Tur 3). LoRA'nın PEFT ``disable_adapter()`` context
+    manager'ı sayesinde base-model forward-pass'i İKİNCİ bir model kopyası YÜKLEMEDEN
+    aynı ağırlıklar üzerinden alınır (makalenin bellek-sinerji bulgusunun uygulanışı).
+
+    ``kl_reg_beta`` config'te 0 ise bu sınıf hiç devreye girmez (``train()`` düz
+    ``Trainer`` kullanır) — opt-in, varsayılan davranış değişmez.
+    """
+
+    kl_reg_beta: float = 0.0
+
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+        import torch
+        import torch.nn.functional as F
+
+        outputs = model(**inputs)
+        sft_loss = outputs.loss
+        labels = inputs.get("labels")
+        if self.kl_reg_beta <= 0 or labels is None:
+            return (sft_loss, outputs) if return_outputs else sft_loss
+
+        # Loss'a giren (maskelenmemiş) token pozisyonlarını izole et.
+        mask = (labels != -100)[:, 1:].contiguous()
+        if not mask.any():
+            return (sft_loss, outputs) if return_outputs else sft_loss
+
+        adapter_logits = outputs.logits[:, :-1, :][mask]
+        with torch.no_grad():
+            base_model = getattr(model, "disable_adapter", None)
+            if base_model is None:  # adapter sarmalanmamışsa (beklenmez) sessizce atla
+                return (sft_loss, outputs) if return_outputs else sft_loss
+            with model.disable_adapter():
+                base_outputs = model(
+                    input_ids=inputs["input_ids"], attention_mask=inputs.get("attention_mask")
+                )
+            base_logits = base_outputs.logits[:, :-1, :][mask].detach()
+
+        # KL(adapter || base): base'e göre "sürpriz" cezalandırılır (Bayesian prior — β
+        # yüksekse forgetting azalır ama plastisite de azalır; makale β=0.001-0.01 önerir).
+        adapter_logp = F.log_softmax(adapter_logits.float(), dim=-1)
+        base_logp = F.log_softmax(base_logits.float(), dim=-1)
+        kl = F.kl_div(adapter_logp, base_logp, log_target=True, reduction="batchmean")
+        loss = sft_loss + self.kl_reg_beta * kl
+        if return_outputs:
+            return loss, outputs
+        return loss
+
+
+def _make_trainer_cls(kl_reg_beta: float) -> type:
+    """``kl_reg_beta>0`` ise KL-regularized Trainer sınıfı, aksi halde düz Trainer döner.
+
+    torch/transformers import'u burada (fonksiyon-içi) yapılır — modül top-level'ı
+    torch'suz ortamda (yalnız ``--extra dev`` testleri) import edilebilir kalır. Sınıf
+    ``type()`` ile RUNTIME'da kurulur (statik ``class X(A, B):`` bildirimi DEĞİL) — mypy
+    sürümüne/ortamına göre değişen çoklu-miras ``[misc]`` uyarısını (Windows'ta gerekli,
+    CI/Linux'ta "unused ignore") her iki ortamda da hiç TETİKLEMEZ.
+    """
+    from transformers import Trainer
+
+    if kl_reg_beta <= 0:
+        return Trainer
+
+    trainer_cls = type("_KLRegTrainerImpl", (_KLRegTrainer, Trainer), {"kl_reg_beta": kl_reg_beta})
+    return trainer_cls
+
+
 def train(cfg: PeftTrainConfig) -> dict:
     missing = _check_deps()
     if missing:
@@ -409,7 +498,6 @@ def train(cfg: PeftTrainConfig) -> dict:
         AutoModelForCausalLM,
         AutoTokenizer,
         DataCollatorForLanguageModeling,
-        Trainer,
         TrainingArguments,
     )
 
@@ -573,7 +661,14 @@ def train(cfg: PeftTrainConfig) -> dict:
         optimizers = (opt, None)
         logger.info("LoRA+ optimizer aktif (lr_ratio=%s)", cfg.loraplus_lr_ratio)
 
-    trainer = Trainer(
+    # kl_reg_beta>0 ise KL-regularized Trainer alt sınıfı (base'e karşı KL cezası);
+    # 0 ise düz Trainer (davranış değişmez). Bkz. _KLRegTrainer docstring (arXiv:2512.22337).
+    trainer_cls = _make_trainer_cls(cfg.kl_reg_beta)
+    if cfg.kl_reg_beta and cfg.kl_reg_beta > 0:
+        logger.info(
+            "KL-regularizasyon AKTİF (β=%s) — base-model'e karşı KL cezası.", cfg.kl_reg_beta
+        )
+    trainer = trainer_cls(
         model=model,
         args=args,
         train_dataset=train_ds,
