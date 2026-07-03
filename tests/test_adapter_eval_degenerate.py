@@ -7,7 +7,7 @@ Bu testler güçlendirilmiş tespiti korur ve sağlam cevabı yanlış-flag'leme
 
 from __future__ import annotations
 
-from app.training.adapter_eval import _is_degenerate, _max_ngram_repeat
+from app.training.adapter_eval import _flags_for, _is_degenerate, _max_ngram_repeat
 
 
 def test_max_ngram_repeat_counts_loop() -> None:
@@ -51,3 +51,28 @@ def test_healthy_discipline_answer_not_degenerate() -> None:
 def test_healthy_short_answer_not_degenerate() -> None:
     s = "Bu soruya cevap verecek bir kaynak şu an elimde yok; sayı uydurmam."
     assert _is_degenerate(s) is False
+
+
+# --- Boş/çökmüş cevap flag'i (Kademe-2 av: boş cevap 1.0 skorlar → sahte-kabul) ---
+
+
+def test_empty_answer_flagged() -> None:
+    """Boş çıktı bayraklanmalı — aksi halde 0 red-flag → skor 1.0 → base'i geçip 'accept'."""
+    assert "empty_answer" in _flags_for("", [])
+    assert "empty_answer" in _flags_for("   \n\t ", [])
+
+
+def test_legitimate_abstention_not_flagged_as_empty() -> None:
+    """Meşru çekimserlik (Kural 7) non-empty → empty_answer bayrağı ALMAZ."""
+    s = "Bu konuda elimde kaynak yok; sayı uydurmam, çekimser kalıyorum."
+    assert "empty_answer" not in _flags_for(s, [])
+
+
+def test_substantive_answer_no_collapse_flags() -> None:
+    s = (
+        "Hayır, garanti kâr yoktur. Bunu hipotez olarak kurar; komisyon ve slippage dahil "
+        "backtest eder, out-of-sample doğrularım."
+    )
+    flags = _flags_for(s, [])
+    assert "empty_answer" not in flags
+    assert "degenerate_repetition" not in flags

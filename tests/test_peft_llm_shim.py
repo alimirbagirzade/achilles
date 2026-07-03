@@ -55,6 +55,25 @@ def test_shim_load_returns_none_without_peft(tmp_path: Path) -> None:
     assert result is None
 
 
+def test_shim_load_base_of_graceful(tmp_path: Path) -> None:
+    """load_base_of (base-only bacak) da bağımlılık/dizin yoksa None döner (çökme yok).
+
+    Kademe-2 av bulgusu: base ladder bacağı adapter'ın KENDİ base'ini kullanmalı; bu
+    factory'nin varlığı ve graceful-skip davranışı, elmayla-armut kıyasını (4B Ollama vs
+    1.5B adapter) önleyen düzeltmenin sözleşmesidir.
+    """
+    from app.lora.peft_llm_shim import PeftAdapterLLMShim
+
+    # Dizin yok → None
+    assert PeftAdapterLLMShim.load_base_of(tmp_path / "yok") is None
+
+    # Dizin var ama bağımlılık yok → None
+    adapter_dir = tmp_path / "fake_adapter"
+    adapter_dir.mkdir()
+    with patch.dict("sys.modules", {"torch": None, "peft": None, "transformers": None}):
+        assert PeftAdapterLLMShim.load_base_of(adapter_dir) is None
+
+
 def test_fake_shim_interface() -> None:
     """Sahte shim LocalLLM arayüzüyle uyumlu."""
     shim = _FakeShim()

@@ -320,21 +320,61 @@ def _find_achilles(root: Path) -> list[str] | None:
     return None
 
 
+def _build_train_cmd(
+    base: list[str],
+    adapter_name: str,
+    iters: int,
+    base_model: str | None,
+    profile: str | None,
+    max_examples: int,
+) -> list[str]:
+    """Detached eğitim için `achilles train --run …` komut listesini kur (saf, test edilebilir).
+
+    profile TRUTHY ise `--profile` EKLENİR; boş/None ise EKLENMEZ. Bu ayrım kritik:
+    profile geçmezse spawn edilen `train --run` PeftTrainConfig varsayılanlarıyla (vanilya:
+    assistant_only_loss=False, NEFTune=0, lr=2e-4) koşar → prompt maskeleme FİİLEN kapalı
+    kalır (v5 disiplin-regresyon reçetesi). Bu yüzden `launch()` yerel-güvenli bir profili
+    varsayılan yapar; bu helper yalnız listeyi kurar.
+    """
+    cmd = [
+        *base,
+        "train",
+        "--run",
+        "--backend",
+        "peft",
+        "--adapter-name",
+        adapter_name,
+        "--iterations",
+        str(iters),
+    ]
+    if base_model:
+        cmd += ["--base-model", base_model]
+    if profile:
+        cmd += ["--profile", profile]
+    if max_examples > 0:
+        cmd += ["--max-examples", str(max_examples)]
+    return cmd
+
+
 def launch(
     adapter_name: str = "achilles_lora",
     iterations: int = 0,
     dtype: str = "bf16",
     base_model: str | None = None,
-    profile: str | None = None,
+    profile: str | None = "discipline_safe_local",
     max_examples: int = 0,
 ) -> dict:
     """Eğitimi DETACHED başlat (web/terminal kapansa da sürer).
 
     - Veriyi `lora_sft.jsonl`'den yeniden böler (clobber-proof).
     - iterations<=0 → 1 epoch (train örnek sayısı kadar adım).
-    - profile: LoRA reçete profili (örn. `discipline_safe_local` → maskeli, NEFTune).
-      Verilmezse vanilya varsayılan (degenerate riski) — yerel CPU için profil ÖNERİLİR.
-    - max_examples>0: yalnız N örnekle eğit (CPU'da makul süre).
+    - profile: LoRA reçete profili. VARSAYILAN `discipline_safe_local` (maskeli + NEFTune)
+      — web butonu / auto_pipeline / CLI-detached çağıranlarının HİÇBİRİ profil geçmediği
+      için varsayılan vanilya olsaydı bu yollarla başlatılan eğitim SESSİZCE maskesiz koşar
+      ve tam v5 disiplin-regresyonunu üretirdi (Kademe-2 av bulgusu). Güvenli-varsayılan
+      olarak yerel maskeli profil seçilir; farklı reçete isteyen çağıran açıkça geçebilir,
+      profili tümüyle atlamak isteyen `profile=""`/`None` verebilir.
+    - max_examples>0: yalnız N örnekle eğit (CPU'da makul süre). profile içinde de olabilir.
     - {ok, message, adapter} döndürür. Eğitimi GERÇEKTEN başlatır (Kural 8: bu
       çağrı yalnızca açık kullanıcı eylemiyle — buton/onay — tetiklenir).
     """
@@ -382,23 +422,7 @@ def launch(
                 "adapter": "",
             }
 
-        cmd = [
-            *base,
-            "train",
-            "--run",
-            "--backend",
-            "peft",
-            "--adapter-name",
-            adapter_name,
-            "--iterations",
-            str(iters),
-        ]
-        if base_model:
-            cmd += ["--base-model", base_model]
-        if profile:
-            cmd += ["--profile", profile]
-        if max_examples > 0:
-            cmd += ["--max-examples", str(max_examples)]
+        cmd = _build_train_cmd(base, adapter_name, iters, base_model, profile, max_examples)
 
         logs = root / "logs"
         logs.mkdir(parents=True, exist_ok=True)

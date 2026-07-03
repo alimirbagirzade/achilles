@@ -383,15 +383,27 @@ class AutoLoRAPipeline:
                 from app.memory.sqlite_store import SqliteStore as _Store
                 from app.verification.exams.understanding_score import score_full_ladder
 
-                shim = await asyncio.to_thread(PeftAdapterLLMShim.load, adapter_dir)
-                if shim is not None:
+                # Base bacağı adapter'ın KENDİ base'ini (adapter'sız) kullanmalı — llm=None
+                # verseydik base=Ollama qwen3:4b olur ve 4B'yi 1.5B+adapter ile kıyaslardık
+                # (elmayla-armut → 1.5B sayısal sınavlarda hep kaybeder → sahte-gerileme).
+                # Bellek: CPU'da iki 1.5B modeli aynı anda tutmamak için base bacağını
+                # yükle→koş→SERBEST BIRAK, sonra adapter bacağını yükle (adapter_eval deseni).
+                base_shim = await asyncio.to_thread(PeftAdapterLLMShim.load_base_of, adapter_dir)
+                adapter_ladder = None
+                base_ladder = None
+                if base_shim is not None:
                     _store = _Store()
                     base_ladder = await asyncio.to_thread(
-                        score_full_ladder, 0, store=_store, use_sessions_l5=False
+                        score_full_ladder, 0, llm=base_shim, store=_store, use_sessions_l5=False
                     )
-                    adapter_ladder = await asyncio.to_thread(
-                        score_full_ladder, 0, llm=shim, store=_store, use_sessions_l5=False
-                    )
+                    del base_shim  # ~1.5B modeli boşalt (adapter yüklenmeden önce)
+                    shim = await asyncio.to_thread(PeftAdapterLLMShim.load, adapter_dir)
+                    if shim is not None:
+                        adapter_ladder = await asyncio.to_thread(
+                            score_full_ladder, 0, llm=shim, store=_store, use_sessions_l5=False
+                        )
+                        del shim
+                if base_ladder is not None and adapter_ladder is not None:
                     base_rate = base_ladder.pass_rate or 0.0
                     adapter_rate = adapter_ladder.pass_rate or 0.0
                     scores["_ladder"] = {
