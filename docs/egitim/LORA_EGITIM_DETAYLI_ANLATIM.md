@@ -1,6 +1,6 @@
 # Achilles LoRA Eğitimi — Detaylı Anlatım
 
-Sürüm: v1.2 · 2026-06-17
+Sürüm: v1.3 · 2026-07-03
 
 ## Sürüm Geçmişi
 
@@ -9,6 +9,7 @@ Sürüm: v1.2 · 2026-06-17
 | v1.0 | 2026-06-16 | İlk kapsamlı sürüm |
 | v1.1 | 2026-06-16 | Denetçi düzeltmeleri: `check_flags` fiili davranışı, `cloud_notebook.py` net durumu, `chunk_size=1200` kesinleştirildi, `classify_curriculum` imzası iki-parametreli olarak düzeltildi |
 | v1.2 | 2026-06-17 | **İleri LoRA teknikleri entegrasyonu** (araştırma turu): rsLoRA / DoRA / `init_lora_weights` (PiSSA/OLoRA/EVA/LoftQ) / LoRA+ / NEFTune + regularizasyon (warmup·cosine·weight_decay·grad-clip) PEFT trainer'a saf, offline-test edilebilir builder'larla bağlandı; `discipline_safe` profili (v5 catastrophic-forgetting reçetesi); bulut notebook parametrik (alpha/dropout/rsLoRA/NEFTune); degenerasyon tespiti n-gram/satır döngüsünü de yakalar. Yeni: **Aşama 8** + **Araştırma Kaynakları & Log**. |
+| v1.3 | 2026-07-03 | **KL-regularized SFT entegrasyonu** (araştırma turu 3, weekly-deep): arXiv:2512.22337 (Riemer ve ark., IBM Research) — Qwen2.5-Instruct'ta (1.5B/3B/7B/14B) standart LoRA SFT'nin ciddi catastrophic forgetting yarattığını, base-model'e KL cezasının (β=0.001-0.01) bunu büyük ölçüde azalttığını gösteriyor; `_KLRegTrainer` (`peft_lora_train.py`) `Trainer.compute_loss`'u override eder, `model.disable_adapter()` sayesinde ek model kopyası gerekmez. Yeni opt-in alan `kl_reg_beta` + deneysel profil `discipline_safe_kl`. Ayrıca LoRA-GA'nın PEFT 0.19.1'de artık GERÇEKTEN native olduğu doğrulandı (önceki turun "eklenmedi" kaydı güncellendi) ama entegre EDİLMEDİ (quantize desteklenmiyor + residual dönüşüm + ayrı gradient-tahmin ön-adımı gerektiriyor — karmaşıklık/fayda dengesi düşük). |
 
 > Not: Yeni eğitim geliştirmesinde sürüm numarası artırılır ve değişiklik buraya eklenir.
 
@@ -285,6 +286,7 @@ Bu aşama, 2024–2025 LoRA/SFT literatüründen doğrulanmış ve PEFT 0.19.1 /
 - **Yüksek dropout (0.1):** küçük veri setinde overfit'i bastırır.
 - **Warmup + cosine + weight_decay + grad-clip:** yerel trainer artık bunları her zaman uygular (`build_training_kwargs`); ani gradyan sıçramaları (degenerasyon tetikleyicisi) `max_grad_norm=1.0` ile kırpılır.
 - **Veri tarafı (replay/rehearsal):** `discipline_dataset.py` adversarial disiplin örneklerini `mix_discipline()` ile ~%25 karıştırır → model yalnız "pasaja göre cevapla" öğrenip refusal/disiplin yeteneğini **unutmaz**. Bu, literatürdeki rehearsal/replay ilkesinin Achilles uygulamasıdır.
+- **KL-regularizasyon (`kl_reg_beta`, araştırma turu 3, v1.3):** Base-model'e göre çıktı-dağılımı KL-sapmasını cezalandırır. Kaynak: arXiv:2512.22337 (Riemer ve ark., IBM Research) — Qwen2.5-Instruct (1.5B/3B/7B/14B) üzerinde standart LoRA SFT'nin bile ciddi catastrophic forgetting yarattığını, `β=0.01`'in bunu neredeyse ortadan kaldırdığını (hafif plastisite kaybıyla), `β=0.001`'in ise plastisiteyi tam koruyup forgetting'i ortalama >7× azalttığını (approximate replay ile birlikte) gösterir. **LoRA-sinerjisi:** base-model forward-pass'i `model.disable_adapter()` context manager'ıyla **aynı ağırlıklar üzerinden** alınır — ikinci model kopyası **gerekmez** (makalenin temel bulgusu: LoRA'da KL-regularizasyonun bellek maliyeti sıfır, yalnız ~1.5-2× hesaplama). `_KLRegTrainer` (`peft_lora_train.py`) `Trainer.compute_loss`'u override eder; `cfg.kl_reg_beta=0.0` (varsayılan) → düz `Trainer`, davranış değişmez. PEFT/TRL'de native bayrak yok (yalnız RLHF/DPO trainer'larında KL var) → özel override gerekli. **Replay/corpus-karışımı kısmı (makalenin ikinci bileşeni) bu turda entegre EDİLMEDİ** — ayrı veri hattı gerektirir (kapsam dışı bırakıldı, ileride ayrı çalışma). Deneysel profil: `discipline_safe_kl` (β=0.01). **Bulut notebook'a henüz eklenmedi** (Unsloth/TRL `SFTTrainer` subclass'ı ayrı entegrasyon işi).
 
 ### 8.3 v5 catastrophic-forgetting reçetesi (`discipline_safe`)
 
@@ -306,6 +308,8 @@ profil: discipline_safe   (achilles train --profile discipline_safe)
 - **QLoRA (4-bit) yerelde:** bulut notebook'unda zaten `load_in_4bit=True`; yerel CPU'da bnb kuantizasyonu pratik değil → yalnız bulutta.
 - **PiSSA/OLoRA varsayılan açma:** GGUF residual dönüşümü ek karmaşıklık → opt-in bırakıldı, dokümante edildi.
 - **DPO/ORPO (tercih optimizasyonu):** `auto_researcher` reward verisi üretir ama SFT sonrası ayrı bir aşama; bu turda kapsanmadı (gelecek tur).
+- **LoRA-GA** (arXiv 2407.05000, `init_lora_weights="lora_ga"` + `LoraGAConfig`): araştırma turu 3'te PEFT 0.19.1'de gerçekten native olduğu doğrulandı (önceki tur "PEFT'e eklenmedi" kaydı artık GÜNCEL DEĞİL — durum değişti). Yine de entegre EDİLMEDİ: (1) quantized model desteklemiyor, (2) base ağırlıkları init'te değiştiriyor → PiSSA/OLoRA gibi GGUF-öncesi residual dönüşüm ister, (3) ayrı bir gradient-tahmin ön-adımı (`preprocess_loraga` — forward+backward turları, ayrı dataloader) gerektiriyor; mevcut `train()` akışına tek-satır config eklemekten çok daha büyük bir iş akışı değişikliği ister. Karmaşıklık/fayda dengesi bu turda düşük görüldü; ileride ayrı bir çalışma olarak değerlendirilebilir.
+- **Approximate replay (açık-corpus next-token karışımı, arXiv:2512.22337'nin ikinci bileşeni):** KL-regularizasyon (`kl_reg_beta`, bkz. 8.2) entegre edildi ama replay kısmı entegre EDİLMEDİ — OpenWebText gibi bir corpus'tan örnekleme + veri hattına karıştırma ayrı bir iş; mevcut `DatasetBuilder` akışına dokunmadan yalnız KL kısmı düşük-riskli/yüksek-değerli görüldü.
 
 ---
 
@@ -365,7 +369,7 @@ profil: discipline_safe   (achilles train --profile discipline_safe)
 | `app/lora/control_plane.py` | Gate orkestrasyonu (`run_audit`/`run_full`), rapor |
 | `app/lora/auto_pipeline.py` | Durum makinesi + background_loop + eval/promote akışı |
 | `app/training/backend.py` | MLX vs PEFT platform tespiti |
-| `app/training/peft_lora_train.py` | PEFT eğitimi (dry-run/`--run`), loss eğrisi; **saf builder'lar** `build_lora_kwargs`/`build_training_kwargs`/`recipe_summary`, `load_lora_profile`, `normalize_init_lora_weights`, ileri teknikler (rsLoRA/DoRA/init/LoRA+/NEFTune) |
+| `app/training/peft_lora_train.py` | PEFT eğitimi (dry-run/`--run`), loss eğrisi; **saf builder'lar** `build_lora_kwargs`/`build_training_kwargs`/`recipe_summary`, `load_lora_profile`, `normalize_init_lora_weights`, ileri teknikler (rsLoRA/DoRA/init/LoRA+/NEFTune/`kl_reg_beta`); `_KLRegTrainer`/`_make_trainer_cls` (KL-regularized Trainer, opt-in) |
 | `app/training/mlx_lora_train.py` | MLX eğitimi, faz resume |
 | `app/training/detached_launch.py` | Detached subprocess başlatma + status + clobber onarımı |
 | `app/training/adapter_eval.py` | Base-vs-adapter gerçek PEFT değerlendirmesi |
@@ -440,6 +444,15 @@ doğrulandı (uydurma değil; bağlantısı doğrulanamayan teknikler entegre ed
 | NEFTune (noisy embedding FT) | arXiv 2310.05914 · <https://github.com/neelsjain/NEFTune> |
 | LoftQ (kuantizasyon-farkında init) | <https://github.com/yxli2123/LoftQ> |
 | Nöral metin degenerasyonu (tekrar/repetition) | arXiv 1904.09751 |
+
+> Tam ve güncellenen liste: `docs/egitim/LORA_ARASTIRMA_LOG.md`.
+
+### v1.3 kaynağı — Tur 3, 2026-07-03 (weekly-deep)
+
+| Teknik / Konu | Kaynak |
+|---------------|--------|
+| KL-regularized SFT + approximate replay (forgetting'i >7× azaltma, LoRA'da bellek-sinerjik) | arXiv:2512.22337 (Riemer ve ark., IBM Research) — Qwen2.5-Instruct 1.5B/3B/7B/14B |
+| LoRA-GA native durumu (artık PEFT 0.19.1'de gerçek, ama quantize-desteksiz + residual dönüşüm gerektirir) | <https://github.com/huggingface/peft/blob/main/src/peft/tuners/lora/config.py> · <https://huggingface.co/docs/peft/main/en/developer_guides/lora> |
 
 > Tam ve güncellenen liste: `docs/egitim/LORA_ARASTIRMA_LOG.md`.
 

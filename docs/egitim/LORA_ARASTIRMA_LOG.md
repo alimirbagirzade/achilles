@@ -23,16 +23,24 @@ Bu dosya **iki işlevi** birden görür:
 `rsLoRA` · `DoRA` · `LoRA+` · `PiSSA` · `OLoRA` · `EVA` · `LoftQ` · `CorDA` ·
 `orthogonal-init` · `NEFTune` · `gaussian-init` · `QLoRA` · `train_on_responses_only` ·
 `cosine-warmup` · `weight-decay` · `gradient-clipping` · `replay/rehearsal` ·
-`n-gram-repetition-detection` · `assistant_only_loss`
+`n-gram-repetition-detection` · `assistant_only_loss` · `KL-regularized-SFT` (`kl_reg_beta`,
+entegre edildi Tur 3) · `LoRA-GA` (native durum doğrulandı Tur 3 — entegre EDİLMEDİ, aşağıda) ·
+`MiCA` (PEFT-native init, incelendi Tur 3 — entegre edilmedi)
 
 ## Elenen adaylar (dedup anahtarı — yeniden derin-araştırma YOK)
 
-`LoRA-GA` (PEFT-native değil — ⚠️ 2026-07-02'de PEFT docs'ta `lora_ga_config` görüldü → weekly-deep'te
-native-durum YENİDEN doğrulanacak) · `VeRA` · `MiLoRA` · `LoRA-FA` (param-azaltma, v5-ilgisiz) ·
+`VeRA` · `MiLoRA` · `LoRA-FA` (param-azaltma, v5-ilgisiz) ·
 `O-LoRA/orthogonal-subspace-CL` · `CLoRA` · `EWCLoRA` · `FIP` (continual-learning, native değil) ·
 `DFT loss_type=dft` · `OPLoRA` · `SC-LoRA` · `AILoRA` · `D²LoRA` · `all-linear` (zaten hizalı) ·
 `OFT/BEFT/Lily` (image-gen odaklı, disiplin/v5-ilgisiz) · `aLoRA/alora_invocation_tokens` ·
-`MonteCLoRA` · `QALoRA` · `BDLoRA` · `VeLoRA` · `Arrow-routing` (2026-07-02 günlük; v5-ilgisiz)
+`MonteCLoRA` · `QALoRA` · `BDLoRA` · `VeLoRA` · `Arrow-routing` (2026-07-02 günlük; v5-ilgisiz) ·
+`LoRA-GA` (Tur 3: PEFT-native OLDU ama quantize-desteksiz + residual dönüşüm + ayrı gradient-tahmin
+ön-adımı gerektiriyor → karmaşıklık/fayda dengesi düşük, entegre edilmedi) ·
+`MiCA` (Tur 3: instruction-tuned model üzerinde ÖNERİLMİYOR — continued-pretraining/base-model
+odaklı; Achilles zaten instruction-tuned Qwen3 kullanıyor, uygun değil) ·
+`approximate replay/corpus-karışımı` (arXiv 2512.22337'nin ikinci bileşeni — KL kısmı entegre
+edildi ama replay/corpus-karışım kısmı ayrı veri hattı gerektirdiğinden bu turda ERTELENDİ) ·
+`Full-FT forgetting-azaltma` (arXiv 2506.09428 — full fine-tuning, 70B'de test, kod yok, LoRA-ilgisiz)
 
 ## Kapsanan kaynaklar (arXiv ID / URL)
 
@@ -44,10 +52,113 @@ native-durum YENİDEN doğrulanacak) · `VeRA` · `MiLoRA` · `LoRA-FA` (param-a
 - huggingface.co/docs/trl/sft_trainer (NEFTune/response-only/packing/assistant_only_loss)
 - github.com/NVlabs/DoRA · github.com/neelsjain/NEFTune · github.com/yxli2123/LoftQ
 - huggingface.co/docs/peft/main/en/developer_guides/lora (orthogonal/eva/gaussian init listesi)
-- arXiv 2407.05000 (LoRA-GA) · github.com/huggingface/peft/issues/2927 (LoRA-GA PEFT'e EKLENMEDİ)
+- arXiv 2407.05000 (LoRA-GA) · github.com/huggingface/peft/issues/2927 (eski durum — Tur 3'te
+  güncellendi: artık PEFT 0.19.1'de `init_lora_weights="lora_ga"` + `LoraGAConfig` NATIVE var,
+  bkz. github.com/huggingface/peft/pull/2926)
 - huggingface.co/docs/peft/main/package_reference/lora (`ensure_weight_tying` + yeni init/config alanları) ·
   huggingface.co/blog/peft-beyond-lora (2026-06-18 "Beyond LoRA": OFT/BEFT/Lily) ·
   unsloth.ai/docs/models/qwen3.5/fine-tune (Qwen3.5 + alpha=r default ablasyonu)
+- **arXiv 2512.22337** (Riemer ve ark., IBM Research — "The Effectiveness of Approximate
+  Regularized Replay for Efficient SFT of LLMs") — KL-regularization Tur 3'te ENTEGRE EDİLDİ
+- huggingface.co/docs/peft/main/en/developer_guides/lora (MiCA init stratejisi — Tur 3 incelendi)
+- github.com/BY571/sft-kl-lora-trainer (community örnek: TRL SFTTrainer + LoRA-base KL loss —
+  arXiv 2512.22337 yaklaşımının pratik uygulanabilirliğini doğrulayan bağımsız referans)
+
+---
+
+## Tur 3 — 2026-07-03 (derin tur — haftalık zamanlı görev)
+
+**Tetikleyici:** Zamanlı görev `lora-arastirma-haftalik-derin` (weekly-deep). `lora-arastirma`
+alt-ajan tipi bu ortamda yok → protokol (`docs/PROTOKOL_LORA_ARASTIRMA.md`, weekly-deep) doğrudan
+uygulandı. CLAUDE.md Kural 2/7/8'e uyuldu; eğitim BAŞLATILMADI (yalnız yerel offline test/ruff/mypy).
+
+**Yöntem:** Çok-açılı paralel WebSearch sweep — (a) LoRA-GA'nın PEFT-native durum-değişikliği
+(2026-07-02'den devir), (b) yeni LoRA varyantları/forgetting makaleleri, (c) PEFT release
+notları/yeni `init_lora_weights` seçenekleri, (d) Unsloth/Qwen3 güncel rehberi, (e) TRL SFTConfig
+yeni regularizasyon, (f) SFT veri kalitesi/degenerasyon. Her aday adversarial süzgeçten geçti:
+*gerçek mi? PEFT 0.19+/Unsloth native mi? Achilles'e uygun mu? GGUF-güvenli mi? v5'e yardım eder mi?*
+Öne çıkan adaylar için tam-metin doğrulama yapıldı (arXiv PDF indirilip okundu; kurulu PEFT 0.19.1
+üzerinde gerçek import testiyle native-durum ölçüldü).
+
+**Sonuç: 1 YENİ, doğrulanmış, GGUF-güvenli, opt-in teknik ENTEGRE EDİLDİ (kod + config + test) →
+PR açıldı.** Ayrıca 1 durum-değişikliği (LoRA-GA artık native) doğrulandı ama pratik kısıtlar
+nedeniyle entegre edilmedi.
+
+**Entegre edilen (kod):**
+
+- **KL-regularized SFT (`kl_reg_beta`)** — Kaynak: arXiv:2512.22337 (Riemer ve ark., IBM
+  Research, Aralık 2025), tam metin okunarak doğrulandı. Qwen2.5-Instruct (1.5B/3B/7B/14B)
+  üzerinde LoRA SFT'nin standart haliyle bile CİDDİ catastrophic forgetting yarattığını
+  (β=0 satırı: ortalama ↓F=15.4, model boyutu arttıkça forgetting de ARTIYOR — küçük
+  modellerde bile ciddi), β=0.01 KL cezasının forgetting'i neredeyse tamamen ortadan
+  kaldırdığını (hafif plastisite kaybıyla), β=0.001'in ise plastisiteyi TAM koruyup
+  forgetting'i approximate-replay ile birlikte ortalama >7× azalttığını gösteriyor.
+  **v5 bağlantısı:** v5 regresyonu (disiplin/refusal davranışının bozulması + degenerate
+  tekrar) tam olarak bu makalenin ölçtüğü "catastrophic forgetting during LoRA SFT"
+  fenomenidir. **LoRA-sinerjisi (makalenin ana bulgusu):** base-model referans forward-pass'i
+  `model.disable_adapter()` context manager'ıyla AYNI ağırlıklar üzerinden alınır — ikinci
+  model kopyası belleğe YÜKLENMEZ (yalnız ~1.5-2× hesaplama overhead'i, sıfır ek bellek).
+  **PEFT/TRL native değil** (yalnız RLHF/DPO trainer'larında KL var, SFT'de yok) →
+  `_KLRegTrainer` (`Trainer.compute_loss` override) ile uygulandı. **GGUF-güvenli:** yalnız
+  eğitim-zamanı ek loss terimi; mimari/ağırlık şekli değişmez. **OPT-IN:** varsayılan
+  `kl_reg_beta=0.0` → düz `Trainer`, davranış değişmez (`_make_trainer_cls` doğrular).
+  Replay/açık-corpus karışım kısmı (makalenin ikinci bileşeni) bu turda kapsam dışı
+  bırakıldı — ayrı veri hattı gerektirir.
+- **Dosyalar:** `app/training/peft_lora_train.py` (`PeftTrainConfig.kl_reg_beta`,
+  `_KLRegTrainer`, `_make_trainer_cls`, `recipe_summary` genişletmesi, `load_lora_profile`
+  field_map), `configs/lora/lora_profiles.yaml` (yeni deneysel profil `discipline_safe_kl`,
+  β=0.01), `tests/test_peft_lora_recipe.py` (6 yeni test: default-off, recipe_summary,
+  `_make_trainer_cls` beta=0/pozitif, profil yükleme).
+- **Doğrulama:** `ruff format`/`ruff check` temiz; `mypy app` temiz (228 dosya); tüm
+  30 test `test_peft_lora_recipe.py` içinde geçti; tam paket (`pytest -m "not ollama and
+  not slow"`) çalıştırıldı — yalnız ÖNCEDEN VAR OLAN 1 ilgisiz başarısızlık
+  (`test_training_dry_run_empty_base_uses_brain_not_1p5b`, benim değişikliklerimden
+  bağımsız olduğu `git stash` ile doğrulandı). **NOT (Kural 2):** `discipline_safe_kl`
+  reçetesi HİPOTEZDİR — bulut eğitim koşusu + `adapter_eval` gate'i ile doğrulanmadan
+  "daha iyi" denmez. Eğitim BAŞLATILMADI.
+
+**Durum-değişikliği doğrulandı ama entegre EDİLMEDİ:**
+
+- **LoRA-GA** (arXiv 2407.05000) — 2026-07-02 günlük taramasının bıraktığı bayrak
+  doğrulandı: kurulu PEFT 0.19.1'de `from peft.tuners.lora.config import LoraGAConfig` ve
+  `from peft import preprocess_loraga` GERÇEKTEN import edilebiliyor (canlı `python -c`
+  testiyle doğrulandı) — artık native (PEFT PR #2926 ile eklenmiş). **Yine de entegre
+  EDİLMEDİ:** (1) quantized modelleri DESTEKLEMİYOR, (2) base ağırlıkları init'te
+  değiştiriyor → PiSSA/OLoRA gibi GGUF-öncesi residual dönüşüm ister, (3) ayrı bir
+  gradient-tahmin ön-adımı gerektiriyor (`preprocess_loraga(model, config, train_step)` —
+  N adet forward+backward geçişi, ayrı dataloader) — mevcut tek-adımlı `train()` akışına
+  tek config-satırı eklemekten çok daha büyük bir iş akışı değişikliği gerektiriyor.
+  Karmaşıklık/fayda dengesi bu turda düşük görüldü; "Elenen adaylar"a güncellenmiş
+  gerekçeyle işlendi (dedup — tekrar araştırılmayacak, ama durumu artık DOĞRU).
+
+**Değerlendirilip elenen (bu turda yeni):**
+
+- **MiCA** (PEFT-native init stratejisi, `init_lora_weights="mica"`) — PiSSA'nın
+  tamamlayıcısı (asıl yerine küçük singular komponentleri kullanır); dokümantasyon açıkça
+  **continued/domain-adaptive pretraining** için önerildiğini ve **instruction/chat-tuned
+  olmayan** base model kullanılmasını tavsiye ettiğini belirtiyor. Achilles zaten
+  instruction-tuned Qwen3 üzerinde çalıştığından uygun değil.
+- **"Improved SFT to Mitigate Catastrophic Forgetting"** (arXiv 2506.09428) — tam metin
+  incelendi: full fine-tuning (LoRA değil), yalnız Llama-3-70B-Instruct'ta test edilmiş,
+  kod/repo paylaşılmamış. Achilles'e (LoRA + 1.5B-4B) uygun değil.
+- **"Mitigating Forgetting in Low Rank Adaptation"** (arXiv 2512.17720) — metodoloji/model
+  boyutu/kod durumu PDF metadata'sından net çıkarılamadı (adversarial doğrulama başarısız —
+  Kural 7: emin olunmayan kaynak entegre edilmez). Ele alındı, dedup'a işlenmedi (net
+  doğrulanamadığı için yeniden bakılabilir — "elenen" değil "belirsiz" statüsünde bırakıldı).
+
+**NOT (Kural 2):** `kl_reg_beta` kod+config+test olarak bağlandı ve ÇEVRIMDIŞI doğrulandı;
+ancak bir bulut eğitim koşusu + `adapter_eval` gate'i ile fiilen "daha iyi" olduğu henüz
+KANITLANMADI. Eğitim başlatılmadı (Kural 8) — gerçek eğitim bulutta, kullanıcı tarafından.
+
+### Kaynaklar (Tur 3 — 2026-07-03)
+
+| Teknik / Konu | Kaynak |
+|---------------|--------|
+| KL-regularized SFT + approximate replay (ENTEGRE EDİLDİ) | arXiv:2512.22337 (tam metin okundu) |
+| LoRA-GA native durum doğrulama (PEFT 0.19.1 canlı import testi) | github.com/huggingface/peft/blob/main/src/peft/tuners/lora/config.py · github.com/huggingface/peft/pull/2926 |
+| MiCA init stratejisi (elendi — continued-pretraining odaklı) | huggingface.co/docs/peft/main/en/developer_guides/lora |
+| Full-FT forgetting makalesi (elendi — LoRA/kod yok) | arXiv 2506.09428 |
+| Community KL-LoRA örneği (bağımsız doğrulama referansı) | github.com/BY571/sft-kl-lora-trainer |
 
 ---
 
