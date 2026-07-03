@@ -122,7 +122,7 @@
     { key: "kutuphane", tabs: ["papers"] },
     { key: "trader", tabs: ["trader", "backtest"] },
     { key: "egitim", tabs: ["review", "training", "eval", "orchestration", "feedback"] },
-    { key: "izleme", tabs: ["learning", "agents", "sentinel", "about"] },
+    { key: "izleme", tabs: ["learning", "agents", "sentinel", "about", "agentmap"] },
   ];
   var TAB_TO_GROUP = {};
   TAB_GROUPS.forEach(function (g) {
@@ -158,6 +158,9 @@
     sentinel:
       "Tüm ajanların sağlığını tek bakışta gör. Uyarı/kritik varsa öneri " +
       "metnindeki adımı uygula; nöbetçi hiçbir şeyi kendisi durdurmaz.",
+    agentmap:
+      "Işıklı yol: hangi ajan hangisini devreye sokar. ⚡ ile ana ajan (claude -p) " +
+      "otonom sürüşü başlatır; gerçek eğitim yine onay kapısında durur (Kural 8).",
   };
   function updateNextStep(name) {
     var box = document.getElementById("nextStep");
@@ -199,6 +202,7 @@
     if (name === "orchestration") loadOrchestration();
     if (name === "feedback") loadFeedback();
     if (name === "sentinel") loadSentinel();
+    if (name === "agentmap") loadAgentMap();
   }
 
   function showGroupTabs(groupKey) {
@@ -4218,6 +4222,412 @@
         senRenderHistory(d.history);
       })
       .catch(function () {});
+  }
+
+  // ---------- 15 · AJAN HARİTASI (canlı "ışıklı yol" grafiği) ----------
+  // Salt-okuma: /agents/graph (düğüm+kenar+canlı durum) poll edilir; harita hiçbir şeyi
+  // kendisi başlatmaz. ⚡ tetik ise ANA ajanı (orchestration-autodrive) devreye sokar —
+  // gerçek `claude -p` yalnız confirm() sonrası (Kural 8: eğitim onay kapısında durur).
+  var amPollTimer = null;
+  var amCurrentRun = null;
+  var amSelectedId = null;
+  var amSig = null; // düğüm-kümesi imzası → yeniden-kurma yalnız küme değişince
+  var amLastData = null;
+  var AM_STLBL = {
+    idle: "boşta",
+    running: "çalışıyor",
+    blocked: "onay bekliyor",
+    error: "hata",
+    done: "bitti",
+  };
+
+  function amPanelActive() {
+    var p = document.getElementById("panel-agentmap");
+    return !!(p && p.classList.contains("active"));
+  }
+
+  function amShort(s, n) {
+    s = String(s || "");
+    return s.length > n ? s.slice(0, n - 1) + "…" : s;
+  }
+
+  function amStatusClass(n) {
+    var s = (n && n.status) || "idle";
+    if (["running", "blocked", "error"].indexOf(s) === -1) s = "idle"; // done/bilinmeyen → idle
+    return "status-" + s;
+  }
+
+  // Deterministik yerleşim: gruba göre yatay lane; lane içinde id'ye göre stabil x
+  // (aynı girdi → aynı konum; poll'de düğümler zıplamaz).
+  function amLayout(data) {
+    var order = (data.groups || []).map(function (g) {
+      return g.key;
+    });
+    var byGroup = {};
+    (data.nodes || []).forEach(function (n) {
+      (byGroup[n.group] = byGroup[n.group] || []).push(n);
+    });
+    var lanes = order.filter(function (k) {
+      return (byGroup[k] || []).length;
+    });
+    Object.keys(byGroup).forEach(function (k) {
+      if (lanes.indexOf(k) === -1) lanes.push(k); // haritada olmayan grup → sona
+    });
+    var LEFT = 178,
+      RIGHT = 52,
+      TOP = 52,
+      LANE_H = 116,
+      NODE_DX = 134;
+    var maxCount = lanes.reduce(function (m, k) {
+      return Math.max(m, byGroup[k].length);
+    }, 1);
+    var W = LEFT + RIGHT + Math.max(1, maxCount) * NODE_DX;
+    var H = TOP + lanes.length * LANE_H + 18;
+    var pos = {};
+    var laneMeta = [];
+    lanes.forEach(function (gk, li) {
+      var arr = byGroup[gk].slice().sort(function (a, b) {
+        return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+      });
+      var y = TOP + li * LANE_H + LANE_H / 2 - 6;
+      laneMeta.push({ label: (arr[0] && arr[0].group_label) || gk, y: y });
+      var usableW = W - LEFT - RIGHT;
+      arr.forEach(function (n, i) {
+        pos[n.id] = {
+          x: LEFT + usableW * ((i + 0.5) / arr.length),
+          y: y,
+          r: n.is_main ? 26 : 18,
+          node: n,
+        };
+      });
+    });
+    return { pos: pos, lanes: laneMeta, W: W, H: H };
+  }
+
+  function amBuildSvg(data) {
+    var L = amLayout(data);
+    var out = [];
+    out.push(
+      '<svg class="am-svg" width="' + L.W + '" height="' + L.H + '" viewBox="0 0 ' +
+        L.W + " " + L.H + '" role="img" aria-label="Ajan etkileşim haritası (ışıklı yol)">'
+    );
+    out.push(
+      '<defs><marker id="am-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" ' +
+        'markerHeight="7" orient="auto-start-reverse">' +
+        '<path class="am-arrow-head" d="M0,0 L10,5 L0,10 z" /></marker></defs>'
+    );
+    // lane etiketleri + ayraç
+    L.lanes.forEach(function (lm) {
+      out.push(
+        '<line class="am-lane-sep" x1="8" y1="' + (lm.y + 42) + '" x2="' + (L.W - 8) +
+          '" y2="' + (lm.y + 42) + '" />'
+      );
+      out.push(
+        '<text class="am-lane-label" x="12" y="' + (lm.y + 4) + '">' + esc(lm.label) + "</text>"
+      );
+    });
+    // kenarlar (düğümlerin ALTINDA) — düğüm kenarına kadar kısaltılır (ok görünür)
+    (data.edges || []).forEach(function (e) {
+      var a = L.pos[e.from],
+        b = L.pos[e.to];
+      if (!a || !b) return;
+      var dx = b.x - a.x,
+        dy = b.y - a.y,
+        dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      var ux = dx / dist,
+        uy = dy / dist;
+      var x1 = a.x + ux * (a.r + 2),
+        y1 = a.y + uy * (a.r + 2);
+      var x2 = b.x - ux * (b.r + 7),
+        y2 = b.y - uy * (b.r + 7);
+      var kind = e.kind === "data" ? "data" : "chain";
+      var arrow = kind === "data" ? "" : ' marker-end="url(#am-arrow)"';
+      out.push(
+        '<line class="am-edge am-edge-' + kind + '" data-from="' + esc(e.from) +
+          '" data-to="' + esc(e.to) + '" x1="' + x1.toFixed(1) + '" y1="' + y1.toFixed(1) +
+          '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) + '"' + arrow + " />"
+      );
+    });
+    // düğümler (kenarların ÜSTÜNDE)
+    (data.nodes || []).forEach(function (n) {
+      var p = L.pos[n.id];
+      if (!p) return;
+      var cls =
+        "am-node " + amStatusClass(n) + (n.is_main ? " am-main" : "") +
+        (n.dangerous ? " am-danger" : "");
+      out.push(
+        '<g class="' + cls + '" data-id="' + esc(n.id) + '" tabindex="0" role="button" ' +
+          'aria-label="' + esc(n.name || n.id) + " — " + esc(AM_STLBL[n.status] || n.status || "boşta") +
+          '">'
+      );
+      if (n.dangerous) {
+        out.push(
+          '<circle class="am-danger-ring" cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) +
+            '" r="' + (p.r + 5) + '" />'
+        );
+      }
+      out.push(
+        '<circle class="am-node-dot" cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) +
+          '" r="' + p.r + '" />'
+      );
+      out.push(
+        '<text class="am-node-label" x="' + p.x.toFixed(1) + '" y="' + (p.y + p.r + 14).toFixed(1) +
+          '">' + esc(amShort(n.name || n.id, n.is_main ? 22 : 16)) + "</text>"
+      );
+      out.push("</g>");
+    });
+    out.push("</svg>");
+    return out.join("");
+  }
+
+  function amApplyStatus(data) {
+    var canvas = document.getElementById("amCanvas");
+    if (!canvas) return;
+    var byId = {};
+    (data.nodes || []).forEach(function (n) {
+      byId[n.id] = n;
+    });
+    canvas.querySelectorAll(".am-node").forEach(function (g) {
+      var id = g.getAttribute("data-id");
+      var n = byId[id];
+      g.classList.remove("status-idle", "status-running", "status-blocked", "status-error");
+      g.classList.add(amStatusClass(n || { status: "idle" }));
+      g.classList.toggle("am-selected", id === amSelectedId);
+    });
+    canvas.querySelectorAll(".am-edge").forEach(function (ln) {
+      var from = ln.getAttribute("data-from");
+      var to = ln.getAttribute("data-to");
+      var src = byId[from];
+      // "ışıklı yol": kaynak düğüm çalışıyorsa kenar akar
+      ln.classList.toggle("flowing", !!(src && src.status === "running"));
+      if (amSelectedId) {
+        var inc = from === amSelectedId || to === amSelectedId;
+        ln.classList.toggle("am-edge-hi", inc);
+        ln.classList.toggle("am-edge-dim", !inc);
+      } else {
+        ln.classList.remove("am-edge-hi", "am-edge-dim");
+      }
+    });
+  }
+
+  function amUpdateStatusLine(data) {
+    var el = document.getElementById("amStatusLine");
+    if (!el) return;
+    var nodes = data.nodes || [];
+    var run = 0,
+      blk = 0,
+      err = 0,
+      main = "idle";
+    nodes.forEach(function (n) {
+      if (n.status === "running") run++;
+      else if (n.status === "blocked") blk++;
+      else if (n.status === "error") err++;
+      if (n.is_main) main = n.status || "idle";
+    });
+    el.textContent =
+      nodes.length + " ajan · " + run + " çalışıyor · " + blk + " onay bekliyor" +
+      (err ? " · " + err + " hata" : "") + " · ana ajan: " + (AM_STLBL[main] || main);
+  }
+
+  function amRenderDetail(id) {
+    var el = document.getElementById("amDetail");
+    if (!el) return;
+    var n = null;
+    ((amLastData && amLastData.nodes) || []).some(function (x) {
+      if (x.id === id) {
+        n = x;
+        return true;
+      }
+      return false;
+    });
+    if (!n) {
+      el.innerHTML = '<span class="muted small">Ajan bulunamadı.</span>';
+      return;
+    }
+    function list(arr, cap) {
+      arr = arr || [];
+      if (!arr.length) return '<span class="muted small">—</span>';
+      var shown = arr
+        .slice(0, cap)
+        .map(function (x) {
+          return "<code>" + esc(x) + "</code>";
+        })
+        .join(" ");
+      return (
+        shown +
+        (arr.length > cap
+          ? ' <span class="muted small">+' + (arr.length - cap) + " diğer</span>"
+          : "")
+      );
+    }
+    var tags = [];
+    if (n.is_main) tags.push('<span class="am-tag am-tag-main">ANA AJAN · claude -p</span>');
+    if (n.dangerous) tags.push('<span class="am-tag am-tag-danger">TEHLİKELİ</span>');
+    if (n.approval_required) tags.push('<span class="am-tag am-tag-warn">ONAY ŞART</span>');
+    tags.push('<span class="am-tag">' + esc(n.autonomy || "manual") + "</span>");
+    el.innerHTML =
+      '<div class="am-d-head"><span class="am-d-name">' + esc(n.name || n.id) + "</span>" +
+      '<span class="am-d-status am-st-' + esc(n.status || "idle") + '">● ' +
+      esc(AM_STLBL[n.status] || n.status || "boşta") + "</span></div>" +
+      '<div class="am-d-tags">' + tags.join(" ") + "</div>" +
+      '<div class="am-d-grp muted small">' + esc(n.group_label || n.group || "") + "</div>" +
+      '<dl class="am-d-dl">' +
+      "<dt>Tetikleyici</dt><dd>" +
+      (n.trigger ? esc(n.trigger) : '<span class="muted small">—</span>') + "</dd>" +
+      "<dt>Okur</dt><dd>" + list(n.reads, 4) + "</dd>" +
+      "<dt>Yazar</dt><dd>" + list(n.writes, 4) + "</dd>" +
+      "<dt>Güvenlik kapıları</dt><dd>" + list(n.safety_gates, 5) + "</dd>" +
+      "</dl>";
+  }
+
+  function amSelectNode(id) {
+    amSelectedId = id;
+    amRenderDetail(id);
+    if (amLastData) amApplyStatus(amLastData);
+  }
+
+  function amRender(data) {
+    amLastData = data;
+    var canvas = document.getElementById("amCanvas");
+    if (!canvas) return;
+    var sig = (data.nodes || [])
+      .map(function (n) {
+        return n.id;
+      })
+      .sort()
+      .join("|");
+    if (sig !== amSig || !canvas.querySelector("svg")) {
+      canvas.innerHTML = amBuildSvg(data); // yalnız düğüm-kümesi değişince yeniden kur
+      amSig = sig;
+    }
+    amApplyStatus(data);
+    amUpdateStatusLine(data);
+    if (amSelectedId) amRenderDetail(amSelectedId); // canlı durum ayrıntıda da tazelensin
+  }
+
+  function amRefreshOnce() {
+    return api("/agents/graph")
+      .then(function (d) {
+        amRender(d);
+      })
+      .catch(function (e) {
+        var c = document.getElementById("amCanvas");
+        if (c) c.innerHTML = '<span class="muted small">Harita yüklenemedi: ' + esc(e.message) + "</span>";
+      });
+  }
+
+  function amStartPoll() {
+    if (amPollTimer) return;
+    amPollTimer = setInterval(function () {
+      if (!amPanelActive()) {
+        clearInterval(amPollTimer); // sekme kapanınca poll dursun
+        amPollTimer = null;
+        return;
+      }
+      amRefreshOnce();
+    }, 7000);
+  }
+
+  function amShowDryRun(cmd) {
+    var box = document.getElementById("amDryRun");
+    var el = document.getElementById("amDryRunCmd");
+    if (el) el.textContent = cmd || ""; // textContent → XSS yok
+    if (box) box.hidden = !cmd; // hidden özelliği (inline style değil) — CSP-güvenli
+  }
+
+  function amCanvasClick(ev) {
+    var t = ev.target;
+    var g = t && t.closest ? t.closest(".am-node") : null;
+    if (g) amSelectNode(g.getAttribute("data-id"));
+  }
+
+  function amCanvasKey(ev) {
+    if (ev.key !== "Enter" && ev.key !== " ") return;
+    var t = ev.target;
+    var g = t && t.closest ? t.closest(".am-node") : null;
+    if (g) {
+      ev.preventDefault();
+      amSelectNode(g.getAttribute("data-id"));
+    }
+  }
+
+  // ⚡ ANA AJANI DEVREYE SOK: (gerekirse) koşu başlat → confirm'li autodrive.
+  // execute değeri = confirm sonucu; onaylanmazsa DRY-RUN komutu gösterilir (spawn YOK).
+  function amTriggerTraining() {
+    var btn = document.getElementById("amTriggerBtn");
+    if (btn) btn.disabled = true;
+    var ensure = amCurrentRun
+      ? Promise.resolve({ run_id: amCurrentRun })
+      : api("/orchestration/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            adapter_name: "achilles_lora",
+            iters: 300,
+            hunt_ack: false,
+            auto_run: true,
+          }),
+        });
+    ensure
+      .then(function (snap) {
+        amCurrentRun = snap.run_id || amCurrentRun;
+        if (!amCurrentRun) throw new Error("koşu kimliği alınamadı");
+        var go = window.confirm(
+          "⚡ ANA AJAN DEVREYE SOKACAK — abonelikli `claude -p` (API DEĞİL).\n\n" +
+            "Onaylarsan: deep-hunt aşamasını GERÇEKTEN otonom sürer (dakikalar sürebilir) ve " +
+            "ilerledikçe diğer ajanlar haritada aydınlanır. Gerçek LoRA eğitimi YİNE ayrı insan " +
+            "onayı bekler — sistem onay kapısında DURUR (Kural 8).\n\n" +
+            "İptal → hiçbir şey spawn edilmez; yalnızca çalıştırılacak KURU-ÇALIŞTIRMA komutu gösterilir."
+        );
+        return api("/orchestration/autodrive/" + encodeURIComponent(amCurrentRun), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ execute: go }),
+        }).then(function (d) {
+          return { d: d, go: go };
+        });
+      })
+      .then(function (r) {
+        if (r.go && r.d && r.d.status === "autodrive_started") {
+          amShowDryRun("");
+          toast("⚡ Ana ajan devrede — ajanlar aydınlanıyor (timeline: 12·ORKESTRASYON).");
+        } else if (r.d && r.d.command) {
+          amShowDryRun(r.d.command);
+          toast(
+            r.go ? "Sürüş gerekmedi — komut gösterildi." : "KURU-ÇALIŞTIRMA: komut hazır (spawn YOK)."
+          );
+        } else {
+          amShowDryRun("");
+          toast(
+            "Yanıt: " + ((r.d && (r.d.reason || r.d.status)) || "bilinmiyor"),
+            !(r.d && r.d.ok)
+          );
+        }
+        amRefreshOnce();
+      })
+      .catch(function (e) {
+        toast("Devreye sokulamadı: " + e.message, true);
+      })
+      .finally(function () {
+        if (btn) btn.disabled = false;
+      });
+  }
+
+  function loadAgentMap() {
+    var canvas = document.getElementById("amCanvas");
+    if (canvas && !canvas._wired) {
+      canvas._wired = true; // delegasyon: #amCanvas kalıcı (innerHTML yenilense de listener durur)
+      canvas.addEventListener("click", amCanvasClick);
+      canvas.addEventListener("keydown", amCanvasKey);
+    }
+    var tb = document.getElementById("amTriggerBtn");
+    if (tb && !tb._wired) {
+      tb._wired = true;
+      tb.addEventListener("click", amTriggerTraining);
+      document.getElementById("amRefreshBtn").addEventListener("click", amRefreshOnce);
+    }
+    amRefreshOnce();
+    amStartPoll();
   }
 
   // ---------- init ----------

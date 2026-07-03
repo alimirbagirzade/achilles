@@ -2364,3 +2364,320 @@ code {
   font-size: 0.72rem;
   margin-left: 5px;
 }
+
+/* ---------- 15 · AJAN HARİTASI (canlı "ışıklı yol" grafiği) ---------- */
+/* CSP-güvenli: tüm görünüm CSS sınıflarıyla; SVG geometrisi yalnız öznitelik. */
+.am-trigger {
+  font-weight: 700;
+}
+.am-dryrun {
+  margin-top: 10px;
+}
+.am-dryrun[hidden] {
+  display: none;
+}
+.am-dryrun-head {
+  margin-bottom: 5px;
+}
+.am-dryrun-cmd {
+  overflow-x: auto;
+  background: var(--ink);
+  color: var(--bg);
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  margin: 0;
+}
+.am-dryrun-cmd code {
+  color: inherit;
+  white-space: pre;
+  font-family: var(--mono);
+}
+
+/* efsane (legend) */
+.am-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-bottom: 12px;
+  font-size: 0.78rem;
+  color: var(--ink-dim);
+}
+.am-lg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.am-lg-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.am-lg-dot.lg-idle {
+  background: var(--muted);
+}
+.am-lg-dot.lg-running {
+  background: var(--ok);
+}
+.am-lg-dot.lg-blocked {
+  background: var(--warn);
+}
+.am-lg-dot.lg-error {
+  background: var(--neg);
+}
+.am-lg-dot.lg-main {
+  background: var(--pos);
+}
+.am-lg-ring {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.6px dashed var(--neg);
+  display: inline-block;
+}
+.am-lg-line {
+  width: 22px;
+  height: 0;
+  border-top: 2px solid var(--border-strong);
+  display: inline-block;
+}
+.am-lg-line.lg-data {
+  border-top-style: dashed;
+}
+
+/* tuval */
+.am-canvas-wrap {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.am-canvas {
+  min-height: 120px;
+  padding: 4px;
+}
+.am-svg {
+  display: block;
+  font-family: var(--sans);
+}
+
+/* lane etiketi + ayraç */
+.am-lane-sep {
+  stroke: var(--border);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+.am-lane-label {
+  fill: var(--bronze-deep);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* kenarlar */
+.am-edge {
+  stroke: var(--border-strong);
+  stroke-width: 1.6;
+  fill: none;
+  transition: stroke 0.2s, opacity 0.2s, stroke-width 0.2s;
+}
+.am-edge-data {
+  stroke-dasharray: 3 4;
+  stroke-width: 1.2;
+}
+.am-arrow-head {
+  fill: var(--border-strong);
+}
+.am-edge-dim {
+  opacity: 0.22;
+}
+.am-edge-hi {
+  stroke: var(--primary);
+}
+.am-edge-hi.am-edge-chain {
+  stroke-width: 2.4;
+}
+/* "ışıklı yol": kaynak düğüm çalışıyorsa akan kesikler */
+.am-edge.flowing {
+  stroke: var(--ok);
+  stroke-width: 2.2;
+  stroke-dasharray: 6 6;
+  animation: am-flow 0.9s linear infinite;
+}
+@keyframes am-flow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+/* düğümler */
+.am-node {
+  cursor: pointer;
+}
+.am-node-dot {
+  fill: var(--muted);
+  stroke: var(--surface);
+  stroke-width: 2;
+  transition: fill 0.25s;
+}
+.am-node-label {
+  fill: var(--ink-dim);
+  font-size: 10.5px;
+  text-anchor: middle;
+  pointer-events: none;
+}
+.am-node:focus {
+  outline: none;
+}
+.am-node:hover .am-node-dot,
+.am-node:focus .am-node-dot {
+  stroke: var(--primary);
+  stroke-width: 2.5;
+}
+.am-node.am-selected .am-node-dot {
+  stroke: var(--primary-strong);
+  stroke-width: 3;
+}
+.am-node.am-selected .am-node-label {
+  fill: var(--ink);
+  font-weight: 700;
+}
+
+/* durum renkleri (Okabe-Ito, CVD-güvenli) */
+.am-node.status-idle .am-node-dot {
+  fill: var(--muted);
+}
+.am-node.status-running .am-node-dot {
+  fill: var(--ok);
+  animation: am-pulse 1.4s ease-in-out infinite;
+}
+.am-node.status-blocked .am-node-dot {
+  fill: var(--warn);
+}
+.am-node.status-error .am-node-dot {
+  fill: var(--neg);
+}
+@keyframes am-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* ana ajan — büyük yeşil */
+.am-node.am-main .am-node-dot {
+  fill: var(--pos);
+  stroke: var(--pos-border);
+  stroke-width: 3;
+}
+.am-node.am-main .am-node-label {
+  fill: var(--pos);
+  font-weight: 700;
+  font-size: 11.5px;
+}
+
+/* tehlikeli — kırmızı halka */
+.am-danger-ring {
+  fill: none;
+  stroke: var(--neg);
+  stroke-width: 1.6;
+  stroke-dasharray: 3 3;
+  opacity: 0.8;
+}
+
+/* ayrıntı paneli */
+.am-detail {
+  font-size: 0.85rem;
+}
+.am-d-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.am-d-name {
+  font-weight: 700;
+  font-size: 1rem;
+}
+.am-d-status {
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.am-d-status.am-st-running {
+  color: var(--ok);
+}
+.am-d-status.am-st-blocked {
+  color: var(--warn);
+}
+.am-d-status.am-st-error {
+  color: var(--neg);
+}
+.am-d-status.am-st-idle,
+.am-d-status.am-st-done {
+  color: var(--muted);
+}
+.am-d-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+.am-tag {
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+  border: 1px solid var(--border);
+}
+.am-tag-main {
+  background: var(--pos-soft);
+  color: var(--pos);
+  border-color: var(--pos-border);
+  font-weight: 700;
+}
+.am-tag-danger {
+  background: var(--neg-soft);
+  color: var(--neg);
+  border-color: var(--neg-border);
+  font-weight: 700;
+}
+.am-tag-warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+  border-color: var(--warn-border);
+}
+.am-d-grp {
+  margin-bottom: 4px;
+}
+.am-d-dl {
+  display: grid;
+  grid-template-columns: 132px 1fr;
+  gap: 6px 12px;
+  margin: 8px 0 0;
+}
+.am-d-dl dt {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.am-d-dl dd {
+  margin: 0;
+}
+.am-d-dl code {
+  font-size: 0.74rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .am-node.status-running .am-node-dot,
+  .am-edge.flowing {
+    animation: none;
+  }
+}
