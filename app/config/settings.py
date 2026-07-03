@@ -142,10 +142,10 @@ class Settings(BaseSettings):
     rlm_seed: int = 42  # determinizm (kural 6) — tüm LLM çağrıları bu seed ile
     # Taslak LLM çağrısı SINIRLI olmalı: sınırsızken qwen3:4b CPU'da tek cevap >9dk sürüp
     # süreç kill'ine takılıyor ve run 'running' asılı kalıyordu (gerçek smoke'ta gözlendi).
+    # 600s: CPU-only i7'de qwen3:4b draft+doğrulama ~5-6dk sürer; 300s sistematik timeout'a
+    # düşürüyordu (tüm sorular no_llm). GPU varsa env ile düşürülebilir.
     rlm_draft_max_tokens: int = 900  # üretim uzunluğu tavanı (yapısal cevap için yeterli)
-    rlm_draft_timeout_s: int = (
-        300  # LLM çağrı süre tavanı; aşılırsa LLMUnavailable → graceful no_llm
-    )
+    rlm_draft_timeout_s: int = 600  # süre tavanı; aşılırsa LLMUnavailable → no_llm
 
     # --- RLM engine adapter (opsiyonel alexzhang13/rlm — talimat) ---
     # Çekirdek RLM Controller (native) VARSAYILANDIR. alexzhang adapter opsiyoneldir;
