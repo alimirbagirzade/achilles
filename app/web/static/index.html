@@ -1012,11 +1012,17 @@
             <span class="am-lg"><span class="am-lg-dot lg-running"></span>çalışıyor</span>
             <span class="am-lg"><span class="am-lg-dot lg-blocked"></span>onay bekliyor</span>
             <span class="am-lg"><span class="am-lg-dot lg-error"></span>hata</span>
-            <span class="am-lg"><span class="am-lg-dot lg-main"></span>ana ajan</span>
+            <span class="am-lg"><span class="am-lg-swatch lg-main"></span>ana ajan (alt buton)</span>
             <span class="am-lg"><span class="am-lg-ring lg-danger"></span>tehlikeli (onay şart)</span>
             <span class="am-lg"><span class="am-lg-line lg-chain"></span>zincir (akış)</span>
             <span class="am-lg"><span class="am-lg-line lg-data"></span>veri bağı</span>
+            <span class="am-lg"><span class="am-lg-line lg-activate"></span>devreye sokar</span>
           </div>
+          <p class="muted small am-hint">
+            Kartın <strong>sol-kenar rengi</strong> = durum. Oklar <strong>dik açılı</strong>
+            akış. Alttaki tam-genişlik <strong>yeşil buton = ana ajan</strong>; ondan yükselen
+            yeşil yollar "devreye soktukları"dır.
+          </p>
           <div class="am-canvas-wrap" id="amCanvasWrap">
             <div id="amCanvas" class="am-canvas"><span class="muted small">Harita yükleniyor…</span></div>
           </div>
@@ -1065,7 +1071,7 @@
       </div>
     </div>
 
-    <script src="/assets/app.js?v=7"></script>
+    <script src="/assets/app.js?v=8"></script>
     <script src="/assets/canli-badge.js?v=1"></script>
   </body>
 </html>

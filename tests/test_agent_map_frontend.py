@@ -118,17 +118,30 @@ def test_csp_safe_no_inline_style_or_onclick() -> None:
     assert " hidden>" in section or " hidden " in section
 
 
-# ── app.css ("ışıklı yol" + durum renkleri) ──────────────────────────────────
+# ── "DERLİ TOPLU" kart yerleşimi (JS + CSS) ──────────────────────────────────
+def test_js_card_layout_structure() -> None:
+    js = _appjs()
+    # kartlar + dik-açılı yol + ana ajan alt buton + aktivasyon yolu
+    for token in ("amOrthPath", "am-card", "am-card-edge", "am-mainbar", "am-edge-activate"):
+        assert token in js, f"kart-yerleşim eksik: {token}"
+    # ana ajan şeritlerden çıkarılıp alt butona alınır + tıkla → ⚡ tetik
+    assert "if (n.is_main)" in js
+    assert 'closest(".am-mainbar")' in js and "amTriggerTraining()" in js
+
+
 def test_css_light_path_and_status_colors() -> None:
     css = _appcss()
-    # akan kenar ("ışıklı yol") animasyonu
+    # akan kenar ("ışıklı yol") animasyonu + aktivasyon (yeşil "devreye sokar") yolu
     assert ".am-edge.flowing" in css
+    assert ".am-edge-activate" in css
     assert "@keyframes am-flow" in css
-    # çalışan düğüm nabzı
+    # çalışan durum nabzı
     assert "@keyframes am-pulse" in css
-    # ana ajan büyük yeşil + tehlikeli halka + Okabe-Ito değişkenleri
-    assert ".am-node.am-main .am-node-dot" in css
-    assert ".am-danger-ring" in css
+    # kart sol-kenar durum rengi + ana ajan yeşil buton + tehlikeli kesik kenarlık
+    assert ".am-node.status-running .am-card-edge" in css
+    assert ".am-mainbar-box" in css
+    assert ".am-node.am-danger .am-card" in css
+    # Okabe-Ito CVD-güvenli palet
     assert "var(--pos)" in css and "var(--ok)" in css and "var(--warn)" in css
     # geniş grafik yatay kaydırma kabında
     assert ".am-canvas-wrap" in css and "overflow-x: auto" in css

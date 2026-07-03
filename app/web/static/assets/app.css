@@ -2391,6 +2391,20 @@ code {
 .am-lg-line.lg-data {
   border-top-style: dashed;
 }
+.am-lg-line.lg-activate {
+  border-top: 2px dashed var(--pos);
+}
+.am-lg-swatch {
+  width: 22px;
+  height: 12px;
+  border-radius: 4px;
+  background: var(--pos);
+  border: 1px solid var(--pos-border);
+  display: inline-block;
+}
+.am-hint {
+  margin: 8px 0 0;
+}
 
 /* tuval */
 .am-canvas-wrap {
@@ -2410,11 +2424,11 @@ code {
   font-family: var(--sans);
 }
 
-/* lane etiketi + ayraç */
-.am-lane-sep {
+/* şerit (grup) kutusu + etiket — "derli toplu" katman */
+.am-lane-box {
+  fill: var(--bg);
   stroke: var(--border);
   stroke-width: 1;
-  stroke-dasharray: 2 4;
 }
 .am-lane-label {
   fill: var(--bronze-deep);
@@ -2424,7 +2438,7 @@ code {
   text-transform: uppercase;
 }
 
-/* kenarlar */
+/* kenarlar — dik açılı yollar */
 .am-edge {
   stroke: var(--border-strong);
   stroke-width: 1.6;
@@ -2438,8 +2452,18 @@ code {
 .am-arrow-head {
   fill: var(--border-strong);
 }
+/* aktivasyon yolu: ana buton → zincir kökleri (yeşil "devreye soktukları") */
+.am-edge-activate {
+  stroke: var(--pos);
+  stroke-width: 1.8;
+  stroke-dasharray: 5 5;
+  opacity: 0.75;
+}
+.am-arrow-act-head {
+  fill: var(--pos);
+}
 .am-edge-dim {
-  opacity: 0.22;
+  opacity: 0.18;
 }
 .am-edge-hi {
   stroke: var(--primary);
@@ -2454,57 +2478,64 @@ code {
   stroke-dasharray: 6 6;
   animation: am-flow 0.9s linear infinite;
 }
+.am-edge-activate.flowing {
+  stroke: var(--pos);
+  opacity: 1;
+}
 @keyframes am-flow {
   to {
     stroke-dashoffset: -24;
   }
 }
 
-/* düğümler */
+/* kartlar (eşit-boy, sol-kenar = durum rengi) */
 .am-node {
   cursor: pointer;
 }
-.am-node-dot {
-  fill: var(--muted);
-  stroke: var(--surface);
-  stroke-width: 2;
+.am-card {
+  fill: var(--surface);
+  stroke: var(--border-strong);
+  stroke-width: 1;
+  transition: stroke 0.2s;
+}
+.am-card-edge {
+  fill: var(--muted); /* durum sınıfı ile değişir */
   transition: fill 0.25s;
 }
-.am-node-label {
-  fill: var(--ink-dim);
-  font-size: 10.5px;
-  text-anchor: middle;
+.am-card-label {
+  fill: var(--ink);
+  font-size: 12px;
+  dominant-baseline: central;
   pointer-events: none;
 }
 .am-node:focus {
   outline: none;
 }
-.am-node:hover .am-node-dot,
-.am-node:focus .am-node-dot {
+.am-node:hover .am-card,
+.am-node:focus .am-card {
   stroke: var(--primary);
-  stroke-width: 2.5;
+  stroke-width: 1.8;
 }
-.am-node.am-selected .am-node-dot {
+.am-node.am-selected .am-card {
   stroke: var(--primary-strong);
-  stroke-width: 3;
+  stroke-width: 2;
 }
-.am-node.am-selected .am-node-label {
-  fill: var(--ink);
+.am-node.am-selected .am-card-label {
   font-weight: 700;
 }
 
-/* durum renkleri (Okabe-Ito, CVD-güvenli) */
-.am-node.status-idle .am-node-dot {
+/* durum renkleri (Okabe-Ito, CVD-güvenli) — kartın SOL-KENAR şeridi */
+.am-node.status-idle .am-card-edge {
   fill: var(--muted);
 }
-.am-node.status-running .am-node-dot {
+.am-node.status-running .am-card-edge {
   fill: var(--ok);
   animation: am-pulse 1.4s ease-in-out infinite;
 }
-.am-node.status-blocked .am-node-dot {
+.am-node.status-blocked .am-card-edge {
   fill: var(--warn);
 }
-.am-node.status-error .am-node-dot {
+.am-node.status-error .am-card-edge {
   fill: var(--neg);
 }
 @keyframes am-pulse {
@@ -2513,29 +2544,53 @@ code {
     opacity: 1;
   }
   50% {
-    opacity: 0.45;
+    opacity: 0.4;
   }
 }
 
-/* ana ajan — büyük yeşil */
-.am-node.am-main .am-node-dot {
-  fill: var(--pos);
-  stroke: var(--pos-border);
-  stroke-width: 3;
-}
-.am-node.am-main .am-node-label {
-  fill: var(--pos);
-  font-weight: 700;
-  font-size: 11.5px;
-}
-
-/* tehlikeli — kırmızı halka */
-.am-danger-ring {
-  fill: none;
+/* tehlikeli — kırmızı kesik kenarlık */
+.am-node.am-danger .am-card {
   stroke: var(--neg);
   stroke-width: 1.6;
-  stroke-dasharray: 3 3;
-  opacity: 0.8;
+  stroke-dasharray: 4 3;
+}
+
+/* ana ajan — ALT tam-genişlik yeşil buton (⚡ tetik) */
+.am-mainbar {
+  cursor: pointer;
+}
+.am-mainbar-box {
+  fill: var(--pos);
+  stroke: var(--pos-border);
+  stroke-width: 2;
+  transition: fill 0.2s;
+}
+.am-mainbar:hover .am-mainbar-box,
+.am-mainbar:focus .am-mainbar-box {
+  fill: var(--pos-strong, #086646);
+}
+.am-mainbar:focus {
+  outline: none;
+}
+.am-mainbar-label {
+  fill: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+  letter-spacing: 0.01em;
+}
+.am-mainbar.status-running .am-mainbar-box {
+  animation: am-pulse 1.4s ease-in-out infinite;
+}
+.am-mainbar.status-blocked .am-mainbar-box {
+  stroke: var(--warn);
+  stroke-width: 3;
+}
+.am-mainbar.status-error .am-mainbar-box {
+  stroke: var(--neg);
+  stroke-width: 3;
 }
 
 /* ayrıntı paneli */
@@ -2622,7 +2677,8 @@ code {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .am-node.status-running .am-node-dot,
+  .am-node.status-running .am-card-edge,
+  .am-mainbar.status-running .am-mainbar-box,
   .am-edge.flowing {
     animation: none;
   }

@@ -4233,6 +4233,7 @@
   var amSelectedId = null;
   var amSig = null; // düğüm-kümesi imzası → yeniden-kurma yalnız küme değişince
   var amLastData = null;
+  var amMainId = null; // ana ajan id (alt tam-genişlik yeşil buton olarak render edilir)
   var AM_STLBL = {
     idle: "boşta",
     running: "çalışıyor",
@@ -4259,12 +4260,33 @@
 
   // Deterministik yerleşim: gruba göre yatay lane; lane içinde id'ye göre stabil x
   // (aynı girdi → aynı konum; poll'de düğümler zıplamaz).
+  // "DERLİ TOPLU" yerleşim: gruplar YATAY ŞERİTLER (sol→sağ katman akışı); her şeritte
+  // EŞİT-BOY KARTLAR sütun hizalı (id'ye göre stabil, satır taşarsa alta sarar). Ana ajan
+  // şeritlerden ÇIKARILIR → ALT ŞERİTTE tam-genişlik yeşil buton; ondan yükselen yeşil
+  // "devreye soktukları" (aktivasyon) yolları zincir-köklerine gider. Tüm konum deterministik.
+  var AM_CARD_W = 152,
+    AM_CARD_H = 44,
+    AM_CARD_GX = 14,
+    AM_CARD_GY = 10,
+    AM_MAX_PER_ROW = 6,
+    AM_PAD = 16,
+    AM_LANE_PAD = 12,
+    AM_LANE_LABEL_H = 22,
+    AM_LANE_GAP = 16,
+    AM_MAIN_H = 58,
+    AM_MAIN_GAP = 40;
+
   function amLayout(data) {
     var order = (data.groups || []).map(function (g) {
       return g.key;
     });
+    var mainNode = null;
     var byGroup = {};
     (data.nodes || []).forEach(function (n) {
+      if (n.is_main) {
+        mainNode = n; // ana ajan şeritlerde DEĞİL, altta buton
+        return;
+      }
       (byGroup[n.group] = byGroup[n.group] || []).push(n);
     });
     var lanes = order.filter(function (k) {
@@ -4273,109 +4295,202 @@
     Object.keys(byGroup).forEach(function (k) {
       if (lanes.indexOf(k) === -1) lanes.push(k); // haritada olmayan grup → sona
     });
-    var LEFT = 178,
-      RIGHT = 52,
-      TOP = 52,
-      LANE_H = 116,
-      NODE_DX = 134;
-    var maxCount = lanes.reduce(function (m, k) {
-      return Math.max(m, byGroup[k].length);
-    }, 1);
-    var W = LEFT + RIGHT + Math.max(1, maxCount) * NODE_DX;
-    var H = TOP + lanes.length * LANE_H + 18;
+    // Global en-geniş satır (tüm şeritler aynı genişlikte kutu; kartlar sola hizalı).
+    var maxRow = 1;
+    lanes.forEach(function (k) {
+      maxRow = Math.max(maxRow, Math.min(byGroup[k].length, AM_MAX_PER_ROW));
+    });
+    var innerW = maxRow * AM_CARD_W + (maxRow - 1) * AM_CARD_GX;
+    var sectionW = innerW + AM_LANE_PAD * 2;
+    var W = sectionW + AM_PAD * 2;
+
     var pos = {};
     var laneMeta = [];
-    lanes.forEach(function (gk, li) {
+    var y = AM_PAD;
+    lanes.forEach(function (gk) {
       var arr = byGroup[gk].slice().sort(function (a, b) {
         return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
       });
-      var y = TOP + li * LANE_H + LANE_H / 2 - 6;
-      laneMeta.push({ label: (arr[0] && arr[0].group_label) || gk, y: y });
-      var usableW = W - LEFT - RIGHT;
+      var perRow = Math.min(arr.length, AM_MAX_PER_ROW);
+      var rows = Math.ceil(arr.length / perRow);
+      var cardsTop = y + AM_LANE_PAD + AM_LANE_LABEL_H;
+      var laneInnerH = rows * AM_CARD_H + (rows - 1) * AM_CARD_GY;
+      var sectionH = AM_LANE_PAD + AM_LANE_LABEL_H + laneInnerH + AM_LANE_PAD;
       arr.forEach(function (n, i) {
+        var row = Math.floor(i / perRow),
+          col = i % perRow;
+        var cx0 = AM_PAD + AM_LANE_PAD + col * (AM_CARD_W + AM_CARD_GX);
+        var cy0 = cardsTop + row * (AM_CARD_H + AM_CARD_GY);
         pos[n.id] = {
-          x: LEFT + usableW * ((i + 0.5) / arr.length),
-          y: y,
-          r: n.is_main ? 26 : 18,
+          x: cx0,
+          y: cy0,
+          w: AM_CARD_W,
+          h: AM_CARD_H,
+          cx: cx0 + AM_CARD_W / 2,
+          cy: cy0 + AM_CARD_H / 2,
+          left: cx0,
+          right: cx0 + AM_CARD_W,
+          top: cy0,
+          bottom: cy0 + AM_CARD_H,
           node: n,
         };
       });
+      laneMeta.push({
+        label: (arr[0] && arr[0].group_label) || gk,
+        x: AM_PAD,
+        y: y,
+        w: sectionW,
+        h: sectionH,
+      });
+      y += sectionH + AM_LANE_GAP;
     });
-    return { pos: pos, lanes: laneMeta, W: W, H: H };
+
+    // Alt ana-ajan butonu + yüksekliği.
+    var mainBar = null;
+    var H = y - AM_LANE_GAP + AM_PAD;
+    if (mainNode) {
+      var mainTop = y - AM_LANE_GAP + AM_MAIN_GAP;
+      mainBar = {
+        x: AM_PAD,
+        y: mainTop,
+        w: W - AM_PAD * 2,
+        h: AM_MAIN_H,
+        cx: W / 2,
+        cy: mainTop + AM_MAIN_H / 2,
+        node: mainNode,
+      };
+      H = mainTop + AM_MAIN_H + AM_PAD;
+    }
+
+    // Zincir kökleri (gelen chain-kenarı olmayan; ana ajanın "devreye soktukları").
+    var hasIncoming = {};
+    (data.edges || []).forEach(function (e) {
+      if (e.kind !== "data") hasIncoming[e.to] = true;
+    });
+    var roots = [];
+    lanes.forEach(function (gk) {
+      byGroup[gk].forEach(function (n) {
+        if (!hasIncoming[n.id]) roots.push(n.id);
+      });
+    });
+
+    return { pos: pos, lanes: laneMeta, mainBar: mainBar, roots: roots, W: W, H: H };
+  }
+
+  // Dik-açılı (ortogonal) yol: aşağı → yatay → aşağı (baskın akış yönü). Aynı satırda yan-yana.
+  function amOrthPath(a, b) {
+    if (Math.abs(a.cy - b.cy) < 6) {
+      // aynı satır → yatay
+      return b.cx >= a.cx
+        ? "M" + a.right + " " + a.cy + " H" + b.left
+        : "M" + a.left + " " + a.cy + " H" + b.right;
+    }
+    if (b.cy > a.cy) {
+      var my = ((a.bottom + b.top) / 2).toFixed(1);
+      return "M" + a.cx + " " + a.bottom + " V" + my + " H" + b.cx + " V" + b.top;
+    }
+    var my2 = ((b.bottom + a.top) / 2).toFixed(1);
+    return "M" + a.cx + " " + a.top + " V" + my2 + " H" + b.cx + " V" + b.bottom;
   }
 
   function amBuildSvg(data) {
     var L = amLayout(data);
+    amMainId = L.mainBar ? L.mainBar.node.id : null;
     var out = [];
     out.push(
       '<svg class="am-svg" width="' + L.W + '" height="' + L.H + '" viewBox="0 0 ' +
         L.W + " " + L.H + '" role="img" aria-label="Ajan etkileşim haritası (ışıklı yol)">'
     );
     out.push(
-      '<defs><marker id="am-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" ' +
+      "<defs>" +
+        '<marker id="am-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" ' +
         'markerHeight="7" orient="auto-start-reverse">' +
-        '<path class="am-arrow-head" d="M0,0 L10,5 L0,10 z" /></marker></defs>'
+        '<path class="am-arrow-head" d="M0,0 L10,5 L0,10 z" /></marker>' +
+        '<marker id="am-arrow-act" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" ' +
+        'markerHeight="7" orient="auto-start-reverse">' +
+        '<path class="am-arrow-act-head" d="M0,0 L10,5 L0,10 z" /></marker>' +
+        "</defs>"
     );
-    // lane etiketleri + ayraç
+    // 1) Şerit kutuları + etiketler (en altta)
     L.lanes.forEach(function (lm) {
       out.push(
-        '<line class="am-lane-sep" x1="8" y1="' + (lm.y + 42) + '" x2="' + (L.W - 8) +
-          '" y2="' + (lm.y + 42) + '" />'
+        '<rect class="am-lane-box" x="' + lm.x + '" y="' + lm.y + '" width="' + lm.w +
+          '" height="' + lm.h + '" rx="10" />'
       );
       out.push(
-        '<text class="am-lane-label" x="12" y="' + (lm.y + 4) + '">' + esc(lm.label) + "</text>"
+        '<text class="am-lane-label" x="' + (lm.x + AM_LANE_PAD) + '" y="' +
+          (lm.y + AM_LANE_PAD + 12) + '">' + esc(lm.label) + "</text>"
       );
     });
-    // kenarlar (düğümlerin ALTINDA) — düğüm kenarına kadar kısaltılır (ok görünür)
+    // 2) Aktivasyon yolları (ana buton → zincir kökleri; yükselen yeşil "ışıklı yol")
+    if (L.mainBar) {
+      L.roots.forEach(function (rid) {
+        var r = L.pos[rid];
+        if (!r) return;
+        var sx = Math.max(L.mainBar.x + 24, Math.min(L.mainBar.x + L.mainBar.w - 24, r.cx));
+        var my = ((L.mainBar.y + r.bottom) / 2).toFixed(1);
+        var d = "M" + sx + " " + L.mainBar.y + " V" + my + " H" + r.cx + " V" + r.bottom;
+        out.push(
+          '<path class="am-edge am-edge-activate" data-from="' + esc(amMainId) +
+            '" data-to="' + esc(rid) + '" d="' + d + '" marker-end="url(#am-arrow-act)" />'
+        );
+      });
+    }
+    // 3) Normal kenarlar (kartların ALTINDA) — dik açılı
     (data.edges || []).forEach(function (e) {
       var a = L.pos[e.from],
         b = L.pos[e.to];
       if (!a || !b) return;
-      var dx = b.x - a.x,
-        dy = b.y - a.y,
-        dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      var ux = dx / dist,
-        uy = dy / dist;
-      var x1 = a.x + ux * (a.r + 2),
-        y1 = a.y + uy * (a.r + 2);
-      var x2 = b.x - ux * (b.r + 7),
-        y2 = b.y - uy * (b.r + 7);
       var kind = e.kind === "data" ? "data" : "chain";
       var arrow = kind === "data" ? "" : ' marker-end="url(#am-arrow)"';
       out.push(
-        '<line class="am-edge am-edge-' + kind + '" data-from="' + esc(e.from) +
-          '" data-to="' + esc(e.to) + '" x1="' + x1.toFixed(1) + '" y1="' + y1.toFixed(1) +
-          '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) + '"' + arrow + " />"
+        '<path class="am-edge am-edge-' + kind + '" data-from="' + esc(e.from) +
+          '" data-to="' + esc(e.to) + '" d="' + amOrthPath(a, b) + '"' + arrow + " />"
       );
     });
-    // düğümler (kenarların ÜSTÜNDE)
+    // 4) Kartlar (kenarların ÜSTÜNDE)
     (data.nodes || []).forEach(function (n) {
       var p = L.pos[n.id];
-      if (!p) return;
-      var cls =
-        "am-node " + amStatusClass(n) + (n.is_main ? " am-main" : "") +
-        (n.dangerous ? " am-danger" : "");
+      if (!p) return; // ana ajan burada yok (altta buton)
+      var cls = "am-node " + amStatusClass(n) + (n.dangerous ? " am-danger" : "");
       out.push(
         '<g class="' + cls + '" data-id="' + esc(n.id) + '" tabindex="0" role="button" ' +
-          'aria-label="' + esc(n.name || n.id) + " — " + esc(AM_STLBL[n.status] || n.status || "boşta") +
-          '">'
-      );
-      if (n.dangerous) {
-        out.push(
-          '<circle class="am-danger-ring" cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) +
-            '" r="' + (p.r + 5) + '" />'
-        );
-      }
-      out.push(
-        '<circle class="am-node-dot" cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) +
-          '" r="' + p.r + '" />'
+          'aria-label="' + esc(n.name || n.id) + " — " +
+          esc(AM_STLBL[n.status] || n.status || "boşta") + '">'
       );
       out.push(
-        '<text class="am-node-label" x="' + p.x.toFixed(1) + '" y="' + (p.y + p.r + 14).toFixed(1) +
-          '">' + esc(amShort(n.name || n.id, n.is_main ? 22 : 16)) + "</text>"
+        '<rect class="am-card" x="' + p.x + '" y="' + p.y + '" width="' + p.w + '" height="' +
+          p.h + '" rx="7" />'
+      );
+      out.push(
+        '<rect class="am-card-edge" x="' + p.x + '" y="' + (p.y + 3) + '" width="5" height="' +
+          (p.h - 6) + '" rx="2" />'
+      );
+      out.push(
+        '<text class="am-card-label" x="' + (p.x + 16) + '" y="' + p.cy.toFixed(1) + '">' +
+          esc(amShort(n.name || n.id, 17)) + "</text>"
       );
       out.push("</g>");
     });
+    // 5) Ana ajan — ALT tam-genişlik yeşil buton (tıkla → ⚡ tetik)
+    if (L.mainBar) {
+      var mb = L.mainBar,
+        mn = mb.node;
+      out.push(
+        '<g class="am-mainbar ' + amStatusClass(mn) + '" data-main="1" data-id="' + esc(mn.id) +
+          '" tabindex="0" role="button" aria-label="⚡ Eğitimi devreye sok — ' +
+          esc(mn.name || mn.id) + '">'
+      );
+      out.push(
+        '<rect class="am-mainbar-box" x="' + mb.x + '" y="' + mb.y + '" width="' + mb.w +
+          '" height="' + mb.h + '" rx="12" />'
+      );
+      out.push(
+        '<text class="am-mainbar-label" x="' + mb.cx + '" y="' + mb.cy.toFixed(1) + '">' +
+          "⚡ EĞİTİMİ DEVREYE SOK · " + esc(amShort(mn.name || mn.id, 26)) + "</text>"
+      );
+      out.push("</g>");
+    }
     out.push("</svg>");
     return out.join("");
   }
@@ -4394,6 +4509,19 @@
       g.classList.add(amStatusClass(n || { status: "idle" }));
       g.classList.toggle("am-selected", id === amSelectedId);
     });
+    // Ana ajan alt butonu: durum sınıfı + etiketi canlı tut.
+    var mainG = canvas.querySelector(".am-mainbar");
+    if (mainG) {
+      var mn = byId[mainG.getAttribute("data-id")];
+      mainG.classList.remove("status-idle", "status-running", "status-blocked", "status-error");
+      mainG.classList.add(amStatusClass(mn || { status: "idle" }));
+      var lbl = mainG.querySelector(".am-mainbar-label");
+      if (lbl && mn) {
+        lbl.textContent =
+          "⚡ EĞİTİMİ DEVREYE SOK · " + amShort(mn.name || mn.id, 26) +
+          " (" + (AM_STLBL[mn.status] || mn.status || "boşta") + ")";
+      }
+    }
     canvas.querySelectorAll(".am-edge").forEach(function (ln) {
       var from = ln.getAttribute("data-from");
       var to = ln.getAttribute("data-to");
@@ -4537,14 +4665,25 @@
 
   function amCanvasClick(ev) {
     var t = ev.target;
-    var g = t && t.closest ? t.closest(".am-node") : null;
+    if (!t || !t.closest) return;
+    if (t.closest(".am-mainbar")) {
+      amTriggerTraining(); // alt yeşil buton = ⚡ tetik (grafik-içi)
+      return;
+    }
+    var g = t.closest(".am-node");
     if (g) amSelectNode(g.getAttribute("data-id"));
   }
 
   function amCanvasKey(ev) {
     if (ev.key !== "Enter" && ev.key !== " ") return;
     var t = ev.target;
-    var g = t && t.closest ? t.closest(".am-node") : null;
+    if (!t || !t.closest) return;
+    if (t.closest(".am-mainbar")) {
+      ev.preventDefault();
+      amTriggerTraining();
+      return;
+    }
+    var g = t.closest(".am-node");
     if (g) {
       ev.preventDefault();
       amSelectNode(g.getAttribute("data-id"));
