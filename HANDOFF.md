@@ -1,7 +1,7 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-07-03 (Faz-6 Sentinel sağlık monitörü) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
-_Açık PR: yok — ajan-sistem #72·#74·#79 + av/sertleştirme #73·#75·#76·#77·#78·#82·#85·#88·#89 + Faz-4 smoke #84 + Faz-5 #86 + **Faz-6 Sentinel #90** hepsi MERGED. **Ajan-orkestrasyon Faz-1..6 TAMAMLANDI.** Eğitim-öncesi kapı temiz; carding/RLM/eğitim ANA ortamda (worktree izole)._
+_Son güncelleme: 2026-07-03 (ajan haritası backend + 3 süren görev) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Açık PR: yok — ajan-sistem Faz-1..6 (#72·#74·#79·#84·#86·#90) + ajan-haritası backend (**#96**) + av/sertleştirme (#73·#75·#76·#77·#78·#82·#85·#88·#89·#95) hepsi MERGED. Ajan-orkestrasyon TAM. **3 GÖREV AYRI OTURUMLARDA SÜRÜYOR** (aşağıda). Eğitim-öncesi kapı temiz._
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
@@ -17,6 +17,30 @@ araçlarla (Claude Code, Codex vb.) — API anahtarı/faturalı endpoint DEĞİL
 RLM `backend="anthropic"` (API) yolu OPSİYONEL + KAPALI kalır (`rlm_alexzhang_enabled=False`,
 `provider=native`); varsayılan/zorunlu YAPILMAZ. Yeni özelliklerde bulut API'sini varsayılan
 bağımlılık yapma → opt-in + native fallback şart. Bkz memory [[no-api-local-subscription-only]].
+
+### ⚠️ KRİTİK — WORKTREE ORPHAN HAZARD (git ANA repo'yu etkileyebilir)
+Bir oturumun cwd'si `.claude/worktrees/<ad>` GÖRÜNÜR ama GERÇEK worktree OLMAYABİLİR
+(pruned/orphan: `.git` yok, `git rev-parse --show-toplevel` ANA repo'yu verir, `.claude/worktrees`
+gitignore'da → dosyalar commit edilemez, git komutları ANA checkout'un dalını DEĞİŞTİRİR). Bu seans
+tam da bunu yaşadı (eşzamanlı oturumun parklı dalı koptu → kurtarıldı). **BAŞLARKEN
+`git rev-parse --show-toplevel` cwd'ni VERMİYORSA** gerçek izole worktree kur:
+`cd C:/Users/sevinc/Development/achilles && git worktree add "…/achilles-<iş>" -b <branch> origin/main`
+→ orada `uv sync --extra dev` + gate + commit + PR + `git worktree remove --force` + `git worktree
+prune`. Ana repo'da checkout-dance yapma; `git add -A`/`git clean` ASLA (WIP süpürür).
+Bkz [[worktree-orphan-hazard-2026-07-03]].
+
+### 🆕 EN SON İŞ (2026-07-03 devamı) — AJAN HARİTASI + 3 SÜREN GÖREV
+- **Ajan haritası backend (PR #96 MERGED):** `GET /api/agents/graph` — manifest'ten 24 ajanı
+  DÜĞÜM + kenar (chain akışı + veri-bağı "kim kimle ilişkili") + canlı status + main_agent=
+  orchestration-autodrive. Kullanıcının en baştan istediği "ışıklı yol" görselini besler; 6 test.
+- **3 GÖREV AYRI OTURUMLARDA SÜRÜYOR (ANA ortam):**
+  1. `task_3961a922` **Parça-1 veri hattı** — son kartsız makale + 5 pending kart onaya + 2 asılı
+     RLM temizliği + §16 RLM aday üretimi + dataset rebuild + GO/NO-GO raporu (eğitim YOK).
+  2. `task_699292d5` **Parça-2 LoRA eğitim** — orkestrasyon→Kademe-2 av→veri kapıları→TAZE insan
+     onayı→DETACHED eğitim→eval→registry ADAY (Kural-8 gated; production terfisi insan).
+  3. `task_ce6b1086` **Harita frontend** — 15·AJAN HARİTASI ışıklı-yol paneli (derli-toplu
+     sütun-lane layout; ⚡ EĞİTİMİ DEVREYE SOK = ana ajan → autodrive). Endpoint hazır.
+  Bkz [[agent-graph-map-2026-07-03]], [[ana-ortam-durumu-2026-07-03]].
 
 ### ▶️ SIRADAKİ ADIM — EĞİTİME HAZIRLIK (HANDOFF, ana ortamda yapılmalı)
 
