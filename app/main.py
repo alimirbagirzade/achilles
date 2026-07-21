@@ -1457,6 +1457,69 @@ def rag_scan(
         console.print("[yellow]Yeni aday yok (hepsi zaten izleme listesinde).[/yellow]")
 
 
+@app.command("lit-scan")
+def lit_scan(
+    topic: list[str] = typer.Option(
+        None,
+        "--topic",
+        "-t",
+        help="Konu paketi (rag|lora|rlm|math-physics). Tekrarlanabilir; boş → hepsi.",
+    ),
+    max_per_query: int = typer.Option(8, help="Sorgu başına maksimum arXiv sonucu (1-20)"),
+    min_score: int = typer.Option(2, help="Minimum heuristik alaka skoru (eşik)"),
+    top_n: int = typer.Option(3, help="Konu başına indirilecek en alakalı makale sayısı"),
+    download: bool = typer.Option(True, "--download/--no-download", help="PDF indirilsin mi"),
+) -> None:
+    """Literatür KEŞİF turu: LoRA/RAG/RLM/matematik-fizik adaylarını tara, indir, listele.
+
+    İndirilenler "gelen kutusu"na düşer (ACHILLES_SCOUT_INBOX_DIR; yoksa
+    data/literature_inbox/). **RAG'a ingest ETMEZ, eğitim BAŞLATMAZ** — bunlar SENDE
+    kalır (Kural 8). Claude/API kotası kullanmaz: yalnız arXiv + offline skor.
+    """
+    from app.research.literature_scout import TOPIC_PACKS, run_scout
+
+    try:
+        report = run_scout(
+            topics=topic or None,
+            max_per_query=max(1, min(max_per_query, 20)),
+            min_score=min_score,
+            top_n_download=top_n,
+            download=download,
+        )
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
+
+    if not report.found:
+        console.print("[yellow]Eşik üstü yeni aday bulunamadı (veya ağ erişimi yok).[/yellow]")
+        raise typer.Exit()
+
+    t = Table(title=f"Bulunan makaleler — {report.ran_at}")
+    t.add_column("Konu")
+    t.add_column("Skor")
+    t.add_column("arXiv")
+    t.add_column("Başlık")
+    t.add_column("Dosya")
+    for f in report.found:
+        t.add_row(
+            TOPIC_PACKS[f.topic].label.split(" /")[0],
+            str(f.candidate.score),
+            f.candidate.arxiv_id,
+            f.candidate.title[:52],
+            "✓ yeni" if f.downloaded else ("· var" if f.pdf_path else "—"),
+        )
+    console.print(t)
+    console.print(f"[green]Gelen kutusu:[/green] {report.inbox}")
+    console.print(f"[green]Bu turda indirilen:[/green] {report.downloaded_count}")
+    for k, v in sorted(report.watchlist_added.items()):
+        if v:
+            console.print(f"[cyan]{k}[/cyan] izleme defterine +{v} aday")
+    console.print(
+        "[yellow]Not:[/yellow] indirilenler yalnız ADAY. RAG'a alma ve eğitim sende "
+        "(Kural 8) — istediğini seç, kalanını sil."
+    )
+
+
 @app.command("profile")
 def oss_profile(
     as_json: bool = typer.Option(False, "--json", help="JSON formatında çıktı ver"),
