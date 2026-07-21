@@ -71,16 +71,71 @@ def driver_headers(env: dict[str, str] | None = None) -> dict[str, str]:
     return headers
 
 
+def auth_headers() -> dict[str, str]:
+    """Web API'sine gidecek kimlik başlıkları.
+
+    ``ACHILLES_API_TOKEN`` ayarlıysa proxy istekleri ``Authorization: Bearer ...``
+    ile imzalanır. Bu olmadan token açıkken TÜM MCP tool çağrıları 401 alırdı →
+    "token aç, MCP kırılsın / MCP çalışsın, kapı açık kalsın" kısır döngüsü.
+    Token boşsa (varsayılan yerel mod) başlık gönderilmez; web tarafı da doğrulamaz.
+
+    Ayar `.env` üzerinden de gelebildiği için önce ayarlar, sonra ham env okunur.
+    """
+    token = ""
+    try:
+        from app.config import get_settings
+
+        token = get_settings().api_token.strip()
+    except Exception:  # ayar katmanı yüklenemezse ham env'e düş
+        token = ""
+    if not token:
+        token = os.environ.get("ACHILLES_API_TOKEN", "").strip()
+    if token:
+        _warn_if_token_leaves_loopback()
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
+def _warn_if_token_leaves_loopback() -> None:
+    """``ACHILLES_WEB_URL`` loopback dışıysa stderr'e uyar (token o host'a gider).
+
+    Sert hata DEĞİL bilinçli olarak: token ayarlamanın amacı zaten ağa açmaktır ve
+    web sunucusu meşru biçimde başka bir makinede olabilir. Ama bearer token'ın
+    yabancı bir host'a gideceği sessiz kalmamalı — stdio MCP'de stderr güvenlidir
+    (protokol stdout'u kullanır).
+    """
+    from urllib.parse import urlparse
+
+    host = (urlparse(BASE_URL).hostname or "").lower()
+    if host not in {"127.0.0.1", "localhost", "::1", "[::1]"}:
+        print(
+            f"GÜVENLİK UYARISI: ACHILLES_WEB_URL loopback değil ({BASE_URL}) — "
+            "API token'ı bu host'a gönderilecek. Kasıtlı değilse ACHILLES_WEB_URL'i düzelt.",
+            file=sys.stderr,
+        )
+
+
 def build_mcp():
-    """Achilles OpenAPI'sinden FastMCP sunucusu kur (proxy → çalışan web)."""
+    """Achilles OpenAPI'sinden FastMCP sunucusu kur (proxy → çalışan web).
+
+    Spec, FastMCP'ye verilmeden ÖNCE ``allowlist.filter_spec`` ile budanır:
+    yalnız açıkça izin verilen salt-okuma uçları tool olur (varsayılan kapalı).
+    """
     import httpx
     from fastmcp import FastMCP
+    from mcp_server.allowlist import filter_spec
 
     from app.web.server import app as achilles_app
 
-    spec = achilles_app.openapi()  # in-process, güvenilir (65+ path)
-    # Sürücü başlıkları TÜM proxy isteklerine iliştirilir → scope sunucuda çözülür.
-    client = httpx.AsyncClient(base_url=BASE_URL, timeout=120.0, headers=driver_headers())
+    spec = filter_spec(achilles_app.openapi())  # varsayılan-kapalı budama
+    # Kimlik başlıkları: insan bearer token'ı + (varsa) sürücü kimliği.
+    # İkisi ÇAKIŞMAZ (farklı başlık adları) ve birlikte doğru davranırlar: bearer
+    # `require_auth`'u geçirir, sürücü başlığı ise `require_human` kapısında 403'e yol
+    # açar (Kural 8). Yani sürücü kimliği, insan sırrı sızsa BİLE yetki vermez.
+    client = httpx.AsyncClient(
+        base_url=BASE_URL,
+        timeout=120.0,
+        headers={**auth_headers(), **driver_headers()},
+    )
     return FastMCP.from_openapi(
         openapi_spec=spec,
         client=client,
@@ -88,7 +143,21 @@ def build_mcp():
     )
 
 
+def __getattr__(name: str):
+    """``mcp`` niteliğini TEMBEL kur (modül import'u yan etkisiz kalsın).
+
+    Önceden modül seviyesinde ``mcp = build_mcp()`` vardı: modülü sadece import etmek
+    tüm FastMCP sunucusunu kuruyor ve ``fastmcp``'yi zorunlu kılıyordu. Bu yüzden
+    ``auth_headers``'ı test etmek bile opsiyonel ``mcp`` extra'sını gerektiriyordu
+    (CI ``--extra dev`` ile kurduğu için `ModuleNotFoundError: fastmcp` veriyordu).
+
+    ``mcp`` niteliği hâlâ erişilebilir (``from mcp_server.achilles_mcp import mcp``)
+    — yalnız ilk erişimde kurulur. PEP 562 modül düzeyi ``__getattr__``.
+    """
+    if name == "mcp":
+        return build_mcp()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 if __name__ == "__main__":
-    # `mcp` modül düzeyinde KURULMAZ: içe aktarma `fastmcp` (opsiyonel `mcp` extra) ve
-    # tüm web uygulamasını gerektirir. Böylece `driver_headers` çevrimdışı test edilebilir.
     build_mcp().run()

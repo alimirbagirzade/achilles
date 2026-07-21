@@ -59,6 +59,10 @@ data/lora/approved/
 data/lora/review_needed/
 data/lora/rejected/
 data/lora_sft/*.jsonl
+# Echo feedback — KULLANICI DÜZELTME METNİ içerir (app/feedback/echo.py:237).
+# Diğer data/ alt dizinleri tek tek sayıldığı için bu atlanmıştı → kullanıcının
+# yazdığı metin sessizce commit'lenebilirdi. .gitkeep `!**/.gitkeep` ile korunur.
+data/feedback/*.jsonl
 outputs/
 checkpoints/
 adapters/

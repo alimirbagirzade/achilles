@@ -210,6 +210,28 @@ agents:
       - "sentez None → döngü kırılır"
       - "LLM çevrimdışı → reflection no-op"
 
+  - agent_id: literature-scout
+    name: Literatür Keşif Ajanı (LoRA/RAG/RLM/mat-fizik)
+    file: app/research/literature_scout.py
+    entrypoint: run_scout
+    trigger: "CLI `lit-scan` / scripts/install-literature-scout-task.ps1 (Task Scheduler, günlük)"
+    autonomy: semi_auto
+    dangerous: false
+    default_enabled: false
+    writes:
+      - "docs/egitim/<konu>-watchlist.md (rag|lora|rlm|math-physics)"
+      - "gelen kutusu: ACHILLES_SCOUT_INBOX_DIR (yoksa data/literature_inbox/) — PDF + BULUNANLAR.md"
+    reads:
+      - "arXiv (ağ, enjekte edilebilir searcher)"
+      - docs/egitim/rag-watchlist.md
+    safety_gates:
+      - "yalnız KEŞİF: indirir + listeler — RAG'a ingest YOK, eğitim YOK (Kural 8)"
+      - "LLM/API kotası kullanmaz (arXiv genel API + offline anahtar-kelime skoru)"
+      - "PDF doğrulaması (%PDF) — bozuk/HTML içerik diske yazılmaz"
+      - "idempotent: var olan dosya yeniden indirilmez, aday dedup edilir"
+      - "çevrimdışı-güvenli (ağ hatası → boş rapor, çökme yok)"
+    approval_required: false
+
   - agent_id: rag-trend-scanner
     name: RAG Trend Scanner
     file: app/research/rag_trend_scanner.py

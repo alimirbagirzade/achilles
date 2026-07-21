@@ -141,12 +141,24 @@ async def _lifespan(app: FastAPI):
     yield
 
 
+# Keşif yüzeyi: `/api/docs` ve `/api/openapi.json` FastAPI'nin yerleşik uçlarıdır ve
+# route-başına `api_auth` bağımlılığı ALMAZ → kimlik doğrulamasızdırlar. Yerel modda
+# (token boş) bu zararsız ve geliştirici için faydalıdır. Ama token ATANDIYSA amaç ağa
+# açmaktır; o modda kimliksiz bir istemcinin tüm route/şema envanterini okuyabilmesi
+# gereksiz bir keşif yüzeyidir → kapatılır.
+#
+# Kırılma riski yok (doğrulandı): web arayüzü bu uçlara hiç başvurmaz ve MCP sunucusu
+# spec'i HTTP'den değil IN-PROCESS üretir (`achilles_app.openapi()`).
+# NOT: bu bir derinlemesine-savunma önlemidir, erişim kontrolü DEĞİL — uçların kendisi
+# zaten `api_auth` ile korunur; şema gizlemek onları korumaz.
+_expose_schema = not _settings.api_token.strip()
+
 app = FastAPI(
     title="Achilles Trader AI",
     description="Yerel-öncelikli trading araştırma sistemi — web arayüzü.",
     version="0.1.0",
-    docs_url="/api/docs",
-    openapi_url="/api/openapi.json",
+    docs_url="/api/docs" if _expose_schema else None,
+    openapi_url="/api/openapi.json" if _expose_schema else None,
     lifespan=_lifespan,
 )
 
@@ -1640,10 +1652,18 @@ def api_cards_pending() -> PendingCardsResponse:
 
 
 @app.post(
-    "/api/card/{card_id}/approve", response_model=ApproveCardResponse, dependencies=[api_auth]
+    "/api/card/{card_id}/approve",
+    response_model=ApproveCardResponse,
+    dependencies=[api_auth, human_only],
 )
 def api_approve_card(card_id: str) -> ApproveCardResponse:
-    """Kartı onayla: review_status=approved, lora_eligible=1.
+    """Kartı onayla: review_status=approved, lora_eligible=1. YALNIZ insan scope'u.
+
+    Kart onayı `lora_eligible=1` yapar → doğrudan EĞİTİM KORPUSUNU besler. Kart korpus
+    kalitesi v5 gerilemesinin köküydü; motorun kendi eğitim verisini onaylaması bu
+    yüzden bir yetki kararıdır. (Web UI 06·ONAY akışı etkilenmez — başlıksız istekler
+    human scope'tur. `rag_learning_loop` süreç-içi `approve_card` çağırır, HTTP'den
+    geçmez → etkilenmez.)
 
     ``approve_card`` False dönerse İKİ ayrı sebep olabilir: (a) kart hiç yok, ya da
     (b) kart var ama içeriksiz/'...' placeholder (içerik guard'ı boş kartı eğitime
@@ -1667,9 +1687,15 @@ def api_approve_card(card_id: str) -> ApproveCardResponse:
     )
 
 
-@app.post("/api/card/{card_id}/reject", response_model=ApproveCardResponse, dependencies=[api_auth])
+@app.post(
+    "/api/card/{card_id}/reject",
+    response_model=ApproveCardResponse,
+    dependencies=[api_auth, human_only],
+)
 def api_reject_card(card_id: str) -> ApproveCardResponse:
-    """Kartı reddet: review_status=rejected, lora_eligible=0."""
+    """Kartı reddet: review_status=rejected, lora_eligible=0. YALNIZ insan scope'u.
+
+    Red de korpus üzerinde bir yetki kararıdır (motor rakip kanıtı eleyebilirdi)."""
     from app.memory.sqlite_store import SqliteStore
 
     ok = SqliteStore().reject_card(card_id)
@@ -1911,10 +1937,24 @@ def api_list_tasks(limit: int = 50, status: str | None = None, agent_id: str | N
 
 @app.post("/api/automation/tasks", dependencies=[api_auth])
 def api_create_task(
-    agent_id: str, title: str, description: str | None = None, requires_approval: bool = False
+    request: Request,
+    agent_id: str,
+    title: str,
+    description: str | None = None,
+    requires_approval: bool = False,
 ) -> dict:
-    """Yeni otomasyon görevi oluştur (pending)."""
+    """Yeni otomasyon görevi oluştur (pending).
+
+    ÖNLEYİCİ SERTLEŞTİRME: bugün bu kuyruğu tüketen bir executor YOK, dolayısıyla
+    görev yaratmak zararsızdır. Ama ileride bir executor eklenip `requires_approval=False`
+    görevleri otomatik koşarsa, sürücü kendine onaysız iş yazabilirdi. Bu yüzden
+    sürücü scope'u görev yaratabilir ama onay bayrağını DÜŞÜREMEZ — driver'ın açtığı
+    her görev `requires_approval=True` olur. (İnsan akışı değişmez.)
+    """
     from app.agents.runtime import task_queue
+
+    if security.resolve_scope(request) == "driver":
+        requires_approval = True
 
     t = task_queue.create_task(
         agent_id=agent_id,

@@ -22,6 +22,7 @@ _GROUP: dict[str, str] = {
     "arxiv-fetcher": "arastirma",
     "auto-researcher": "arastirma",
     "rag-trend-scanner": "arastirma",
+    "literature-scout": "arastirma",
     "makale-arastirma": "arastirma",
     "rag-learning-loop": "ogrenme",
     "ingestion-quality-scorer": "ogrenme",

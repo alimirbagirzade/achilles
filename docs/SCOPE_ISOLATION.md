@@ -143,6 +143,64 @@ anahtar ""ye ezilmiş -> ''                  # ← doğru
 **Düzeltme:** `build_child_env` anahtarı silmez, açıkça **boş string'e ezer** (env
 kaynağı pydantic-settings'te dotenv'den önceliklidir).
 
+## Achilles nerede ajan doğurur? (üç spawn noktası)
+
+Scope katmanı ilk turda yalnız AutoDriver'ı kapsıyordu; aynı tehdit sınıfındaki diğer
+iki spawn noktası kapsam dışı kalmıştı. Üçünün **bilinçli olarak farklı** rejimi var:
+
+| Spawn | İşi | Rejim |
+|-------|-----|-------|
+| `AutoDriver` (`app/orchestration/driver.py`) | Kademe-2 derin av — **salt okuma** | Tam kısıt: `--safe-mode` + `--strict-mcp-config` + `--disallowedTools` + sürücü token'ı |
+| `scripts/weekly-bug-scan.ps1` | Kademe-1 hafif tarama — **salt rapor** | Tam kısıt (aynı üç bayrak). Diff'i **script** hesaplar → ajana Bash gerekmez |
+| `scripts/rag-research-loop.ps1` | Makale entegrasyonu — **yazar, test koşar, push eder** | **Kuşatılamaz** (aşağıya bkz.); yalnız `--strict-mcp-config` + token hijyeni |
+
+`weekly-bug-scan.ps1`'de kısıt eskiden yalnız **prompt'taydı** ("DO NOT edit code, DO NOT
+run git"). Bu tarama commit diff'lerini okur → düşmanca bir commit içeriği ajanı
+yönlendirebilir (prompt-injection) ve Bash'iyle auth'suz `achilles approval-approve`
+çalıştırabilirdi. Artık kısıt **teknik**.
+
+### ⚠️ Kuşatılamayan ajan — `rag-research-loop.ps1`
+
+Bu ajanın işi kod entegre etmek, test koşmak ve **commit+push** etmektir;
+`Bash`/`Edit`/`Write` **işlevsel şarttır**. Dolayısıyla araç kısıtı **uygulanamaz** —
+uygulanırsa script'in işi biter.
+
+**Açıkça kabul edilen sonuç:** bu ajan `uv run achilles approval-approve` çalıştırıp
+**kendi eğitimini onaylayabilir.** Hiçbir bayrak bunu engellemez. Buraya sahte bir kısıt
+eklemek, bu dokümanın baştan beri reddettiği **overclaim** olurdu; bu yüzden eklenmedi
+ve bir test (`test_research_loop_does_not_claim_tool_restriction`) bu bilinçli farkı
+sabitler — ileride sessizce "sertleştirilmiş" sanılmasın.
+
+Gerçek kontroller:
+- **Ne okuduğu** — arXiv içeriği yutar, yani prompt-injection yüzeyi taşır.
+- **Çıktısının insan tarafından gözden geçirilmesi** (commit'leri incelenmeli).
+- `bypassPermissions` artık **gürültülü uyarı** basar (sessizce tam yetki almasın).
+- Bedava olan kapatıldı: `--strict-mcp-config` (işlevsel maliyeti yok).
+  `--safe-mode` **bilinçli olarak eklenmedi** — CLAUDE.md oto-keşfini ve skill'leri
+  kapatır, bu ajan ise tam olarak o proje konvansiyonlarına göre kod yazar.
+
+> Kural: bu döngüyü yalnız **güvendiğin içerikle** koştur.
+
+## Eğitim VERİSİNİ besleyen kararlar da insan-yalnız
+
+Yetki yalnız "eğitimi başlat" değildir — eğitim **verisini** belirleyen kararlar da
+yetkidir. Motor kendi korpusunu seçebilseydi, Kural-8'i hiç ihlal etmeden sonucu
+belirlerdi. Bu yüzden şunlar da `require_human` arkasında:
+
+| Uç | Neden |
+|----|-------|
+| `/api/card/{id}/approve` · `/reject` | `lora_eligible=1` yapar → korpusu besler. **Kart korpus kalitesi v5 gerilemesinin köküydü.** |
+| `/api/feedback/approve` · `/reject` · `/export` | Onaylanan düzeltme SFT adayı olur; export eğitim verisi **dosyası** üretir |
+
+`/api/automation/tasks` (görev yaratma) sürücüye **açık** kaldı — bugün bu kuyruğu tüketen
+bir executor yok, dolayısıyla zararsız. Ama önleyici olarak sürücünün açtığı görev
+**her zaman `requires_approval=True`** olur: ileride bir executor eklenirse motor kendine
+onaysız iş yazamaz.
+
+> `rag_learning_loop` kartları **süreç-içi** onaylar (`store.approve_card`), HTTP'den
+> geçmez → bu kapılardan etkilenmez. Otonom kart onayı hâlâ mümkündür; bu ayrı bir
+> yönetişim sorusudur, bu katmanın kapsamı değil.
+
 ## Dürüst sınır — neyi İDDİA ETMİYORUZ
 
 `api_token` **boşken** (şu anki varsayılan) bu katman **kriptografik bir sınır

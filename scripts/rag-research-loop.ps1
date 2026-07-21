@@ -106,7 +106,35 @@ function Invoke-IntegrateCycle {
     $log = New-LogPath
     $prompt = Get-Content -Raw -Encoding utf8 $PromptPath
     Write-Host "[$(Get-Date -Format o)] RAG entegrasyon turu basliyor -> $log"
-    & $claude.Source -p $prompt --permission-mode $PermissionMode *>> $log
+
+    # GUVENLIK -- bkz. docs/SCOPE_ISOLATION.md "Kusatilamayan ajan".
+    # Bu ajan TASARIM GEREGI guvenilirdir: isi kod entegre etmek, test kosmak, commit+push
+    # etmektir; Bash/Edit/Write ISLEVSEL SARTTIR. Bu yuzden AutoDriver'daki arac-kisiti
+    # (--disallowedTools) buraya UYGULANAMAZ -- uygulanirsa script'in isi biter.
+    #
+    # ACIKCA KABUL EDILEN SONUC: bu ajan `uv run achilles approval-approve` calistirip
+    # KENDI egitimini onaylayabilir. Hicbir bayrak bunu engellemez. Gercek kontrol,
+    # dongunun NE okudugu (arXiv icerigi = prompt-injection yuzeyi) ve ciktinin insan
+    # tarafindan gozden gecirilmesidir.
+    #
+    # Yine de bedava olan kapatilir: --strict-mcp-config => hic MCP sunucusu yuklenmez
+    # (`achilles` MCP proxy'si 127.0.0.1:8765'e ayri bir kanal aciyordu). Islevsel maliyet YOK.
+    # --safe-mode BILEREK eklenmedi: CLAUDE.md oto-kesfini ve skill'leri kapatir; bu ajan
+    # ise tam olarak o proje konvansiyonlarina gore kod yazar.
+    if ($PermissionMode -eq 'bypassPermissions') {
+        Write-Warning "bypassPermissions: ajan sorulmadan dosya yazar, komut kosar, push eder -- ve kendi egitimini onaylayabilir. Yalnizca guvendigin icerikle kos."
+    }
+
+    # Insan API token'ini cocuga sizdirma (bkz. app/orchestration/driver.py build_child_env).
+    # NOT: ajanin Read araci var, .env dosyasini okuyabilir -- bu TAM BIR SINIR DEGIL, hijyen.
+    $prevToken = $env:ACHILLES_API_TOKEN
+    $env:ACHILLES_API_TOKEN = ""
+    try {
+        & $claude.Source -p $prompt --permission-mode $PermissionMode --strict-mcp-config *>> $log
+    }
+    finally {
+        $env:ACHILLES_API_TOKEN = $prevToken
+    }
     $code = $LASTEXITCODE
     Write-Host "[$(Get-Date -Format o)] Entegrasyon bitti (exit=$code). Log: $log"
     return $code
