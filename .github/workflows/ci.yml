@@ -23,9 +23,12 @@ jobs:
           enable-cache: true
 
       # 'dev' extra includes the web deps (fastapi/httpx/...) so web tests run.
+      # 'mcp' extra (fastmcp) is required so the MCP tool-surface allow-list is
+      # actually exercised in CI — without it those tests skip and the guarantee
+      # that forbidden endpoints stay off the MCP surface goes unverified.
       # 'train' (mlx-lm) is Apple-Silicon only and is intentionally NOT installed.
       - name: Sync dependencies
-        run: uv sync --extra dev
+        run: uv sync --extra dev --extra mcp
 
       - name: Ruff lint
         run: uv run ruff check app tests
