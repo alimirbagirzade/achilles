@@ -38,6 +38,54 @@ gereksiz. ⚠️ **2026-07-28 spec'i stateless** — session/SSE/Sampling gidiyo
 bağımlılığı EKLEME.
 
 **Sıradaki:** P1 + P2 paralel başlatılabilir (bkz roadmap prompt'ları).
+## 🧹 GENEL TEMİZLİK — 2026-07-21 (PR #106 + #107, ikisi de MERGE EDİLMEDİ)
+
+Dört paralel salt-okuma tarama ajanı; **muhafazakâr** kriter (hiç import edilmiyor **+**
+test kapsamıyor **+** entry-point'ten erişilmiyor). Kullanıcı onayıyla uygulandı.
+
+**PR #106 — temizlik:** 17 ölü Python modülü (~1.865 satır) + 5 ölü prompt + 7 kullanılmayan
+bağımlılık (transitifle 20 paket) + 4 ölü config YAML + 4 artık script/dosya. 6 eskimiş
+doküman `docs/arsiv/` altına **taşındı** (silinmedi).
+
+**PR #107 — 3 gerçek hata** (temizlik değil, düzeltme):
+1. `make install` KIRIKTI — tanımsız `--extra web` (Makefile + update.sh + update.ps1 + README).
+   `|| true` ve `Out-Null` hatayı yuttuğu için görünmez kalmıştı.
+2. `mcp_server/` çalışmıyordu — `fastmcp` hiçbir bağımlılık dosyasında yoktu. `mcp` extra'sı
+   eklendi; `sync-mcp.sh` artık hatayı `2>/dev/null` ile yutmuyor.
+3. `cors_origins` SAHTE-GUARD'dı — ayar vardı, `CORSMiddleware` hiç kurulmamıştı. Artık
+   gerçekten kuruluyor + 2 regresyon testi.
+
+### ⚠️ DERS — "referans 0" iddiası test dizinini kaçırabilir
+`docs/PHASE4B_DRYRUN.md` + `PHASE4C_ACTIVATION.md` "referanssız" sanılıp arşivlenmişti;
+`tests/test_phase4b_*.py` / `test_phase4c_*.py` onları **yönetişim belgesi** olarak zorunlu
+kılıyor (auto-merge yasağı, rollback, insan onayı maddeleri). Test paketi yakaladı, geri alındı.
+**Doküman silmeden önce `tests/` içinde de ara.**
+
+### Git durumu (2026-07-21)
+- Uzakta artık yalnız `main` + 2 PR dalı. 12 dal silindi (6 merged + 4 içeriği main'de + 2 onaylı).
+- Stale ref uyarısı: `git branch -r` 62 dal gösteriyordu, `fetch --prune` sonrası gerçek sayı 13'tü.
+  **Dal sayımından önce `git fetch --prune` çalıştır.**
+- `git branch --no-merged` içerik değil **commit erişilebilirliği** ölçer — 6 "merge edilmemiş"
+  dalın 4'ünün içeriği `git cherry` + byte-diff ile main'de doğrulandı.
+- **ARŞİV ETİKETLERİ** (dal silindi, commit kalıcı korundu):
+  - `arsiv/salvage-system32-cpu-lora` → `b8220cb` (9 dosya/490 satır; `cpu_lora_train.py` 304
+    satır main'de yok — halefi `peft_lora_train.py`)
+  - `arsiv/local-claude-operator-dry-run` → `a9ebc2e` (95 satır doküman)
+- **ESKİ UYARI GEÇERSİZ:** `rag-chains-work` / `fix/rag-scoring-approval-cas` için "STRANDED,
+  auto-merge etme" notu artık geçerli değil — içerik main'de doğrulandı, dal silindi.
+- GitHub issue #1 KAPATILDI (kriterleri kodda doğrulandı). **#2 AÇIK BIRAKILDI** — kısmen
+  farklı isimlerle yapılmış (`SynthesisEngine` var ama `StructuredIndicatorGenerator` ve
+  `POST /api/research/synthesize` YOK); "tamamlandı" demek yanlış kayıt olurdu.
+
+### Bekleyen / dokunulmayan
+- **Worktree'ler kaldırılamadı** — çalışan `achilles-web` süreci `.venv` hardlink'lerini
+  kilitliyor (Windows açık dosyanın hardlink'ini silmiyor). Web'i durdurup tekrar dene.
+- *"Test var ama üretim yolu yok"* 6 dosya (~650 satır): `query_expander →
+  multi_query_retriever → self_refining_rag` zinciri, `hybrid_retriever`, `regression_runner`,
+  `ollama_installer`. Muhafazakâr kriteri sağlamadıkları için DOKUNULMADI.
+- `reports/bug-scan/` `.gitignore`'da DEĞİL ama tüm komşu rapor dizinleri ignore'lu;
+  `weekly-bug-scan.ps1` haftalık üretiyor → repoya birikiyor. Karar bekliyor.
+- `pyarrow` kodda hiç import edilmiyor ama chromadb transitif isteyebilir → bırakıldı.
 
 ---
 

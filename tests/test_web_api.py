@@ -664,3 +664,20 @@ def test_list_risk_reports_endpoint(client: TestClient) -> None:
     rec = next((x for x in body["reports"] if x["backtest_id"] == bt_id), None)
     assert rec is not None
     assert rec["report_id"] == f"rr_{bt_id}"
+
+
+def test_cors_allows_configured_origin(client: TestClient) -> None:
+    """İzinli origin CORS başlığı almalı.
+
+    Regresyon: ``cors_origins`` ayarı vardı ama ``CORSMiddleware`` hiç kurulmamıştı —
+    ayar sahte bir güvenlik güvencesi veriyordu (bkz. temizlik taraması 2026-07-21).
+    """
+    r = client.get("/api/status", headers={"Origin": "http://127.0.0.1:8765"})
+    assert r.status_code == 200
+    assert r.headers.get("access-control-allow-origin") == "http://127.0.0.1:8765"
+
+
+def test_cors_rejects_foreign_origin(client: TestClient) -> None:
+    """İzinsiz origin için izin başlığı DÖNMEMELİ (tarayıcı çapraz-origin okumayı bloklar)."""
+    r = client.get("/api/status", headers={"Origin": "http://evil.example.com"})
+    assert "access-control-allow-origin" not in {k.lower() for k in r.headers}

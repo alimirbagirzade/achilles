@@ -9,6 +9,7 @@ Ağ/Ollama gerektirmez. Backend grafik zaten `test_agent_graph.py`'de test'li.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 _STATIC = Path(__file__).resolve().parents[1] / "app" / "web" / "static"
@@ -42,7 +43,9 @@ def test_tab_and_panel_present() -> None:
     html = _index()
     assert 'data-tab="agentmap"' in html
     assert 'id="panel-agentmap"' in html
-    assert ">15</span> · AJAN HARİTASI" in html
+    # Sekme NUMARASINA pinleme yapma: sekme eklenip çıkarıldıkça numara kayar
+    # (11 · RLM kaldırılınca 15 → 14 oldu). Etiket sabit, numara değil.
+    assert re.search(r'<span class="tab-num">\d+</span> · AJAN HARİTASI', html)
 
 
 def test_panel_has_all_sections() -> None:
@@ -127,6 +130,43 @@ def test_js_card_layout_structure() -> None:
     # ana ajan şeritlerden çıkarılıp alt butona alınır + tıkla → ⚡ tetik
     assert "if (n.is_main)" in js
     assert 'closest(".am-mainbar")' in js and "amTriggerTraining()" in js
+
+
+def test_js_running_orbit_and_linked() -> None:
+    """Çalışan ajan = kart etrafında GEZEN LED; ona bağlı komşular = 'ilişkili' çerçeve."""
+    js = _appjs()
+    # LED halkası bir <path> üzerinde döner (pathLength=100 → kart boyutundan bağımsız)
+    assert "amRoundRectPath" in js
+    assert "am-card-orbit" in js and "am-mainbar-orbit" in js
+    assert 'pathLength="100"' in js
+    # "ilişkili" küme kenarlardan (aktivasyon yolları dahil, DOM'dan) hesaplanır
+    assert "am-linked" in js
+    seg = js[js.index("function amApplyStatus") : js.index("function amUpdateStatusLine")]
+    assert "linked" in seg
+    assert 'querySelectorAll(".am-edge")' in seg  # sentetik aktivasyon yolları da sayılsın
+    assert 'status === "running"' in seg
+
+
+def test_css_running_orbit_and_linked() -> None:
+    css = _appcss()
+    # gezen LED: yalnız çalışırken görünür + dönen dash + parıltı
+    assert ".am-node.status-running .am-card-orbit" in css
+    assert ".am-mainbar.status-running .am-mainbar-orbit" in css
+    assert "@keyframes am-orbit" in css
+    # parıltı iki-stroke ile (geniş yarı-saydam hale + ince LED)
+    assert ".am-node.status-running .am-card-orbit-glow" in css
+    # TERCİH KAPISI: animasyonlu LED'lerde kare-başı filtre rasterizasyonundan kaçınılır
+    # (GPU'suz + eşzamanlı CPU-only eğitim) → parıltı iki-stroke ile yapılmalı, filter ile değil.
+    # Yorumlar ayıklanır (gerekçe metninin kendisi "drop-shadow" kelimesini içeriyor).
+    import re
+
+    seg = re.sub(r"/\*.*?\*/", "", css[css.index('/* ── "GEZEN LED"') :], flags=re.S)
+    assert "drop-shadow" not in seg, "animasyonlu LED'lerde filtre yerine iki-stroke kullan"
+    # ilişkili komşu çerçevesi
+    assert ".am-node.am-linked .am-card" in css
+    # erişilebilirlik: hareket azaltılınca dönmesin ama "devrede" bilgisi kalsın
+    seg = css[css.index("@media (prefers-reduced-motion: reduce)", css.index(".am-card-orbit")) :]
+    assert "am-card-orbit" in seg
 
 
 def test_css_light_path_and_status_colors() -> None:
