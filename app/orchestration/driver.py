@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -23,6 +24,7 @@ from collections.abc import Callable
 from typing import Any
 
 from app.orchestration.orchestrator import TrainingOrchestrator
+from app.web import driver_scope
 
 log = logging.getLogger(__name__)
 
@@ -30,8 +32,24 @@ log = logging.getLogger(__name__)
 _VERDICT_RE = re.compile(r"ACHILLES_HUNT_VERDICT:\s*(PASS|FAIL)", re.IGNORECASE)
 HUNT_TIMEOUT_S = 1800  # 30 dk — CPU'da derin av uzun sürebilir.
 
-# runner sözleşmesi: (command, timeout_s) -> (returncode, combined_output)
-Runner = Callable[[list[str], int], tuple[int, str]]
+# Doğurulan motorun YASAKLI araçları. Derin av SALT-OKUMADIR (Read/Grep/Glob yeter).
+# Bu, prompt'taki "kod değiştirme / eğitim başlatma" talimatını TEKNİK olarak zorunlu
+# kılar — prompt talimatı güvenlik sınırı DEĞİLDİR (RAG'e alınan bir makale/kart
+# içeriği prompt-injection ile motoru yönlendirebilir).
+#
+# Bu kısıt olmadan scope katmanı TİYATRODUR: Bash'i olan bir motor HTTP'yi tamamen
+# atlayıp `uv run achilles approval-approve <id>` / `clear-stop-all` çalıştırabilir —
+# bu CLI komutları hiçbir kimlik doğrulamasından geçmez (denetim BLOCKER bulgusu).
+DISALLOWED_TOOLS = ("Bash", "Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch")
+
+# Çocuğa GEÇİRİLMEYECEK insan sırları. NOT: anahtarı silmek YETMEZ — Settings
+# `env_file=".env"` kullandığı için silinen anahtar dotenv'den geri okunur
+# (deneyle doğrulandı). Bu yüzden anahtar açıkça BOŞ STRING'e ezilir; env kaynağı
+# pydantic-settings'te dotenv'den önceliklidir.
+_HUMAN_SECRET_ENV = ("ACHILLES_API_TOKEN",)
+
+# runner sözleşmesi: (command, timeout_s, env) -> (returncode, combined_output)
+Runner = Callable[..., tuple[int, str]]
 
 
 def build_hunt_prompt(run: dict[str, Any]) -> str:
@@ -52,8 +70,31 @@ def build_hunt_prompt(run: dict[str, Any]) -> str:
 
 
 def build_hunt_command(run: dict[str, Any]) -> list[str]:
-    """`claude -p <prompt>` argv'si (shell yok → enjeksiyon yok; prompt sabit şablon)."""
-    return ["claude", "-p", build_hunt_prompt(run)]
+    """`claude -p <prompt>` argv'si (shell yok → enjeksiyon yok; prompt sabit şablon).
+
+    ``--disallowedTools`` ile motor araç-seviyesinde kısıtlanır: Bash/Write olmadan
+    ne yerel CLI'yi (auth'suz `approval-approve`) çalıştırabilir ne de dosya yazabilir.
+    """
+    return [
+        "claude",
+        "-p",
+        build_hunt_prompt(run),
+        "--disallowedTools",
+        ",".join(DISALLOWED_TOOLS),
+    ]
+
+
+def build_child_env(token: str, run_id: str) -> dict[str, str]:
+    """Doğurulan motorun ortamı: insan sırları BOŞA ezilir, sürücü kimliği eklenir.
+
+    Anahtarı ``del`` etmek yerine boş string'e ezmek ZORUNLU — bkz. ``_HUMAN_SECRET_ENV``.
+    """
+    env = dict(os.environ)
+    for key in _HUMAN_SECRET_ENV:
+        env[key] = ""
+    env[driver_scope.DRIVER_TOKEN_ENV] = token
+    env[driver_scope.DRIVER_RUN_ID_ENV] = run_id
+    return env
 
 
 def parse_hunt_verdict(output: str) -> dict[str, Any]:
@@ -78,9 +119,14 @@ def claude_available() -> bool:
     return shutil.which("claude") is not None
 
 
-def _default_runner(command: list[str], timeout: int) -> tuple[int, str]:
+def _default_runner(
+    command: list[str], timeout: int, env: dict[str, str] | None = None
+) -> tuple[int, str]:
     # shell=False + argv listesi → kabuk enjeksiyonu yok. Çıktı (stdout+stderr) birleşik.
-    proc = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
+    # env: insan sırları temizlenmiş + sürücü kimliği eklenmiş ortam (build_child_env).
+    proc = subprocess.run(
+        command, capture_output=True, text=True, timeout=timeout, check=False, env=env
+    )
     return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
 
 
@@ -151,12 +197,17 @@ class AutoDriver:
         self.orch.store.add_event(
             run_id, "deep-hunt", "info", "Otonom sürüş: claude -p ile Kademe-2 derin av başladı."
         )
+        # Sürücü kimliği: bu koşuya bağlı, kısa ömürlü token. Motor bununla insan-yalnız
+        # uçlarda 403 alır (Kural 8). Koşu bitince `finally` ile MUTLAKA iptal edilir.
+        token = driver_scope.mint(run_id)
         try:
-            _rc, output = run_fn(command, timeout)
+            _rc, output = run_fn(command, timeout, build_child_env(token, run_id))
         except Exception as exc:  # spawn/timeout — koşuyu çökertme, deep-hunt bloklu kalır
             log.exception("AutoDriver: claude -p çalıştırılamadı")
             self.orch.store.add_event(run_id, "deep-hunt", "error", f"Otonom sürüş hatası: {exc}")
             return {"ok": False, "reason": f"claude -p çalıştırılamadı: {exc}", "command": command}
+        finally:
+            driver_scope.revoke_run(run_id)
 
         verdict = parse_hunt_verdict(output)
         if not verdict["passed"]:

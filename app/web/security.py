@@ -15,16 +15,21 @@ regex ile ayrıştırılır (bkz. trading/strategy_ir.py).
 
 from __future__ import annotations
 
+import logging
 import re
 import secrets
 import time
 import unicodedata
 from collections import defaultdict, deque
 from pathlib import Path
+from typing import Literal
 
 from fastapi import HTTPException, Request, status
 
 from app.config import get_settings
+from app.web import driver_scope
+
+log = logging.getLogger(__name__)
 
 # --- Sabitler ---
 _PDF_MAGIC = b"%PDF-"
@@ -81,6 +86,68 @@ def require_auth(request: Request) -> None:
             detail="Geçersiz veya eksik API token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+
+# --- Scope (kimlik seviyesi): human vs driver ---
+Scope = Literal["human", "driver"]
+
+
+def resolve_scope(request: Request) -> Scope:
+    """İsteğin kimlik seviyesini çöz: ``"human"`` (UI/CLI) veya ``"driver"`` (motor).
+
+    - ``X-Achilles-Driver-Token`` başlığı VARSA doğrulanır; geçersiz/süresi dolmuş ya
+      da ``X-Achilles-Run-Id`` ile eşleşmiyorsa **401** atılır — sessizce ``human``'a
+      DÜŞÜLMEZ (aksi halde geçersiz token göndermek yetki yükseltmesi olurdu).
+    - Başlık yoksa ``human``.
+    """
+    raw = request.headers.get(driver_scope.DRIVER_TOKEN_HEADER, "").strip()
+    if not raw:
+        return "human"
+
+    claimed_run = request.headers.get(driver_scope.RUN_ID_HEADER, "").strip() or None
+    if driver_scope.verify(raw, run_id=claimed_run) is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=(
+                "Geçersiz, süresi dolmuş veya koşuyla eşleşmeyen sürücü token'ı. "
+                "Sürücü token'ı yalnız bağlı olduğu run_id ile kullanılabilir."
+            ),
+        )
+    return "driver"
+
+
+def require_human(request: Request) -> None:
+    """İnsan-yalnız uçlar için kapı: ``driver`` scope **403** alır (CLAUDE.md Kural 8).
+
+    Achilles kendi motorunu doğurduğu için (``app/orchestration/driver.py``), motorun
+    kendi eğitimini onaylaması / kill-switch'i temizlemesi engellenmelidir. Bu kapı
+    yetki kararlarını insana saklar.
+    """
+    if resolve_scope(request) == "driver":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Bu uç yalnız insan (human) scope'una açıktır. Sürücü (driver) motoru "
+                "onay veremez, STOP_ALL temizleyemez ve eğitim başlatamaz (Kural 8)."
+            ),
+        )
+
+
+def warn_if_auth_disabled() -> bool:
+    """``api_token`` boşsa GÜRÜLTÜLÜ uyarı logla. Auth açıksa ``True`` döner.
+
+    Sessiz "auth kapalı" durumu, sürücü izolasyonunun neden kriptografik bir sınır
+    olmadığının da temel sebebidir → başlangıçta açıkça görünür olmalı.
+    """
+    if get_settings().api_token.strip():
+        return True
+    log.warning(
+        "GÜVENLİK: ACHILLES_API_TOKEN BOŞ — API kimlik doğrulaması KAPALI. "
+        "Sunucuya erişebilen her yerel süreç insan yetkisiyle istek atabilir; "
+        "sürücü (driver) scope izolasyonu bu modda yalnız DERİNLEMESİNE SAVUNMADIR, "
+        "kriptografik sınır DEĞİLDİR. Gerçek sınır için ACHILLES_API_TOKEN ata."
+    )
+    return False
 
 
 # --- Hız sınırı (bellekte, IP başına kayan pencere) ---
