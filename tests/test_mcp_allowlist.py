@@ -136,6 +136,54 @@ def test_hicbir_human_only_route_allowlist_te_degil() -> None:
     assert not sizanlar, f"İNSAN-YALNIZ uç allow-list'te: {sizanlar}"
 
 
+# --- Gerçek FastMCP sunucusu (uçtan uca) -----------------------------------------
+
+
+@pytest.mark.anyio
+async def test_gercek_mcp_sunucusu_yalniz_izinli_toollari_sunar() -> None:
+    """Spec budamayı değil, KURULAN FastMCP sunucusunun tool listesini doğrula.
+
+    Budama testleri sözlük seviyesindedir; bu test FastMCP'nin spec'i gerçekten
+    beklediğimiz gibi yorumladığını kanıtlar (sürüm yükseltmesinde regresyon yakalar).
+    """
+    pytest.importorskip("fastmcp", reason="opsiyonel 'mcp' extra kurulu değil")
+    from fastmcp import Client
+    from mcp_server.achilles_mcp import build_mcp
+
+    async with Client(build_mcp()) as client:
+        tools = await client.list_tools()
+
+    assert len(tools) == len(allowlist.ALLOWED), (
+        f"Tool sayısı allow-list ile uyuşmuyor: {len(tools)} != {len(allowlist.ALLOWED)}"
+    )
+    # Yasak uçlara ait ayırt edici belirteçler hiçbir tool adında geçmemeli.
+    # NOT: "approve"/"reject" BİLEREK yok — meşru salt-okuma ucu
+    # `/api/cards/approved` bunları içerir (ilk denemede yanlış-pozitif verdi).
+    # Buradaki belirteçler yalnız yazma/tetikleme uçlarında oluşabilir.
+    adlar = " ".join(t.name for t in tools).lower()
+    for yasak in ("stop_all", "training_run", "autodrive", "promote", "clear_stop"):
+        assert yasak not in adlar, f"Yasak uç tool adında görünüyor: {yasak}"
+
+
+def test_modul_importu_fastmcp_gerektirmez() -> None:
+    """`achilles_mcp` import'u yan etkisiz olmalı (sunucu kurmaz, fastmcp istemez).
+
+    Regresyon kilidi: modül seviyesinde `mcp = build_mcp()` vardı; modülü import
+    etmek tüm sunucuyu kuruyor ve opsiyonel `fastmcp`'yi zorunlu yapıyordu → CI
+    (`--extra dev`) toplama aşamasında ModuleNotFoundError ile düşüyordu.
+    """
+    import subprocess
+    import sys
+
+    code = (
+        "import sys; import mcp_server.achilles_mcp as m; "
+        "assert 'fastmcp' not in sys.modules, 'import fastmcp yükledi'; "
+        "assert m.auth_headers() is not None"
+    )
+    res = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=300)
+    assert res.returncode == 0, f"yan etkisiz import bozuldu:\n{res.stderr[-1500:]}"
+
+
 # --- Token iletimi ---------------------------------------------------------------
 
 

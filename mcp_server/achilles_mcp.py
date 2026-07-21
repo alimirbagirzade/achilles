@@ -106,8 +106,21 @@ def build_mcp():
     )
 
 
-mcp = build_mcp()
+def __getattr__(name: str):
+    """``mcp`` niteliğini TEMBEL kur (modül import'u yan etkisiz kalsın).
+
+    Önceden modül seviyesinde ``mcp = build_mcp()`` vardı: modülü sadece import etmek
+    tüm FastMCP sunucusunu kuruyor ve ``fastmcp``'yi zorunlu kılıyordu. Bu yüzden
+    ``auth_headers``'ı test etmek bile opsiyonel ``mcp`` extra'sını gerektiriyordu
+    (CI ``--extra dev`` ile kurduğu için `ModuleNotFoundError: fastmcp` veriyordu).
+
+    ``mcp`` niteliği hâlâ erişilebilir (``from mcp_server.achilles_mcp import mcp``)
+    — yalnız ilk erişimde kurulur. PEP 562 modül düzeyi ``__getattr__``.
+    """
+    if name == "mcp":
+        return build_mcp()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 if __name__ == "__main__":
-    mcp.run()
+    build_mcp().run()
