@@ -4377,6 +4377,21 @@
     return { pos: pos, lanes: laneMeta, mainBar: mainBar, roots: roots, W: W, H: H };
   }
 
+  // Yuvarlatılmış dikdörtgen YOLU (path) — "gezen LED" halkası bunun üstünde döner.
+  // <path> kullanılır (<rect> değil): pathLength her tarayıcıda path'te güvenilir çalışır →
+  // dash birimleri %0-100'e normalize olur, kart boyutundan BAĞIMSIZ animasyon.
+  function amRoundRectPath(x, y, w, h, r) {
+    var x2 = x + w,
+      y2 = y + h;
+    return (
+      "M" + (x + r) + " " + y +
+      " H" + (x2 - r) + " A" + r + " " + r + " 0 0 1 " + x2 + " " + (y + r) +
+      " V" + (y2 - r) + " A" + r + " " + r + " 0 0 1 " + (x2 - r) + " " + y2 +
+      " H" + (x + r) + " A" + r + " " + r + " 0 0 1 " + x + " " + (y2 - r) +
+      " V" + (y + r) + " A" + r + " " + r + " 0 0 1 " + (x + r) + " " + y + " Z"
+    );
+  }
+
   // Dik-açılı (ortogonal) yol: aşağı → yatay → aşağı (baskın akış yönü). Aynı satırda yan-yana.
   function amOrthPath(a, b) {
     if (Math.abs(a.cy - b.cy) < 6) {
@@ -4466,6 +4481,11 @@
         '<rect class="am-card-edge" x="' + p.x + '" y="' + (p.y + 3) + '" width="5" height="' +
           (p.h - 6) + '" rx="2" />'
       );
+      // "gezen LED" halkası — yalnız çalışırken görünür (CSS), kartın çevresinde döner.
+      // İki katman: geniş yarı-saydam hale + ince parlak LED (filtresiz → ucuz render).
+      var orbitD = amRoundRectPath(p.x, p.y, p.w, p.h, 7);
+      out.push('<path class="am-card-orbit-glow" pathLength="100" d="' + orbitD + '" />');
+      out.push('<path class="am-card-orbit" pathLength="100" d="' + orbitD + '" />');
       out.push(
         '<text class="am-card-label" x="' + (p.x + 16) + '" y="' + p.cy.toFixed(1) + '">' +
           esc(amShort(n.name || n.id, 17)) + "</text>"
@@ -4485,6 +4505,10 @@
         '<rect class="am-mainbar-box" x="' + mb.x + '" y="' + mb.y + '" width="' + mb.w +
           '" height="' + mb.h + '" rx="12" />'
       );
+      // ana ajan çalışırken butonun çevresinde dönen beyaz LED'ler (hale + LED, filtresiz)
+      var mOrbitD = amRoundRectPath(mb.x, mb.y, mb.w, mb.h, 12);
+      out.push('<path class="am-mainbar-orbit-glow" pathLength="100" d="' + mOrbitD + '" />');
+      out.push('<path class="am-mainbar-orbit" pathLength="100" d="' + mOrbitD + '" />');
       out.push(
         '<text class="am-mainbar-label" x="' + mb.cx + '" y="' + mb.cy.toFixed(1) + '">' +
           "⚡ EĞİTİMİ DEVREYE SOK · " + esc(amShort(mn.name || mn.id, 26)) + "</text>"
@@ -4502,19 +4526,35 @@
     (data.nodes || []).forEach(function (n) {
       byId[n.id] = n;
     });
+    // "İLİŞKİLİ" küme: çalışan bir ajana kenarla bağlı komşular → o an hangi ajanların
+    // birbiriyle iş gördüğü tek bakışta anlaşılsın (çalışan = gezen LED, komşu = ışıklı çerçeve).
+    // Kenarlar DOM'dan okunur: böylece sentetik aktivasyon yolları (ana ajan → kökler) de sayılır.
+    var linked = {};
+    canvas.querySelectorAll(".am-edge").forEach(function (ln) {
+      var f = ln.getAttribute("data-from"),
+        t = ln.getAttribute("data-to");
+      var a = byId[f],
+        b = byId[t];
+      if (a && a.status === "running") linked[t] = true;
+      if (b && b.status === "running") linked[f] = true;
+    });
     canvas.querySelectorAll(".am-node").forEach(function (g) {
       var id = g.getAttribute("data-id");
       var n = byId[id];
       g.classList.remove("status-idle", "status-running", "status-blocked", "status-error");
       g.classList.add(amStatusClass(n || { status: "idle" }));
       g.classList.toggle("am-selected", id === amSelectedId);
+      // çalışanın kendisi zaten LED'li; komşuysa "ilişkili" parıltısı al
+      g.classList.toggle("am-linked", !!linked[id] && !(n && n.status === "running"));
     });
     // Ana ajan alt butonu: durum sınıfı + etiketi canlı tut.
     var mainG = canvas.querySelector(".am-mainbar");
     if (mainG) {
-      var mn = byId[mainG.getAttribute("data-id")];
+      var mainId = mainG.getAttribute("data-id");
+      var mn = byId[mainId];
       mainG.classList.remove("status-idle", "status-running", "status-blocked", "status-error");
       mainG.classList.add(amStatusClass(mn || { status: "idle" }));
+      mainG.classList.toggle("am-linked", !!linked[mainId] && !(mn && mn.status === "running"));
       var lbl = mainG.querySelector(".am-mainbar-label");
       if (lbl && mn) {
         lbl.textContent =
