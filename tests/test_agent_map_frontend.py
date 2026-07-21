@@ -89,17 +89,198 @@ def test_js_uses_only_readonly_and_orchestration_endpoints() -> None:
         assert token in js, f"app.js eksik uç: {token}"
 
 
-def test_trigger_confirms_before_execute() -> None:
-    """⚡ tetik gerçek `claude -p` (execute:true) spawn'ından ÖNCE confirm() ister (Kural 8)."""
+def _trigger_seg() -> str:
+    """`amTriggerTraining` gövdesi (tetik akışının statik denetimi için)."""
     js = _appjs()
     h = js.index("function amTriggerTraining")
-    seg = js[h : js.index("function loadAgentMap")]
-    assert "window.confirm(" in seg
-    # confirm, autodrive POST'undan ÖNCE gelmeli ve execute değeri confirm sonucu (go) olmalı.
-    assert seg.index("window.confirm(") < seg.index("/orchestration/autodrive/")
+    return js[h : js.index("function loadAgentMap")]
+
+
+def test_trigger_confirms_before_execute() -> None:
+    """⚡ tetik, gerçek spawn'dan (execute:true) ÖNCE onay diyaloğunu AÇAR (Kural 8).
+
+    `window.confirm` yerine gerçek bir modal kullanılır: diyalogda hangi motorun koşacağı
+    ve abonelik kotası uyarısı GÖSTERİLEBİLSİN diye (düz confirm metin kutusu buna elverişsiz).
+    Güvenlik sözleşmesi aynı, hatta daha güçlü: `execute` değeri diyaloğun çözümüdür.
+    """
+    seg = _trigger_seg()
+    assert "amConfirmOpen(" in seg
+    # Diyalog, autodrive POST'undan ÖNCE açılmalı ve execute değeri onun sonucu (go) olmalı.
+    assert seg.index("amConfirmOpen(") < seg.index("/orchestration/autodrive/")
     assert "execute: go" in seg
     # DRY-RUN yolu: onaylanmazsa komut gösterilir (spawn yok).
     assert "amShowDryRun" in seg
+
+
+def test_agentmap_trigger_never_hardcodes_execute_true() -> None:
+    """⚡ tetikte sabit `execute: true` YOK — tek yol onay diyaloğunun sonucudur (`go`).
+
+    Tek-tıkla geri alınamaz iş başlamasın diye: diyalog atlanamaz olmalı, yani `execute`
+    değeri bu akışta diyalogdan bağımsız olarak `true` yazılamamalı.
+    """
+    seg = _trigger_seg()
+    for bad in ("execute: true", "execute:true", '"execute": true'):
+        assert bad not in seg, f"onay atlanabilir: sabit {bad!r} bulundu"
+
+
+def test_every_execute_true_site_is_human_gated() -> None:
+    """app.js'teki HER `execute:true` çağrısı bir insan kapısının ARDINDA olmalı.
+
+    ⚡ butonu tek başına yeterli değil: 12·ORKESTRASYON sekmesinde de bir otonom-sürüş
+    tetiği var. Gerçek spawn'a giden HİÇBİR yol kapısız kalmamalı — bu test yeni bir
+    tetik eklendiğinde (kapı unutulursa) patlar.
+    """
+    import re
+
+    # Yorum satırlarını at: açıklama metinlerinde geçen "execute:true" ifadesi bir çağrı
+    # DEĞİLDİR (aksi halde test kendi dokümantasyonuna takılır).
+    js = re.sub(r"^\s*//.*$", "", _appjs(), flags=re.MULTILINE)
+    gates = ("window.confirm(", "amConfirmOpen(")
+    for m in re.finditer(r"execute:\s*true", js):
+        # Çağrıdan geriye doğru makul bir pencerede insan kapısı aranır.
+        window = js[max(0, m.start() - 1200) : m.start()]
+        assert any(g in window for g in gates), (
+            f"kapısız spawn yolu: konum {m.start()} — execute:true öncesinde "
+            "confirm/onay diyaloğu yok"
+        )
+
+
+def test_confirm_dialog_shows_engine_quota_and_safety() -> None:
+    """Onay diyaloğu AÇIKÇA gösterir: hangi motor, kota uyarısı, 'eğitim başlamaz' güvencesi."""
+    html = _index()
+    # Modal panel DIŞINDA durur (paneller display:none ile gizlenir) → index sonundan bak.
+    seg = html[html.index('id="amConfirmModal"') :]
+    # üç zorunlu bilgi alanı
+    for el_id in ("amConfirmEngine", "amConfirmQuota", "amConfirmSafe"):
+        assert f'id="{el_id}"' in seg, f"onay diyaloğunda eksik alan: {el_id}"
+    # "eğitim BAŞLAMAZ + taze insan onayında durur" güvencesi metinde geçmeli
+    assert "Eğitim BAŞLAMAZ" in seg
+    assert "onay" in seg and "DURUR" in seg
+    # motor/kota alanları JS'te doldurulur
+    js = _appjs()
+    assert "quota_warning" in js
+
+
+# ── REGRESYON: kazara spawn (geliştirme sırasında FİİLEN yaşandı) ────────────
+# Canlı doğrulamada ⚡ diyaloğu, "başlat" butonu ODAKLANMIŞ olduğu için hiç bilinçli
+# tıklama olmadan çözüldü ve 5 gerçek `claude -p` süreci doğdu (abonelik kotası yandı).
+# Aşağıdaki dört test o üç savunmayı da sabitler; biri kalkarsa CI patlar.
+def test_confirm_never_autofocuses_destructive_button() -> None:
+    """Yıkıcı butona ODAK VERİLMEZ — odaklı buton tek Enter'la motor doğurur."""
+    js = _appjs()
+    h = js.index("function amConfirmOpen")
+    seg = js[h : js.index("function amConfirmClose")]
+    assert "amConfirmGoBtn" in seg  # buton yine de kilitlenmek için bulunur
+    assert 'getElementById("amConfirmCancelBtn")' in seg and "cancel.focus()" in seg
+    # "başlat" butonuna odak VERİLMEMELİ
+    assert "go.focus()" not in seg
+
+
+def test_confirm_requires_explicit_acknowledgement() -> None:
+    """Başlat butonu, onay kutusu işaretlenmeden AÇILMAZ (iki bilinçli hareket)."""
+    html = _index()
+    seg = html[html.index('id="amConfirmModal"') :]
+    assert 'id="amConfirmAck"' in seg, "onay kutusu yok"
+    # buton HTML'de varsayılan olarak devre dışı (fail-closed)
+    go_idx = seg.index('id="amConfirmGoBtn"')
+    assert "disabled" in seg[go_idx : go_idx + 200], "başlat butonu varsayılan kilitli olmalı"
+    js = _appjs()
+    h = js.index("function amWireConfirm")
+    wire = js[h : js.index("function amSetLive")]
+    assert "go.disabled = !ack.checked" in wire
+
+
+def test_confirm_go_rejects_untrusted_and_unacked_events() -> None:
+    """Başlat: kilit açık + kutu işaretli + GERÇEK kullanıcı olayı — üçü birden şart."""
+    js = _appjs()
+    h = js.index("function amWireConfirm")
+    wire = js[h : js.index("function amSetLive")]
+    assert "if (go.disabled) return;" in wire
+    assert "!ack.checked" in wire
+    assert "ev.isTrusted === false" in wire
+
+
+def test_confirm_resets_acknowledgement_on_open() -> None:
+    """Diyalog her açılışta sıfırlanır — önceki işaret bir sonrakini açmasın."""
+    js = _appjs()
+    h = js.index("function amConfirmOpen")
+    seg = js[h : js.index("function amConfirmClose")]
+    assert "ack.checked = false" in seg
+    assert "go.disabled = true" in seg
+
+
+def test_trigger_has_reentrancy_lock() -> None:
+    """Sürüş devredeyken ⚡ yeniden tetiklenemez (üst üste motor doğurmasın)."""
+    seg = _trigger_seg()
+    assert "if (amDriving)" in seg
+    assert "if (amConfirmResolve) return;" in seg
+
+
+def test_confirm_dialog_defaults_to_cancel() -> None:
+    """Diyalog güvenli tarafa varsayılan: Esc / arka plan / kapat → İPTAL (spawn yok)."""
+    js = _appjs()
+    h = js.index("function amWireConfirm")
+    seg = js[h : js.index("function amSetLive")]
+    assert "amConfirmClose(false)" in seg
+    assert 'ev.key === "Escape"' in seg
+    # diyalog hiç yoksa da çalıştırma (fail-closed)
+    assert "return Promise.resolve(false)" in _appjs()
+
+
+# ── motor seçici ─────────────────────────────────────────────────────────────
+def test_engine_selector_present_and_wired() -> None:
+    """Motor seçici var, /api/engines'ten beslenir ve seçim autodrive'a gönderilir."""
+    seg = _panel_section()
+    for el_id in ("amEngineSel", "amEngineNote", "amEngineRescanBtn"):
+        assert f'id="{el_id}"' in seg, f"motor seçicide eksik öğe: {el_id}"
+    js = _appjs()
+    assert '"/engines"' in js or '/engines"' in js
+    assert "engine: eng.name" in js, "seçilen motor autodrive isteğine konmalı"
+
+
+def test_uninstalled_engine_is_disabled_in_selector() -> None:
+    """Kurulu olmayan motor <option disabled> → seçilemez; ipucu gösterilir."""
+    js = _appjs()
+    h = js.index("function amRenderEngines")
+    seg = js[h : js.index("function amRenderEngineNote")]
+    assert "o.disabled = !e.selectable" in seg
+    # tetik ayrıca seçilemeyen motoru reddeder (çift kapı)
+    assert "!eng.selectable" in _trigger_seg()
+    # "nasıl kurulur" ipucu — kimlik formu DEĞİL
+    assert "install_hint" in js
+
+
+def test_selector_never_renders_credentials() -> None:
+    """Seçici kimlik bilgisi göstermez: giriş durumu 'bilinmiyor' olarak sunulur."""
+    js = _appjs()
+    h = js.index("function amRenderEngineNote")
+    seg = js[h : js.index("function amLoadEngines")]
+    assert "bilinmiyor" in seg
+    for bad in ("password", "api_key", "apiKey", "token"):
+        assert bad not in seg, f"motor notunda kimlik alanı: {bad}"
+
+
+# ── canlı durum + görünür DURDUR ─────────────────────────────────────────────
+def test_live_strip_and_visible_stop_button() -> None:
+    """Koşu sırasında canlı durum + GÖRÜNÜR stop-all butonu bulunur."""
+    seg = _panel_section()
+    for el_id in ("amLive", "amLiveText", "amStopBtn"):
+        assert f'id="{el_id}"' in seg, f"canlı şeritte eksik öğe: {el_id}"
+    js = _appjs()
+    h = js.index("function amStopAll")
+    stop = js[h : js.index("function amTriggerTraining")]
+    assert '"/supervisor/stop-all"' in stop
+    # durdurma da tek tık olmasın
+    assert "window.confirm(" in stop
+
+
+def test_live_strip_follows_real_run_status() -> None:
+    """Canlı şerit 'başlattık' bayrağına değil GERÇEK koşu durumuna bakar (koşu bitince kapanır)."""
+    js = _appjs()
+    h = js.index("function amRefreshGate")
+    seg = js[h : js.index("function amApproveAndTrain")]
+    assert 'run.status === "running"' in seg
+    assert "amSetLive(false)" in seg
 
 
 def test_dynamic_content_is_escaped() -> None:

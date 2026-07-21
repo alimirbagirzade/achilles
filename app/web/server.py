@@ -233,6 +233,7 @@ human_only = Depends(security.require_human)
 from app.web.agent_graph_routes import router as _agent_graph_router  # noqa: E402
 from app.web.ai_brain_routes import router as _ai_brain_router  # noqa: E402
 from app.web.ai_brain_routes import ui_router as _ai_brain_ui_router  # noqa: E402
+from app.web.engines_routes import router as _engines_router  # noqa: E402
 from app.web.feedback_routes import router as _feedback_router  # noqa: E402
 from app.web.orchestration_routes import router as _orchestration_router  # noqa: E402
 from app.web.sentinel_routes import router as _sentinel_router  # noqa: E402
@@ -243,6 +244,7 @@ app.include_router(_orchestration_router)
 app.include_router(_feedback_router)
 app.include_router(_sentinel_router)
 app.include_router(_agent_graph_router)
+app.include_router(_engines_router)
 
 
 @app.get("/api/status", response_model=StatusResponse, dependencies=[api_auth])

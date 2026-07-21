@@ -993,11 +993,35 @@
         </div>
 
         <div class="card">
+          <!-- MOTOR SEÇİCİ — salt bilgi (/api/engines). Kurulu olmayan motor DEVRE DIŞI ve
+               altında "nasıl kurulur" ipucu görünür. ⛔ Burası bir KİMLİK FORMU DEĞİLDİR:
+               Achilles hiçbir motorun mail/şifre/anahtarını istemez, saklamaz, göstermez —
+               motorlar kendi CLI oturumlarıyla girişlidir. -->
+          <div class="am-engine">
+            <label class="am-engine-lbl" for="amEngineSel">Motor</label>
+            <select class="am-engine-sel" id="amEngineSel">
+              <option value="">Yükleniyor…</option>
+            </select>
+            <button class="btn btn-sm" id="amEngineRescanBtn" type="button">↻ Yeniden tara</button>
+          </div>
+          <p class="muted small am-engine-note" id="amEngineNote">—</p>
+
           <div class="orc-actions">
             <button class="btn btn-primary am-trigger" id="amTriggerBtn">⚡ EĞİTİMİ DEVREYE SOK</button>
             <button class="btn" id="amRefreshBtn">↻ Yenile</button>
             <span class="muted small" id="amStatusLine">Yükleniyor…</span>
           </div>
+
+          <!-- CANLI KOŞU + GÖRÜNÜR DURDURMA. Sürüş başlayınca açılır; STOP_ALL kill-switch'i
+               her zaman tek tık uzakta olsun (koşu arka planda sürerken de). -->
+          <div id="amLive" class="am-live" hidden>
+            <span class="am-live-dot" aria-hidden="true"></span>
+            <span class="am-live-text" id="amLiveText">Sürüş devrede…</span>
+            <button class="btn btn-danger am-stop-btn" id="amStopBtn" type="button">
+              ⛔ DURDUR (STOP_ALL)
+            </button>
+          </div>
+
           <div id="amDryRun" class="am-dryrun" hidden>
             <div class="muted small am-dryrun-head">
               KURU-ÇALIŞTIRMA — çalıştırılacak <code>claude -p</code> komutu (spawn YOK):
@@ -1065,6 +1089,53 @@
     <footer class="footer">
       <span class="muted small">achilles-trader-ai · local-first · not financial advice</span>
     </footer>
+
+    <!-- ⚡ RUN ONAY DİYALOĞU — ATLANAMAZ. Geri alınamaz iş (gerçek motor spawn'ı) YALNIZ
+         buradaki "Evet, başlat" ile tetiklenir; `execute:true` başka hiçbir yoldan
+         gönderilmez (test bunu sabitler). Panel dışında durur: paneller display:none ile
+         gizlenir, modal içeride olsaydı görünmezdi. -->
+    <div id="amConfirmModal" class="modal hidden" role="dialog" aria-modal="true"
+         aria-labelledby="amConfirmTitle">
+      <div class="modal-box am-confirm-box">
+        <button class="modal-close" id="amConfirmCloseBtn" type="button"
+                aria-label="Kapat">✕</button>
+        <h3 class="am-confirm-title" id="amConfirmTitle">⚡ Otonom sürüşü başlat?</h3>
+
+        <dl class="am-confirm-facts">
+          <dt>Çalışacak motor</dt>
+          <dd id="amConfirmEngine">—</dd>
+          <dt>Abonelik kotası</dt>
+          <dd id="amConfirmQuota">—</dd>
+        </dl>
+
+        <p class="am-confirm-safe" id="amConfirmSafe">
+          ✅ <strong>Eğitim BAŞLAMAZ.</strong> Bu adım yalnız zorunlu Kademe-2 derin avı
+          sürer ve hat <strong>taze insan onayında DURUR</strong> (Kural 8). Gerçek LoRA
+          eğitimi ancak sen ayrıca onaylarsan başlar — motor kendi eğitimini onaylayamaz.
+        </p>
+        <p class="muted small am-confirm-note">
+          İptal edersen hiçbir süreç doğmaz; yalnızca çalıştırılacak
+          <strong>kuru-çalıştırma</strong> komutu gösterilir.
+        </p>
+
+        <!-- İKİNCİ BİLİNÇLİ HAREKET: kutu işaretlenmeden başlat butonu AÇILMAZ.
+             Neden: tek bir buton, odaklanmışsa kazara Enter/tıkla tetiklenebilir —
+             bu gerçekten yaşandı (bkz. PR açıklaması). İki bağımsız kasıtlı hareket
+             istemek, dalgın bir tuş vuruşunu zararsız kılar. -->
+        <label class="am-confirm-ack">
+          <input type="checkbox" id="amConfirmAck" />
+          <span>Abonelik kotamın harcanacağını anladım ve bu motoru başlatmak istiyorum.</span>
+        </label>
+
+        <div class="am-confirm-actions">
+          <button class="btn" id="amConfirmCancelBtn" type="button">Vazgeç (kuru-çalıştırma)</button>
+          <!-- Varsayılan DEVRE DIŞI (fail-closed): yalnız kutu işaretlenince açılır. -->
+          <button class="btn btn-primary am-confirm-go" id="amConfirmGoBtn" type="button" disabled>
+            Evet, motoru başlat
+          </button>
+        </div>
+      </div>
+    </div>
 
     <div id="toast" class="toast hidden"></div>
 
