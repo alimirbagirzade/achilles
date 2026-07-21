@@ -189,11 +189,16 @@ def test_motor_mutlak_yola_cozulur(monkeypatch, tmp_path):
     sahte bir `claude.exe` gerçek CLI yerine koşar ve son satıra `PASS` yazarak ZORUNLU
     derin av kapısını düşürürdü (Kural 8).
     """
-    sahte = tmp_path / "claude.exe"
+    # Binary adı platforma göre değişir: Windows'ta `.exe`, POSIX'te çalıştırma biti.
+    ad = "claude.exe" if os.name == "nt" else "claude"
+    sahte = tmp_path / ad
     sahte.write_text("taklitci")
-    gercek = tmp_path / "gercek" / "claude.exe"
+    gercek = tmp_path / "gercek" / ad
     gercek.parent.mkdir()
     gercek.write_text("gercek")
+    if os.name != "nt":  # `shutil.which` POSIX'te çalıştırma bitine bakar
+        sahte.chmod(0o755)
+        gercek.chmod(0o755)
 
     monkeypatch.chdir(tmp_path)  # cwd'de taklitçi var
     monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{gercek.parent}")
