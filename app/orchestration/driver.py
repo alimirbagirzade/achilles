@@ -18,11 +18,12 @@ import json
 import logging
 import os
 import re
-import shutil
 import subprocess
 from collections.abc import Callable
 from typing import Any
 
+from app.orchestration import engines
+from app.orchestration.engines import DEFAULT_ENGINE
 from app.orchestration.orchestrator import TrainingOrchestrator
 from app.web import driver_scope
 
@@ -32,26 +33,9 @@ log = logging.getLogger(__name__)
 _VERDICT_RE = re.compile(r"ACHILLES_HUNT_VERDICT:\s*(PASS|FAIL)", re.IGNORECASE)
 HUNT_TIMEOUT_S = 1800  # 30 dk — CPU'da derin av uzun sürebilir.
 
-# Doğurulan motorun YASAKLI araçları. Derin av SALT-OKUMADIR (Read/Grep/Glob yeter).
-# Bu, prompt'taki "kod değiştirme / eğitim başlatma" talimatını TEKNİK olarak zorunlu
-# kılar — prompt talimatı güvenlik sınırı DEĞİLDİR (RAG'e alınan bir makale/kart
-# içeriği prompt-injection ile motoru yönlendirebilir).
-#
-# Bu kısıt olmadan scope katmanı TİYATRODUR: Bash'i olan bir motor HTTP'yi tamamen
-# atlayıp `uv run achilles approval-approve <id>` / `clear-stop-all` çalıştırabilir —
-# bu CLI komutları hiçbir kimlik doğrulamasından geçmez (denetim BLOCKER bulgusu).
-# `Task` de yasak: aksi halde motor, kısıtsız araç setine sahip bir ALT-ajan doğurup
-# bu deny-list'i dolaylı olarak aşabilir (deny-list'in alt-ajanlara özyinelemeli
-# uygulandığı test edilmiş bir varsayım DEĞİLDİR).
-DISALLOWED_TOOLS = (
-    "Bash",
-    "Edit",
-    "Write",
-    "NotebookEdit",
-    "WebFetch",
-    "WebSearch",
-    "Task",
-)
+# Araç deny-list'i motor kayıt tablosunda durur (motora ÖZGÜ bayraklar).
+# Geriye dönük uyum + tek kaynak: buradan yeniden dışa aktarılır.
+DISALLOWED_TOOLS = engines.DISALLOWED_TOOLS
 
 # Çocuğa GEÇİRİLMEYECEK insan sırları. NOT: anahtarı silmek YETMEZ — Settings
 # `env_file=".env"` kullandığı için silinen anahtar dotenv'den geri okunur
@@ -92,46 +76,17 @@ def build_hunt_prompt(run: dict[str, Any]) -> str:
     )
 
 
-def build_hunt_command(run: dict[str, Any]) -> list[str]:
-    """`claude -p <prompt>` argv'si (shell yok → enjeksiyon yok; prompt sabit şablon).
+def build_hunt_command(run: dict[str, Any], engine: str = DEFAULT_ENGINE) -> list[str]:
+    """Seçili motorun argv'si (shell yok → enjeksiyon yok; prompt argv ÖĞESİ olarak geçer).
 
-    ``--disallowedTools`` ile motor araç-seviyesinde kısıtlanır: Bash/Write olmadan
-    ne yerel CLI'yi (auth'suz `approval-approve`) çalıştırabilir ne de dosya yazabilir.
+    Motor adı kayıt tablosundan gelir; bilinmeyen ad ValueError ile REDDEDİLİR.
 
-    ``--safe-mode`` ZORUNLU — asıl sınır budur. Araç deny-list'i TEK BAŞINA yetmez:
-    Claude Code'un *özelleştirme* kanalları (hook'lar, plugin'ler, MCP sunucuları,
-    özel ajanlar/komutlar/skill'ler) araç katmanının DIŞINDA çalışır. İki somut
-    denetim bulgusu bunu kanıtladı:
-
-    - MCP: proje kapsamında kayıtlı `achilles` sunucusu (`mcp_server/achilles_mcp.py`)
-      Achilles OpenAPI'sinden tool üretip ``127.0.0.1:8765``'e proxy'liyor → Bash
-      OLMADAN HTTP isteği atan bir kanal (üstelik sürücü başlığı göndermediği için
-      istekleri ``human`` scope'una düşerdi).
-    - Hook'lar: ``.claude/settings.json`` içindeki ``SessionStart``/``PreToolUse``
-      hook'ları Claude Code tarafından DOĞRUDAN kabukta çalıştırılır — ``Bash``
-      *aracı* üzerinden değil. ``-p`` modunda güven (trust) diyaloğu atlandığı için
-      onaysız çalışırlar; deny-list bunları hiç görmez.
-
-    ``--safe-mode`` bu kanalların tamamını tek seferde kapatır (kanal kanal
-    kovalamaca yerine sınıf-düzeyi çözüm). ``--strict-mcp-config`` kemer-askı olarak
-    korunur. ``--disallowedTools`` ise yerleşik araçları kısar (safe-mode onları
-    kısmaz) → iki bayrak BİRLİKTE gereklidir.
-
-    NOT: ``--safe-mode`` CLAUDE.md oto-keşfini de kapatır; bu yüzden prompt, avcıya
-    CLAUDE.md'yi AÇIKÇA okumasını söyler (Read aracı hâlâ açık).
-
-    Bayrak sırası: ``--disallowedTools`` variadic (``<tools...>``) olduğundan EN SONDA
-    durur ve tek virgüllü arg alır; aksi halde sonraki bayrakları yutabilir.
+    GÜVENLİK: sertleştirme bayrakları motorun `argv_template`'inde durur
+    (`app/orchestration/engines.py`). `claude` motoru `--safe-mode` +
+    `--strict-mcp-config` + `--disallowedTools` ile doğurulur; gerekçe için
+    `engines.Engine.hardened` ve `docs/SCOPE_ISOLATION.md`.
     """
-    return [
-        "claude",
-        "-p",
-        build_hunt_prompt(run),
-        "--safe-mode",
-        "--strict-mcp-config",
-        "--disallowedTools",
-        ",".join(DISALLOWED_TOOLS),
-    ]
+    return engines.build_command(engine, build_hunt_prompt(run))
 
 
 def build_child_env(token: str, run_id: str) -> dict[str, str]:
@@ -168,9 +123,14 @@ def parse_hunt_verdict(output: str) -> dict[str, Any]:
     return {"verdict": verdict, "passed": verdict == "PASS", "summary": (output or "")[-600:]}
 
 
+def engine_available(engine: str = DEFAULT_ENGINE) -> bool:
+    """Motor CLI'si PATH'te KURULU mu (giriş durumu DEĞİL — o ancak çalıştırınca anlaşılır)."""
+    return engines.available(engine)
+
+
 def claude_available() -> bool:
-    """Abonelikli `claude` CLI PATH'te mi (gerçek otonom sürüş için)."""
-    return shutil.which("claude") is not None
+    """Geriye dönük uyumluluk: varsayılan (claude) motorunun kurulu olup olmadığı."""
+    return engine_available(DEFAULT_ENGINE)
 
 
 def _default_runner(
@@ -195,15 +155,30 @@ class AutoDriver:
         run_id: str,
         *,
         execute: bool = False,
+        engine: str = DEFAULT_ENGINE,
         runner: Runner | None = None,
         timeout: int = HUNT_TIMEOUT_S,
     ) -> dict[str, Any]:
         """Salt-okuma aşamaları → deep-hunt'ı claude -p ile sür → PASS ise onaya kadar ilerlet.
 
         Varsayılan `execute=False`: gerçek spawn YOK, çalıştırılacak komutu döner (DRY-RUN).
-        `execute=True` + claude PATH'te: gerçek `claude -p` koşar; PASS → hunt_ack + onaya
-        kadar ilerletir (Kural 8: onayda DURUR). `runner` enjekte edilirse gerçek spawn yerine
-        o kullanılır (test)."""
+        `execute=True` + motor PATH'te: gerçek motor koşar; PASS → hunt_ack + onaya kadar
+        ilerletir (Kural 8: onayda DURUR). `runner` enjekte edilirse gerçek spawn yerine o
+        kullanılır (test). `engine` kayıt tablosundan gelir (bilinmeyen ad reddedilir);
+        süreç başlatmayan motorlar (ör. `local`) otonom sürüşte kullanılamaz."""
+        try:
+            eng = engines.get_engine(engine)
+        except ValueError as exc:
+            return {"ok": False, "reason": str(exc)}
+        if not eng.spawns:
+            return {
+                "ok": False,
+                "reason": (
+                    f"Motor '{eng.name}' süreç başlatmaz (doğrudan yerel hat) — "
+                    "otonom derin av için spawn eden bir motor seç."
+                ),
+            }
+
         run = self.orch.store.get_run(run_id)
         if run is None:
             return {"ok": False, "reason": f"Koşu bulunamadı: {run_id}"}
@@ -222,34 +197,62 @@ class AutoDriver:
                 **snap,
             }
 
-        command = build_hunt_command(run)
+        command = build_hunt_command(run, eng.name)
 
         if not execute:
             self.orch.store.add_event(
                 run_id,
                 "deep-hunt",
                 "info",
-                "Otonom sürüş DRY-RUN: claude -p komutu hazır (execute=False; spawn yok).",
+                f"Otonom sürüş DRY-RUN: {eng.label} komutu hazır (execute=False; spawn yok).",
             )
             return {
                 "ok": True,
                 "drove": False,
                 "dry_run": True,
+                "engine": eng.name,
+                "quota_warning": eng.quota_warning,
                 "command": command,
-                "needs": "execute=True + abonelikli `claude` CLI",
+                "needs": f"execute=True + kurulu `{eng.binary}` CLI (giriş kendi CLI'sinde)",
                 **self.orch.status(run_id),
             }
 
         run_fn = runner or _default_runner
-        if runner is None and not claude_available():
+        # FAIL-CLOSED: sertleştirilmemiş motor DOĞURULMAZ. Araç kısıtı olmayan bir motor
+        # auth'suz yerel CLI'yi (`achilles approval-approve`) veya 127.0.0.1:8765'i
+        # çağırıp kendi eğitimini onaylayabilir → scope katmanı tamamen delinir (Kural 8).
+        # `runner` enjekte edilmişse gerçek spawn yoktur (test yolu) → kısıt aranmaz.
+        if runner is None and not eng.hardened:
+            self.orch.store.add_event(
+                run_id,
+                "deep-hunt",
+                "error",
+                f"Otonom sürüş REDDEDİLDİ: {eng.label} araç-seviyesinde kısıtlanamıyor.",
+            )
             return {
                 "ok": False,
-                "reason": "`claude` CLI PATH'te yok — abonelikli Claude Code kurulu olmalı.",
+                "reason": (
+                    f"{eng.label} sertleştirilmiş değil — AutoDriver yalnız araç-kısıtlı "
+                    "motor doğurur. Kısıtsız motor kendi eğitimini onaylayabilir (Kural 8). "
+                    "Bkz. docs/SCOPE_ISOLATION.md."
+                ),
+                "engine": eng.name,
+                "hardened": False,
+                "command": command,
+            }
+        if runner is None and not engine_available(eng.name):
+            return {
+                "ok": False,
+                "reason": f"`{eng.binary}` CLI PATH'te yok — {eng.label} kurulu olmalı.",
+                "engine": eng.name,
                 "command": command,
             }
 
         self.orch.store.add_event(
-            run_id, "deep-hunt", "info", "Otonom sürüş: claude -p ile Kademe-2 derin av başladı."
+            run_id,
+            "deep-hunt",
+            "info",
+            f"Otonom sürüş: {eng.label} ile Kademe-2 derin av başladı. {eng.quota_warning}",
         )
         # Sürücü kimliği: bu koşuya bağlı, kısa ömürlü token. Motor bununla insan-yalnız
         # uçlarda 403 alır (Kural 8). Koşu bitince `finally` ile MUTLAKA iptal edilir.
@@ -257,9 +260,14 @@ class AutoDriver:
         try:
             _rc, output = run_fn(command, timeout, build_child_env(token, run_id))
         except Exception as exc:  # spawn/timeout — koşuyu çökertme, deep-hunt bloklu kalır
-            log.exception("AutoDriver: claude -p çalıştırılamadı")
+            log.exception("AutoDriver: %s çalıştırılamadı", eng.name)
             self.orch.store.add_event(run_id, "deep-hunt", "error", f"Otonom sürüş hatası: {exc}")
-            return {"ok": False, "reason": f"claude -p çalıştırılamadı: {exc}", "command": command}
+            return {
+                "ok": False,
+                "reason": f"{eng.label} çalıştırılamadı: {exc}",
+                "engine": eng.name,
+                "command": command,
+            }
         finally:
             driver_scope.revoke_run(run_id)
 
@@ -282,7 +290,7 @@ class AutoDriver:
         # 2) PASS → hunt_ack=true işaretle + onay kapısına kadar ilerlet (orada DURUR — Kural 8).
         params = dict(run.get("params") or {})
         params["hunt_ack"] = True
-        params["hunt_driven_by"] = "claude-p-autodrive"
+        params["hunt_driven_by"] = f"{eng.name}-autodrive"
         self.orch.store.update_run(
             run_id, params_json=json.dumps(params, ensure_ascii=False, default=str)
         )

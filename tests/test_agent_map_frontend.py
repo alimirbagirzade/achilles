@@ -9,7 +9,6 @@ Ağ/Ollama gerektirmez. Backend grafik zaten `test_agent_graph.py`'de test'li.
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 _STATIC = Path(__file__).resolve().parents[1] / "app" / "web" / "static"
@@ -43,8 +42,11 @@ def test_tab_and_panel_present() -> None:
     html = _index()
     assert 'data-tab="agentmap"' in html
     assert 'id="panel-agentmap"' in html
-    # Sekme NUMARASINA pinleme yapma: sekme eklenip çıkarıldıkça numara kayar
-    # (11 · RLM kaldırılınca 15 → 14 oldu). Etiket sabit, numara değil.
+    # ETİKETE göre eşle, sekme NUMARASINA pinleme: sekme eklenip çıkarıldığında numara
+    # kayabiliyor (RLM kaldırılınca 15→14 oldu, geri gelince 15). Aynı ders: PR#103 asset
+    # cache-bust testi versiyona-duyarsız yapılmıştı.
+    import re
+
     assert re.search(r'<span class="tab-num">\d+</span> · AJAN HARİTASI', html)
 
 
@@ -205,3 +207,86 @@ def test_graph_endpoint_shape() -> None:
     assert isinstance(body["nodes"], list) and body["nodes"]
     assert isinstance(body["edges"], list)
     assert isinstance(body["groups"], list) and body["groups"]
+
+
+# ── İKİ-TIK eğitim kapısı (⚡ RUN → onay → gerçek eğitim) ─────────────────────
+def test_gate_box_present() -> None:
+    """Onay kapısı kutusu + butonu panelde var ve varsayılan GİZLİ (hidden)."""
+    section = _panel_section()
+    assert 'id="amGate"' in section
+    assert 'id="amApproveTrainBtn"' in section
+    assert 'id="amGateInfo"' in section
+    # kutu varsayılan gizli olmalı (hat kapıda değilken görünmesin)
+    gate = section[section.index('id="amGate"') :]
+    assert gate[: gate.index(">")].find("hidden") != -1, "amGate varsayılan hidden olmalı"
+
+
+def test_gate_only_opens_when_blocked_at_approval() -> None:
+    """Kutu YALNIZ koşu approval/train aşamasında BLOCKED iken açılır (yanlışlıkla açılmasın)."""
+    js = _appjs()
+    seg = js[js.index("function amRefreshGate") : js.index("function amApproveAndTrain")]
+    assert '"/orchestration/runs?limit=1"' in seg
+    assert 'run.status === "blocked"' in seg
+    assert 'run.current_stage === "approval"' in seg
+    assert 'run.current_stage === "train"' in seg
+    # durum okunamazsa kapı KAPALI kalmalı (güvenli taraf)
+    assert "box.hidden = true" in seg
+
+
+def test_training_requires_human_confirm_and_uses_gated_endpoint() -> None:
+    """Gerçek eğitim: confirm() ŞART ve mevcut taze-onay kapılı /training/run kullanılır."""
+    js = _appjs()
+    seg = js[js.index("function amApproveAndTrain") : js.index("function amStartPoll")]
+    assert "window.confirm(" in seg
+    # confirm, eğitim POST'undan ÖNCE gelmeli
+    assert seg.index("window.confirm(") < seg.index('"/training/run"')
+    # needs_approval → insan yüzeyinden onay → tekrar çağır (onay tüketilir)
+    assert 'status === "needs_approval"' in seg
+    assert "/approvals/" in seg and "/approve" in seg
+    # Kural 8: STOP_ALL / blocked yanıtı kullanıcıya bildirilmeli
+    assert 'status === "blocked"' in seg
+
+
+def test_engine_cannot_selfapprove_no_autoapprove_in_autodrive() -> None:
+    """P1 güvenlik: ⚡ otonom sürüş yolu onay ucuna DOKUNMAZ — onay yalnız insan butonunda.
+
+    Motorun kendi eğitimini onaylaması roadmap'te bloklayıcı açık; ⚡ (autodrive) akışında
+    /approvals/*/approve çağrısı BULUNMAMALI.
+    """
+    js = _appjs()
+    trigger = js[js.index("function amTriggerTraining") : js.index("function loadAgentMap")]
+    assert "/approvals/" not in trigger, "⚡ otonom yol onay veremez (motor kendini onaylamasın)"
+    assert '"/training/run"' not in trigger, "⚡ otonom yol gerçek eğitimi başlatamaz"
+
+
+# ── Geniş panel + genişliğe uyarlanan satır kapasitesi ───────────────────────
+def test_panel_is_wide_and_recenters() -> None:
+    """Harita paneli `main`in 1000px kolonundan taşar (tüm ajanlar aynı anda görünsün)."""
+    css = _appcss()
+    seg = css[css.index("#panel-agentmap") :]
+    assert "--am-wide" in seg
+    assert "100vw" in seg  # viewport genişliğine göre taşar
+    assert "margin-left: calc(50%" in seg  # negatif margin ile yeniden merkezlenir
+    # dar ekranda taşırma kapanmalı (yatay sayfa kayması olmasın)
+    assert "@media (max-width: 1060px)" in css
+
+
+def test_per_row_adapts_to_canvas_width() -> None:
+    """Satır başına kart sayısı tuvalin gerçek genişliğinden hesaplanır (sabit 6 değil)."""
+    js = _appjs()
+    seg = js[js.index("function amPerRowCap") : js.index("function amLayout")]
+    assert "clientWidth" in seg
+    assert "AM_CARD_W" in seg and "AM_CARD_GX" in seg
+    assert "AM_MIN_PER_ROW" in seg and "AM_MAX_PER_ROW" in seg
+    # yerleşim bu kapasiteyi kullanmalı (eski sabit sınır kalmasın)
+    lay = js[js.index("function amLayout") : js.index("function amRoundRectPath")]
+    assert "amPerRowCap()" in lay
+    assert "perRowCap" in lay
+
+
+def test_resize_rebuilds_layout() -> None:
+    """Pencere genişleyince yerleşim yeniden kurulur (imza sıfırlanır)."""
+    js = _appjs()
+    assert '"resize"' in js
+    seg = js[js.index('addEventListener("resize"') :]
+    assert "amSig = null" in seg[:400]

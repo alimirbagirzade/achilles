@@ -241,6 +241,46 @@ def test_child_env_strips_settings_override_vars(monkeypatch: pytest.MonkeyPatch
     assert "CLAUDE_CODE_MOCK_REMOTE_SETTINGS" not in env
 
 
+def test_only_claude_engine_is_hardened() -> None:
+    """Sertleştirme bayrakları motora ÖZGÜ → yalnız doğrulanan motor hardened olmalı.
+
+    Kısıtsız bir motor (codex/gemini) doğurulursa scope katmanı tamamen delinir:
+    araç kısıtı olmadan auth'suz `achilles approval-approve` çağrılabilir.
+    """
+    from app.orchestration import engines
+
+    assert engines.get_engine("claude").hardened is True
+    for name in ("codex", "gemini", "local"):
+        assert engines.get_engine(name).hardened is False, f"{name} doğrulanmadan hardened"
+
+
+def test_driver_refuses_unhardened_engine(tmp_path) -> None:
+    """FAIL-CLOSED: sertleştirilmemiş motor için gerçek spawn REDDEDİLİR."""
+    from app.orchestration.driver import AutoDriver
+    from app.orchestration.orchestrator import RunContext, StageResult, TrainingOrchestrator
+    from app.orchestration.pipeline import StageStatus
+    from app.orchestration.store import OrchestrationStore
+
+    def blocked_hunt(ctx: RunContext) -> StageResult:
+        return StageResult(StageStatus.blocked, "hunt_ack yok", {})
+
+    def done(ctx: RunContext) -> StageResult:
+        return StageResult(StageStatus.completed, "ok", {})
+
+    orch = TrainingOrchestrator(
+        store=OrchestrationStore(db_path=tmp_path / "eng.db"),
+        delegates={"preflight": done, "deep-hunt": blocked_hunt},
+    )
+    drv = AutoDriver(orchestrator=orch)
+    run_id = orch.start(model="m", profile="p", adapter_name="a")
+
+    # runner enjekte EDİLMEDEN (gerçek spawn yolu) → kısıt aranır ve reddedilir.
+    res = drv.drive(run_id, execute=True, engine="codex")
+    assert res["ok"] is False
+    assert res["hardened"] is False
+    assert "sertleştirilmiş değil" in res["reason"]
+
+
 def test_hunt_command_disables_customization_channels() -> None:
     """Özelleştirme kanalları (hook/plugin/MCP/özel-ajan) araç deny-list'inin DIŞINDADIR.
 

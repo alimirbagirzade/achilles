@@ -169,7 +169,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 28px;
+  padding: 14px 28px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   position: sticky;
@@ -317,9 +317,8 @@ body {
 /* ---------- disclaimer ---------- */
 .disclaimer {
   margin: 0;
-  padding: 7px 28px;
-  font-size: 12.5px;
-  line-height: 1.45;
+  padding: 10px 28px;
+  font-size: 13px;
   color: #92400e;
   background: var(--warn-soft);
   border-bottom: 1px solid var(--warn-border);
@@ -362,7 +361,7 @@ body {
   font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.03em;
-  padding: 10px 14px;
+  padding: 14px 16px;
   cursor: pointer;
   white-space: nowrap;
   transition: color 0.15s, border-color 0.15s;
@@ -379,7 +378,7 @@ body {
 .groups {
   display: flex;
   gap: 6px;
-  padding: 6px 22px 0;
+  padding: 10px 22px 0;
   background: var(--surface);
   overflow-x: auto;
 }
@@ -391,7 +390,7 @@ body {
   font-size: 13.5px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  padding: 7px 12px;
+  padding: 9px 14px;
   border-radius: 8px;
   cursor: pointer;
   white-space: nowrap;
@@ -2341,6 +2340,34 @@ code {
   font-family: var(--mono);
 }
 
+/* İKİ-TIK eğitim onay kapısı — hat `approval`/`train`de bloklanınca açılır */
+.am-gate {
+  margin-top: 12px;
+  padding: 14px 16px;
+  border: 2px solid var(--warn-border);
+  background: var(--warn-soft);
+  border-radius: var(--radius);
+}
+.am-gate[hidden] {
+  display: none;
+}
+.am-gate-head {
+  font-size: 0.95rem;
+  color: var(--warn);
+}
+.am-gate-note {
+  margin: 6px 0 10px;
+}
+.am-approve-btn {
+  font-weight: 700;
+  background: var(--pos);
+  border-color: var(--pos-border);
+  color: #ffffff;
+}
+.am-approve-btn:hover:not(:disabled) {
+  background: var(--pos-strong, #086646);
+}
+
 /* efsane (legend) */
 .am-legend {
   display: flex;
@@ -2437,6 +2464,23 @@ code {
 }
 .am-hint {
   margin: 8px 0 0;
+}
+
+/* GENİŞ PANEL — harita `main`in 1000px'lik ortalanmış kolonundan TAŞAR ki tüm ajanlar
+   aynı anda görünsün (8 ajanlı "Eğitim Hattı" şeridi tek satıra sığsın, yatay kaydırma
+   gerekmesin). Ortalamayı korumak için negatif margin ile yeniden merkezlenir.
+   100vw yerine (100vw - 64px): dikey kaydırma çubuğu payı — sayfa yatay kaymasın. */
+#panel-agentmap {
+  --am-wide: min(1760px, calc(100vw - 64px));
+  width: var(--am-wide);
+  margin-left: calc(50% - var(--am-wide) / 2);
+}
+@media (max-width: 1060px) {
+  /* dar ekran: taşırma yok, normal kolon + yatay kaydırma devreye girsin */
+  #panel-agentmap {
+    width: auto;
+    margin-left: 0;
+  }
 }
 
 /* tuval */

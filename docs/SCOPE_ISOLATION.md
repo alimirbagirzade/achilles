@@ -89,6 +89,22 @@ plugin'ler, **hook'lar**, **MCP sunucuları**, özel komut/ajanlar ve diğer tü
 > `--safe-mode` CLAUDE.md **oto-keşfini** de kapatır (dosya hâlâ okunabilir). Bu yüzden
 > av promptu avcıya CLAUDE.md'yi **açıkça Read ile okumasını** söyler.
 
+### Çok-motorlu kurulum: sertleştirme motora ÖZGÜdür
+
+`main` birden çok motor ekledi (`claude`, `codex`, `gemini`, `local` —
+`app/orchestration/engines.py`). Sertleştirme bayrakları **motora özgüdür**: yukarıdaki
+üç bayrak yalnız Claude Code'un CLI'sinde vardır. `codex`/`gemini` için eşdeğer bir
+araç-kısıtı **doğrulanmadı**.
+
+Kısıtsız bir motor doğurulursa bu katman **tamamen delinir** (araç kısıtı olmadan
+auth'suz `achilles approval-approve` çağrılabilir). Bu yüzden `Engine.hardened`
+bayrağı eklendi ve **AutoDriver yalnız `hardened=True` motoru doğurur** — aksi halde
+**fail-closed** reddeder.
+
+> Yeni motor eklerken `hardened=True` ancak araç-kısıtı bayrakları **doğrulandıktan
+> sonra** verilmelidir. Varsayılan `False`'tur: doğrulanmamış motor sessizce
+> güvenli sayılmaz.
+
 **Kalan risk — ayar-ezme env kanalı (derinlemesine savunma uygulandı):**
 `--safe-mode` dokümantasyonu *"Admin-managed (policy) settings still apply"* der.
 `CLAUDE_CODE_MANAGED_SETTINGS_PATH` · `CLAUDE_CODE_REMOTE_SETTINGS_PATH` ·

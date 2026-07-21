@@ -118,7 +118,7 @@
   // 11 sekme 5 mantıklı gruba toplanır. data-tab değerleri ve panel-<name>
   // ID'leri DEĞİŞMEZ; bu yalnız üst-navigasyon + görünürlük katmanıdır.
   var TAB_GROUPS = [
-    { key: "kesfet", tabs: ["research"] },
+    { key: "kesfet", tabs: ["research", "rlm"] },
     { key: "kutuphane", tabs: ["papers"] },
     { key: "trader", tabs: ["trader", "backtest"] },
     { key: "egitim", tabs: ["review", "training", "eval", "orchestration", "feedback"] },
@@ -139,6 +139,7 @@
   };
   var NEXT_STEPS = {
     research: "Sonuç gelmiyorsa önce Kütüphane'den makale ekle, sonra burada soru sor.",
+    rlm: "Daha titiz, iddia-düzeyi kaynak-doğrulamalı cevap için bir koşuya tıkla.",
     papers: "PDF sürükle-bırak ya da arXiv'den çek; sonra Keşfet & sor'da soru sor.",
     trader: "Formül çıkar → agentic araştırma; öneriler otomatik backtest edilir.",
     backtest: "Sentetik veya CSV ile çalıştır; sonucu PASS/FAIL/INCONCLUSIVE oku.",
@@ -197,6 +198,7 @@
     if (name === "eval") loadEvalSets();
     if (name === "about") loadSystemStatus();
     if (name === "agents") loadAgentsDashboard();
+    if (name === "rlm") loadRlmDashboard();
     if (name === "orchestration") loadOrchestration();
     if (name === "feedback") loadFeedback();
     if (name === "sentinel") loadSentinel();
@@ -3524,6 +3526,255 @@
     });
   })();
 
+  // ---------- RLM dashboard (salt-okuma; /api/rlm/*) ----------
+  function rlmStatusBadge(s) {
+    var cls = "ag-gray";
+    if (s === "answered") cls = "ag-green";
+    else if (s === "answered_with_limitation" || s === "no_llm") cls = "ag-yellow";
+    else if (s === "abstained" || s === "failed") cls = "ag-red";
+    return '<span class="ag-badge ' + cls + '">' + esc(s) + "</span>";
+  }
+
+  function rlmCfgRow(k, v) {
+    return '<tr><td class="muted">' + esc(k) + "</td><td>" + esc(String(v)) + "</td></tr>";
+  }
+  function rlmAvail(ok) {
+    return ok
+      ? '<span class="ag-badge ag-green">var</span>'
+      : '<span class="ag-badge ag-yellow">yok</span>';
+  }
+
+  // Motor paneli: /api/rlm/config (salt-okuma) + /test-adapter uygunluk (çağrı yapmaz).
+  function loadRlmEnginePanel() {
+    var el = document.getElementById("rlmEnginePanel");
+    if (!el) return;
+    el.innerHTML = '<span class="muted small">Yükleniyor…</span>';
+    api("/rlm/config")
+      .then(function (d) {
+        var c = (d && d.config) || {};
+        var rows =
+          rlmCfgRow("Sağlayıcı (provider)", c.provider) +
+          rlmCfgRow("alexzhang açık", c.alexzhang_enabled ? "evet" : "hayır") +
+          rlmCfgRow("Backend", c.alexzhang_backend) +
+          rlmCfgRow("Ortam (environment)", c.alexzhang_environment) +
+          rlmCfgRow("Üretim modu", c.production_mode ? "açık" : "kapalı") +
+          rlmCfgRow("Local exec", c.allow_local_exec ? "AÇIK" : "kapalı") +
+          rlmCfgRow("İzinli tool'lar", (c.allowed_tools || []).join(", "));
+        el.innerHTML =
+          '<table class="ag-table"><tbody>' +
+          rows +
+          "</tbody></table>" +
+          '<div id="rlmAdapterTest" class="small muted" style="margin-top:.4rem">' +
+          "Motor uygunluğu kontrol ediliyor…</div>";
+        Promise.all([
+          api("/rlm/test-adapter?adapter=native", { method: "POST" }).catch(function () {
+            return { available: false };
+          }),
+          api("/rlm/test-adapter?adapter=alexzhang", { method: "POST" }).catch(function () {
+            return { available: false };
+          }),
+        ])
+          .then(function (res) {
+            var t = document.getElementById("rlmAdapterTest");
+            if (!t) return;
+            var a = res[1] || {};
+            t.innerHTML =
+              "native: " +
+              rlmAvail((res[0] || {}).available) +
+              " · alexzhang: " +
+              rlmAvail(a.available) +
+              (a.note ? ' <span class="muted">(' + esc(a.note) + ")</span>" : "");
+          })
+          .catch(function (e) {
+            // Beklenmedik hata panelin geri kalanını bozmasın (savunma; iç fetch'ler zaten catch'li).
+            var t = document.getElementById("rlmAdapterTest");
+            if (t) t.innerHTML = '<span class="ag-red">Motor durumu alınamadı: ' + esc(e.message) + "</span>";
+          });
+      })
+      .catch(function (e) {
+        el.innerHTML = '<span class="ag-red">Yüklenemedi: ' + esc(e.message) + "</span>";
+      });
+  }
+
+  function loadRlmDashboard() {
+    loadRlmEnginePanel();
+    var el = document.getElementById("rlmRunsTable");
+    if (!el) return;
+    el.innerHTML = '<span class="muted small">Yükleniyor…</span>';
+    api("/rlm/runs?limit=50")
+      .then(function (d) {
+        var runs = d.runs || [];
+        if (!runs.length) {
+          el.innerHTML =
+            '<span class="muted small">Henüz RLM koşusu yok. CLI: achilles rlm-answer "soru"</span>';
+          return;
+        }
+        var rows = "";
+        runs.forEach(function (r) {
+          rows +=
+            "<tr><td><button class=\"ag-link\" data-rlm-run=\"" +
+            esc(r.run_id) +
+            '">' +
+            agShort(r.run_id) +
+            "</button></td><td>" +
+            esc((r.user_query || "").slice(0, 60)) +
+            "</td><td>" +
+            esc(r.task_type) +
+            "</td><td>" +
+            rlmStatusBadge(r.status) +
+            "</td><td>" +
+            esc(r.evidence_score) +
+            "</td><td>" +
+            esc(r.final_confidence) +
+            "</td><td>" +
+            agTime(r.created_at) +
+            "</td></tr>";
+        });
+        el.innerHTML =
+          '<table class="ag-table"><thead><tr><th>Run</th><th>Soru</th><th>Görev</th>' +
+          "<th>Durum</th><th>Kanıt</th><th>Güven</th><th>Tarih</th></tr></thead><tbody>" +
+          rows +
+          "</tbody></table>";
+      })
+      .catch(function (e) {
+        el.innerHTML = '<span class="ag-red">Yüklenemedi: ' + esc(e.message) + "</span>";
+      });
+  }
+
+  function rlmClaimList(title, claims, red) {
+    if (!claims || !claims.length) return "";
+    var items = claims
+      .map(function (c) {
+        return "<li>" + esc(c) + "</li>";
+      })
+      .join("");
+    return (
+      '<div class="small' +
+      (red ? " ag-red" : "") +
+      '"><strong>' +
+      esc(title) +
+      "</strong><ul>" +
+      items +
+      "</ul></div>"
+    );
+  }
+
+  function loadRlmRunDetail(runId) {
+    var el = document.getElementById("rlmDetail");
+    if (!el) return;
+    el.classList.remove("hidden");
+    el.innerHTML = '<span class="muted small">Yükleniyor…</span>';
+    api("/rlm/runs/" + encodeURIComponent(runId))
+      .then(function (d) {
+        var r = d.run || {},
+          steps = d.steps || [],
+          ev = d.evidence || [],
+          v = d.verification || null;
+        var head =
+          '<div class="ag-detail-head"><strong>' +
+          esc(r.run_id) +
+          "</strong> " +
+          rlmStatusBadge(r.status) +
+          ' <button class="ag-link" id="rlmDetailClose">kapat ✕</button></div>' +
+          '<div class="muted small">görev: ' +
+          esc(r.task_type) +
+          " · kanıt: " +
+          esc(r.evidence_score) +
+          " · güven: " +
+          esc(r.final_confidence) +
+          " · model: " +
+          esc(r.model_name || "—") +
+          " · " +
+          agTime(r.created_at) +
+          "</div>" +
+          '<div style="white-space:pre-wrap;background:rgba(127,127,127,.12);padding:.5rem;' +
+          'border-radius:4px;margin:.4rem 0;font-size:.85rem">' +
+          esc(r.final_answer || "") +
+          "</div>";
+        var sl = "";
+        steps.forEach(function (s) {
+          var txt =
+            (s.tool_used ? s.tool_used + " — " : "") + (s.output_text || s.input_text || "");
+          sl +=
+            '<li class="ag-tl"><span class="ag-badge ag-gray">' +
+            esc(s.step_type) +
+            "</span> " +
+            esc(txt.slice(0, 220)) +
+            "</li>";
+        });
+        var er = "";
+        ev.forEach(function (e2) {
+          er +=
+            "<tr><td>" +
+            esc(e2.paper_id) +
+            "</td><td>" +
+            esc(e2.chunk_id) +
+            "</td><td>" +
+            esc(e2.relevance_score) +
+            "</td><td>" +
+            (e2.used_in_final_answer ? "✓" : "—") +
+            "</td></tr>";
+        });
+        var vb;
+        if (v) {
+          vb =
+            '<div class="muted small">citation: ' +
+            esc(v.citation_score) +
+            " · grounding: " +
+            esc(v.grounding_score) +
+            " · sufficiency: " +
+            esc(v.context_sufficiency_score) +
+            " · karar: " +
+            esc(v.final_decision) +
+            "</div>" +
+            rlmClaimList("Desteklenen iddialar:", v.supported_claims, false) +
+            rlmClaimList("Desteklenmeyen (atılan):", v.unsupported_claims, true) +
+            (v.contradictions && v.contradictions.length
+              ? "<div class=\"small\"><strong>Çelişki:</strong> " +
+                esc(v.contradictions.join(", ")) +
+                "</div>"
+              : "");
+        } else {
+          vb = '<span class="muted small">doğrulama kaydı yok</span>';
+        }
+        el.innerHTML =
+          head +
+          '<h4 style="margin:.6rem 0 .2rem">Adımlar</h4><ul class="ag-timeline">' +
+          (sl || '<li class="muted small">adım yok</li>') +
+          "</ul>" +
+          '<h4 style="margin:.6rem 0 .2rem">Kanıt (chunk)</h4>' +
+          (er
+            ? '<table class="ag-table"><thead><tr><th>paper</th><th>chunk</th>' +
+              "<th>relevance</th><th>kullanıldı</th></tr></thead><tbody>" +
+              er +
+              "</tbody></table>"
+            : '<span class="muted small">kanıt satırı yok</span>') +
+          '<h4 style="margin:.6rem 0 .2rem">Doğrulama</h4>' +
+          vb;
+        var cl = document.getElementById("rlmDetailClose");
+        if (cl)
+          cl.addEventListener("click", function () {
+            el.classList.add("hidden");
+            el.innerHTML = "";
+          });
+      })
+      .catch(function (e) {
+        el.innerHTML = '<span class="ag-red">Detay yüklenemedi: ' + esc(e.message) + "</span>";
+      });
+  }
+
+  (function () {
+    var panel = document.getElementById("panel-rlm");
+    if (!panel) return;
+    panel.addEventListener("click", function (e) {
+      var t = e.target;
+      if (!t || t.nodeType !== 1) return;
+      if (t.id === "rlmRefreshBtn") return loadRlmDashboard();
+      var runId = t.getAttribute("data-rlm-run");
+      if (runId) return loadRlmRunDetail(runId);
+    });
+  })();
+
   // ---------- Orkestrasyon (dayanıklı eğitim hattı) ----------
   var ORC_GLYPH = {
     completed: "✓",
@@ -3983,6 +4234,8 @@
   var amSig = null; // düğüm-kümesi imzası → yeniden-kurma yalnız küme değişince
   var amLastData = null;
   var amMainId = null; // ana ajan id (alt tam-genişlik yeşil buton olarak render edilir)
+  var amGateRun = null; // hattın son koşusu — onay kapısında mı diye bakılır (iki-tık akışı)
+  var amResizeTimer = null; // pencere yeniden boyutlanınca yerleşimi tazeler (debounce)
   var AM_STLBL = {
     idle: "boşta",
     running: "çalışıyor",
@@ -4017,13 +4270,26 @@
     AM_CARD_H = 44,
     AM_CARD_GX = 14,
     AM_CARD_GY = 10,
-    AM_MAX_PER_ROW = 6,
+    AM_MAX_PER_ROW = 12, // sert üst sınır (aşırı gerilmesin)
+    AM_MIN_PER_ROW = 4, // dar ekranda bile okunur kalsın (altında yatay kaydırma devreye girer)
     AM_PAD = 16,
     AM_LANE_PAD = 12,
     AM_LANE_LABEL_H = 22,
     AM_LANE_GAP = 16,
     AM_MAIN_H = 58,
     AM_MAIN_GAP = 40;
+
+  // Satır başına kaç kart sığar? Tuvalin GERÇEK genişliğinden hesaplanır → geniş ekranda
+  // 8 ajanlı şerit tek satıra sığar (sarma yok, yatay kaydırma yok = "tüm ajanlar görünsün").
+  // Ölçüm alınamazsa 6'ya düşer (eski davranış). Belirli bir genişlik için sonuç deterministik.
+  function amPerRowCap() {
+    var el = document.getElementById("amCanvas");
+    var avail = (el && el.clientWidth) || 0;
+    if (!avail) return 6;
+    var inner = avail - AM_PAD * 2 - AM_LANE_PAD * 2 - 10; // kenarlık/kaydırma payı
+    var n = Math.floor((inner + AM_CARD_GX) / (AM_CARD_W + AM_CARD_GX));
+    return Math.max(AM_MIN_PER_ROW, Math.min(AM_MAX_PER_ROW, n));
+  }
 
   function amLayout(data) {
     var order = (data.groups || []).map(function (g) {
@@ -4044,10 +4310,12 @@
     Object.keys(byGroup).forEach(function (k) {
       if (lanes.indexOf(k) === -1) lanes.push(k); // haritada olmayan grup → sona
     });
+    // Satır kapasitesi tuval genişliğinden gelir (geniş panelde 8'lik şerit tek satır olur).
+    var perRowCap = amPerRowCap();
     // Global en-geniş satır (tüm şeritler aynı genişlikte kutu; kartlar sola hizalı).
     var maxRow = 1;
     lanes.forEach(function (k) {
-      maxRow = Math.max(maxRow, Math.min(byGroup[k].length, AM_MAX_PER_ROW));
+      maxRow = Math.max(maxRow, Math.min(byGroup[k].length, perRowCap));
     });
     var innerW = maxRow * AM_CARD_W + (maxRow - 1) * AM_CARD_GX;
     var sectionW = innerW + AM_LANE_PAD * 2;
@@ -4060,7 +4328,7 @@
       var arr = byGroup[gk].slice().sort(function (a, b) {
         return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
       });
-      var perRow = Math.min(arr.length, AM_MAX_PER_ROW);
+      var perRow = Math.min(arr.length, perRowCap);
       var rows = Math.ceil(arr.length / perRow);
       var cardsTop = y + AM_LANE_PAD + AM_LANE_LABEL_H;
       var laneInnerH = rows * AM_CARD_H + (rows - 1) * AM_CARD_GY;
@@ -4433,6 +4701,90 @@
       });
   }
 
+  // ── İKİ-TIK EĞİTİM KAPISI ──────────────────────────────────────────────────
+  // ⚡ RUN salt-okuma aşamalarını + zorunlu derin avı sürer, sonra `approval`/`train`
+  // aşamasında DURUR (Kural 8). Burada hattın son koşusuna bakıp, kapıda bekliyorsa
+  // "ONAYLA VE EĞİTİMİ BAŞLAT" kutusunu açarız — onayı İNSAN verir, motor değil.
+  function amRefreshGate() {
+    return api("/orchestration/runs?limit=1")
+      .then(function (d) {
+        var run = ((d && d.runs) || [])[0] || null;
+        amGateRun = run;
+        var box = document.getElementById("amGate");
+        var info = document.getElementById("amGateInfo");
+        var waiting = !!(
+          run &&
+          run.status === "blocked" &&
+          (run.current_stage === "approval" || run.current_stage === "train")
+        );
+        if (box) box.hidden = !waiting;
+        if (info && run) {
+          info.textContent =
+            "· koşu " + (run.run_id || "?") + " · aşama: " + (run.current_stage || "-");
+        }
+      })
+      .catch(function () {
+        var box = document.getElementById("amGate");
+        if (box) box.hidden = true; // durum bilinmiyorsa kapıyı AÇMA (güvenli taraf)
+      });
+  }
+
+  // ✅ İkinci tık: insan onayı + GERÇEK detached eğitim (mevcut /training/run kapısı).
+  // Akış: run → needs_approval ise approvals/{id}/approve → run (onay TÜKETİLİR, eğitim başlar).
+  function amApproveAndTrain() {
+    var btn = document.getElementById("amApproveTrainBtn");
+    var adapter = (amGateRun && amGateRun.adapter_name) || "achilles_lora";
+    var iters = parseInt((amGateRun && amGateRun.iters) || 300, 10) || 300;
+    if (
+      !window.confirm(
+        "✅ GERÇEK LoRA EĞİTİMİ BAŞLATILACAK.\n\n" +
+          "Adapter: " + adapter + " · ~" + iters + " adım.\n" +
+          "Uzun sürer (saatlerce) ve CPU'yu doldurur; bilgisayar açık kalmalı.\n" +
+          "Eğitim DETACHED başlar — web/terminal kapansa da sürer.\n\n" +
+          "Bu senin TAZE onayındır (Kural 8): tek kullanımlıktır ve yalnız bu eğitimi yetkilendirir.\n" +
+          "Başlatılsın mı?"
+      )
+    )
+      return;
+    if (btn) btn.disabled = true;
+    var payload = { adapter_name: adapter, iterations: iters };
+    function runTraining() {
+      return api("/training/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    }
+    runTraining()
+      .then(function (d) {
+        if (d && d.status === "needs_approval" && d.approval_id) {
+          // Onayı İNSAN yüzeyinden ver, sonra eğitimi tekrar çağır (onay tüketilir).
+          return api("/approvals/" + encodeURIComponent(d.approval_id) + "/approve", {
+            method: "POST",
+          }).then(runTraining);
+        }
+        return d;
+      })
+      .then(function (d) {
+        if (d && d.status === "started") {
+          toast("🚀 Eğitim başladı (detached) — harita canlı yanacak.");
+        } else if (d && d.status === "blocked") {
+          toast("Engellendi: " + (d.message || "STOP_ALL aktif olabilir"), true);
+        } else {
+          toast((d && d.message) || "Eğitim başlatılamadı", !(d && d.ok));
+        }
+        amRefreshGate();
+        amRefreshOnce();
+        if (typeof refreshTrain === "function") refreshTrain(); // üst şerit rozetini tazele
+      })
+      .catch(function (e) {
+        toast("Eğitim başlatılamadı: " + e.message, true);
+      })
+      .finally(function () {
+        if (btn) btn.disabled = false;
+      });
+  }
+
   function amStartPoll() {
     if (amPollTimer) return;
     amPollTimer = setInterval(function () {
@@ -4442,6 +4794,7 @@
         return;
       }
       amRefreshOnce();
+      amRefreshGate();
     }, 7000);
   }
 
@@ -4532,6 +4885,7 @@
           );
         }
         amRefreshOnce();
+        amRefreshGate(); // sürüş bitince hat onay kapısına gelmiş olabilir → kutuyu aç
       })
       .catch(function (e) {
         toast("Devreye sokulamadı: " + e.message, true);
@@ -4552,9 +4906,31 @@
     if (tb && !tb._wired) {
       tb._wired = true;
       tb.addEventListener("click", amTriggerTraining);
-      document.getElementById("amRefreshBtn").addEventListener("click", amRefreshOnce);
+      document.getElementById("amRefreshBtn").addEventListener("click", function () {
+        amRefreshOnce();
+        amRefreshGate();
+      });
+    }
+    var ab = document.getElementById("amApproveTrainBtn");
+    if (ab && !ab._wired) {
+      ab._wired = true;
+      ab.addEventListener("click", amApproveAndTrain);
+    }
+    if (!window._amResizeWired) {
+      window._amResizeWired = true;
+      // Genişlik değişince satır kapasitesi değişir → yerleşimi yeniden kur (debounce'lu).
+      window.addEventListener("resize", function () {
+        if (amResizeTimer) clearTimeout(amResizeTimer);
+        amResizeTimer = setTimeout(function () {
+          amResizeTimer = null;
+          if (!amPanelActive() || !amLastData) return;
+          amSig = null; // imzayı sıfırla → amRender tam yeniden kurar
+          amRender(amLastData);
+        }, 250);
+      });
     }
     amRefreshOnce();
+    amRefreshGate();
     amStartPoll();
   }
 
