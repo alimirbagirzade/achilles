@@ -218,11 +218,20 @@ def inbox_root() -> Path:
     return repo_root() / "data" / "literature_inbox"
 
 
-def watchlist_path_for(topic: str) -> Path:
-    """Konu başına izleme defteri. `rag` geriye uyum için mevcut dosyayı kullanır."""
-    if topic == "rag":
-        return repo_root() / "docs" / "egitim" / "rag-watchlist.md"
-    return repo_root() / "docs" / "egitim" / f"{topic}-watchlist.md"
+def watchlist_dir_default() -> Path:
+    """İzleme defterlerinin varsayılan kökü (`docs/egitim/`)."""
+    return repo_root() / "docs" / "egitim"
+
+
+def watchlist_path_for(topic: str, base: Path | None = None) -> Path:
+    """Konu başına izleme defteri.
+
+    `rag` geriye uyum için mevcut `rag-watchlist.md` dosyasını kullanır. `base`
+    enjekte edilebilir → testler repo'ya YAZMAZ (tmp_path ile izole edilir).
+    """
+    root = base or watchlist_dir_default()
+    name = "rag-watchlist.md" if topic == "rag" else f"{topic}-watchlist.md"
+    return root / name
 
 
 def _safe_name(arxiv_id: str) -> str:
@@ -319,6 +328,7 @@ def run_scout(
     top_n_download: int = 3,
     download: bool = True,
     inbox: Path | None = None,
+    watchlist_dir: Path | None = None,
     searcher: Callable[[str, int], list[ArxivEntry]] = search_arxiv,
     downloader: Callable[[str], bytes] = _default_downloader,
     today: str | None = None,
@@ -332,6 +342,7 @@ def run_scout(
         top_n_download: Konu başına en çok kaç PDF indirilsin (gelen kutusu boğulmasın).
         download: False → yalnız defter güncellenir, dosya indirilmez.
         inbox: PDF kökü; None → `inbox_root()`.
+        watchlist_dir: İzleme defteri kökü; None → `docs/egitim/` (testler tmp_path verir).
         searcher/downloader: test/çevrimdışı için enjekte edilir.
         today: Tarih damgası (test determinizmi).
 
@@ -355,7 +366,11 @@ def run_scout(
             continue
         # 1) İzleme defteri (idempotent; zaten bilinen id atlanır)
         try:
-            added = append_candidates(watchlist_path_for(pack.key), cands, today=stamp)
+            wl_path = watchlist_path_for(pack.key, watchlist_dir)
+            # Kök yoksa oluştur: yeni makinede/yeni konuda defter sessizce yazılmadan
+            # kalmasın (append_candidates dizini kendisi açmaz).
+            wl_path.parent.mkdir(parents=True, exist_ok=True)
+            added = append_candidates(wl_path, cands, today=stamp)
             report.watchlist_added[pack.key] = added
         except Exception as exc:  # defter yazılamasa bile tur sürsün
             logger.warning("Watchlist yazılamadı (%s): %s", pack.key, exc)

@@ -110,6 +110,7 @@ def test_run_scout_downloads_and_writes_manifest(tmp_path: Path) -> None:
         topics=["lora"],
         top_n_download=2,
         inbox=inbox,
+        watchlist_dir=tmp_path,
         searcher=_searcher_for("lora low-rank adapter fine-tuning peft"),
         downloader=lambda u: _PDF,
         today="2026-07-21",
@@ -131,6 +132,7 @@ def test_no_download_mode_writes_nothing(tmp_path: Path) -> None:
     report = run_scout(
         topics=["rlm"],
         inbox=inbox,
+        watchlist_dir=tmp_path,
         download=False,
         searcher=_searcher_for("reasoning claim verification grounding evidence"),
         downloader=lambda u: pytest.fail("download=False iken indirici çağrılmamalı"),
@@ -145,7 +147,12 @@ def test_network_failure_is_graceful(tmp_path: Path) -> None:
         raise RuntimeError("ağ yok")
 
     report = run_scout(
-        topics=["rag"], inbox=tmp_path, searcher=dead, downloader=lambda u: _PDF, today="2026-07-21"
+        topics=["rag"],
+        inbox=tmp_path,
+        watchlist_dir=tmp_path,
+        searcher=dead,
+        downloader=lambda u: _PDF,
+        today="2026-07-21",
     )
     assert report.found == []  # çökmedi
 
@@ -194,3 +201,26 @@ def test_scout_never_ingests_or_trains() -> None:
     assert not (called & forbidden_calls), (
         f"keşif ajanı şunları çağırmamalı (Kural 8): {sorted(called & forbidden_calls)}"
     )
+
+
+def test_watchlist_is_injectable_repo_not_touched(tmp_path: Path) -> None:
+    """Testler/koşular repo'daki docs/egitim'e YAZMAMALI — defter kökü enjekte edilebilir."""
+    from app.research.literature_scout import watchlist_dir_default, watchlist_path_for
+
+    # enjekte edilen kök kullanılır
+    assert watchlist_path_for("lora", tmp_path) == tmp_path / "lora-watchlist.md"
+    # rag geriye uyum: dosya adı korunur
+    assert watchlist_path_for("rag", tmp_path).name == "rag-watchlist.md"
+    # varsayilan kok repo docs/egitim
+    assert watchlist_dir_default().name == "egitim"
+
+    wl = tmp_path / "wl"
+    run_scout(
+        topics=["lora"],
+        inbox=tmp_path / "ib",
+        watchlist_dir=wl,
+        searcher=_searcher_for("lora adapter fine-tuning peft"),
+        downloader=lambda u: _PDF,
+        today="2026-07-21",
+    )
+    assert (wl / "lora-watchlist.md").exists(), "defter enjekte edilen köke yazılmalı"
