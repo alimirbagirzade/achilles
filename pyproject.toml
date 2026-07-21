@@ -56,6 +56,10 @@ docs = ["markdown-pdf>=1.13"]
 # OPSIYONEL: alexzhang13/rlm recursive reasoning motoru. Kurulu degilse Achilles native
 # RLM ile tam calisir. Acmak icin: uv sync --extra rlm  (veya uv pip install -e ".[rlm]")
 rlm = ["rlms>=0.1.2"]
+# OPSIYONEL: mcp_server/achilles_mcp.py (FastMCP proxy) icin. Bu extra kurulmadan
+# `python mcp_server/achilles_mcp.py` ModuleNotFoundError ile duser.
+# Kuran taraf: scripts/sync-mcp.sh
+mcp = ["fastmcp>=2.0"]
 dev = [
     "pytest>=8.2",
     "pytest-cov>=5.0",

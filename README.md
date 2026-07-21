@@ -144,7 +144,7 @@ bash update.sh
 
 Her iki script de şunu yapar: web sunucusunu durdur (port 8765) → **hangi dalda olursan ol
 `main`'e geçip `origin/main`'e yakınsa** (ff-only; eskiden yapmıyordu, "oturmuyor"un kök sebebi
-buydu) → **`uv sync --extra web`** → web'i yeniden başlat → sağlık kontrolü. **Eğitime dokunmaz.**
+buydu) → **`uv sync --extra dev`** → web'i yeniden başlat → sağlık kontrolü. **Eğitime dokunmaz.**
 Yerel main GitHub'dan ıraksaksa **otomatik birleştirme yapmaz**; `-Force` ile yereli atıp eşitlersin.
 
 > 🔴 **Güncelledikten sonra tarayıcıda sert yenileme yap:** Windows/Linux **`Ctrl + Shift + R`**,

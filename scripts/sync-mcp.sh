@@ -7,17 +7,26 @@ cd "$(dirname "$0")/.." || exit 1
 REPO="$(pwd)"
 
 echo "[sync-mcp] tool üretimi doğrulanıyor..."
+# Hata çıktısı bir dosyaya alınır; /dev/null'a atmak gerçek nedeni (ör. eksik fastmcp)
+# gizliyordu — başarısızlıkta aşağıda gösterilir.
+ERRLOG="$(mktemp)"
 N=$(uv run python -c "
 import asyncio
 from mcp_server.achilles_mcp import mcp
 print(len(asyncio.run(mcp.list_tools())))
-" 2>/dev/null | tail -1)
+" 2>"$ERRLOG" | tail -1)
 echo "[sync-mcp] üretilen tool: ${N:-?}"
 
 if [ -z "${N:-}" ] || [ "${N:-0}" -lt 1 ]; then
-  echo "[sync-mcp] HATA: tool üretilemedi (web sunucusu açık mı? import hatası?)"
+  echo "[sync-mcp] HATA: tool üretilemedi. Python çıktısı:"
+  sed 's/^/    /' "$ERRLOG" >&2
+  if grep -q "No module named 'fastmcp'" "$ERRLOG"; then
+    echo "[sync-mcp] ÇÖZÜM: fastmcp opsiyonel 'mcp' extra'sındadır → uv sync --extra mcp" >&2
+  fi
+  rm -f "$ERRLOG"
   exit 1
 fi
+rm -f "$ERRLOG"
 
 echo "[sync-mcp] MCP yeniden kaydediliyor (achilles)..."
 claude mcp remove achilles 2>/dev/null || true

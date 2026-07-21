@@ -3,7 +3,7 @@
 #   .\update.ps1           -- normal: origin/main'e GUVENLI yakinsama (ff-only)
 #   .\update.ps1 -Force    -- yereli AT, origin/main ile birebir esitle (salt-kopya kurulum)
 #
-# Yapar: web sunucusunu durdur -> 'main' dalina yakinsa (origin/main) -> uv sync --extra web ->
+# Yapar: web sunucusunu durdur -> 'main' dalina yakinsa (origin/main) -> uv sync --extra dev ->
 #        web'i yeniden baslat -> saglik kontrolu.  EGITIME DOKUNMAZ.
 #
 # NOT (kok-neden duzeltmesi): Bu betik artik MEVCUT dal ne olursa olsun makineyi
@@ -187,8 +187,8 @@ if ($updated) {
 
 # --- 3. Bagimliliklar (WEB extra DAHIL -- duz 'uv sync' web paketlerini budar) ---
 if ($updated -or $Force) {
-    Write-Host "[..] Bagimliliklar esitleniyor (uv sync --extra web)..." -ForegroundColor Gray
-    & $UvPath sync --extra web 2>&1 | Out-Null
+    Write-Host "[..] Bagimliliklar esitleniyor (uv sync --extra dev)..." -ForegroundColor Gray
+    & $UvPath sync --extra dev 2>&1 | Out-Null
 }
 
 # --- 4. Web'i yeniden baslat ---
