@@ -2403,6 +2403,38 @@ code {
   border: 1px solid var(--pos-border);
   display: inline-block;
 }
+/* efsanede "gezen ışık" — küçük parlayan nokta */
+.am-lg-orbit {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 5px var(--ok);
+  display: inline-block;
+  animation: am-lg-blink 2.2s ease-in-out infinite;
+}
+@keyframes am-lg-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+/* efsanede "ilişkili" — ışıklı çerçeve */
+.am-lg-frame {
+  width: 20px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1.8px solid var(--ok);
+  display: inline-block;
+}
+@media (prefers-reduced-motion: reduce) {
+  .am-lg-orbit {
+    animation: none;
+  }
+}
 .am-hint {
   margin: 8px 0 0;
 }
@@ -2549,7 +2581,83 @@ code {
   }
 }
 
-/* tehlikeli — kırmızı kesik kenarlık */
+/* ── "GEZEN LED" — çalışan ajanın kartı ETRAFINDA dönen ışıklar ───────────────
+   pathLength="100" sayesinde dash birimleri yüzdedir → kart boyutundan bağımsız.
+   dash+gap = 50 → çevrede EŞİT ARALIKLI 2 ışık; offset -50 (bir periyot) = kesintisiz
+   döngü. Çalışan ajan "devrede" olduğunu, komşusunun ışıklı çerçevesi de "bunlar şu an
+   birbiriyle ilişkili" olduğunu anlatır.
+
+   PARILTI TEKNİĞİ (tercih): `filter: drop-shadow()` yerine "iki-stroke" — altta geniş+
+   yarı-saydam hale, üstte ince+parlak LED. Gerekçe: animasyonlu stroke-dashoffset ile
+   filtre her karede yeniden rasterize edilmek zorundadır; bu makine GPU'suz ve aynı anda
+   CPU-only LoRA eğitimi koşabiliyor (bkz. Nöbetçi 'contention' probe'u), o yüzden kare-başı
+   filtre maliyetinden kaçınmak varsayılan. NOT: bu bir ön-tercih, ölçülmüş bir regresyon
+   değil — iki-stroke zaten ucuz ve LED görünümü daha net. */
+.am-card-orbit,
+.am-mainbar-orbit,
+.am-card-orbit-glow,
+.am-mainbar-orbit-glow {
+  fill: none;
+  stroke: none; /* varsayılan görünmez — yalnız çalışırken yanar */
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+/* alt katman: geniş, yarı-saydam "hale" (bloom hissi, filtresiz) */
+.am-node.status-running .am-card-orbit-glow {
+  stroke: var(--ok);
+  stroke-width: 7;
+  opacity: 0.28;
+  stroke-dasharray: 13 37;
+  animation: am-orbit 2.2s linear infinite;
+}
+/* üst katman: ince, parlak LED */
+.am-node.status-running .am-card-orbit {
+  stroke: var(--ok);
+  stroke-dasharray: 13 37;
+  animation: am-orbit 2.2s linear infinite;
+}
+.am-mainbar.status-running .am-mainbar-orbit-glow {
+  stroke: #ffffff;
+  stroke-width: 8;
+  opacity: 0.32;
+  stroke-dasharray: 7 18;
+  animation: am-orbit-main 3s linear infinite;
+}
+.am-mainbar.status-running .am-mainbar-orbit {
+  stroke: #ffffff;
+  stroke-width: 3;
+  stroke-dasharray: 7 18; /* dash+gap = 25 → 4 ışık (geniş buton) */
+  animation: am-orbit-main 3s linear infinite;
+}
+@keyframes am-orbit {
+  to {
+    stroke-dashoffset: -50;
+  }
+}
+@keyframes am-orbit-main {
+  to {
+    stroke-dashoffset: -25;
+  }
+}
+/* çalışan kartın gövdesi de vurgulanır (filtresiz — yalnız stroke) */
+.am-node.status-running .am-card {
+  stroke: var(--ok);
+  stroke-width: 2;
+}
+
+/* İLİŞKİLİ — çalışan bir ajana bağlı komşu: sabit (dönmeyen) ışıklı çerçeve */
+.am-node.am-linked .am-card {
+  stroke: var(--ok);
+  stroke-width: 1.8;
+  stroke-dasharray: none;
+}
+.am-mainbar.am-linked .am-mainbar-box {
+  stroke: #ffffff;
+  stroke-width: 3;
+}
+
+/* tehlikeli — kırmızı kesik kenarlık (çalışan/ilişkili değilken) */
 .am-node.am-danger .am-card {
   stroke: var(--neg);
   stroke-width: 1.6;
@@ -2682,5 +2790,13 @@ code {
   .am-mainbar.status-running .am-mainbar-box,
   .am-edge.flowing {
     animation: none;
+  }
+  /* LED'ler dönmesin ama "devrede" bilgisi kaybolmasın → sabit tam çerçeve olarak kalsın */
+  .am-node.status-running .am-card-orbit,
+  .am-node.status-running .am-card-orbit-glow,
+  .am-mainbar.status-running .am-mainbar-orbit,
+  .am-mainbar.status-running .am-mainbar-orbit-glow {
+    animation: none;
+    stroke-dasharray: none;
   }
 }
