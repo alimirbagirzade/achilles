@@ -67,8 +67,9 @@ def build_hunt_prompt(run: dict[str, Any]) -> str:
     """Headless claude -p için Kademe-2 derin av promptu (SALT RAPOR; kod/eğitim YOK)."""
     adapter = run.get("adapter_name", "achilles_lora")
     return (
-        "Sen Achilles deposunda KADEME-2 derin adversarial bug-avı çalıştıran bir ajansın "
-        "(CLAUDE.md). Bu, eğitim ÖNCESİ ZORUNLU denetimdir. KESİNLİKLE: yalnız RAPOR üret; "
+        "Sen Achilles deposunda KADEME-2 derin adversarial bug-avı çalıştıran bir ajansın. "
+        "İLK İŞ: depo kökündeki CLAUDE.md'yi Read ile OKU (safe-mode'da oto-keşif kapalıdır; "
+        "kurallar oradadır). Bu, eğitim ÖNCESİ ZORUNLU denetimdir. KESİNLİKLE: yalnız RAPOR üret; "
         "KOD DEĞİŞTİRME, git commit/push YAPMA, EĞİTİM BAŞLATMA, hiçbir dosyaya yazma. "
         "Alt-sistem başına paralel bul → şüpheci adversarial doğrula (varsayılan çürütülmüş) "
         "→ yalnız onaylanan CİDDİ (HIGH/BLOCKER) bulguları say. Çıktının SON SATIRI tam olarak "
@@ -86,12 +87,27 @@ def build_hunt_command(run: dict[str, Any]) -> list[str]:
     ``--disallowedTools`` ile motor araç-seviyesinde kısıtlanır: Bash/Write olmadan
     ne yerel CLI'yi (auth'suz `approval-approve`) çalıştırabilir ne de dosya yazabilir.
 
-    ``--strict-mcp-config`` ZORUNLU: ``--mcp-config`` verilmediği için HİÇBİR MCP
-    sunucusu yüklenmez. Bu makinede proje kapsamında kayıtlı `achilles` MCP sunucusu
-    (`mcp_server/achilles_mcp.py`) Achilles OpenAPI'sinden tool üretip
-    ``127.0.0.1:8765``'e httpx ile proxy'liyor → Bash OLMADAN HTTP isteği atan bir
-    kanal. Üstelik proxy sürücü başlığı göndermediği için istekleri ``human``
-    scope'una düşerdi. Denetim BLOCKER bulgusu.
+    ``--safe-mode`` ZORUNLU — asıl sınır budur. Araç deny-list'i TEK BAŞINA yetmez:
+    Claude Code'un *özelleştirme* kanalları (hook'lar, plugin'ler, MCP sunucuları,
+    özel ajanlar/komutlar/skill'ler) araç katmanının DIŞINDA çalışır. İki somut
+    denetim bulgusu bunu kanıtladı:
+
+    - MCP: proje kapsamında kayıtlı `achilles` sunucusu (`mcp_server/achilles_mcp.py`)
+      Achilles OpenAPI'sinden tool üretip ``127.0.0.1:8765``'e proxy'liyor → Bash
+      OLMADAN HTTP isteği atan bir kanal (üstelik sürücü başlığı göndermediği için
+      istekleri ``human`` scope'una düşerdi).
+    - Hook'lar: ``.claude/settings.json`` içindeki ``SessionStart``/``PreToolUse``
+      hook'ları Claude Code tarafından DOĞRUDAN kabukta çalıştırılır — ``Bash``
+      *aracı* üzerinden değil. ``-p`` modunda güven (trust) diyaloğu atlandığı için
+      onaysız çalışırlar; deny-list bunları hiç görmez.
+
+    ``--safe-mode`` bu kanalların tamamını tek seferde kapatır (kanal kanal
+    kovalamaca yerine sınıf-düzeyi çözüm). ``--strict-mcp-config`` kemer-askı olarak
+    korunur. ``--disallowedTools`` ise yerleşik araçları kısar (safe-mode onları
+    kısmaz) → iki bayrak BİRLİKTE gereklidir.
+
+    NOT: ``--safe-mode`` CLAUDE.md oto-keşfini de kapatır; bu yüzden prompt, avcıya
+    CLAUDE.md'yi AÇIKÇA okumasını söyler (Read aracı hâlâ açık).
 
     Bayrak sırası: ``--disallowedTools`` variadic (``<tools...>``) olduğundan EN SONDA
     durur ve tek virgüllü arg alır; aksi halde sonraki bayrakları yutabilir.
@@ -100,6 +116,7 @@ def build_hunt_command(run: dict[str, Any]) -> list[str]:
         "claude",
         "-p",
         build_hunt_prompt(run),
+        "--safe-mode",
         "--strict-mcp-config",
         "--disallowedTools",
         ",".join(DISALLOWED_TOOLS),

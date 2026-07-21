@@ -62,21 +62,37 @@ uygulandığı, test edilmiş bir varsayım değildir).
 > Prompt talimatı bir güvenlik sınırı **değildir**: RAG'e alınan bir makale/kart
 > içeriği prompt-injection ile motoru yönlendirebilir.
 
-### 1b. MCP sunucuları deny-list'in DIŞINDAYDI
+### 1b. Özelleştirme kanalları deny-list'in DIŞINDA (MCP + hook'lar)
 
-İkinci denetim turunda çıktı: `--disallowedTools` yalnız **yerleşik** araç adlarını
-yasaklar, `mcp__*` araçlarını **değil**. Bu makinede proje kapsamında kayıtlı
-`achilles` MCP sunucusu (`mcp_server/achilles_mcp.py`), Achilles OpenAPI'sinden tool
-üretip `127.0.0.1:8765`'e `httpx` ile proxy'ler — yani **Bash olmadan HTTP isteği atan
-bir kanal**. Üstelik bu proxy sürücü başlığı göndermediği için istekleri `human`
-scope'una düşerdi.
+Araç deny-list'i **tek başına yetmez**. Claude Code'un *özelleştirme* kanalları araç
+katmanının dışında çalışır; iki ayrı denetim turunda ikisi de somut olarak bulundu:
 
-**Düzeltme:** spawn'a `--strict-mcp-config` eklendi ve `--mcp-config` verilmiyor →
-hiçbir MCP sunucusu yüklenmez.
+**MCP:** `--disallowedTools` yalnız **yerleşik** araç adlarını yasaklar, `mcp__*`
+araçlarını **değil**. Proje kapsamında kayıtlı `achilles` MCP sunucusu
+(`mcp_server/achilles_mcp.py`), Achilles OpenAPI'sinden tool üretip
+`127.0.0.1:8765`'e `httpx` ile proxy'ler — yani **Bash olmadan HTTP isteği atan bir
+kanal**. Üstelik bu proxy sürücü başlığı göndermediği için istekleri `human` scope'una
+düşerdi.
 
-> Bu vektör bir süre **kazara** kapalıydı: insan-yalnız 6 uç `include_in_schema=False`
-> olduğu için FastMCP'nin ürettiği şemada yer almıyordu. Bu bir savunma **değildi** —
-> dokümanın kendisinin "koruma değildir" dediği bayrağa bağımlıydı.
+**Hook'lar:** `.claude/settings.json` içindeki `SessionStart`/`PreToolUse` hook'ları
+Claude Code tarafından **doğrudan kabukta** çalıştırılır — `Bash` *aracı* üzerinden
+değil. `-p` modunda güven (trust) diyaloğu atlandığı için **onaysız** koşarlar ve
+deny-list bunları hiç görmez. Depoya hook ekleyen bir PR/enjeksiyon, motor doğduğu
+anda tek bir araç çağrısı bile yapmadan `curl`/`achilles approval-approve`
+çalıştırabilirdi.
+
+**Düzeltme (sınıf-düzeyi):** spawn'a **`--safe-mode`** eklendi — CLAUDE.md, skill'ler,
+plugin'ler, **hook'lar**, **MCP sunucuları**, özel komut/ajanlar ve diğer tüm
+özelleştirmeler kapatılır. Kanal kanal kovalamaca yerine sınıfın tamamı kapanır.
+`--strict-mcp-config` kemer-askı olarak korunur.
+
+> `--safe-mode` CLAUDE.md **oto-keşfini** de kapatır (dosya hâlâ okunabilir). Bu yüzden
+> av promptu avcıya CLAUDE.md'yi **açıkça Read ile okumasını** söyler.
+
+> MCP vektörü bir süre **kazara** kapalıydı: insan-yalnız 6 uç
+> `include_in_schema=False` olduğu için FastMCP'nin ürettiği şemada yer almıyordu. Bu
+> bir savunma **değildi** — dokümanın kendisinin "koruma değildir" dediği bayrağa
+> bağımlıydı.
 
 ### 1c. `hunt_ack` doğrulanmadan kabul ediliyordu
 
@@ -115,7 +131,7 @@ Bu yüzden koruma **katmanlıdır** ve gücü şuna bağlıdır:
 
 | Durum | Gerçek koruma |
 |-------|---------------|
-| Araç kısıtı (`--disallowedTools` + `--strict-mcp-config`) | **Asıl sınır.** Bash/Write/Task'ı ve MCP kanalı olmayan motorun elinde HTTP isteği atacak ya da CLI çalıştıracak bir araç kalmaz. Bu iki bayrak birlikte olmalıdır: yalnız `--disallowedTools` MCP tool'larını (`mcp__*`) kapsamaz. |
+| Araç kısıtı (`--safe-mode` + `--strict-mcp-config` + `--disallowedTools`) | **Asıl sınır.** Üçü BİRLİKTE gerekir: `--disallowedTools` yerleşik araçları kısar ama özelleştirme kanallarını (hook/plugin/MCP/özel-ajan) görmez; `--safe-mode` o sınıfın tamamını kapatır ama yerleşik araçları kısmaz. |
 | `api_token` **atanmış** | Gerçek yetki sınırı: çocuğun ortamı temizlenir, insan token'ını bilemez. |
 | `api_token` **boş** | Yalnız derinlemesine savunma + gürültülü başlangıç uyarısı. Kriptografik garanti **yok**. |
 

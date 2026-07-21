@@ -227,15 +227,29 @@ def test_hunt_command_restricts_tools() -> None:
     assert cmd[-2] == "--disallowedTools"
 
 
-def test_hunt_command_disables_mcp_servers() -> None:
-    """MCP kanalı kapalı olmalı — yoksa motor Bash OLMADAN HTTP isteği atabilir.
+def test_hunt_command_disables_customization_channels() -> None:
+    """Özelleştirme kanalları (hook/plugin/MCP/özel-ajan) araç deny-list'inin DIŞINDADIR.
 
-    `mcp_server/achilles_mcp.py` Achilles OpenAPI'sinden tool üretip 127.0.0.1:8765'e
-    proxy'liyor ve sürücü başlığı GÖNDERMİYOR → istekler human scope'una düşerdi.
+    İki kanıtlanmış kaçış yolu: (a) `achilles` MCP sunucusu 127.0.0.1:8765'e proxy'liyor
+    ve sürücü başlığı göndermiyor → human scope'una düşerdi; (b) `.claude/settings.json`
+    hook'ları Claude Code tarafından DOĞRUDAN kabukta çalıştırılır (`Bash` aracı DEĞİL)
+    ve `-p` modunda güven diyaloğu atlandığı için onaysız koşar.
+
+    `--safe-mode` bu sınıfın tamamını kapatır; kanal kanal kovalamacadan üstündür.
     """
     cmd = build_hunt_command({"adapter_name": "myad"})
-    assert "--strict-mcp-config" in cmd
+    assert "--safe-mode" in cmd  # hook + plugin + MCP + özel ajan/komut/skill kapalı
+    assert "--strict-mcp-config" in cmd  # kemer-askı
     assert "--mcp-config" not in cmd  # hiçbir MCP sunucusu yüklenmez
+
+
+def test_hunt_prompt_tells_agent_to_read_claude_md() -> None:
+    """safe-mode CLAUDE.md oto-keşfini kapatır → prompt açıkça okumasını söylemeli."""
+    from app.orchestration.driver import build_hunt_prompt
+
+    prompt = build_hunt_prompt({"adapter_name": "x"})
+    assert "CLAUDE.md" in prompt
+    assert "OKU" in prompt
 
 
 # ── hunt_ack: doğrulanmayan insan yetki beyanı → sürücüye kapalı ─────────────
