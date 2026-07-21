@@ -29,7 +29,7 @@ SUPPORTED_TYPES: tuple[str, ...] = ("trading-hypothesis", "rag-retrieval")
 DEFERRED_TYPES: dict[str, str] = {
     "rag-answer": "tam RAG cevap hattı gerekir; şimdilik AnswerEvaluator doğrudan kullanılır",
     "lora": "bkz. 'achilles lora-eval' (adapter + LLM gerektirir, çevrimdışı değil)",
-    "formula": "formula_verifier doğrudan çağrılır; runner'a bağlanması ertelendi",
+    "formula": "formül doğrulayıcı henüz yok; hiç bağlanmadan ölü kaldığı için kaldırıldı",
     "rlm-reward": "app/rlm çıktısı gerekir — eş zamanlı oturum bitene dek ertelendi",
 }
 
