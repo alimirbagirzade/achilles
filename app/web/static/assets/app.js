@@ -4235,6 +4235,7 @@
   var amLastData = null;
   var amMainId = null; // ana ajan id (alt tam-genişlik yeşil buton olarak render edilir)
   var amGateRun = null; // hattın son koşusu — onay kapısında mı diye bakılır (iki-tık akışı)
+  var amResizeTimer = null; // pencere yeniden boyutlanınca yerleşimi tazeler (debounce)
   var AM_STLBL = {
     idle: "boşta",
     running: "çalışıyor",
@@ -4269,13 +4270,26 @@
     AM_CARD_H = 44,
     AM_CARD_GX = 14,
     AM_CARD_GY = 10,
-    AM_MAX_PER_ROW = 6,
+    AM_MAX_PER_ROW = 12, // sert üst sınır (aşırı gerilmesin)
+    AM_MIN_PER_ROW = 4, // dar ekranda bile okunur kalsın (altında yatay kaydırma devreye girer)
     AM_PAD = 16,
     AM_LANE_PAD = 12,
     AM_LANE_LABEL_H = 22,
     AM_LANE_GAP = 16,
     AM_MAIN_H = 58,
     AM_MAIN_GAP = 40;
+
+  // Satır başına kaç kart sığar? Tuvalin GERÇEK genişliğinden hesaplanır → geniş ekranda
+  // 8 ajanlı şerit tek satıra sığar (sarma yok, yatay kaydırma yok = "tüm ajanlar görünsün").
+  // Ölçüm alınamazsa 6'ya düşer (eski davranış). Belirli bir genişlik için sonuç deterministik.
+  function amPerRowCap() {
+    var el = document.getElementById("amCanvas");
+    var avail = (el && el.clientWidth) || 0;
+    if (!avail) return 6;
+    var inner = avail - AM_PAD * 2 - AM_LANE_PAD * 2 - 10; // kenarlık/kaydırma payı
+    var n = Math.floor((inner + AM_CARD_GX) / (AM_CARD_W + AM_CARD_GX));
+    return Math.max(AM_MIN_PER_ROW, Math.min(AM_MAX_PER_ROW, n));
+  }
 
   function amLayout(data) {
     var order = (data.groups || []).map(function (g) {
@@ -4296,10 +4310,12 @@
     Object.keys(byGroup).forEach(function (k) {
       if (lanes.indexOf(k) === -1) lanes.push(k); // haritada olmayan grup → sona
     });
+    // Satır kapasitesi tuval genişliğinden gelir (geniş panelde 8'lik şerit tek satır olur).
+    var perRowCap = amPerRowCap();
     // Global en-geniş satır (tüm şeritler aynı genişlikte kutu; kartlar sola hizalı).
     var maxRow = 1;
     lanes.forEach(function (k) {
-      maxRow = Math.max(maxRow, Math.min(byGroup[k].length, AM_MAX_PER_ROW));
+      maxRow = Math.max(maxRow, Math.min(byGroup[k].length, perRowCap));
     });
     var innerW = maxRow * AM_CARD_W + (maxRow - 1) * AM_CARD_GX;
     var sectionW = innerW + AM_LANE_PAD * 2;
@@ -4312,7 +4328,7 @@
       var arr = byGroup[gk].slice().sort(function (a, b) {
         return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
       });
-      var perRow = Math.min(arr.length, AM_MAX_PER_ROW);
+      var perRow = Math.min(arr.length, perRowCap);
       var rows = Math.ceil(arr.length / perRow);
       var cardsTop = y + AM_LANE_PAD + AM_LANE_LABEL_H;
       var laneInnerH = rows * AM_CARD_H + (rows - 1) * AM_CARD_GY;
@@ -4899,6 +4915,19 @@
     if (ab && !ab._wired) {
       ab._wired = true;
       ab.addEventListener("click", amApproveAndTrain);
+    }
+    if (!window._amResizeWired) {
+      window._amResizeWired = true;
+      // Genişlik değişince satır kapasitesi değişir → yerleşimi yeniden kur (debounce'lu).
+      window.addEventListener("resize", function () {
+        if (amResizeTimer) clearTimeout(amResizeTimer);
+        amResizeTimer = setTimeout(function () {
+          amResizeTimer = null;
+          if (!amPanelActive() || !amLastData) return;
+          amSig = null; // imzayı sıfırla → amRender tam yeniden kurar
+          amRender(amLastData);
+        }, 250);
+      });
     }
     amRefreshOnce();
     amRefreshGate();
