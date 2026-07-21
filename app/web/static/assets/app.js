@@ -4236,6 +4236,9 @@
   var amMainId = null; // ana ajan id (alt tam-genişlik yeşil buton olarak render edilir)
   var amGateRun = null; // hattın son koşusu — onay kapısında mı diye bakılır (iki-tık akışı)
   var amResizeTimer = null; // pencere yeniden boyutlanınca yerleşimi tazeler (debounce)
+  var amEngines = []; // /api/engines özeti (salt bilgi; KİMLİK BİLGİSİ İÇERMEZ)
+  var amConfirmResolve = null; // açık onay diyaloğunun promise resolver'ı
+  var amDriving = false; // bu oturumda sürüş başlatıldı mı → canlı şerit + DURDUR görünür
   var AM_STLBL = {
     idle: "boşta",
     running: "çalışıyor",
@@ -4722,6 +4725,20 @@
           info.textContent =
             "· koşu " + (run.run_id || "?") + " · aşama: " + (run.current_stage || "-");
         }
+        // Canlı şerit GERÇEK koşu durumundan sürülür (yalnız "başlattık" bayrağından değil):
+        // koşu artık running değilse sürüş bitmiştir → şeridi kapat.
+        if (amDriving) {
+          if (run && run.status === "running") {
+            var live = document.getElementById("amLiveText");
+            if (live) {
+              live.textContent =
+                "Sürüş devrede — aşama: " + (run.current_stage || "-") + " · koşu " +
+                (run.run_id || "?");
+            }
+          } else {
+            amSetLive(false);
+          }
+        }
       })
       .catch(function () {
         var box = document.getElementById("amGate");
@@ -4832,10 +4849,221 @@
     }
   }
 
-  // ⚡ ANA AJANI DEVREYE SOK: (gerekirse) koşu başlat → confirm'li autodrive.
-  // execute değeri = confirm sonucu; onaylanmazsa DRY-RUN komutu gösterilir (spawn YOK).
+  // ---------- motor seçici (salt bilgi — /api/engines) ----------
+  // ⛔ Bu blok KİMLİK BİLGİSİ İŞLEMEZ: uç token/mail/anahtar döndürmez, UI de istemez.
+  // Kurulu olmayan motor <option disabled> → tarayıcı seçtirmez; sunucu da ayrıca reddeder
+  // (`engines.run_blocked_reason`, çift kapı — gri buton güvenlik sınırı DEĞİLDİR).
+  function amSelectedEngine() {
+    var sel = document.getElementById("amEngineSel");
+    var name = (sel && sel.value) || "";
+    for (var i = 0; i < amEngines.length; i++) {
+      if (amEngines[i].name === name) return amEngines[i];
+    }
+    return null;
+  }
+
+  function amRenderEngines(d) {
+    amEngines = (d && d.engines) || [];
+    var sel = document.getElementById("amEngineSel");
+    if (!sel) return;
+    var prev = sel.value;
+    sel.innerHTML = "";
+    amEngines.forEach(function (e) {
+      var o = document.createElement("option"); // DOM + textContent → XSS yok
+      o.value = e.name;
+      o.textContent = e.label + (e.selectable ? "" : " — kullanılamaz");
+      o.disabled = !e.selectable; // kurulu değil / süreç başlatmaz / sertleştirilemez
+      sel.appendChild(o);
+    });
+    // Seçim: önceki geçerliyse korunur, değilse ilk SEÇİLEBİLİR motora düşer.
+    var keep = amEngines.some(function (e) {
+      return e.name === prev && e.selectable;
+    });
+    if (!keep) {
+      var first = amEngines.filter(function (e) {
+        return e.selectable;
+      })[0];
+      sel.value = first ? first.name : "";
+    } else {
+      sel.value = prev;
+    }
+    amRenderEngineNote();
+  }
+
+  function amRenderEngineNote() {
+    var box = document.getElementById("amEngineNote");
+    if (!box) return;
+    var cur = amSelectedEngine();
+    var parts = [];
+    if (cur) {
+      // Giriş durumu UYDURULMAZ: uç `logged_in: null` döner, biz de "bilinmiyor" deriz.
+      parts.push(
+        "<strong>" +
+          esc(cur.label) +
+          "</strong> · kurulu: " +
+          (cur.installed ? "evet" : "hayır") +
+          " · giriş: bilinmiyor (" +
+          esc(cur.login_note || "") +
+          ")"
+      );
+      if (cur.quota_warning) parts.push("⚠ " + esc(cur.quota_warning));
+    } else {
+      parts.push("Seçilebilir motor yok — aşağıdaki kurulum ipuçlarına bak.");
+    }
+    // Kullanılamayan motorlar için "nasıl kurulur" (kimlik formu DEĞİL — kendi terminalinde
+    // çalıştıracağın kurulum/giriş komutu).
+    amEngines
+      .filter(function (e) {
+        return !e.selectable;
+      })
+      .forEach(function (e) {
+        parts.push(
+          "⛔ <strong>" +
+            esc(e.label) +
+            "</strong>: " +
+            esc(e.blocked_reason || "kullanılamaz") +
+            (e.install_hint ? " — " + esc(e.install_hint) : "")
+        );
+      });
+    box.innerHTML = parts.join("<br>");
+  }
+
+  function amLoadEngines(rescan) {
+    return api("/engines" + (rescan ? "/rescan" : ""), rescan ? { method: "POST" } : undefined)
+      .then(amRenderEngines)
+      .catch(function (e) {
+        var box = document.getElementById("amEngineNote");
+        if (box) box.textContent = "Motor listesi alınamadı: " + e.message;
+      });
+  }
+
+  // ---------- ATLANAMAZ onay diyaloğu ----------
+  // Geri alınamaz iş (gerçek motor spawn'ı) YALNIZ buradan geçer: `execute:true` isteği
+  // bu promise `true` çözülmeden GÖNDERİLMEZ. Tek tıkla spawn YOKTUR.
+  function amConfirmOpen(eng) {
+    var modal = document.getElementById("amConfirmModal");
+    var elEngine = document.getElementById("amConfirmEngine");
+    var elQuota = document.getElementById("amConfirmQuota");
+    if (!modal) return Promise.resolve(false); // diyalog yoksa ASLA çalıştırma (fail-closed)
+    // textContent → sunucudan gelen metin işaretleme olarak yorumlanmaz.
+    if (elEngine) {
+      elEngine.textContent =
+        eng.label + " (" + eng.name + ") · abonelik CLI'si — API anahtarı KULLANILMAZ";
+    }
+    if (elQuota) elQuota.textContent = eng.quota_warning || "—";
+    // Her açılışta onay kutusu SIFIRLANIR ve başlat butonu KİLİTLENİR — önceki
+    // diyalogdan kalan işaret bir sonrakini asla açmasın.
+    var ack = document.getElementById("amConfirmAck");
+    var go = document.getElementById("amConfirmGoBtn");
+    if (ack) ack.checked = false;
+    if (go) go.disabled = true;
+    modal.classList.remove("hidden");
+    // ⚠️ ODAK GÜVENLİ TARAFA: yıkıcı butona ASLA odaklanma. Odaklanmış bir "başlat"
+    // butonu tek bir dalgın Enter'la gerçek motor doğurur — bu geliştirme sırasında
+    // FİİLEN yaşandı (5 istenmeyen `claude -p` spawn'ı). Odak "Vazgeç"e verilir.
+    var cancel = document.getElementById("amConfirmCancelBtn");
+    if (cancel) cancel.focus();
+    return new Promise(function (resolve) {
+      amConfirmResolve = resolve;
+    });
+  }
+
+  function amConfirmClose(ok) {
+    var modal = document.getElementById("amConfirmModal");
+    if (modal) modal.classList.add("hidden");
+    var resolve = amConfirmResolve;
+    amConfirmResolve = null;
+    if (resolve) resolve(!!ok);
+  }
+
+  function amWireConfirm() {
+    var modal = document.getElementById("amConfirmModal");
+    if (!modal || modal._wired) return;
+    modal._wired = true;
+    ["amConfirmCancelBtn", "amConfirmCloseBtn"].forEach(function (id) {
+      var b = document.getElementById(id);
+      if (b) b.addEventListener("click", function () { amConfirmClose(false); });
+    });
+    // Onay kutusu → başlat butonunun kilidi (ikinci bilinçli hareket).
+    var ack = document.getElementById("amConfirmAck");
+    var go = document.getElementById("amConfirmGoBtn");
+    if (ack && go) {
+      ack.addEventListener("change", function () {
+        go.disabled = !ack.checked;
+      });
+    }
+    if (go) {
+      go.addEventListener("click", function (ev) {
+        // Üç kapı birden: (1) buton kilidi açık mı, (2) kutu gerçekten işaretli mi,
+        // (3) olay GERÇEK kullanıcı hareketinden mi geliyor (script `.click()` değil).
+        // `isTrusted` yalnız tarayıcının girdi hattından gelen olaylarda true'dur.
+        if (go.disabled) return;
+        if (!ack || !ack.checked) return;
+        if (ev && ev.isTrusted === false) return;
+        amConfirmClose(true);
+      });
+    }
+    // Arka plana tıklama ve Esc → İPTAL (varsayılan güvenli taraf).
+    modal.addEventListener("click", function (ev) {
+      if (ev.target === modal) amConfirmClose(false);
+    });
+    document.addEventListener("keydown", function (ev) {
+      if (ev.key === "Escape" && amConfirmResolve) amConfirmClose(false);
+    });
+  }
+
+  // ---------- canlı şerit + görünür DURDUR ----------
+  function amSetLive(on, text) {
+    amDriving = !!on;
+    var box = document.getElementById("amLive");
+    var el = document.getElementById("amLiveText");
+    if (el && text) el.textContent = text;
+    if (box) box.hidden = !on;
+  }
+
+  function amStopAll() {
+    if (
+      !window.confirm(
+        "⛔ STOP_ALL etkinleştirilecek: tüm tehlikeli ajan aksiyonları durur ve " +
+          "eğitim başlatılamaz.\n\nDevam edilsin mi?"
+      )
+    )
+      return;
+    api("/supervisor/stop-all", { method: "POST" })
+      .then(function () {
+        amSetLive(false);
+        toast("⛔ STOP_ALL etkin — tehlikeli aksiyonlar durduruldu.");
+        amRefreshOnce();
+        amRefreshGate();
+      })
+      .catch(function (e) {
+        toast("Durdurulamadı: " + e.message, true);
+      });
+  }
+
+  // ⚡ ANA AJANI DEVREYE SOK: (gerekirse) koşu başlat → ATLANAMAZ onay diyaloğu → autodrive.
+  // execute değeri = diyalog sonucu; onaylanmazsa DRY-RUN komutu gösterilir (spawn YOK).
   function amTriggerTraining() {
     var btn = document.getElementById("amTriggerBtn");
+    var eng = amSelectedEngine();
+    // ⛔ TEKRAR-GİRİŞ KİLİDİ: sürüş devredeyken yeni tetik ÜST ÜSTE motor doğurur
+    // (geliştirme sırasında 5 eşzamanlı `claude -p` bu yüzden oluştu — her biri aynı
+    // abonelik penceresinden yer). Önce mevcut sürüşü DURDUR.
+    if (amDriving) {
+      toast("Sürüş zaten devrede — yenisini başlatmadan önce DURDUR.", true);
+      return;
+    }
+    // Diyalog zaten açıksa ikinci bir akış başlatma (resolver tek; ikincisi öncekini
+    // sahipsiz bırakırdı).
+    if (amConfirmResolve) return;
+    if (!eng || !eng.selectable) {
+      toast(
+        "Kullanılabilir motor seçili değil" +
+          (eng && eng.blocked_reason ? ": " + eng.blocked_reason : "."),
+        true
+      );
+      return;
+    }
     if (btn) btn.disabled = true;
     var ensure = amCurrentRun
       ? Promise.resolve({ run_id: amCurrentRun })
@@ -4853,17 +5081,13 @@
       .then(function (snap) {
         amCurrentRun = snap.run_id || amCurrentRun;
         if (!amCurrentRun) throw new Error("koşu kimliği alınamadı");
-        var go = window.confirm(
-          "⚡ ANA AJAN DEVREYE SOKACAK — abonelikli `claude -p` (API DEĞİL).\n\n" +
-            "Onaylarsan: deep-hunt aşamasını GERÇEKTEN otonom sürer (dakikalar sürebilir) ve " +
-            "ilerledikçe diğer ajanlar haritada aydınlanır. Gerçek LoRA eğitimi YİNE ayrı insan " +
-            "onayı bekler — sistem onay kapısında DURUR (Kural 8).\n\n" +
-            "İptal → hiçbir şey spawn edilmez; yalnızca çalıştırılacak KURU-ÇALIŞTIRMA komutu gösterilir."
-        );
+        return amConfirmOpen(eng); // ← geri alınamaz iş için TEK kapı
+      })
+      .then(function (go) {
         return api("/orchestration/autodrive/" + encodeURIComponent(amCurrentRun), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ execute: go }),
+          body: JSON.stringify({ execute: go, engine: eng.name }),
         }).then(function (d) {
           return { d: d, go: go };
         });
@@ -4871,9 +5095,10 @@
       .then(function (r) {
         if (r.go && r.d && r.d.status === "autodrive_started") {
           amShowDryRun("");
+          amSetLive(true, eng.label + " sürüyor — derin av devrede (onay kapısında duracak).");
           toast("⚡ Ana ajan devrede — ajanlar aydınlanıyor (timeline: 12·ORKESTRASYON).");
         } else if (r.d && r.d.command) {
-          amShowDryRun(r.d.command);
+          amShowDryRun(Array.isArray(r.d.command) ? r.d.command.join(" ") : r.d.command);
           toast(
             r.go ? "Sürüş gerekmedi — komut gösterildi." : "KURU-ÇALIŞTIRMA: komut hazır (spawn YOK)."
           );
@@ -4916,6 +5141,26 @@
       ab._wired = true;
       ab.addEventListener("click", amApproveAndTrain);
     }
+    amWireConfirm(); // onay diyaloğu — ⚡ tetikten ÖNCE bağlanmalı (fail-closed)
+    var es = document.getElementById("amEngineSel");
+    if (es && !es._wired) {
+      es._wired = true;
+      es.addEventListener("change", amRenderEngineNote);
+    }
+    var er = document.getElementById("amEngineRescanBtn");
+    if (er && !er._wired) {
+      er._wired = true;
+      er.addEventListener("click", function () {
+        amLoadEngines(true).then(function () {
+          toast("Motorlar yeniden tarandı.");
+        });
+      });
+    }
+    var sb = document.getElementById("amStopBtn");
+    if (sb && !sb._wired) {
+      sb._wired = true;
+      sb.addEventListener("click", amStopAll);
+    }
     if (!window._amResizeWired) {
       window._amResizeWired = true;
       // Genişlik değişince satır kapasitesi değişir → yerleşimi yeniden kur (debounce'lu).
@@ -4929,6 +5174,7 @@
         }, 250);
       });
     }
+    amLoadEngines(false);
     amRefreshOnce();
     amRefreshGate();
     amStartPoll();

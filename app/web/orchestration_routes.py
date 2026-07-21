@@ -135,14 +135,17 @@ def orchestration_recover(req: OrchestrationRecoverRequest) -> dict[str, Any]:
 
 
 class OrchestrationAutodriveRequest(BaseModel):
-    execute: bool = False  # True → gerçek `claude -p` spawn (abonelik); False → dry-run komut
+    execute: bool = False  # True → gerçek motor spawn (abonelik); False → dry-run komut
+    # Boş → kayıt tablosundaki varsayılan. Kalıp erken-ret içindir; asıl doğrulama
+    # `engines.get_engine` (bilinmeyen ad → ValueError) + `run_blocked_reason`.
+    engine: str = Field(default="", pattern=r"^[A-Za-z0-9_-]{0,32}$")
 
 
-def _run_autodrive_bg(run_id: str) -> None:
+def _run_autodrive_bg(run_id: str, engine: str) -> None:
     """Arka plan: gerçek otonom sürüş (uzun sürer). Olaylar timeline'a yazılır."""
     from app.orchestration.driver import AutoDriver
 
-    AutoDriver().drive(run_id, execute=True)
+    AutoDriver().drive(run_id, execute=True, engine=engine)
 
 
 # ⛔ `human_only`: bu uç gerçek bir `claude -p` ALT-SÜRECİ doğurur. Sür (drive) modunda
@@ -160,24 +163,37 @@ def orchestration_autodrive(
     `execute=true`: gerçek sürüş ARKA PLANDA başlar (timeline'dan izlenir); yanıt hemen döner.
     Gerçek eğitim yine TAZE insan onayı bekler (Kural 8 — onayda durur).
     """
-    from app.orchestration.driver import AutoDriver, claude_available
+    from app.orchestration import engines
+    from app.orchestration.driver import AutoDriver
 
     orch = _orchestrator()
     if orch.store.get_run(run_id) is None:
         raise HTTPException(status_code=404, detail=f"Koşu bulunamadı: {run_id}")
 
-    if not req.execute:
-        return AutoDriver(orchestrator=orch).drive(run_id, execute=False)
+    # Motor adını çöz — bilinmeyen ad sessizce varsayılana DÜŞMEZ (yanlış motoru
+    # doğurmaktansa 400 vermek doğru; `engines.get_engine` ile aynı disiplin).
+    engine_name = req.engine or engines.DEFAULT_ENGINE
+    try:
+        engines.get_engine(engine_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    if not claude_available():
-        raise HTTPException(
-            status_code=503,
-            detail="`claude` CLI bulunamadı — abonelikli Claude Code kurulu olmalı.",
-        )
-    background.add_task(_run_autodrive_bg, run_id)
+    if not req.execute:
+        return AutoDriver(orchestrator=orch).drive(run_id, execute=False, engine=engine_name)
+
+    # ⛔ SUNUCU TARAFI KAPI: kurulu-değil / süreç-başlatmayan / sertleştirilemeyen motor
+    # REDDEDİLİR. UI bu motorları zaten gri gösterir, ama gri buton bir güvenlik sınırı
+    # DEĞİLDİR — istek elle (curl/MCP) atılabilir. Tek doğruluk kaynağı
+    # `engines.run_blocked_reason`; UI ile uç aynı fonksiyonu kullanır (fail-closed).
+    blocked = engines.run_blocked_reason(engine_name)
+    if blocked:
+        raise HTTPException(status_code=503, detail=blocked)
+
+    background.add_task(_run_autodrive_bg, run_id, engine_name)
     return {
         "ok": True,
         "status": "autodrive_started",
+        "engine": engine_name,
         "message": "Otonom sürüş arka planda başladı; ilerlemeyi timeline'dan izle.",
         "run_id": run_id,
     }

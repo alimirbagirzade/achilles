@@ -55,6 +55,10 @@ class Engine:
     argv_template: tuple[str, ...]
     quota_warning: str
     spawns: bool = True
+    # "Nasıl kurulur" ipucu — UI'da kurulu OLMAYAN motorun altında gösterilir.
+    # ⛔ Bu bir KİMLİK FORMU DEĞİLDİR: yalnız kullanıcının kendi terminalinde çalıştıracağı
+    # kurulum/giriş komutunu tarif eder. Achilles giriş bilgisini ne ister ne de taşır.
+    install_hint: str = ""
     # "Sür" (drive) modu argv şablonu — MCP erişimi GEREKTİRİR, bu yüzden av modundan
     # AYRI bir sertleştirme profili kullanır (bkz. _CLAUDE_DRIVE_ARGV). Boş = motor sür
     # modunu DESTEKLEMEZ (fail-closed).
@@ -186,10 +190,43 @@ _ENGINES: tuple[Engine, ...] = (
         hardened=True,
         drive_argv_template=_CLAUDE_DRIVE_ARGV,
         drive_hardened=True,
+        install_hint=(
+            "Kur: `npm install -g @anthropic-ai/claude-code` → sonra kendi terminalinde "
+            "bir kez `claude` çalıştırıp aboneliğinle giriş yap. Achilles giriş bilgisi "
+            "istemez ve saklamaz."
+        ),
     ),
-    Engine("codex", "Codex CLI (ChatGPT planı)", "codex", ("codex", "exec", PROMPT), _Q_CODEX),
-    Engine("gemini", "Gemini CLI (Google hesabı)", "gemini", ("gemini", "-p", PROMPT), _Q_GEMINI),
-    Engine("local", "Yerel hat (Ollama)", None, (), _Q_LOCAL, spawns=False),
+    Engine(
+        "codex",
+        "Codex CLI (ChatGPT planı)",
+        "codex",
+        ("codex", "exec", PROMPT),
+        _Q_CODEX,
+        install_hint=(
+            "Kur: `npm install -g @openai/codex` → sonra kendi terminalinde `codex` "
+            "çalıştırıp ChatGPT hesabınla giriş yap."
+        ),
+    ),
+    Engine(
+        "gemini",
+        "Gemini CLI (Google hesabı)",
+        "gemini",
+        ("gemini", "-p", PROMPT),
+        _Q_GEMINI,
+        install_hint=(
+            "Kur: `npm install -g @google/gemini-cli` → sonra kendi terminalinde `gemini` "
+            "çalıştırıp Google hesabınla giriş yap."
+        ),
+    ),
+    Engine(
+        "local",
+        "Yerel hat (Ollama)",
+        None,
+        (),
+        _Q_LOCAL,
+        spawns=False,
+        install_hint="Ollama kurulu olmalı (ollama.com). Bu hat süreç başlatmaz — RUN sürmez.",
+    ),
 )
 
 _BY_NAME: dict[str, Engine] = {engine.name: engine for engine in _ENGINES}
@@ -263,18 +300,63 @@ def available(
     return found
 
 
-def describe(name: str, *, which: Which | None = None) -> dict[str, object]:
-    """UI/CLI için motor özeti — kimlik bilgisi ALANI YOK, yalnız kurulum durumu + kota uyarısı."""
+# Giriş (login) durumu NEDEN `None`: bir CLI'nin abonelik oturumu ancak ÇALIŞTIRILINCA
+# anlaşılır. "Girişli mi" sorusunu yoklamak için motoru spawn etmek gerekirdi — bu hem
+# kotadan yerdi hem de salt-okuma sözleşmesini bozardı. Tahmin ETMEYİZ (CLAUDE.md Kural 7:
+# uydurma yok): alan üç-durumlu ve şimdilik daima "bilinmiyor".
+LOGIN_UNKNOWN_NOTE = (
+    "Giriş durumu yoklanamaz — abonelik oturumu ancak motor çalıştırılınca anlaşılır. "
+    "Achilles kimlik bilgisi istemez, saklamaz ve göstermez."
+)
+
+
+def run_blocked_reason(name: str, *, which: Which | None = None) -> str:
+    """⚡ RUN (otonom sürüş) bu motorla başlatılabilir mi? Engel varsa Türkçe sebep, yoksa "".
+
+    Sunucu tarafındaki tek doğruluk kaynağı: UI bunu gri-leştirmek için, `/autodrive` ucu
+    ise İSTEĞİ REDDETMEK için kullanır → gri buton kurcalansa da uç fail-closed kalır.
+    """
     engine = get_engine(name)
+    if not engine.spawns:
+        return f"{engine.label} süreç başlatmaz — otonom sürüş için spawn eden motor gerekir."
+    if not engine.hardened:
+        # Bkz. AutoDriver fail-closed kısıtı + docs/SCOPE_ISOLATION.md.
+        return (
+            f"{engine.label} araç seviyesinde kısıtlanamıyor — kısıtsız motor kendi "
+            "eğitimini onaylayabilir (Kural 8), bu yüzden doğurulmaz."
+        )
+    if not available(name, which=which):
+        return f"`{engine.binary}` CLI PATH'te bulunamadı — {engine.label} kurulu değil."
+    return ""
+
+
+def describe(name: str, *, which: Which | None = None) -> dict[str, object]:
+    """UI/CLI için motor özeti.
+
+    ⛔ KİMLİK BİLGİSİ ALANI YOK ve OLMAYACAK: token / e-posta / API anahtarı / oturum
+    çerezi bu sözlüğe ASLA girmez (test bunu sabitler). Yalnız kurulum durumu, kota
+    uyarısı ve "nasıl kurulur" ipucu döner.
+    """
+    engine = get_engine(name)
+    blocked = run_blocked_reason(name, which=which)
     return {
         "name": engine.name,
         "label": engine.label,
         "spawns": engine.spawns,
         "installed": available(name, which=which),
+        # Üç-durumlu ve bilinçli olarak daima None — bkz. LOGIN_UNKNOWN_NOTE.
+        "logged_in": None,
+        "login_note": LOGIN_UNKNOWN_NOTE,
         "quota_warning": engine.quota_warning,
+        "install_hint": engine.install_hint,
+        "hardened": engine.hardened,
+        "drive_supported": bool(engine.drive_argv_template),
+        # UI bunu "seçilebilir mi" için kullanır; uç aynı fonksiyonla yeniden doğrular.
+        "selectable": not blocked,
+        "blocked_reason": blocked,
     }
 
 
 def describe_all(*, which: Which | None = None) -> list[dict[str, object]]:
-    """Tüm motorların özeti (P5'te UI kota uyarısını buradan gösterecek)."""
+    """Tüm motorların özeti (UI motor seçici + kota uyarısı buradan beslenir)."""
     return [describe(name, which=which) for name in engine_names()]

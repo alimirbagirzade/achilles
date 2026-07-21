@@ -1124,6 +1124,14 @@ code {
   padding: 24px 26px;
   animation: rise 0.25s ease both;
 }
+/* Animasyon kısıtlıysa `rise`'ın `both` dolgusu opacity:0'da takılır → görünmez ama
+   tıklanabilir modal. Her modal için güvenli tarafa düş: animasyonsuz, tam opak. */
+@media (prefers-reduced-motion: reduce) {
+  .modal-box {
+    animation: none;
+    opacity: 1;
+  }
+}
 .modal-close {
   position: absolute;
   top: 12px;
@@ -2314,6 +2322,137 @@ code {
 /* ---------- 15 · AJAN HARİTASI (canlı "ışıklı yol" grafiği) ---------- */
 /* CSP-güvenli: tüm görünüm CSS sınıflarıyla; SVG geometrisi yalnız öznitelik. */
 .am-trigger {
+  font-weight: 700;
+}
+
+/* motor seçici — işlevsel satır (dekoratif öğe YOK, PR#103 declutter kararı) */
+.am-engine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.am-engine-lbl {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-dim);
+}
+.am-engine-sel {
+  min-width: 240px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.85rem;
+  font-family: inherit;
+}
+/* kurulu olmayan motor: gri + seçilemez (option:disabled tarayıcıda zaten seçilemez) */
+.am-engine-sel option:disabled {
+  color: var(--ink-dim);
+}
+.am-engine-note {
+  margin: 0 0 10px;
+}
+
+/* canlı koşu şeridi + görünür DURDUR */
+.am-live {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--warn-border);
+  background: var(--warn-soft);
+  border-radius: var(--radius);
+}
+.am-live[hidden] {
+  display: none;
+}
+.am-live-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--warn);
+  flex: none;
+}
+.am-live-text {
+  font-size: 0.85rem;
+  color: var(--warn);
+  flex: 1 1 auto;
+}
+.am-stop-btn {
+  font-weight: 700;
+}
+
+/* ⚡ RUN onay diyaloğu (mevcut .modal/.modal-box iskeletini kullanır) */
+
+/* ⚠️ GÜVENLİK: onay kutusu ANİMASYONA BAĞLI OLARAK GÖRÜNMEZ. `.modal-box` `rise`
+   animasyonunu `both` dolgusuyla kullanır; animasyon kısılırsa/duraklatılırsa (headless
+   render, sekme arka planda, prefers-reduced-motion) dolgu `from` durumunu tutar →
+   opacity:0. Tıklamaları YİNE ALAN ama GÖRÜNMEYEN bir onay diyaloğu, kullanıcının ne
+   onayladığını göremediği anlamına gelir — kabul edilemez. Bu yüzden bu kutu animasyondan
+   bağımsız olarak DAİMA opak. (Süsleme kaybı bilinçli — PR#103 declutter kararıyla uyumlu.) */
+.am-confirm-box {
+  animation: none;
+  opacity: 1;
+}
+
+.am-confirm-title {
+  margin: 0 0 12px;
+  font-size: 1.05rem;
+}
+.am-confirm-facts {
+  margin: 0 0 12px;
+  display: grid;
+  grid-template-columns: minmax(120px, auto) 1fr;
+  gap: 6px 14px;
+  font-size: 0.85rem;
+}
+.am-confirm-facts dt {
+  font-weight: 600;
+  color: var(--ink-dim);
+}
+.am-confirm-facts dd {
+  margin: 0;
+}
+.am-confirm-safe {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--pos-border);
+  background: var(--pos-soft);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+}
+.am-confirm-note {
+  margin: 0 0 14px;
+}
+.am-confirm-ack {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.am-confirm-ack input {
+  margin-top: 2px;
+  flex: none;
+}
+/* kilitli başlat butonu açıkça edilgen görünsün (yanlışlıkla "hazır" sanılmasın) */
+.am-confirm-go:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.am-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.am-confirm-go {
   font-weight: 700;
 }
 .am-dryrun {
