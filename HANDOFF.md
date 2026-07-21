@@ -8,6 +8,36 @@ Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple S
 
 ---
 
+## 🆕 2026-07-21 — MOTOR BAĞLAMA ROADMAP'İ (araştırma, kod yok)
+
+Yerel abonelikli motorları (Claude Code / Codex / Gemini CLI) Achilles'e bağlayıp
+tek-tık **RUN** ile ajanları sürdürme yolu araştırıldı → **[docs/ROADMAP_MOTOR_BAGLAMA.md](docs/ROADMAP_MOTOR_BAGLAMA.md)**
+(6 paket P1-P6, kopyala-yapıştır prompt'lar, 2 paralel şerit).
+
+**Bulgu 1 — hattın %80'i zaten var, fişi takılı değil:**
+MCP sunucusu (`mcp_server/achilles_mcp.py`, OpenAPI→tool proxy) · `claude -p` alt-süreç
+sürücüsü (`app/orchestration/driver.py:56`, abonelik CLI'si, API key değil) · autodrive ucu
+(`app/web/orchestration_routes.py:132`, `execute=false` dry-run kilidinde) · ⚡ buton (dry-run).
+
+**Bulgu 2 — 🔴 BLOKLAYICI güvenlik açığı (P1):**
+`api_token` boşsa doğrulama tamamen atlanıyor (`app/web/security.py:66`); onay
+(`server.py:1917`) ve stop-all temizleme (`:1971`) insanla aynı yetkide. Yani Achilles'in
+kendi doğurduğu motor **kendi eğitimini onaylayabilir + kill-switch'i temizleyebilir**
+→ Kural-8 bu kurulumda etkisiz. RUN açılmadan ÖNCE scope izolasyonu şart.
+
+**Bulgu 3 — MCP token kısır döngüsü (P4):** proxy Authorization iletmiyor
+(`achilles_mcp.py:43`) → token açarsan MCP 401, MCP çalışsın diye kapatırsan kapı açık.
+
+**Bulgu 4 — "motor bağlama" ekranı YOK:** CLI'lar kendi OAuth'uyla girişli; Achilles
+kimlik toplamaz/saklamaz. Sadece "kurulu mu/girişli mi" tespiti. ⚠️ headless koşu
+interaktif kullanımla **aynı abonelik penceresini** tüketir — UI'da uyarı gerekli.
+
+**Ekosistem (2026):** MCP kazandı (Linux Foundation/Agentic AI Foundation, 97M aylık SDK
+indirmesi; Claude/GPT/Gemini/Cursor/Hermes hepsi istemci). A2A tamamlayıcı ama local-first'te
+gereksiz. ⚠️ **2026-07-28 spec'i stateless** — session/SSE/Sampling gidiyor; yeni session
+bağımlılığı EKLEME.
+
+**Sıradaki:** P1 + P2 paralel başlatılabilir (bkz roadmap prompt'ları).
 ## 🧹 GENEL TEMİZLİK — 2026-07-21 (PR #106 + #107, ikisi de MERGE EDİLMEDİ)
 
 Dört paralel salt-okuma tarama ajanı; **muhafazakâr** kriter (hiç import edilmiyor **+**
