@@ -8,6 +8,45 @@ Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple S
 
 ---
 
+## 🔐 2026-07-21 — SCOPE İZOLASYONU: sürücü-motor ≠ insan yetkisi (PR #116 + #117)
+
+**Kapatılan zafiyet:** Achilles kendi `claude -p` motorunu doğuruyor ve bu motor insanla
+**aynı yetkiyle** kendi eğitimini onaylayabiliyor, kill-switch'i temizleyebiliyordu.
+`app/web/security.py` — `api_token` boşsa (varsayılan) doğrulama tamamen atlanıyordu.
+**Kural-8 bu kurulumda etkisizdi.**
+
+İki kimlik seviyesi: `human` (UI/CLI) · `driver` (motor). `require_human` kapısı olan
+uçlarda driver **403**. Sürücü token'ı sha256-hash'li, `run_id`-bağlı, TTL'li, koşu
+bitince iptal. Doküman: **`docs/SCOPE_ISOLATION.md`**.
+
+### ⚠️ ANA DERS — doğurulan ajana karşı HTTP auth TİYATRODUR
+`rlm-security-reviewer` 3 turda HTTP katmanını atlayan **4 kanal** buldu:
+1. **CLI auth'suz** — `achilles approval-approve` doğrudan `approvals.approve()` çağırır.
+2. **`.env` fallback** — env'den token SİLMEK yetmez, dotenv geri okur → **boşa EZ**.
+3. **MCP** — `--disallowedTools` `mcp__*`'ı kapsamaz; `achilles` MCP proxy'si 8765'e kanal açar.
+4. **Hook'lar** — `.claude/settings.json` hook'ları **doğrudan kabukta** koşar (`Bash` aracı DEĞİL).
+
+**Asıl sınır = ARAÇ kısıtı**, kanal kovalamaca değil sınıf-düzeyi çözüm:
+`--safe-mode` + `--strict-mcp-config` + `--disallowedTools` (üçü **birlikte**).
+
+### Üç spawn noktası, bilinçli farklı rejim
+| Spawn | Rejim |
+|-------|-------|
+| `AutoDriver` | Tam kısıt + sürücü token'ı |
+| `weekly-bug-scan.ps1` | Tam kısıt (kısıt eskiden yalnız PROMPT'taydı); diff'i script hesaplar |
+| `rag-research-loop.ps1` | **KUŞATILAMAZ** — yazma/push işlevsel şart. Kendi eğitimini onaylayabilir; sahte kısıt EKLENMEDİ, test bunu sabitler. Yalnız güvendiğin içerikle koştur. |
+
+### Ayrıca
+- **Çok-motorlu tuzak:** sertleştirme motora ÖZGÜ. `Engine.hardened` varsayılan `False`;
+  AutoDriver yalnız hardened motoru doğurur (**fail-closed**). codex/gemini doğrulanmadı.
+- **Eğitim VERİSİ kararları da insan-yalnız:** kart approve/reject + feedback
+  approve/reject/export (korpus = v5'in kökü). `automation/tasks`: sürücünün açtığı görev
+  zorla `requires_approval=True`.
+- **Dürüstlük:** `api_token` boşken bu katman kriptografik sınır **DEĞİL**.
+  **Öneri: `ACHILLES_API_TOKEN` ata.** `include_in_schema=False` koruma değildir.
+
+---
+
 ## 🆕 2026-07-21 — MOTOR BAĞLAMA ROADMAP'İ (araştırma, kod yok)
 
 Yerel abonelikli motorları (Claude Code / Codex / Gemini CLI) Achilles'e bağlayıp

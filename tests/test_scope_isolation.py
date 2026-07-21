@@ -112,6 +112,63 @@ def test_driver_cannot_promote_adapter() -> None:
     assert r.status_code == 403
 
 
+# ── eğitim VERİSİNİ besleyen yetki kararları da insan-yalnız ─────────────────
+
+
+def test_driver_cannot_approve_card() -> None:
+    """Kart onayı `lora_eligible=1` yapar → eğitim korpusunu besler (v5'in kökü)."""
+    token = driver_scope.mint(_RUN_ID)
+    with patch("app.memory.sqlite_store.SqliteStore.approve_card") as m_approve:
+        r = client.post("/api/card/kart_x/approve", headers=_driver_headers(token))
+    assert r.status_code == 403
+    m_approve.assert_not_called()
+
+
+def test_driver_cannot_reject_card() -> None:
+    """Red de korpus kararıdır — motor rakip kanıtı eleyemez."""
+    token = driver_scope.mint(_RUN_ID)
+    with patch("app.memory.sqlite_store.SqliteStore.reject_card") as m_reject:
+        r = client.post("/api/card/kart_x/reject", headers=_driver_headers(token))
+    assert r.status_code == 403
+    m_reject.assert_not_called()
+
+
+def test_driver_cannot_approve_feedback() -> None:
+    """Onaylanan düzeltme SFT adayı olur → eğitim verisi."""
+    token = driver_scope.mint(_RUN_ID)
+    r = client.post("/api/feedback/approve/corr_x", headers=_driver_headers(token))
+    assert r.status_code == 403
+
+
+def test_driver_cannot_export_feedback() -> None:
+    """Export eğitim verisi DOSYASI üretir → motor kendi verisini yazamamalı."""
+    token = driver_scope.mint(_RUN_ID)
+    r = client.post("/api/feedback/export", headers=_driver_headers(token))
+    assert r.status_code == 403
+
+
+def test_driver_task_forced_to_require_approval() -> None:
+    """Önleyici: sürücü görev açabilir ama onay bayrağını DÜŞÜREMEZ."""
+    token = driver_scope.mint(_RUN_ID)
+    r = client.post(
+        "/api/automation/tasks",
+        params={"agent_id": "a", "title": "t", "requires_approval": False},
+        headers=_driver_headers(token),
+    )
+    assert r.status_code == 200
+    assert r.json()["task"]["requires_approval"] is True  # driver isteği YÜKSELTİLDİ
+
+
+def test_human_task_keeps_requested_approval_flag() -> None:
+    """İnsan akışı değişmez: requires_approval=False insanda False kalır."""
+    r = client.post(
+        "/api/automation/tasks",
+        params={"agent_id": "a", "title": "t", "requires_approval": False},
+    )
+    assert r.status_code == 200
+    assert r.json()["task"]["requires_approval"] is False
+
+
 # ── human scope → çalışmaya devam eder (geriye dönük uyum) ────────────────────
 
 
