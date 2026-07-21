@@ -87,10 +87,13 @@ def watchlist_path() -> Path:
     return repo_root().joinpath(*_WATCHLIST_REL)
 
 
-def _score(entry: ArxivEntry) -> int:
-    """Başlık+özette geçen ayırt edici RAG anahtar kelimesi sayısı (deterministik)."""
+def _score(entry: ArxivEntry, terms: Sequence[str] = _RELEVANCE_TERMS) -> int:
+    """Başlık+özette geçen ayırt edici anahtar kelime sayısı (deterministik).
+
+    `terms` konu paketine göre değişir (literature_scout); varsayılan RAG terimleridir.
+    """
     haystack = f"{entry.title}\n{entry.abstract}".lower()
-    return sum(1 for term in _RELEVANCE_TERMS if term in haystack)
+    return sum(1 for term in terms if term in haystack)
 
 
 def scan_rag_trends(
@@ -98,14 +101,16 @@ def scan_rag_trends(
     max_per_query: int = 8,
     min_score: int = 2,
     searcher: Callable[[str, int], list[ArxivEntry]] = search_arxiv,
+    terms: Sequence[str] = _RELEVANCE_TERMS,
 ) -> list[TrendCandidate]:
-    """arXiv'de RAG yöntemi ara → eşik üstü adayları (deterministik sıralı) döndür.
+    """arXiv'de yöntem ara → eşik üstü adayları (deterministik sıralı) döndür.
 
     Args:
         queries: arXiv arama sorguları.
         max_per_query: Sorgu başına maksimum sonuç.
         min_score: Minimum heuristik alaka skoru (eşik).
         searcher: `(query, max_results) -> list[ArxivEntry]`; test/çevrimdışı için enjekte edilir.
+        terms: Alaka skorunda aranan anahtar kelimeler (konu paketi başına farklı).
 
     Returns:
         Skora göre azalan (eşitlikte tarih, sonra id) benzersiz aday listesi. Ağ hatası
@@ -121,7 +126,7 @@ def scan_rag_trends(
         for e in entries:
             if not e.arxiv_id:
                 continue
-            sc = _score(e)
+            sc = _score(e, terms)
             if sc < min_score:
                 continue
             prev = seen.get(e.arxiv_id)
