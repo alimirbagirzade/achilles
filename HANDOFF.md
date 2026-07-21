@@ -60,12 +60,35 @@ tarar (üç ucu da yakaladığı elle doğrulandı). Yerine salt-okuma muadiller
 ⛔ **Gerçek motor doğurmaz** (kota yakmaz): `live-spawn` bilinçli `skip` ve raporda
 "KANITLANMAZ" der.
 
+### 🔍 Kademe-2 av — 2. tur (düşen 3 finder yeniden koşturuldu): 8 onaylanan bulgu
+
+İlk turda 6 finder'ın 3'ü API hatasıyla düşmüştü (tam da odak alanları: token sızıntısı,
+scope izolasyonu, alt-süreç enjeksiyonu) → **yeniden koşturuldu, 63/63 ajan tamamlandı.**
+
+**BU PAKETTE DÜZELTİLDİ:**
+
+| Sev | Bulgu | Düzeltme |
+|-----|-------|----------|
+| 🔴 high (3/3) | **Motor binary'si mutlak yol olmadan + cwd pinlenmeden doğuruluyordu** → çalışma dizinine bırakılan sahte `claude.exe` gerçek CLI yerine koşar; taklitçi son satıra `PASS` yazıp **zorunlu derin av kapısını düşürürdü** (Kural 8). Sertleştirme bayrakları sahte binary'ye hiçbir şey yaptıramaz. | `_resolve_executable` (PATH'ten cwd atılır) + `cwd=_REPO_ROOT` pinlendi; 3 regresyon testi |
+| 🟡 low | `/api/understanding-score/history` `limit` **sınırsız** (allow-list'e bu pakette eklendi) | `min(max(1,limit),200)` |
+| 🟡 low | `DRIVE_TOKEN_TTL_S` **ölü sabit**; testi yalnız büyüklüğünü ölçüp sahte güvence veriyor | Açık "HENÜZ KULLANILMIYOR" uyarısı + P7 talimatı |
+
+**⚠️ ONAYLANDI AMA DÜZELTİLMEDİ — tasarım kararı gerektiriyor (SIRADAKİ İŞ):**
+
+| Sev | Bulgu | Neden ertelendi |
+|-----|-------|-----------------|
+| 🔴 high (3/3) | **İnsan API token'ı URL sorgu dizesinde** (`/api/training/stream`, SSE) → uvicorn erişim log'una **düz metin** düşer. EventSource özel başlık gönderemediği için böyle yapılmış. | Doğru çözüm kısa ömürlü **tek-kullanımlık SSE bileti** (ayrı authenticated POST → ticket). Auth akışı değişikliği; ayrı paket. |
+| 🔴 high (2/3) | **`hunt_ack` motorun KENDİ stdout'undan yazılıyor.** HTTP'de `hunt_ack=true` insan-yalnızdır (v5 regresyon gerekçesiyle), ama `AutoDriver` aynı bayrağı motorun son satırındaki `ACHILLES_HUNT_VERDICT: PASS` metnine bakarak **doğrulamasız** kalıcı yazar. Bağımsız kanıt (rapor artefaktı, bulgu sayısı) aranmaz. Prompt-injection ya da tembellik → **denetlenmemiş denetim kapısı**. | Fail-closed tarafı sağlam (işaretçi yoksa FAIL) ve eğitim yine taze insan onayı ister; ama av kapısı motorun öz-beyanına dayanıyor. Çözüm: PASS için rapor artefaktı şartı + panelde "motor beyanı" rozeti. Tasarım kararı senin. |
+| 🔴 high (2/3) | Av motoru `Read/Grep/Glob` ile **`.env` gibi sır dosyalarını okuyabilir** — `build_child_env` yalnız SÜREÇ ORTAMINI temizler, dosya sistemini değil. | Av'ın işlevi için Read şart; araç seviyesinde dosya kısıtı yok. Azaltım: `.env`'i repo dışına almak ya da motoru izole çalışma alanında koşturmak. |
+| 🟠 medium (2/3) | Aynı `run_id`'de **eşzamanlı autodrive**: `mint()` kardeş motorun token'ını koşu ORTASINDA iptal eder (uçta koşu-başına kilit yok). | Koşu-başına kilit gerekiyor; UI'daki tekrar-giriş kilidi güvenlik sınırı değil. |
+
+**Reddedilen 11 iddia** (adversarial 3-lens, çoğunluk çürüttü) — ayrıntı workflow
+journal'ında. Örn. "sürücü STOP_ALL basabiliyor ama kaldıramıyor" = **kasıtlı** asimetri.
+
 ### ⚠️ Bu pakette KANITLANMAYANLAR (dürüstlük notu)
 - Gerçek `claude -p` spawn'ı **koşturulmadı** (kota koruması). MCP araçlarının canlı
   görünürlüğü ve ajanların gerçekten sürülmesi **kanıtlanmadı**.
-- Kademe-2 avın 6 finder'ından **3'ü API hatasıyla düştü** (token sızıntısı, scope
-  izolasyonu, alt-süreç enjeksiyonu) ve **yeniden koşturuldu**; sonuçları için bu
-  bölümün altındaki nota bak.
+- Av bir **statik kod incelemesidir**; çalışma zamanı davranışı ayrıca doğrulanmadı.
 
 ---
 

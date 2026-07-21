@@ -817,10 +817,15 @@ def api_understanding_score(
 
 @app.get("/api/understanding-score/history", dependencies=[api_auth])
 def api_understanding_history(limit: int = 20) -> dict:
-    """KALICI anlama skoru geçmişi (zaman serisi) — understanding_snapshots."""
+    """KALICI anlama skoru geçmişi (zaman serisi) — understanding_snapshots.
+
+    `limit` sunucu tarafında kıstırılır: bu uç MCP allow-list'inde olduğu için sınırsız
+    bırakılsaydı, motorun tek çağrıyla tüm tabloyu çekebildiği tek liste ucu olurdu
+    (komşu uçların hepsi zaten 200'de kıstırıyor).
+    """
     from app.verification.exams.understanding_record import load_understanding_history
 
-    return {"history": load_understanding_history(limit=limit)}
+    return {"history": load_understanding_history(limit=min(max(1, limit), 200))}
 
 
 @app.get("/api/synthesis/reports", dependencies=[api_auth])

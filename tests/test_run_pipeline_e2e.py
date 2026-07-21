@@ -14,9 +14,11 @@ nesne, `subprocess.run`'ın kesilemezliğini asla yakalayamazdı; v5 dersi: stub
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -174,6 +176,67 @@ def test_drive_durdurulunca_stopped_raporlar(monkeypatch, tmp_path):
     assert res.get("stopped") is True, res
     assert res.get("hunt_passed") is False
     assert "DURDUR" in res.get("reason", "")
+
+
+# ── Motor binary'si ele geçirilemez (CWD taklitçisi) ─────────────────────────────
+
+
+def test_motor_mutlak_yola_cozulur(monkeypatch, tmp_path):
+    """argv[0] MUTLAK yola çözülür — çalışma dizinindeki taklitçi binary koşmaz.
+
+    REGRESYON (Kademe-2, 3/3 onay): motor `argv[0]='claude'` ile mutlak yol olmadan
+    doğuruluyordu. Windows'ta arama yolu ÖNCE çalışma dizinine bakar → cwd'ye bırakılan
+    sahte bir `claude.exe` gerçek CLI yerine koşar ve son satıra `PASS` yazarak ZORUNLU
+    derin av kapısını düşürürdü (Kural 8).
+    """
+    sahte = tmp_path / "claude.exe"
+    sahte.write_text("taklitci")
+    gercek = tmp_path / "gercek" / "claude.exe"
+    gercek.parent.mkdir()
+    gercek.write_text("gercek")
+
+    monkeypatch.chdir(tmp_path)  # cwd'de taklitçi var
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{gercek.parent}")
+
+    cozulmus = driver._resolve_executable(["claude", "-p", "merhaba"])
+    assert cozulmus[0] != "claude", "argv[0] mutlak yola çözülmedi"
+    assert Path(cozulmus[0]).parent.resolve() == gercek.parent.resolve(), (
+        f"cwd'deki taklitçi seçildi: {cozulmus[0]}"
+    )
+    assert cozulmus[1:] == ["-p", "merhaba"], "argv kuyruğu bozuldu"
+
+
+def test_cozulemeyen_motor_komutu_oldugu_gibi_birakir(monkeypatch, tmp_path):
+    """PATH'te yoksa komut değişmez → Popen temiz FileNotFoundError verir (sessiz düşüş yok)."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PATH", str(tmp_path / "bos"))
+    assert driver._resolve_executable(["yokboyle_motor", "-p"]) == ["yokboyle_motor", "-p"]
+
+
+def test_motor_depo_kokunde_kosar(monkeypatch):
+    """Motor DAİMA depo kökünde doğar — av yanlış ağacı tarayıp 'temiz' diyemez."""
+    yakalanan: dict[str, object] = {}
+
+    class SahteProc:
+        returncode = 0
+
+        def poll(self):
+            return 0
+
+        def communicate(self, timeout=None):
+            return ("ACHILLES_HUNT_VERDICT: PASS", "")
+
+    def sahte_popen(command, **kwargs):
+        yakalanan.update(kwargs)
+        return SahteProc()
+
+    monkeypatch.setattr(driver.subprocess, "Popen", sahte_popen)
+    monkeypatch.setattr(driver, "_stop_all_active", lambda: False)
+    driver._default_runner(["echo", "x"], timeout=5, run_id="cwd-testi")
+
+    assert yakalanan.get("cwd") == str(driver._REPO_ROOT), (
+        f"cwd depo köküne pinlenmedi: {yakalanan.get('cwd')!r}"
+    )
 
 
 # ── Motor kurulu değilken temiz hata ─────────────────────────────────────────────

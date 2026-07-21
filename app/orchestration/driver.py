@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import time
 from collections.abc import Callable
@@ -56,6 +57,12 @@ DRIVE_TIMEOUT_S = 3600  # 60 dk
 # Sürücü token TTL'i sür modu için AYRI hesaplanır. driver_scope.DEFAULT_TTL_S (2100s) av
 # moduna (1800s) göre ayarlıdır; sür modunda kullanılsaydı token koşunun ORTASINDA
 # (~35. dk) ölür, MCP çağrıları 401 almaya başlar ve ajan sebebini anlamadan tıkanırdı.
+# ⚠️ HENÜZ KULLANILMIYOR (ölü sabit — Kademe-2 avında yakalandı): sür modu hiçbir spawn
+# yoluna bağlı olmadığı için tek `mint()` çağrısı varsayılan TTL'i (2100s) kullanır. Sür
+# modu bağlandığında `mint(run_id, ttl_s=DRIVE_TOKEN_TTL_S)` ÇAĞRILMALIDIR; yoksa token
+# koşunun ~35. dakikasında ölür ve MCP çağrıları sebepsiz 401 almaya başlar.
+# Bunu doğrulayan test yalnız sabitin BÜYÜKLÜĞÜNÜ ölçer, KULLANILDIĞINI değil → tek
+# başına güvence saymayın.
 DRIVE_TOKEN_TTL_S = DRIVE_TIMEOUT_S + 300
 
 # Araç deny-list'i motor kayıt tablosunda durur (motora ÖZGÜ bayraklar).
@@ -267,6 +274,28 @@ STOPPED_RC = -99
 STOP_POLL_S = 1.0
 
 
+def _resolve_executable(command: list[str]) -> list[str]:
+    """argv[0]'ı MUTLAK yola çöz — çalışma dizinindeki taklitçi binary'yi engeller.
+
+    `shutil.which` çağrılırken cwd BİLİNÇLİ olarak arama yolundan çıkarılır: Windows'ta
+    `which`/`CreateProcess` varsayılan olarak önce çalışma dizinine bakar, bu da depo
+    köküne bırakılmış sahte bir `claude.exe`'nin gerçek CLI yerine koşmasına yol açardı.
+
+    Çözülemezse komut OLDUĞU GİBİ bırakılır → `Popen` `FileNotFoundError` verir ve
+    çağıran bunu "motor kurulu değil" olarak temiz biçimde raporlar (sessiz düşüş yok).
+    """
+    if not command:
+        return command
+    # PATH'ten cwd ve boş girdileri at (boş girdi POSIX'te "geçerli dizin" demektir).
+    yol = os.pathsep.join(
+        p
+        for p in os.environ.get("PATH", "").split(os.pathsep)
+        if p and Path(p).resolve() != Path.cwd().resolve()
+    )
+    tam = shutil.which(command[0], path=yol)
+    return [tam, *command[1:]] if tam else command
+
+
 def _stop_all_active() -> bool:
     """STOP_ALL kill-switch'i etkin mi (savunmacı — yoklama patlarsa koşuyu kesme)."""
     try:
@@ -296,13 +325,25 @@ def _default_runner(
 
     shell=False + argv listesi → kabuk enjeksiyonu yok. Çıktı (stdout+stderr) birleşik.
     env: insan sırları temizlenmiş + sürücü kimliği eklenmiş ortam (build_child_env).
+
+    ⛔ MUTLAK YOL + SABİT CWD (Kademe-2 avında yakalandı, 3/3 onay):
+    Motor eskiden argv[0]='claude' ile, mutlak yol olmadan ve `cwd` pinlenmeden
+    doğuruluyordu. Windows'ta hem `shutil.which` hem `CreateProcess` arama yolunun
+    BAŞINDA süreç çalışma dizinine bakar → çalışma dizinine bırakılan sahte bir
+    `claude.exe` gerçek CLI'nin YERİNE koşardı. Sertleştirme bayrakları sahte binary'ye
+    hiçbir şey yaptıramaz: taklitçi yalnız son satıra `ACHILLES_HUNT_VERDICT: PASS`
+    yazarak ZORUNLU derin av kapısını düşürürdü (Kural 8).
+    Ayrıca sabitlenmemiş cwd, avın YANLIŞ AĞACI tarayıp "temiz" demesine yol açardı.
     """
+    command = _resolve_executable(command)
     proc = subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
         env=env,
+        # Av HER ZAMAN bu deponun kökünü tarar — sunucuyu kim nereden başlattıysa değil.
+        cwd=str(_REPO_ROOT),
     )
     engine_procs.register(run_id, proc)
     stopped = False
