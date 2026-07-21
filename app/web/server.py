@@ -141,12 +141,24 @@ async def _lifespan(app: FastAPI):
     yield
 
 
+# Keşif yüzeyi: `/api/docs` ve `/api/openapi.json` FastAPI'nin yerleşik uçlarıdır ve
+# route-başına `api_auth` bağımlılığı ALMAZ → kimlik doğrulamasızdırlar. Yerel modda
+# (token boş) bu zararsız ve geliştirici için faydalıdır. Ama token ATANDIYSA amaç ağa
+# açmaktır; o modda kimliksiz bir istemcinin tüm route/şema envanterini okuyabilmesi
+# gereksiz bir keşif yüzeyidir → kapatılır.
+#
+# Kırılma riski yok (doğrulandı): web arayüzü bu uçlara hiç başvurmaz ve MCP sunucusu
+# spec'i HTTP'den değil IN-PROCESS üretir (`achilles_app.openapi()`).
+# NOT: bu bir derinlemesine-savunma önlemidir, erişim kontrolü DEĞİL — uçların kendisi
+# zaten `api_auth` ile korunur; şema gizlemek onları korumaz.
+_expose_schema = not _settings.api_token.strip()
+
 app = FastAPI(
     title="Achilles Trader AI",
     description="Yerel-öncelikli trading araştırma sistemi — web arayüzü.",
     version="0.1.0",
-    docs_url="/api/docs",
-    openapi_url="/api/openapi.json",
+    docs_url="/api/docs" if _expose_schema else None,
+    openapi_url="/api/openapi.json" if _expose_schema else None,
     lifespan=_lifespan,
 )
 

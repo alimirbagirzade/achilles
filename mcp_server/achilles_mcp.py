@@ -38,15 +38,46 @@ if str(_ROOT) not in sys.path:
 BASE_URL = os.environ.get("ACHILLES_WEB_URL", "http://127.0.0.1:8765")
 
 
+def auth_headers() -> dict[str, str]:
+    """Web API'sine gidecek kimlik başlıkları.
+
+    ``ACHILLES_API_TOKEN`` ayarlıysa proxy istekleri ``Authorization: Bearer ...``
+    ile imzalanır. Bu olmadan token açıkken TÜM MCP tool çağrıları 401 alırdı →
+    "token aç, MCP kırılsın / MCP çalışsın, kapı açık kalsın" kısır döngüsü.
+    Token boşsa (varsayılan yerel mod) başlık gönderilmez; web tarafı da doğrulamaz.
+
+    Ayar `.env` üzerinden de gelebildiği için önce ayarlar, sonra ham env okunur.
+    """
+    token = ""
+    try:
+        from app.config import get_settings
+
+        token = get_settings().api_token.strip()
+    except Exception:  # ayar katmanı yüklenemezse ham env'e düş
+        token = ""
+    if not token:
+        token = os.environ.get("ACHILLES_API_TOKEN", "").strip()
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
 def build_mcp():
-    """Achilles OpenAPI'sinden FastMCP sunucusu kur (proxy → çalışan web)."""
+    """Achilles OpenAPI'sinden FastMCP sunucusu kur (proxy → çalışan web).
+
+    Spec, FastMCP'ye verilmeden ÖNCE ``allowlist.filter_spec`` ile budanır:
+    yalnız açıkça izin verilen salt-okuma uçları tool olur (varsayılan kapalı).
+    """
     import httpx
     from fastmcp import FastMCP
+    from mcp_server.allowlist import filter_spec
 
     from app.web.server import app as achilles_app
 
-    spec = achilles_app.openapi()  # in-process, güvenilir (65+ path)
-    client = httpx.AsyncClient(base_url=BASE_URL, timeout=120.0)
+    spec = filter_spec(achilles_app.openapi())  # varsayılan-kapalı budama
+    client = httpx.AsyncClient(
+        base_url=BASE_URL,
+        timeout=120.0,
+        headers=auth_headers(),
+    )
     return FastMCP.from_openapi(
         openapi_spec=spec,
         client=client,
