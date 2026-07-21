@@ -197,6 +197,12 @@ class Settings(BaseSettings):
     # Makineye özel yol .env içinde verilir: ACHILLES_SYNTHESIS_MIRROR_DIR=...
     synthesis_mirror_dir: str = ""
 
+    # --- Literatür keşif ajanı (literature scout) ---
+    # Bulunan makalelerin PDF'lerinin indirileceği "gelen kutusu" kökü. Boşsa repo-içi
+    # `data/literature_inbox/` kullanılır (test/CI davranışı değişmez, Desktop'a yazmaz).
+    # Makineye özel yol .env içinde: ACHILLES_SCOUT_INBOX_DIR=C:\...\Gerekli kaynaklar\_yeni
+    scout_inbox_dir: str = ""
+
     # --- Auto-LoRA Pipeline ---
     auto_lora_enabled: bool = False  # otomatik döngü; varsayılan kapalı
     auto_lora_min_cards: int = 20  # eğitim başlamadan gereken minimum kart
