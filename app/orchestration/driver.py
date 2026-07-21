@@ -20,6 +20,7 @@ import os
 import re
 import subprocess
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from app.orchestration import engines
@@ -29,9 +30,29 @@ from app.web import driver_scope
 
 log = logging.getLogger(__name__)
 
+# Depo kökü: app/orchestration/driver.py → parents[2]. MCP config'te mutlak yol gerekir
+# (motor başka bir cwd'de doğabilir).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
 # claude -p çıktısının SON satırındaki verdict işaretçisi.
 _VERDICT_RE = re.compile(r"ACHILLES_HUNT_VERDICT:\s*(PASS|FAIL)", re.IGNORECASE)
 HUNT_TIMEOUT_S = 1800  # 30 dk — CPU'da derin av uzun sürebilir.
+
+# "Sür" modu verdict işaretçisi — av modunun DESENİ birebir aynı (son satır, PASS|FAIL,
+# bulunamazsa güvenli tarafta FAIL). İşaretçi ADI kasıtlı FARKLIDIR: aynı olsaydı bir sür
+# koşusunun "PASS"i `parse_hunt_verdict` tarafından "derin av geçti" sanılıp `hunt_ack=true`
+# yazdırabilirdi — yani ajan, av yapmadan eğitim kapısını açardı (Kural 8).
+_DRIVE_VERDICT_RE = re.compile(r"ACHILLES_DRIVE_VERDICT:\s*(PASS|FAIL)", re.IGNORECASE)
+
+# Sür modu av modundan UZUNDUR: veri hattı adımları (carding → RLM → curate → assemble)
+# CPU'da saatler alabilir; av tek geçişlik salt-okuma taramadır. Ayrı sabit → biri
+# değişince diğeri sessizce kaymaz.
+DRIVE_TIMEOUT_S = 3600  # 60 dk
+
+# Sürücü token TTL'i sür modu için AYRI hesaplanır. driver_scope.DEFAULT_TTL_S (2100s) av
+# moduna (1800s) göre ayarlıdır; sür modunda kullanılsaydı token koşunun ORTASINDA
+# (~35. dk) ölür, MCP çağrıları 401 almaya başlar ve ajan sebebini anlamadan tıkanırdı.
+DRIVE_TOKEN_TTL_S = DRIVE_TIMEOUT_S + 300
 
 # Araç deny-list'i motor kayıt tablosunda durur (motora ÖZGÜ bayraklar).
 # Geriye dönük uyum + tek kaynak: buradan yeniden dışa aktarılır.
@@ -76,6 +97,92 @@ def build_hunt_prompt(run: dict[str, Any]) -> str:
     )
 
 
+def build_drive_prompt(run: dict[str, Any]) -> str:
+    """Headless motor için "sür" modu promptu (MCP araçlarıyla veri hattını ilerletir).
+
+    Av modundan farkı: burada ajanın İŞ YAPMASI beklenir — ama yalnız Achilles MCP
+    araçlarıyla, dosyaya doğrudan dokunmadan ve EĞİTİME ASLA başlamadan.
+    """
+    adapter = run.get("adapter_name", "achilles_lora")
+    return (
+        "Sen Achilles deposunda VERİ HATTINI ilerleten bir sürücü ajansın. "
+        "İLK İŞ: depo kökündeki CLAUDE.md'yi Read ile OKU — bağlayıcı kurallar oradadır.\n"
+        "\n"
+        "ARAÇ KULLANIMI: işleri YALNIZCA Achilles MCP araçlarıyla (`mcp__*`) yap. "
+        "Dosyaları DOĞRUDAN DÜZENLEME (Edit/Write yok), kabuk komutu çalıştırma, "
+        "git commit/push yapma. Read/Grep/Glob yalnız DURUM ANLAMAK içindir.\n"
+        "\n"
+        "HEDEF: veri hattı adımlarını sırayla ilerlet — carding → RLM → curate → assemble. "
+        "Her adımdan önce durumu MCP ile oku; adım zaten tamamsa ATLA, baştan çalıştırma.\n"
+        "\n"
+        "⛔ EĞİTİM BAŞLATMA. Gerçek LoRA eğitimini ASLA tetikleme; onay uçlarını "
+        "(`/api/approvals/{id}/approve`) ve eğitim uçlarını (`/api/training/run`) ÇAĞIRMA. "
+        "Bunlar insan yetkisidir (CLAUDE.md Kural 8) ve sürücü kimliğinle 403 alırsın — "
+        "403'ü aşmaya ÇALIŞMA, beklenen davranıştır. TAZE İNSAN ONAYI gerektiren her "
+        "adımda DUR ve neyin beklediğini raporla.\n"
+        "\n"
+        "Çıktının SON SATIRI tam olarak şu biçimde olmalı:\n"
+        "ACHILLES_DRIVE_VERDICT: PASS    (ilerletilebilen adımlar ilerletildi; "
+        "onay kapısında ya da yapılacak iş kalmadığı için temiz durdu)\n"
+        "veya\n"
+        "ACHILLES_DRIVE_VERDICT: FAIL    (ilerlenemedi — sebebi raporda açıkla)\n"
+        f"Bağlam: orkestrasyon koşusu, adapter={adapter}."
+    )
+
+
+def build_mcp_config(root: str | None = None) -> dict[str, Any]:
+    """Doğurulan motora verilecek MCP config'i üret (kullanıcı kaydına BAĞIMLI DEĞİL).
+
+    `--strict-mcp-config` ile birlikte kullanılır → kullanıcı düzeyindeki `claude mcp add`
+    kayıtları YOK SAYILIR, yalnız burada tanımlanan sunucu yüklenir. Böylece spawn kendi
+    kendine yeter (makine değişse de çalışır).
+
+    ⚠️ SIR YAZILMAZ: sürücü token'ı bu dosyaya KONULMAZ. MCP sunucusu motorun ÇOCUĞU olarak
+    doğar ve ortamı ondan miras alır; token zaten `build_child_env` ile motorun ortamındadır
+    (bkz. mcp_server/achilles_mcp.py:driver_headers). Token'ı config'e yazmak, kısa ömürlü
+    bir sırrı diske düşürürdü.
+    """
+    repo_root = root or str(_REPO_ROOT)
+    return {
+        "mcpServers": {
+            "achilles": {
+                "command": "uv",
+                "args": [
+                    "run",
+                    "--project",
+                    repo_root,
+                    "--extra",
+                    "mcp",  # fastmcp opsiyonel `mcp` extra'sındadır
+                    "python",
+                    str(Path(repo_root) / "mcp_server" / "achilles_mcp.py"),
+                ],
+            }
+        }
+    }
+
+
+def write_mcp_config(path: str | Path, root: str | None = None) -> str:
+    """MCP config'i diske yaz ve yolunu döndür (sır içermez — bkz. build_mcp_config)."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        json.dumps(build_mcp_config(root), ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return str(target)
+
+
+def build_drive_command(
+    run: dict[str, Any], mcp_config_path: str, engine: str = DEFAULT_ENGINE
+) -> list[str]:
+    """ "Sür" modu argv'si — MCP erişimli, sertleştirilmiş şablon.
+
+    GÜVENLİK: sür modu `--safe-mode` KULLANAMAZ (o bayrak MCP'yi de kapatır). Bunun yerine
+    safe-mode'un kapattığı kanallar tek tek kapatılır; gerekçe `engines._CLAUDE_DRIVE_ARGV`
+    ve `docs/SCOPE_ISOLATION.md`.
+    """
+    return engines.build_drive_command(engine, build_drive_prompt(run), mcp_config_path)
+
+
 def build_hunt_command(run: dict[str, Any], engine: str = DEFAULT_ENGINE) -> list[str]:
     """Seçili motorun argv'si (shell yok → enjeksiyon yok; prompt argv ÖĞESİ olarak geçer).
 
@@ -106,21 +213,34 @@ def build_child_env(token: str, run_id: str) -> dict[str, str]:
     return env
 
 
-def parse_hunt_verdict(output: str) -> dict[str, Any]:
-    """claude çıktısından verdict satırını (sondan) ayıkla → {verdict, passed, summary}."""
+def _parse_verdict(output: str, pattern: re.Pattern[str], marker: str) -> dict[str, Any]:
+    """Ortak verdict ayıklayıcı: SONDAN ilk eşleşme; bulunamazsa FAIL (fail-closed).
+
+    Av ve sür modları AYNI deseni paylaşır — yalnız işaretçi adı farklıdır.
+    """
     match = None
     for line in reversed((output or "").splitlines()):
-        match = _VERDICT_RE.search(line)
+        match = pattern.search(line)
         if match:
             break
     if match is None:
         return {
             "verdict": "unknown",
             "passed": False,
-            "summary": "Verdict satırı (ACHILLES_HUNT_VERDICT) bulunamadı — güvenli tarafta FAIL.",
+            "summary": f"Verdict satırı ({marker}) bulunamadı — güvenli tarafta FAIL.",
         }
     verdict = match.group(1).upper()
     return {"verdict": verdict, "passed": verdict == "PASS", "summary": (output or "")[-600:]}
+
+
+def parse_hunt_verdict(output: str) -> dict[str, Any]:
+    """claude çıktısından verdict satırını (sondan) ayıkla → {verdict, passed, summary}."""
+    return _parse_verdict(output, _VERDICT_RE, "ACHILLES_HUNT_VERDICT")
+
+
+def parse_drive_verdict(output: str) -> dict[str, Any]:
+    """Sür modu çıktısından verdict satırını ayıkla (av moduyla AYNI sözleşme)."""
+    return _parse_verdict(output, _DRIVE_VERDICT_RE, "ACHILLES_DRIVE_VERDICT")
 
 
 def engine_available(engine: str = DEFAULT_ENGINE) -> bool:
