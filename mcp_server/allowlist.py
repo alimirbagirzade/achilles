@@ -76,8 +76,15 @@ FORBIDDEN_SUBSTRINGS: tuple[str, ...] = (
     "/api/orchestration/start",  # eğitim orkestrasyonu başlatma
     "/api/orchestration/resume",
     "/api/auto-lora/promote",  # adaptör terfisi
+    "/api/auto-lora/train",
     "/api/auto-lora/enable",
 )
+
+# NOT: bu liste ELLE bakım edilir ve tek başına yeterli DEĞİLDİR — asıl garanti
+# `ALLOWED`'ın kapalı bir küme olmasıdır. Ayrıca `tests/test_mcp_allowlist.py`
+# içindeki `test_hicbir_human_only_route_allowlist_te_degil`, FastAPI'nin GERÇEK
+# bağımlılık grafiğini tarayarak hiçbir `require_human` ucunun allow-list'e
+# sızmadığını doğrular (bu string listesine güvenmez).
 
 _HTTP_METHODS = ("get", "post", "put", "delete", "patch", "head", "options", "trace")
 

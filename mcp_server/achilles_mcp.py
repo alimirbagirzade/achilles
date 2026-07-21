@@ -57,7 +57,28 @@ def auth_headers() -> dict[str, str]:
         token = ""
     if not token:
         token = os.environ.get("ACHILLES_API_TOKEN", "").strip()
+    if token:
+        _warn_if_token_leaves_loopback()
     return {"Authorization": f"Bearer {token}"} if token else {}
+
+
+def _warn_if_token_leaves_loopback() -> None:
+    """``ACHILLES_WEB_URL`` loopback dışıysa stderr'e uyar (token o host'a gider).
+
+    Sert hata DEĞİL bilinçli olarak: token ayarlamanın amacı zaten ağa açmaktır ve
+    web sunucusu meşru biçimde başka bir makinede olabilir. Ama bearer token'ın
+    yabancı bir host'a gideceği sessiz kalmamalı — stdio MCP'de stderr güvenlidir
+    (protokol stdout'u kullanır).
+    """
+    from urllib.parse import urlparse
+
+    host = (urlparse(BASE_URL).hostname or "").lower()
+    if host not in {"127.0.0.1", "localhost", "::1", "[::1]"}:
+        print(
+            f"GÜVENLİK UYARISI: ACHILLES_WEB_URL loopback değil ({BASE_URL}) — "
+            "API token'ı bu host'a gönderilecek. Kasıtlı değilse ACHILLES_WEB_URL'i düzelt.",
+            file=sys.stderr,
+        )
 
 
 def build_mcp():

@@ -111,6 +111,31 @@ def test_yasak_desen_allowlist_e_sizarsa_fail_closed(
         allowlist.filter_spec(spec)
 
 
+def test_hicbir_human_only_route_allowlist_te_degil() -> None:
+    """İnsan-yalnız route'lar allow-list'e SIZAMAZ — gerçek bağımlılık grafiğinden.
+
+    Neden bu test şart: MCP proxy'si token'ı **human** scope'uyla taşır, yani
+    `require_human` kapıları MCP çağrılarını DURDURMAZ (bkz. docs/PROTOKOL_MCP.md).
+    Gerçek sınır allow-list'in kendisidir. Elle bakım edilen `FORBIDDEN_SUBSTRINGS`
+    listesi bunu garanti edemez — kaynağın kendisi (FastAPI dependency grafiği)
+    sorgulanır, böylece yeni bir `human_only` uç eklendiğinde liste güncellenmese
+    bile allow-list'e girerse test DÜŞER.
+    """
+    from app.web import security as _security
+    from app.web.server import app
+
+    human_only_paths = {
+        route.path
+        for route in app.routes
+        if getattr(route, "dependant", None) is not None
+        and _security.require_human in {d.call for d in route.dependant.dependencies}
+    }
+    assert human_only_paths, "human_only route bulunamadı — tarama bozulmuş olabilir"
+
+    sizanlar = {(m, p) for m, p in allowlist.ALLOWED if p in human_only_paths}
+    assert not sizanlar, f"İNSAN-YALNIZ uç allow-list'te: {sizanlar}"
+
+
 # --- Token iletimi ---------------------------------------------------------------
 
 
