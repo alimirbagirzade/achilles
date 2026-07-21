@@ -9,6 +9,7 @@ Ağ/Ollama gerektirmez. Backend grafik zaten `test_agent_graph.py`'de test'li.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 _STATIC = Path(__file__).resolve().parents[1] / "app" / "web" / "static"
@@ -42,7 +43,9 @@ def test_tab_and_panel_present() -> None:
     html = _index()
     assert 'data-tab="agentmap"' in html
     assert 'id="panel-agentmap"' in html
-    assert ">15</span> · AJAN HARİTASI" in html
+    # Sekme NUMARASINA pinleme yapma: sekme eklenip çıkarıldıkça numara kayar
+    # (11 · RLM kaldırılınca 15 → 14 oldu). Etiket sabit, numara değil.
+    assert re.search(r'<span class="tab-num">\d+</span> · AJAN HARİTASI', html)
 
 
 def test_panel_has_all_sections() -> None:
