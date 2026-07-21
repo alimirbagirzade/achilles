@@ -7,11 +7,17 @@ Tasarım (otomatik senkron):
 - Tool çağrıları ise ÇALIŞAN web sunucusuna (http://127.0.0.1:8765) httpx ile
   proxy'lenir; uygulama MCP içinde yeniden init edilmez, SQLite kilit çakışması olmaz.
 
+Gereksinim: ``fastmcp`` — opsiyonel ``mcp`` extra'sındadır::
+
+    uv sync --extra mcp
+
+Bu extra kurulmadan aşağıdaki komutlar ``ModuleNotFoundError`` ile düşer.
+
 Çalıştırma (stdio MCP):
-    uv run python mcp/achilles_mcp.py
+    uv run python mcp_server/achilles_mcp.py
 
 Kayıt:
-    claude mcp add achilles -- uv run --project <repo> python mcp/achilles_mcp.py
+    claude mcp add achilles -- uv run --project <repo> python mcp_server/achilles_mcp.py
 
 Senkron protokolü: web (app/web/server.py) değişince → MCP'yi yeniden başlat
 (veya Claude Code'u). Spec her başlangıçta taze üretildiği için tool listesi güncellenir.

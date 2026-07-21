@@ -5,7 +5,7 @@
 #   ./update.sh --force    -- yereli AT, origin/main ile birebir eşitle (salt-kopya kurulum)
 #
 # Yapar: web sunucusunu durdur (port 8765) -> 'main' dalına yakınsa (origin/main) ->
-#        uv sync --extra web -> web'i yeniden başlat -> sağlık kontrolü.  EĞİTİME DOKUNMAZ.
+#        uv sync --extra dev -> web'i yeniden başlat -> sağlık kontrolü.  EĞİTİME DOKUNMAZ.
 #
 # NOT (kök-neden düzeltmesi): Bu betik artık MEVCUT dal ne olursa olsun makineyi
 # 'main' dalına + origin/main'e yakınsatır. Eskiden bir feature dalına parklanmış
@@ -150,8 +150,8 @@ UPDATED=0
 
 # --- 3. Bağımlılıklar (WEB extra DAHIL — düz 'uv sync' web paketlerini budar) ---
 if [ "$UPDATED" -eq 1 ] || [ "$FORCE" -eq 1 ]; then
-  echo "[..] Bağımlılıklar eşitleniyor (uv sync --extra web)..."
-  "$UV" sync --extra web >/dev/null 2>&1 || true
+  echo "[..] Bağımlılıklar eşitleniyor (uv sync --extra dev)..."
+  "$UV" sync --extra dev >/dev/null 2>&1 || true
 fi
 
 # --- 4. Web'i yeniden başlat (arka plan) ---

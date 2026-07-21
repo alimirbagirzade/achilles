@@ -159,6 +159,21 @@ if _trusted_hosts:
 
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=_trusted_hosts)
 
+# CORS: `cors_origins` ayarı vardı ama middleware hiç kurulmamıştı — ayar sahte bir
+# güvenlik güvencesi veriyordu. Frontend aynı origin'den sunulduğu için kısıtlı liste
+# normal kullanımı etkilemez; çapraz-origin API erişimini açıkça sınırlar.
+_cors_origins = [o.strip() for o in _settings.cors_origins.split(",") if o.strip()]
+if _cors_origins:
+    from starlette.middleware.cors import CORSMiddleware
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["*"],
+    )
+
 
 @app.middleware("http")
 async def _security_middleware(request: Request, call_next):

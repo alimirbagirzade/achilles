@@ -20,10 +20,10 @@ help:
 
 install:
 ifdef UV
-	uv sync --extra web
+	uv sync --extra dev
 	-uv run pre-commit install
 else
-	python -m pip install -e ".[dev,web]"
+	python -m pip install -e ".[dev]"
 	-pre-commit install
 endif
 
@@ -57,7 +57,7 @@ endif
 
 ci: lint typecheck test
 
-# Tek komut güncelleme (macOS/Linux) — git pull + uv sync --extra web + web restart.
+# Tek komut güncelleme (macOS/Linux) — git pull + uv sync --extra dev + web restart.
 update:
 	@bash update.sh
 
