@@ -2466,6 +2466,23 @@ code {
   margin: 8px 0 0;
 }
 
+/* GENİŞ PANEL — harita `main`in 1000px'lik ortalanmış kolonundan TAŞAR ki tüm ajanlar
+   aynı anda görünsün (8 ajanlı "Eğitim Hattı" şeridi tek satıra sığsın, yatay kaydırma
+   gerekmesin). Ortalamayı korumak için negatif margin ile yeniden merkezlenir.
+   100vw yerine (100vw - 64px): dikey kaydırma çubuğu payı — sayfa yatay kaymasın. */
+#panel-agentmap {
+  --am-wide: min(1760px, calc(100vw - 64px));
+  width: var(--am-wide);
+  margin-left: calc(50% - var(--am-wide) / 2);
+}
+@media (max-width: 1060px) {
+  /* dar ekran: taşırma yok, normal kolon + yatay kaydırma devreye girsin */
+  #panel-agentmap {
+    width: auto;
+    margin-left: 0;
+  }
+}
+
 /* tuval */
 .am-canvas-wrap {
   overflow-x: auto;

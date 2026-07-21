@@ -257,3 +257,36 @@ def test_engine_cannot_selfapprove_no_autoapprove_in_autodrive() -> None:
     trigger = js[js.index("function amTriggerTraining") : js.index("function loadAgentMap")]
     assert "/approvals/" not in trigger, "⚡ otonom yol onay veremez (motor kendini onaylamasın)"
     assert '"/training/run"' not in trigger, "⚡ otonom yol gerçek eğitimi başlatamaz"
+
+
+# ── Geniş panel + genişliğe uyarlanan satır kapasitesi ───────────────────────
+def test_panel_is_wide_and_recenters() -> None:
+    """Harita paneli `main`in 1000px kolonundan taşar (tüm ajanlar aynı anda görünsün)."""
+    css = _appcss()
+    seg = css[css.index("#panel-agentmap") :]
+    assert "--am-wide" in seg
+    assert "100vw" in seg  # viewport genişliğine göre taşar
+    assert "margin-left: calc(50%" in seg  # negatif margin ile yeniden merkezlenir
+    # dar ekranda taşırma kapanmalı (yatay sayfa kayması olmasın)
+    assert "@media (max-width: 1060px)" in css
+
+
+def test_per_row_adapts_to_canvas_width() -> None:
+    """Satır başına kart sayısı tuvalin gerçek genişliğinden hesaplanır (sabit 6 değil)."""
+    js = _appjs()
+    seg = js[js.index("function amPerRowCap") : js.index("function amLayout")]
+    assert "clientWidth" in seg
+    assert "AM_CARD_W" in seg and "AM_CARD_GX" in seg
+    assert "AM_MIN_PER_ROW" in seg and "AM_MAX_PER_ROW" in seg
+    # yerleşim bu kapasiteyi kullanmalı (eski sabit sınır kalmasın)
+    lay = js[js.index("function amLayout") : js.index("function amRoundRectPath")]
+    assert "amPerRowCap()" in lay
+    assert "perRowCap" in lay
+
+
+def test_resize_rebuilds_layout() -> None:
+    """Pencere genişleyince yerleşim yeniden kurulur (imza sıfırlanır)."""
+    js = _appjs()
+    assert '"resize"' in js
+    seg = js[js.index('addEventListener("resize"') :]
+    assert "amSig = null" in seg[:400]
