@@ -51,12 +51,42 @@ scope izolasyonunu tek başına **tiyatro** haline getiriyordu:
 kontrolü yoktur**. Bash aracı olan bir motor HTTP'ye hiç dokunmadan aynı sonuca ulaşır.
 
 **Düzeltme:** motor artık araç-seviyesinde kısıtlı doğurulur —
-`--disallowedTools Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch`. Derin av zaten
+`--disallowedTools Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch,Task`. Derin av zaten
 salt-okumadır (Read/Grep/Glob yeter). Bu, prompt'taki "kod değiştirme / eğitim
 başlatma" talimatını **teknik olarak** zorunlu kılar.
 
+`Task` de yasaktır: aksi halde motor, kısıtsız araç setine sahip bir **alt-ajan**
+doğurup deny-list'i dolaylı olarak aşabilir (deny-list'in alt-ajanlara özyinelemeli
+uygulandığı, test edilmiş bir varsayım değildir).
+
 > Prompt talimatı bir güvenlik sınırı **değildir**: RAG'e alınan bir makale/kart
 > içeriği prompt-injection ile motoru yönlendirebilir.
+
+### 1b. MCP sunucuları deny-list'in DIŞINDAYDI
+
+İkinci denetim turunda çıktı: `--disallowedTools` yalnız **yerleşik** araç adlarını
+yasaklar, `mcp__*` araçlarını **değil**. Bu makinede proje kapsamında kayıtlı
+`achilles` MCP sunucusu (`mcp_server/achilles_mcp.py`), Achilles OpenAPI'sinden tool
+üretip `127.0.0.1:8765`'e `httpx` ile proxy'ler — yani **Bash olmadan HTTP isteği atan
+bir kanal**. Üstelik bu proxy sürücü başlığı göndermediği için istekleri `human`
+scope'una düşerdi.
+
+**Düzeltme:** spawn'a `--strict-mcp-config` eklendi ve `--mcp-config` verilmiyor →
+hiçbir MCP sunucusu yüklenmez.
+
+> Bu vektör bir süre **kazara** kapalıydı: insan-yalnız 6 uç `include_in_schema=False`
+> olduğu için FastMCP'nin ürettiği şemada yer almıyordu. Bu bir savunma **değildi** —
+> dokümanın kendisinin "koruma değildir" dediği bayrağa bağımlıydı.
+
+### 1c. `hunt_ack` doğrulanmadan kabul ediliyordu
+
+`POST /api/orchestration/start` ve `/resume`, gövdeden gelen `hunt_ack: bool`'u
+doğrulamadan kabul ediyordu; `delegates.py` yalnız truthy'liğine bakar. Yani
+CLAUDE.md'nin "her eğitimden önce **ZORUNLU**" dediği Kademe-2 av,
+`{"hunt_ack": true}` göndermekle atlanabiliyordu — **v5 regresyonunun kök nedeni**.
+
+**Düzeltme:** `hunt_ack=true` bir insan yetki beyanıdır → `require_human` arkasında.
+Koşu başlatmanın kendisi serbest kalır (yalnız beyan kapılıdır).
 
 ### 2. `.env` fallback, ortam temizliğini etkisiz kılıyordu
 
@@ -85,7 +115,7 @@ Bu yüzden koruma **katmanlıdır** ve gücü şuna bağlıdır:
 
 | Durum | Gerçek koruma |
 |-------|---------------|
-| Araç kısıtı (`--disallowedTools`) | **Asıl sınır.** Bash/Write olmayan motor ne CLI çalıştırabilir ne HTTP isteği atabilir. |
+| Araç kısıtı (`--disallowedTools` + `--strict-mcp-config`) | **Asıl sınır.** Bash/Write/Task'ı ve MCP kanalı olmayan motorun elinde HTTP isteği atacak ya da CLI çalıştıracak bir araç kalmaz. Bu iki bayrak birlikte olmalıdır: yalnız `--disallowedTools` MCP tool'larını (`mcp__*`) kapsamaz. |
 | `api_token` **atanmış** | Gerçek yetki sınırı: çocuğun ortamı temizlenir, insan token'ını bilemez. |
 | `api_token` **boş** | Yalnız derinlemesine savunma + gürültülü başlangıç uyarısı. Kriptografik garanti **yok**. |
 

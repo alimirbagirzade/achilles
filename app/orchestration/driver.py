@@ -40,7 +40,18 @@ HUNT_TIMEOUT_S = 1800  # 30 dk — CPU'da derin av uzun sürebilir.
 # Bu kısıt olmadan scope katmanı TİYATRODUR: Bash'i olan bir motor HTTP'yi tamamen
 # atlayıp `uv run achilles approval-approve <id>` / `clear-stop-all` çalıştırabilir —
 # bu CLI komutları hiçbir kimlik doğrulamasından geçmez (denetim BLOCKER bulgusu).
-DISALLOWED_TOOLS = ("Bash", "Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch")
+# `Task` de yasak: aksi halde motor, kısıtsız araç setine sahip bir ALT-ajan doğurup
+# bu deny-list'i dolaylı olarak aşabilir (deny-list'in alt-ajanlara özyinelemeli
+# uygulandığı test edilmiş bir varsayım DEĞİLDİR).
+DISALLOWED_TOOLS = (
+    "Bash",
+    "Edit",
+    "Write",
+    "NotebookEdit",
+    "WebFetch",
+    "WebSearch",
+    "Task",
+)
 
 # Çocuğa GEÇİRİLMEYECEK insan sırları. NOT: anahtarı silmek YETMEZ — Settings
 # `env_file=".env"` kullandığı için silinen anahtar dotenv'den geri okunur
@@ -74,11 +85,22 @@ def build_hunt_command(run: dict[str, Any]) -> list[str]:
 
     ``--disallowedTools`` ile motor araç-seviyesinde kısıtlanır: Bash/Write olmadan
     ne yerel CLI'yi (auth'suz `approval-approve`) çalıştırabilir ne de dosya yazabilir.
+
+    ``--strict-mcp-config`` ZORUNLU: ``--mcp-config`` verilmediği için HİÇBİR MCP
+    sunucusu yüklenmez. Bu makinede proje kapsamında kayıtlı `achilles` MCP sunucusu
+    (`mcp_server/achilles_mcp.py`) Achilles OpenAPI'sinden tool üretip
+    ``127.0.0.1:8765``'e httpx ile proxy'liyor → Bash OLMADAN HTTP isteği atan bir
+    kanal. Üstelik proxy sürücü başlığı göndermediği için istekleri ``human``
+    scope'una düşerdi. Denetim BLOCKER bulgusu.
+
+    Bayrak sırası: ``--disallowedTools`` variadic (``<tools...>``) olduğundan EN SONDA
+    durur ve tek virgüllü arg alır; aksi halde sonraki bayrakları yutabilir.
     """
     return [
         "claude",
         "-p",
         build_hunt_prompt(run),
+        "--strict-mcp-config",
         "--disallowedTools",
         ",".join(DISALLOWED_TOOLS),
     ]

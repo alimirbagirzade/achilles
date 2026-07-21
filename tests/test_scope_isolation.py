@@ -221,7 +221,57 @@ def test_hunt_command_restricts_tools() -> None:
     blocked = cmd[cmd.index("--disallowedTools") + 1]
     for tool in ("Bash", "Write", "Edit"):
         assert tool in blocked
-    assert set(DISALLOWED_TOOLS) >= {"Bash", "Edit", "Write"}
+    # `Task` de yasak: alt-ajan doğurup deny-list'i dolaylı aşmasın.
+    assert set(DISALLOWED_TOOLS) >= {"Bash", "Edit", "Write", "Task"}
+    # variadic bayrak EN SONDA olmalı (sonraki bayrakları yutmasın).
+    assert cmd[-2] == "--disallowedTools"
+
+
+def test_hunt_command_disables_mcp_servers() -> None:
+    """MCP kanalı kapalı olmalı — yoksa motor Bash OLMADAN HTTP isteği atabilir.
+
+    `mcp_server/achilles_mcp.py` Achilles OpenAPI'sinden tool üretip 127.0.0.1:8765'e
+    proxy'liyor ve sürücü başlığı GÖNDERMİYOR → istekler human scope'una düşerdi.
+    """
+    cmd = build_hunt_command({"adapter_name": "myad"})
+    assert "--strict-mcp-config" in cmd
+    assert "--mcp-config" not in cmd  # hiçbir MCP sunucusu yüklenmez
+
+
+# ── hunt_ack: doğrulanmayan insan yetki beyanı → sürücüye kapalı ─────────────
+
+
+def test_driver_cannot_self_ack_deep_hunt_on_start() -> None:
+    """Motor zorunlu Kademe-2 avını `hunt_ack=true` göndererek ATLAYAMAZ (v5 kökü)."""
+    token = driver_scope.mint(_RUN_ID)
+    r = client.post(
+        "/api/orchestration/start",
+        json={"hunt_ack": True, "auto_run": False},
+        headers=_driver_headers(token),
+    )
+    assert r.status_code == 403
+
+
+def test_driver_cannot_self_ack_deep_hunt_on_resume() -> None:
+    token = driver_scope.mint(_RUN_ID)
+    r = client.post(
+        "/api/orchestration/resume/orc_hicbir_kosu",
+        json={"hunt_ack": True},
+        headers=_driver_headers(token),
+    )
+    # 403 (scope kapısı), 404'ten (koşu yok) ÖNCE gelmeli
+    assert r.status_code == 403
+
+
+def test_driver_may_start_run_without_ack() -> None:
+    """Kapı yalnız yetki BEYANINA takılır — avsız başlatma sürücüye serbesttir."""
+    token = driver_scope.mint(_RUN_ID)
+    r = client.post(
+        "/api/orchestration/start",
+        json={"hunt_ack": False, "auto_run": False},
+        headers=_driver_headers(token),
+    )
+    assert r.status_code == 200
 
 
 # ── api_token boşken gürültülü uyarı (sessiz "auth kapalı" olmasın) ───────────

@@ -12,10 +12,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.web.security import require_auth
+from app.web.security import require_auth, require_human
 
 router = APIRouter(
     prefix="/api/orchestration", tags=["orchestration"], dependencies=[Depends(require_auth)]
@@ -49,13 +49,21 @@ def _orchestrator() -> Any:
 
 
 @router.post("/start")
-def orchestration_start(req: OrchestrationStartRequest) -> dict[str, Any]:
+def orchestration_start(req: OrchestrationStartRequest, request: Request) -> dict[str, Any]:
     """Dayanıklı eğitim orkestrasyonunu BAŞLAT (tek-tık).
 
     `auto_run=true` (varsayılan): salt-okuma aşamalarını yürütür, insan kapısında durur.
     Gerçek eğitim için `hunt_ack=true` + ayrı taze onay (Kural 8) gerekir.
+
+    `hunt_ack=true` bir İNSAN yetki beyanıdır ("Kademe-2 derin avı yaptım") ve
+    doğrulanmadan kabul edilir → sürücü scope'una KAPALI. Aksi halde motor, zorunlu
+    eğitim-öncesi avı basitçe `{"hunt_ack": true}` göndererek atlayabilirdi (v5
+    regresyonunun kök nedeni tam olarak buydu). Başlatmanın kendisi serbesttir.
     """
     from app.config import get_settings
+
+    if req.hunt_ack:
+        require_human(request)
 
     orch = _orchestrator()
     model = req.model or getattr(get_settings(), "peft_base_model", "")
@@ -89,9 +97,17 @@ def orchestration_timeline(run_id: str, limit: int = 200) -> dict[str, Any]:
 
 
 @router.post("/resume/{run_id}")
-def orchestration_resume(run_id: str, req: OrchestrationResumeRequest) -> dict[str, Any]:
-    """Bloke/başarısız koşuyu sürdür — tamamlanan aşamalar atlanır (checkpoint)."""
+def orchestration_resume(
+    run_id: str, req: OrchestrationResumeRequest, request: Request
+) -> dict[str, Any]:
+    """Bloke/başarısız koşuyu sürdür — tamamlanan aşamalar atlanır (checkpoint).
+
+    `hunt_ack=true` insan yetki beyanıdır → sürücüye kapalı (bkz. `orchestration_start`).
+    """
     import json
+
+    if req.hunt_ack:
+        require_human(request)
 
     orch = _orchestrator()
     run = orch.store.get_run(run_id)
