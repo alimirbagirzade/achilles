@@ -145,7 +145,12 @@ def _run_autodrive_bg(run_id: str) -> None:
     AutoDriver().drive(run_id, execute=True)
 
 
-@router.post("/autodrive/{run_id}")
+# ⛔ `human_only`: bu uç gerçek bir `claude -p` ALT-SÜRECİ doğurur. Sür (drive) modunda
+# motora MCP erişimi verildiği için, kapı olmasaydı motor bu ucu MCP aracı olarak görüp
+# KENDİ KENDİNE yeni sürücüler doğurabilirdi (özyinelemeli spawn + abonelik kotası yakma).
+# İnsan (UI/CLI) etkilenmez — yalnız `driver` scope 403 alır (Kural 8; /training/run ile
+# aynı desen). Bkz. docs/SCOPE_ISOLATION.md.
+@router.post("/autodrive/{run_id}", dependencies=[Depends(require_human)])
 def orchestration_autodrive(
     run_id: str, req: OrchestrationAutodriveRequest, background: BackgroundTasks
 ) -> dict[str, Any]:

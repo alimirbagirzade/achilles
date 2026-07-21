@@ -62,10 +62,21 @@ SECURITY_HEADERS: dict[str, str] = {
 
 # --- Kimlik doğrulama ---
 def require_auth(request: Request) -> None:
-    """API token ayarlıysa geçerli bir bearer token zorunludur.
+    """API token ayarlıysa geçerli bir bearer token **ya da** sürücü token'ı zorunludur.
 
     Token boşsa (varsayılan yerel mod) doğrulama atlanır — sunucu zaten yalnız
     localhost'a bağlıdır. Ağa açmak için ACHILLES_API_TOKEN ata.
+
+    SÜRÜCÜ KİMLİĞİ (bkz. driver_scope + docs/SCOPE_ISOLATION.md): doğurulan motorun
+    ``ACHILLES_API_TOKEN``'ı bilinçli olarak BOŞALTILIR (insan sırrı çocuğa sızmasın —
+    ``driver.py:_HUMAN_SECRET_ENV``). Bu kapı yalnız insan sırrını tanısaydı, api_token
+    ayarlı kurulumda motor HER çağrıda 401 alır ve MCP üzerinden hiçbir iş yapamazdı.
+    Bu yüzden geçerli bir sürücü token'ı da **kimlik** olarak kabul edilir.
+
+    ⚠️ BU BİR YETKİ DEĞİL, YALNIZ KİMLİKTİR: sürücü kimliğiyle geçen istek
+    ``require_human`` kapısında yine **403** alır (Kural 8) — motor onay veremez,
+    eğitim başlatamaz. Geçersiz/süresi dolmuş sürücü token'ı ``resolve_scope``
+    tarafından **401** ile reddedilir; sessizce ``human``'a düşme YOKTUR.
     """
     settings = get_settings()
     token = settings.api_token.strip()
@@ -80,12 +91,21 @@ def require_auth(request: Request) -> None:
         provided = request.headers.get("x-api-token", "").strip()
 
     # sabit-zamanlı karşılaştırma (stdlib; encode ile non-ASCII token güvenli)
-    if not secrets.compare_digest(provided.encode("utf-8"), token.encode("utf-8")):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Geçersiz veya eksik API token.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    if secrets.compare_digest(provided.encode("utf-8"), token.encode("utf-8")):
+        return
+
+    # İnsan sırrı eşleşmedi → geçerli bir sürücü kimliği var mı?
+    # `resolve_scope` başlık VARSA doğrular (geçersizse kendisi 401 atar), başlık
+    # YOKSA "human" döner → aşağıdaki 401'e düşer. Yani bu dal yalnız DOĞRULANMIŞ
+    # sürücü token'ını geçirir.
+    if resolve_scope(request) == "driver":
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Geçersiz veya eksik API token.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 # --- Scope (kimlik seviyesi): human vs driver ---

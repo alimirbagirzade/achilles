@@ -37,6 +37,39 @@ if str(_ROOT) not in sys.path:
 
 BASE_URL = os.environ.get("ACHILLES_WEB_URL", "http://127.0.0.1:8765")
 
+# Sürücü kimliği başlıkları — app/web/driver_scope.py ile AYNI adlar (tek kaynak orada).
+# Buraya elle yazılır çünkü bu modül `app` paketi kurulu olmadan da içe aktarılabilmelidir.
+_DRIVER_TOKEN_ENV = "ACHILLES_DRIVER_TOKEN"
+_DRIVER_RUN_ID_ENV = "ACHILLES_DRIVER_RUN_ID"
+_DRIVER_TOKEN_HEADER = "x-achilles-driver-token"
+_RUN_ID_HEADER = "x-achilles-run-id"
+
+
+def driver_headers(env: dict[str, str] | None = None) -> dict[str, str]:
+    """Ortamdaki sürücü kimliğini HTTP başlıklarına çevir (yoksa BOŞ sözlük).
+
+    ⚠️ GÜVENLİK — KİMLİK AKLAMA (identity laundering) ÖNLEMİ:
+    Bu sunucu MCP çağrılarını çalışan web'e httpx ile proxy'ler. Başlıklar
+    taşınmazsa, doğurulan motorun ``driver`` kimliği proxy'de KAYBOLUR ve istek
+    sunucuya ``human`` gibi ulaşır (``app/web/security.py:resolve_scope`` başlık
+    yoksa ``"human"`` döner). O durumda motor, MCP üzerinden ``/api/training/run``
+    ve ``/api/approvals/{id}/approve`` gibi ``human_only`` uçları çağırıp KENDİ
+    eğitimini onaylayıp başlatabilirdi → CLAUDE.md Kural 8 delinir.
+
+    İnsan bu MCP sunucusunu kendi oturumunda kullandığında bu değişkenler ortamda
+    YOKTUR → başlık eklenmez → davranış eskisiyle birebir aynı (``human``).
+    """
+    src = os.environ if env is None else env
+    token = (src.get(_DRIVER_TOKEN_ENV) or "").strip()
+    run_id = (src.get(_DRIVER_RUN_ID_ENV) or "").strip()
+    if not token:
+        return {}
+    headers = {_DRIVER_TOKEN_HEADER: token}
+    if run_id:
+        # run_id da gönderilir: token yalnız bağlı olduğu koşuda geçerlidir.
+        headers[_RUN_ID_HEADER] = run_id
+    return headers
+
 
 def auth_headers() -> dict[str, str]:
     """Web API'sine gidecek kimlik başlıkları.
@@ -94,10 +127,14 @@ def build_mcp():
     from app.web.server import app as achilles_app
 
     spec = filter_spec(achilles_app.openapi())  # varsayılan-kapalı budama
+    # Kimlik başlıkları: insan bearer token'ı + (varsa) sürücü kimliği.
+    # İkisi ÇAKIŞMAZ (farklı başlık adları) ve birlikte doğru davranırlar: bearer
+    # `require_auth`'u geçirir, sürücü başlığı ise `require_human` kapısında 403'e yol
+    # açar (Kural 8). Yani sürücü kimliği, insan sırrı sızsa BİLE yetki vermez.
     client = httpx.AsyncClient(
         base_url=BASE_URL,
         timeout=120.0,
-        headers=auth_headers(),
+        headers={**auth_headers(), **driver_headers()},
     )
     return FastMCP.from_openapi(
         openapi_spec=spec,

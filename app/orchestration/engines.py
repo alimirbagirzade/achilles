@@ -33,6 +33,9 @@ log = logging.getLogger(__name__)
 # değişim şablonun ÖĞELERİ üzerinde tam eşleşmeyle yapılır, prompt içeriğinde arama yapılmaz.
 PROMPT = "\x00ACHILLES_PROMPT\x00"
 
+# "Sür" modunda üretilen MCP config dosyasının yolunu tutan sentinel (aynı tam-eşleşme kuralı).
+MCP_CONFIG = "\x00ACHILLES_MCP_CONFIG\x00"
+
 # PATH yoklama cache ömrü (saniye). Motor oturum ortasında kurulabilir → sonsuz cache yanlış.
 PROBE_TTL_S = 60.0
 
@@ -52,6 +55,13 @@ class Engine:
     argv_template: tuple[str, ...]
     quota_warning: str
     spawns: bool = True
+    # "Sür" (drive) modu argv şablonu — MCP erişimi GEREKTİRİR, bu yüzden av modundan
+    # AYRI bir sertleştirme profili kullanır (bkz. _CLAUDE_DRIVE_ARGV). Boş = motor sür
+    # modunu DESTEKLEMEZ (fail-closed).
+    drive_argv_template: tuple[str, ...] = ()
+    # Sür modu profili araç seviyesinde kısıtlı mı? Av modundaki `hardened`'DAN AYRIDIR:
+    # sür modu `--safe-mode` KULLANAMAZ (o bayrak MCP'yi de kapatır) → farklı bayrak seti.
+    drive_hardened: bool = False
     # Doğurulan ajan ARAÇ SEVİYESİNDE kısıtlanarak mı başlatılıyor?
     # AutoDriver YALNIZ hardened motorları doğurur (bkz. docs/SCOPE_ISOLATION.md):
     # kısıtsız bir motor, auth'suz yerel CLI'yi (`achilles approval-approve`) ya da
@@ -66,6 +76,21 @@ class Engine:
                 f"Motor '{self.name}' süreç başlatmaz (doğrudan yerel hat) — argv kurulamaz."
             )
         return [prompt if part == PROMPT else part for part in self.argv_template]
+
+    def build_drive_command(self, prompt: str, mcp_config_path: str) -> list[str]:
+        """ "Sür" modu argv'si — PROMPT ve MCP_CONFIG sentinel'leri değiştirilir (kabuk YOK).
+
+        Sür modunu desteklemeyen motor ValueError ile REDDEDİLİR (sessiz av-moduna düşme YOK:
+        av modu MCP'siz olduğundan sessiz düşüş, aracı olmayan bir ajan doğururdu)."""
+        if not self.spawns or not self.drive_argv_template:
+            raise ValueError(
+                f"Motor '{self.name}' sür (drive) modunu desteklemiyor — "
+                "MCP erişimli sertleştirilmiş şablonu yok."
+            )
+        if not mcp_config_path:
+            raise ValueError("mcp_config_path boş olamaz — sür modu MCP config dosyası ister.")
+        subs = {PROMPT: prompt, MCP_CONFIG: mcp_config_path}
+        return [subs.get(part, part) for part in self.drive_argv_template]
 
 
 # ── Kota uyarıları — headless koşu, interaktif kullanımla AYNI pencereyi tüketir ────────
@@ -106,11 +131,62 @@ _CLAUDE_ARGV: tuple[str, ...] = (
     ",".join(DISALLOWED_TOOLS),
 )
 
+# ── Sertleştirme — "sür" (drive) modu ───────────────────────────────────────────────────
+# ⚠️ NEDEN AV MODUNDAN FARKLI: `claude --help`, `--safe-mode`'un devre dışı bıraktıkları
+# arasında **MCP sunucularını** açıkça sayar. Sür modunun TÜM amacı Achilles MCP araçlarına
+# erişim olduğundan `--safe-mode` KULLANILAMAZ — kullanılsaydı ajan araçsız kalırdı.
+# `--bare` de ELENDİ: yardım metnine göre kimlik doğrulamayı "strictly ANTHROPIC_API_KEY"e
+# indirger (OAuth/keychain okunmaz) → projenin KALICI "API ASLA" kısıtını ihlal ederdi
+# (CLAUDE.md + HANDOFF; abonelik CLI'si şart).
+# Bu yüzden safe-mode'un kapattığı kanallar TEK TEK, MCP'yi öldürmeden kapatılır:
+#   --setting-sources ""      : user/project/local ayar kaynaklarının HİÇBİRİ yüklenmez →
+#                               hook / özel ajan / plugin kaydı gelmez. (Hook'lar araç
+#                               katmanının DIŞINDA, doğrudan kabukta koşar; deny-list onları
+#                               GÖRMEZ — bu yüzden kritik.)
+#   --disable-slash-commands  : skill kanalı kapalı.
+#   --strict-mcp-config       : YALNIZ --mcp-config'teki sunucular; kullanıcı düzeyindeki
+#                               `claude mcp add` kayıtları YOK SAYILIR → spawn kendine yeter.
+#   --tools Read,Grep,Glob    : yerleşik araçlar için ALLOW-list (deny-list'ten güçlü:
+#                               varsayılan KAPALI). Bash/Edit/Write/Task yok → ajan dosya
+#                               düzenleyemez, kabuk açamaz, alt-ajan doğuramaz.
+# ⚠️ ARTIK RİSK (dürüst ol): `--tools` yalnız YERLEŞİK araç kümesini kapsar; MCP araçları
+# (`mcp__*`) bu listeye TABİ DEĞİLDİR. Sür modunda MCP yüzeyinin sınırı ARAÇ katmanında
+# değil, SUNUCU tarafındadır: `require_human` + sürücü token'ı (bkz. mcp_server/
+# achilles_mcp.py:driver_headers ve docs/SCOPE_ISOLATION.md).
+DRIVE_ALLOWED_TOOLS: tuple[str, ...] = ("Read", "Grep", "Glob")
+
+# ⚠️ SIRA ÖNEMLİ: hem `--tools` hem `--mcp-config` VARIADIC'tir (`<tools...>`, `<configs...>`).
+# Variadic bir bayrak, `--` ile başlayan bir sonraki bayrağa kadar her şeyi yutar. Bu yüzden
+# `--tools` tek virgüllü arg alır ve hemen ardından bir bayrak gelir; `--mcp-config` ise EN
+# SONDA, tek yol argümanıyla durur.
+_CLAUDE_DRIVE_ARGV: tuple[str, ...] = (
+    "claude",
+    "-p",
+    PROMPT,
+    "--setting-sources",
+    "",
+    "--disable-slash-commands",
+    "--strict-mcp-config",
+    "--tools",
+    ",".join(DRIVE_ALLOWED_TOOLS),
+    "--mcp-config",
+    MCP_CONFIG,
+)
+
 # ── Kayıt tablosu — yeni motor eklemek TEK SATIR ────────────────────────────────────────
 # ⚠️ Yeni motor eklerken `hardened=True` yalnız araç-kısıtı bayrakları DOĞRULANMIŞSA
 # verilmelidir; aksi halde AutoDriver onu doğurmayı REDDEDER (fail-closed, doğru davranış).
 _ENGINES: tuple[Engine, ...] = (
-    Engine("claude", "Claude Code (abonelik)", "claude", _CLAUDE_ARGV, _Q_CLAUDE, hardened=True),
+    Engine(
+        "claude",
+        "Claude Code (abonelik)",
+        "claude",
+        _CLAUDE_ARGV,
+        _Q_CLAUDE,
+        hardened=True,
+        drive_argv_template=_CLAUDE_DRIVE_ARGV,
+        drive_hardened=True,
+    ),
     Engine("codex", "Codex CLI (ChatGPT planı)", "codex", ("codex", "exec", PROMPT), _Q_CODEX),
     Engine("gemini", "Gemini CLI (Google hesabı)", "gemini", ("gemini", "-p", PROMPT), _Q_GEMINI),
     Engine("local", "Yerel hat (Ollama)", None, (), _Q_LOCAL, spawns=False),
@@ -141,6 +217,16 @@ def get_engine(name: str) -> Engine:
 def build_command(name: str, prompt: str) -> list[str]:
     """Verilen motor için argv listesi kur (bilinmeyen ad → ValueError)."""
     return get_engine(name).build_command(prompt)
+
+
+def build_drive_command(name: str, prompt: str, mcp_config_path: str) -> list[str]:
+    """Verilen motor için "sür" modu argv'si (bilinmeyen/desteklemeyen motor → ValueError)."""
+    return get_engine(name).build_drive_command(prompt, mcp_config_path)
+
+
+def drive_supported(name: str) -> bool:
+    """Motor "sür" modunu destekliyor mu (MCP erişimli sertleştirilmiş şablonu var mı)?"""
+    return bool(get_engine(name).drive_argv_template)
 
 
 def reset_probe_cache() -> None:
