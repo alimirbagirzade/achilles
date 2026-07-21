@@ -12,7 +12,7 @@ dependencies = [
     # data
     "pandas>=2.2",
     "numpy>=1.26",
-    "polars>=1.0",
+    # pyarrow: kodda dogrudan import edilmiyor; chromadb transitif isteyebilir -> birakildi
     "pyarrow>=16.0",
     # config / validation
     "pydantic>=2.7",
@@ -23,10 +23,8 @@ dependencies = [
     # pdf
     "pymupdf>=1.24",
     "pypdf>=4.2",
-    "pdfplumber>=0.11",
-    # indicators / backtest
-    "ta>=0.11",
-    "backtesting>=0.3.3",
+    # indikatorler ve backtest motoru el yazimi:
+    # app/trading/indicators.py + app/trading/backtester.py (harici kutuphane kullanilmiyor)
     # cli / ux
     "typer>=0.12",
     "rich>=13.7",
@@ -36,8 +34,6 @@ dependencies = [
     # io / web (paper sourcing)
     "requests>=2.32",
     "httpx>=0.27",
-    "beautifulsoup4>=4.12",
-    "feedparser>=6.0",
     # web server — achilles-web entry point (tüm platformlarda gerekli)
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
@@ -50,7 +46,9 @@ dependencies = [
 # Heavier / platform-specific extras. mlx-lm only installs on Apple Silicon.
 train = ["mlx-lm>=0.16; platform_system == 'Darwin' and platform_machine == 'arm64'"]
 # Windows/Linux CPU veya CUDA ile LoRA egitimi icin: uv pip install -e ".[train-cpu]"
-train-cpu = ["torch>=2.2", "transformers>=4.40", "peft>=0.10", "datasets>=2.19", "accelerate>=0.29"]
+# NOT: HF `datasets` kullanilmiyor (bkz. app/training/peft_lora_train.py) — yerel datasets/ dizini
+# kastedilir. `accelerate` dogrudan import edilmez ama transformers.Trainer runtime'da ister.
+train-cpu = ["torch>=2.2", "transformers>=4.40", "peft>=0.10", "accelerate>=0.29"]
 # Egitim dokumanlarini PDF e cevirmek icin: uv pip install -e ".[docs]" (scripts/gen_egitim_pdf.py)
 docs = ["markdown-pdf>=1.13"]
 # OPSIYONEL: alexzhang13/rlm recursive reasoning motoru. Kurulu degilse Achilles native
