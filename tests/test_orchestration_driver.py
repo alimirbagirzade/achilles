@@ -129,3 +129,35 @@ def test_runner_exception_is_safe(driver: AutoDriver) -> None:
 def test_unknown_run_returns_error(driver: AutoDriver) -> None:
     res = driver.drive("orc_yok", execute=False)
     assert res["ok"] is False
+
+
+# ── motor seçimi (kayıt tablosu) ──────────────────────────────────────────────
+
+
+def test_build_command_honors_engine() -> None:
+    """Varsayılan claude; başka motor seçilince o motorun argv şablonu kurulur."""
+    assert build_hunt_command({"adapter_name": "a"})[:2] == ["claude", "-p"]
+    assert build_hunt_command({"adapter_name": "a"}, "codex")[:2] == ["codex", "exec"]
+
+
+def test_drive_rejects_unknown_engine(driver: AutoDriver) -> None:
+    run_id = driver.orch.start(model="m", profile="p", adapter_name="a")
+    res = driver.drive(run_id, execute=True, engine="uydurma-motor", runner=_fake_pass)
+    assert res["ok"] is False and "Bilinmeyen motor" in res["reason"]
+    # Motor adı HER ŞEYDEN ÖNCE doğrulanır → koşuya hiç dokunulmaz (deep-hunt pending kalır).
+    assert driver.orch.store.get_stage(run_id, "deep-hunt")["status"] == StageStatus.pending.value
+
+
+def test_drive_rejects_non_spawning_engine(driver: AutoDriver) -> None:
+    """`local` motor yoktur (doğrudan Ollama hattı) → otonom sürüşte kullanılamaz."""
+    run_id = driver.orch.start(model="m", profile="p", adapter_name="a")
+    res = driver.drive(run_id, execute=True, engine="local", runner=_fake_pass)
+    assert res["ok"] is False and "süreç başlatmaz" in res["reason"]
+
+
+def test_dry_run_reports_engine_quota_warning(driver: AutoDriver) -> None:
+    """P5 UI'ı kota uyarısını buradan gösterecek."""
+    run_id = driver.orch.start(model="m", profile="p", adapter_name="a")
+    res = driver.drive(run_id, execute=False, engine="codex")
+    assert res["engine"] == "codex" and res["command"][:2] == ["codex", "exec"]
+    assert "5 saatlik" in res["quota_warning"]

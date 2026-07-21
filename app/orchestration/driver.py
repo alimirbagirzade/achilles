@@ -17,11 +17,12 @@ from __future__ import annotations
 import json
 import logging
 import re
-import shutil
 import subprocess
 from collections.abc import Callable
 from typing import Any
 
+from app.orchestration import engines
+from app.orchestration.engines import DEFAULT_ENGINE
 from app.orchestration.orchestrator import TrainingOrchestrator
 
 log = logging.getLogger(__name__)
@@ -51,9 +52,11 @@ def build_hunt_prompt(run: dict[str, Any]) -> str:
     )
 
 
-def build_hunt_command(run: dict[str, Any]) -> list[str]:
-    """`claude -p <prompt>` argv'si (shell yok → enjeksiyon yok; prompt sabit şablon)."""
-    return ["claude", "-p", build_hunt_prompt(run)]
+def build_hunt_command(run: dict[str, Any], engine: str = DEFAULT_ENGINE) -> list[str]:
+    """Seçili motorun argv'si (shell yok → enjeksiyon yok; prompt argv ÖĞESİ olarak geçer).
+
+    Motor adı kayıt tablosundan gelir; bilinmeyen ad ValueError ile REDDEDİLİR."""
+    return engines.build_command(engine, build_hunt_prompt(run))
 
 
 def parse_hunt_verdict(output: str) -> dict[str, Any]:
@@ -73,9 +76,14 @@ def parse_hunt_verdict(output: str) -> dict[str, Any]:
     return {"verdict": verdict, "passed": verdict == "PASS", "summary": (output or "")[-600:]}
 
 
+def engine_available(engine: str = DEFAULT_ENGINE) -> bool:
+    """Motor CLI'si PATH'te KURULU mu (giriş durumu DEĞİL — o ancak çalıştırınca anlaşılır)."""
+    return engines.available(engine)
+
+
 def claude_available() -> bool:
-    """Abonelikli `claude` CLI PATH'te mi (gerçek otonom sürüş için)."""
-    return shutil.which("claude") is not None
+    """Geriye dönük uyumluluk: varsayılan (claude) motorunun kurulu olup olmadığı."""
+    return engine_available(DEFAULT_ENGINE)
 
 
 def _default_runner(command: list[str], timeout: int) -> tuple[int, str]:
@@ -95,15 +103,30 @@ class AutoDriver:
         run_id: str,
         *,
         execute: bool = False,
+        engine: str = DEFAULT_ENGINE,
         runner: Runner | None = None,
         timeout: int = HUNT_TIMEOUT_S,
     ) -> dict[str, Any]:
         """Salt-okuma aşamaları → deep-hunt'ı claude -p ile sür → PASS ise onaya kadar ilerlet.
 
         Varsayılan `execute=False`: gerçek spawn YOK, çalıştırılacak komutu döner (DRY-RUN).
-        `execute=True` + claude PATH'te: gerçek `claude -p` koşar; PASS → hunt_ack + onaya
-        kadar ilerletir (Kural 8: onayda DURUR). `runner` enjekte edilirse gerçek spawn yerine
-        o kullanılır (test)."""
+        `execute=True` + motor PATH'te: gerçek motor koşar; PASS → hunt_ack + onaya kadar
+        ilerletir (Kural 8: onayda DURUR). `runner` enjekte edilirse gerçek spawn yerine o
+        kullanılır (test). `engine` kayıt tablosundan gelir (bilinmeyen ad reddedilir);
+        süreç başlatmayan motorlar (ör. `local`) otonom sürüşte kullanılamaz."""
+        try:
+            eng = engines.get_engine(engine)
+        except ValueError as exc:
+            return {"ok": False, "reason": str(exc)}
+        if not eng.spawns:
+            return {
+                "ok": False,
+                "reason": (
+                    f"Motor '{eng.name}' süreç başlatmaz (doğrudan yerel hat) — "
+                    "otonom derin av için spawn eden bir motor seç."
+                ),
+            }
+
         run = self.orch.store.get_run(run_id)
         if run is None:
             return {"ok": False, "reason": f"Koşu bulunamadı: {run_id}"}
@@ -122,41 +145,52 @@ class AutoDriver:
                 **snap,
             }
 
-        command = build_hunt_command(run)
+        command = build_hunt_command(run, eng.name)
 
         if not execute:
             self.orch.store.add_event(
                 run_id,
                 "deep-hunt",
                 "info",
-                "Otonom sürüş DRY-RUN: claude -p komutu hazır (execute=False; spawn yok).",
+                f"Otonom sürüş DRY-RUN: {eng.label} komutu hazır (execute=False; spawn yok).",
             )
             return {
                 "ok": True,
                 "drove": False,
                 "dry_run": True,
+                "engine": eng.name,
+                "quota_warning": eng.quota_warning,
                 "command": command,
-                "needs": "execute=True + abonelikli `claude` CLI",
+                "needs": f"execute=True + kurulu `{eng.binary}` CLI (giriş kendi CLI'sinde)",
                 **self.orch.status(run_id),
             }
 
         run_fn = runner or _default_runner
-        if runner is None and not claude_available():
+        if runner is None and not engine_available(eng.name):
             return {
                 "ok": False,
-                "reason": "`claude` CLI PATH'te yok — abonelikli Claude Code kurulu olmalı.",
+                "reason": f"`{eng.binary}` CLI PATH'te yok — {eng.label} kurulu olmalı.",
+                "engine": eng.name,
                 "command": command,
             }
 
         self.orch.store.add_event(
-            run_id, "deep-hunt", "info", "Otonom sürüş: claude -p ile Kademe-2 derin av başladı."
+            run_id,
+            "deep-hunt",
+            "info",
+            f"Otonom sürüş: {eng.label} ile Kademe-2 derin av başladı. {eng.quota_warning}",
         )
         try:
             _rc, output = run_fn(command, timeout)
         except Exception as exc:  # spawn/timeout — koşuyu çökertme, deep-hunt bloklu kalır
-            log.exception("AutoDriver: claude -p çalıştırılamadı")
+            log.exception("AutoDriver: %s çalıştırılamadı", eng.name)
             self.orch.store.add_event(run_id, "deep-hunt", "error", f"Otonom sürüş hatası: {exc}")
-            return {"ok": False, "reason": f"claude -p çalıştırılamadı: {exc}", "command": command}
+            return {
+                "ok": False,
+                "reason": f"{eng.label} çalıştırılamadı: {exc}",
+                "engine": eng.name,
+                "command": command,
+            }
 
         verdict = parse_hunt_verdict(output)
         if not verdict["passed"]:
@@ -177,7 +211,7 @@ class AutoDriver:
         # 2) PASS → hunt_ack=true işaretle + onay kapısına kadar ilerlet (orada DURUR — Kural 8).
         params = dict(run.get("params") or {})
         params["hunt_ack"] = True
-        params["hunt_driven_by"] = "claude-p-autodrive"
+        params["hunt_driven_by"] = f"{eng.name}-autodrive"
         self.orch.store.update_run(
             run_id, params_json=json.dumps(params, ensure_ascii=False, default=str)
         )
