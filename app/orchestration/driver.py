@@ -59,6 +59,17 @@ DISALLOWED_TOOLS = (
 # pydantic-settings'te dotenv'den önceliklidir.
 _HUMAN_SECRET_ENV = ("ACHILLES_API_TOKEN",)
 
+# Çocuğa geçirilmeyecek AYAR-EZME değişkenleri. `--safe-mode` "admin-managed (policy)
+# settings still apply" der; bu değişkenler harici bir ayar dosyası işaret ederek
+# safe-mode'a rağmen hook/ayar geri getirebilir. Ebeveynin ortamı kirlenmişse
+# (kalıcı shell profili, sistem-genel env) sürücü kısıtı sessizce delinirdi.
+# Derinlemesine savunma: spawn öncesi açıkça temizlenir.
+_SETTINGS_OVERRIDE_ENV = (
+    "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
+    "CLAUDE_CODE_REMOTE_SETTINGS_PATH",
+    "CLAUDE_CODE_MOCK_REMOTE_SETTINGS",
+)
+
 # runner sözleşmesi: (command, timeout_s, env) -> (returncode, combined_output)
 Runner = Callable[..., tuple[int, str]]
 
@@ -131,6 +142,10 @@ def build_child_env(token: str, run_id: str) -> dict[str, str]:
     env = dict(os.environ)
     for key in _HUMAN_SECRET_ENV:
         env[key] = ""
+    # Ayar-ezme kanalları: burada SİLMEK doğru (boş string de geçerli bir yol sayılıp
+    # hataya yol açabilir; yokluk = "ayar yok" demektir).
+    for key in _SETTINGS_OVERRIDE_ENV:
+        env.pop(key, None)
     env[driver_scope.DRIVER_TOKEN_ENV] = token
     env[driver_scope.DRIVER_RUN_ID_ENV] = run_id
     return env

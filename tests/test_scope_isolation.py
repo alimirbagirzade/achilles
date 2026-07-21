@@ -227,6 +227,20 @@ def test_hunt_command_restricts_tools() -> None:
     assert cmd[-2] == "--disallowedTools"
 
 
+def test_child_env_strips_settings_override_vars(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`--safe-mode`'a rağmen ayar geri getirebilecek env kanalları temizlenir.
+
+    safe-mode "admin-managed (policy) settings still apply" der; bu değişkenler harici
+    bir ayar dosyası işaret ederek hook'ları geri getirebilirdi.
+    """
+    monkeypatch.setenv("CLAUDE_CODE_MANAGED_SETTINGS_PATH", r"C:\kotu\settings.json")
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE_SETTINGS_PATH", r"C:\kotu\remote.json")
+    env = build_child_env("drv_token", _RUN_ID)
+    assert "CLAUDE_CODE_MANAGED_SETTINGS_PATH" not in env
+    assert "CLAUDE_CODE_REMOTE_SETTINGS_PATH" not in env
+    assert "CLAUDE_CODE_MOCK_REMOTE_SETTINGS" not in env
+
+
 def test_hunt_command_disables_customization_channels() -> None:
     """Özelleştirme kanalları (hook/plugin/MCP/özel-ajan) araç deny-list'inin DIŞINDADIR.
 

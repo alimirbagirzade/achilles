@@ -89,6 +89,15 @@ plugin'ler, **hook'lar**, **MCP sunucuları**, özel komut/ajanlar ve diğer tü
 > `--safe-mode` CLAUDE.md **oto-keşfini** de kapatır (dosya hâlâ okunabilir). Bu yüzden
 > av promptu avcıya CLAUDE.md'yi **açıkça Read ile okumasını** söyler.
 
+**Kalan risk — ayar-ezme env kanalı (derinlemesine savunma uygulandı):**
+`--safe-mode` dokümantasyonu *"Admin-managed (policy) settings still apply"* der.
+`CLAUDE_CODE_MANAGED_SETTINGS_PATH` · `CLAUDE_CODE_REMOTE_SETTINGS_PATH` ·
+`CLAUDE_CODE_MOCK_REMOTE_SETTINGS` değişkenleri harici bir ayar dosyası işaret ederek
+safe-mode'a rağmen hook geri getirebilir. `build_child_env` bunları spawn öncesi
+**siler**. Bu vektör ampirik olarak doğrulanmadı (denetim sırasında `claude` CLI
+oturumu yoktu) — önkoşulu da güçlüdür (ebeveyn sürecin ortamının kirletilmiş olması),
+ama maliyeti düşük olduğu için kapatıldı.
+
 > MCP vektörü bir süre **kazara** kapalıydı: insan-yalnız 6 uç
 > `include_in_schema=False` olduğu için FastMCP'nin ürettiği şemada yer almıyordu. Bu
 > bir savunma **değildi** — dokümanın kendisinin "koruma değildir" dediği bayrağa
