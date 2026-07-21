@@ -23,7 +23,7 @@ kimlik bilgisi toplamaz, saklamaz, göstermez.
 | Çok-sağlayıcılı LLM katmanı | ✅ var | `app/brain/local_llm.py:27` |
 | ⚡ RUN butonu | 🟡 dry-run | 15·AJAN HARİTASI sekmesi |
 | **Onay/kill-switch izolasyonu** | ❌ **YOK — bloklayıcı** | aşağıda P1 |
-| Motor kayıt tablosu (çok motor) | ❌ yok | P2 |
+| Motor kayıt tablosu (çok motor) | ✅ **P2 TAMAM** (PR #112) | `app/orchestration/engines.py` |
 | Sür-modu prompt | ❌ yok (yalnız av-modu) | P3 |
 | MCP allow-list + token iletimi | ❌ yok | P4 |
 
@@ -123,7 +123,16 @@ Sonra PR aç, CI yeşilse merge et. Gerçek eğitim BAŞLATMA.
 
 ---
 
-## P2 — Motor kayıt tablosu
+## P2 — Motor kayıt tablosu ✅ TAMAMLANDI (PR #112, 2026-07-21)
+
+> **Teslim:** `app/orchestration/engines.py` — `Engine` frozen dataclass + `_ENGINES` tablosu
+> (claude / codex / gemini / local); yeni motor = **tek satır**. `driver.py` tabloya bağlandı:
+> `build_hunt_command(run, engine)` + `engine_available(engine)`; `claude_available()` geriye
+> dönük korundu. Prompt, `PROMPT` sentinel'inin yerine **tek argv öğesi** olarak konur (shell yok).
+> PATH yoklaması TTL'li (`PROBE_TTL_S=60`); `which`/`clock` enjekte edilebilir → offline test.
+> Kota uyarısı her motorda taşınıyor → **P5 UI bunu `describe_all()`'dan okuyacak.**
+> Kimlik bilgisi alanı yok; yalnız API-key'le çalışan motor tabloya alınmadı (test bekçiliğinde).
+> +27 test. **P3 artık başlatılabilir.**
 
 **Şerit:** B · **Bağımlılık:** yok · **Paralel:** P1 ile aynı anda
 
