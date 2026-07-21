@@ -69,6 +69,20 @@ def test_bug_scan_does_not_rely_on_prompt_as_boundary() -> None:
     assert "DO NOT edit code" not in body
 
 
+def test_bug_scan_disallowed_tools_is_last_flag() -> None:
+    """`--disallowedTools` VARIADIC → argv'nin sonunda durmalı.
+
+    Sonrasına bayrak eklenirse variadic onu bir "araç adı" sanıp yutar ve o bayrak
+    SESSİZCE etkisiz kalır. Kısıtın tamamı buna dayandığı için sıra sabitlenir.
+    """
+    spawn = _spawn_lines(_SCAN)
+    assert spawn, "claude çağrı satırı bulunamadı"
+    # `2>&1 | Out-String` gibi PS yönlendirmeleri argv'ye girmez; bayrak taramasını
+    # yalnız `--` ile başlayan öğeler üzerinde yap.
+    flags = [tok for tok in spawn.split() if tok.startswith("--")]
+    assert flags[-1] == "--disallowedTools", f"son bayrak {flags[-1]!r} (variadic yutabilir)"
+
+
 def test_bug_scan_computes_diff_itself() -> None:
     """Bash yasak → ajan git çalıştıramaz; diff'i script hesaplayıp prompt'a gömer."""
     text = _read(_SCAN)
