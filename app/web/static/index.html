@@ -4,7 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ACHILLES — Trading Research Terminal</title>
-    <link rel="stylesheet" href="/assets/app.css?v=9" />
+    <link rel="stylesheet" href="/assets/app.css?v=10" />
+    <link rel="stylesheet" href="/assets/canli-badge.css?v=1" />
   </head>
   <body>
 
@@ -15,6 +16,11 @@
         <span class="brand-sub">trading research terminal</span>
       </div>
       <div class="status-strip" id="statusStrip">
+        <span id="liveBadge" class="live-badge live-init" title="Web sunucusu canlılığı — birkaç saniyede bir /api/status yoklanır">
+          <span class="live-shape" aria-hidden="true"></span>
+          <span id="liveBadgeText">yokluyor…</span>
+        </span>
+        <span class="sep">│</span>
         <span class="dot dot-idle" id="connDot"></span>
         <span id="connText">bağlanıyor…</span>
         <span class="sep">│</span>
@@ -60,10 +66,11 @@
       <button class="tab" data-tab="about"><span class="tab-num">08</span> · SİSTEM</button>
       <button class="tab" data-tab="learning"><span class="tab-num">09</span> · ÖĞRENME</button>
       <button class="tab" data-tab="agents"><span class="tab-num">10</span> · AGENTS / OTOMASYON</button>
-      <button class="tab" data-tab="orchestration"><span class="tab-num">11</span> · ORKESTRASYON</button>
-      <button class="tab" data-tab="feedback"><span class="tab-num">12</span> · GERİ BİLDİRİM</button>
-      <button class="tab" data-tab="sentinel"><span class="tab-num">13</span> · NÖBETÇİ</button>
-      <button class="tab" data-tab="agentmap"><span class="tab-num">14</span> · AJAN HARİTASI</button>
+      <button class="tab" data-tab="rlm"><span class="tab-num">11</span> · RLM</button>
+      <button class="tab" data-tab="orchestration"><span class="tab-num">12</span> · ORKESTRASYON</button>
+      <button class="tab" data-tab="feedback"><span class="tab-num">13</span> · GERİ BİLDİRİM</button>
+      <button class="tab" data-tab="sentinel"><span class="tab-num">14</span> · NÖBETÇİ</button>
+      <button class="tab" data-tab="agentmap"><span class="tab-num">15</span> · AJAN HARİTASI</button>
     </nav>
 
     <main>
@@ -594,14 +601,6 @@
           <h3>Donanım Profili & Model Önerisi</h3>
           <div id="hwProfileBody" class="muted small">Yükleniyor…</div>
         </div>
-        <div class="card" style="margin-bottom:16px">
-          <h3>AI Beyin Paneli</h3>
-          <p class="muted small" style="margin:0 0 .5rem">
-            Adapter/dataset registry, araç koşuları ve içe-alım kalite skorları —
-            ayrı sayfada. Ana arayüzde karşılığı yok.
-          </p>
-          <a class="btn" href="/ai-brain" target="_blank" rel="noopener">AI Beyin panelini aç →</a>
-        </div>
         <div class="about-grid">
           <div class="card">
             <h3>Katmanlar</h3>
@@ -799,10 +798,24 @@
           <div id="agRunDetail" class="ag-run-detail hidden"></div>
         </div>
 
-        <!-- E) Tasks (salt-görünüm; oluşturma formu kaldırıldı — params_json backend'de yok) -->
+        <!-- E) Tasks + create -->
         <div class="card">
           <h3 style="margin:0 0 .5rem">Otomasyon Görevleri</h3>
           <div id="agTasksTable"><span class="muted small">Yükleniyor…</span></div>
+          <details class="ag-create">
+            <summary>+ Yeni görev oluştur</summary>
+            <div class="ag-create-form">
+              <input id="agTaskAgent" placeholder="ajan kimliği — agent_id" autocomplete="off" />
+              <input id="agTaskTitle" placeholder="başlık" autocomplete="off" />
+              <input id="agTaskDesc" placeholder="açıklama (opsiyonel)" autocomplete="off" />
+              <label class="ag-check">
+                <input type="checkbox" id="agTaskApproval" /> Onay gerektirsin
+              </label>
+              <button class="btn" id="agTaskCreateBtn">Oluştur</button>
+              <span class="muted small">Not: oluşturma ucu query-param tabanlı;
+                JSON parametreler (params_json) şimdilik backend'de yok (Phase 2 şeması).</span>
+            </div>
+          </details>
         </div>
 
         <!-- F) Global events -->
@@ -810,6 +823,25 @@
           <h3 style="margin:0 0 .5rem">Genel Olay Akışı (son 100)</h3>
           <div id="agEventsTable"><span class="muted small">Yükleniyor…</span></div>
         </div>
+      </section>
+
+      <!-- 11 · RLM (Recursive/Reasoning LM — çok-adımlı kaynaklı cevap) -->
+      <section class="panel" id="panel-rlm">
+        <div class="ag-toolbar">
+          <h2 style="margin:0"><span class="jargon" title="Recursive/Reasoning LM — çok-adımlı retrieval + iddia-düzeyi kaynak doğrulama; desteklenmeyen iddiayı atar, kaynak yetersizse çekimser kalır.">RLM</span> — Kaynaklı Cevap Koşuları</h2>
+          <button class="btn" id="rlmRefreshBtn">↻ Yenile</button>
+          <span class="muted small">Çok-adımlı retrieval + iddia-düzeyi doğrulama. Salt-okuma
+            görünüm; bir koşuya tıklayınca adımlar + kanıt + doğrulama açılır.</span>
+        </div>
+        <div class="card">
+          <h3 style="margin:0 0 .5rem">Motor (salt-okuma)</h3>
+          <div id="rlmEnginePanel"><span class="muted small">Yükleniyor…</span></div>
+        </div>
+        <div class="card">
+          <h3 style="margin:0 0 .5rem">Koşular</h3>
+          <div id="rlmRunsTable"><span class="muted small">Yükleniyor…</span></div>
+        </div>
+        <div class="card hidden" id="rlmDetail"></div>
       </section>
 
       <!-- 12 · ORKESTRASYON (dayanıklı eğitim hattı — tek-tık + canlı izleme) -->
@@ -1044,6 +1076,7 @@
       </div>
     </div>
 
-    <script src="/assets/app.js?v=9"></script>
+    <script src="/assets/app.js?v=10"></script>
+    <script src="/assets/canli-badge.js?v=1"></script>
   </body>
 </html>
