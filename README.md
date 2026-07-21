@@ -493,6 +493,98 @@ models/adapters/achilles_lora_v3.meta.json  ← versiyon + hash
 
 ---
 
+## ⚡ MOTOR BAĞLAMA — "RUN" butonunu çalışır hale getirmek
+
+> **Motor nedir?** Achilles'in senin yerine düşünmesi için kullandığı **abonelikli
+> yapay zekâ komut satırı aracı** (Claude Code, Codex CLI, Gemini CLI).
+> Achilles onu kendi başlatır ve **derin hata avını** ona yaptırır.
+
+> 💳 **Para/anahtar İSTENMEZ.** Achilles senden **e-posta, şifre, API anahtarı
+> İSTEMEZ ve SAKLAMAZ.** Motorlar kendi aboneliğinle, kendi terminalinde giriş
+> yapar. Achilles yalnız "kurulu mu?" diye bakar.
+
+### 1) Bir motor kur (bir kez)
+
+Terminali aç, şunu **olduğu gibi** kopyala-yapıştır:
+
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
+`npm` yoksa önce Node.js kur: <https://nodejs.org> (LTS sürümü).
+
+### 2) Motora bir kez giriş yap (bir kez)
+
+```bash
+claude
+```
+
+Açılan ekranda **kendi aboneliğinle** giriş yap, sonra `/exit` yazıp çık.
+Bu adımı Achilles yapamaz — giriş bilgisi yalnız sende kalır.
+
+### 3) Achilles motoru görüyor mu, kontrol et
+
+```bash
+uv run achilles orchestrate-smoke --skip-runtime
+```
+
+Şu satırı görmelisin:
+
+```
+✓ engine-registry: Varsayılan 'claude' sertleştirilmiş; kısıtsız motorlar RUN'a kapalı.
+```
+
+`✕ missing-engine` görüyorsan motor kurulu değildir → 1. adıma dön.
+
+### 4) Web arayüzünde motoru seç
+
+```bash
+uv run achilles-web
+```
+
+Tarayıcıda **<http://127.0.0.1:8765>** → **15 · AJAN HARİTASI** sekmesi →
+üstteki **motor seçici**den motorunu seç.
+Gri (seçilemez) görünüyorsa altındaki sebep yazar (ör. "PATH'te bulunamadı").
+
+### 5) ⚡ RUN'a bas
+
+Karşına **atlanamaz bir onay kutusu** çıkar: hangi motorun koşacağını ve
+**abonelik kotandan yiyeceğini** görürsün. Kutuyu işaretleyip onayla.
+
+### 6) ⛔ DURDUR
+
+Koşu sırasında kırmızı **⛔ DURDUR (STOP_ALL)** butonu görünür.
+Bastığında **koşan motor süreci gerçekten kesilir** (yalnız bayrak yazılmaz) ve
+kaç sürecin kesildiği yanıtta raporlanır.
+
+---
+
+### ⚠️ RUN bugün ne YAPAR, ne YAPMAZ (dürüst tablo)
+
+| Soru | Cevap |
+|------|-------|
+| Motoru başlatır mı? | ✅ Evet — sertleştirilmiş, araç-kısıtlı `claude -p` |
+| Derin hata avını koşturur mu? | ✅ Evet (Kademe-2, salt-rapor) |
+| Eğitimi başlatır mı? | ❌ **HAYIR** — onay kapısında DURUR (Kural 8) |
+| Motor kendi eğitimini onaylayabilir mi? | ❌ Hayır — sürücü kimliği **403** alır |
+| Motor kill-switch'i çözebilir mi? | ❌ Hayır — `clear-stop-all` insan-yalnız |
+| **Motor MCP araçlarını görür mü?** | ❌ **HAYIR — henüz değil** (aşağıya bak) |
+| **Veri hattını (carding→RLM→…) ilerletir mi?** | ❌ **HAYIR — henüz değil** |
+
+> **Neden MCP yok?** ⚡ RUN bugün **av modunu** doğuruyor; av modu `--safe-mode`
+> bayrağıyla başlar ve bu bayrak MCP sunucularını da kapatır. "Sür (drive) modu"
+> komutu (MCP'li) **yazıldı ama hiçbir başlatma yoluna bağlanmadı** —
+> `build_drive_command` hiçbir spawn yolundan çağrılmıyor.
+> Duman testi bunu `≈ drive-mode-wiring` satırıyla açıkça uyarır.
+> Yani bugün ⚡ RUN = "derin av + onay kapısı", "ajanları sürme" **değil**.
+
+### Eğitimi kim başlatır?
+
+**Yalnız sen.** Motor asla. Gerçek LoRA eğitimi ayrı ve açık bir insan onayı ister
+(CLAUDE.md Kural 8). Bunu bir test sabitler: motor onay ucunu çağırırsa **403** alır.
+
+---
+
 ## 🖥️ Web Arayüzü
 
 > Terminale tek komut yaz, tarayıcıda 9 sekmeli araştırma terminali açılır.

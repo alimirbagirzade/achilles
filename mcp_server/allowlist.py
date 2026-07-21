@@ -16,6 +16,21 @@ Neden spec budama (FastMCP ``route_maps`` yerine)?
 
 Bakım: web'e yeni bir SALT-OKUMA ucu eklenip MCP'den görünmesi isteniyorsa buraya
 açıkça eklenir. Yazma/tetikleme uçları buraya EKLENMEZ.
+
+⚠️ YAN-ETKİLİ GET TUZAĞI (Kademe-2 avında YAKALANDI — 2026-07-21):
+"GET = salt-okuma" varsayımı bu depoda YANLIŞTIR. Allow-list'e "okuma" başlığı altında
+eklenmiş ÜÇ GET ucu aslında kalıcı yazıyordu:
+
+  * ``GET /api/backtest/{id}/risk``    → ``save_risk_report`` ile ``rr_<id>`` satırını
+                                          EZİYORDU; içerik motorun verdiği sorgu
+                                          parametrelerinden türüyordu (uyarıları
+                                          susturup pozisyon boyutunu şişirmek mümkündü).
+  * ``GET /api/understanding-score``   → ``record=true`` ile kalıcı snapshot + JSON yazar.
+  * ``GET /api/sentinel/overview``     → ``run(persist=True)`` ile her çağrıda geçmişe yazar.
+
+Bir ucu buraya eklerken HTTP metoduna DEĞİL, handler'ın gövdesine bak. Bu sınıfı
+``tests/test_mcp_allowlist_side_effects.py`` yapısal olarak tarar (metod değil, KAYNAK
+kodu inceler) — yeni bir yan-etkili GET eklenirse CI patlar.
 """
 
 from __future__ import annotations
@@ -38,15 +53,22 @@ ALLOWED: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/api/card/{paper_id}"),
         # --- Backtest (okuma) ---
         ("GET", "/api/backtests"),
-        ("GET", "/api/backtest/{backtest_id}/risk"),
         ("GET", "/api/backtest/{backtest_id}/pine"),
+        # ⛔ `/api/backtest/{id}/risk` BİLİNÇLİ OLARAK YOK: GET olmasına rağmen risk
+        #    raporunu `rr_<backtest_id>` sabit anahtarıyla SQLite'a upsert eder
+        #    (server.py `save_risk_report`) → her çağrı insanın gördüğü raporu EZER,
+        #    üstelik içerik motorun seçtiği sorgu parametrelerinden türer. Bkz. YAN-ETKİLİ
+        #    GET notu (aşağıda).
         # --- Sistem durumu ---
         ("GET", "/api/status"),
         ("GET", "/api/healthz"),
         ("GET", "/api/version"),
         ("GET", "/api/profile"),
-        # --- Nöbetçi (Sentinel) — salt-okuma probe özeti ---
-        ("GET", "/api/sentinel/overview"),
+        # --- Nöbetçi (Sentinel) — YALNIZ geçmiş okuma ---
+        # ⛔ `/api/sentinel/overview` BİLİNÇLİ OLARAK YOK: GET olmasına rağmen
+        #    `run(persist=True)` çağırıp her istekte geçmişe YAZAR (kendi docstring'i
+        #    "Koşuyu geçmişe yazar" der). Tekrarlı çağrı, budama ile eski nöbetçi
+        #    kayıtlarını dışarı iter. Okuma ihtiyacını `/history` zaten karşılar.
         ("GET", "/api/sentinel/history"),
         # --- Ajan haritası / koşu geçmişi (okuma) ---
         ("GET", "/api/agents"),
@@ -58,7 +80,12 @@ ALLOWED: frozenset[tuple[str, str]] = frozenset(
         # --- Öğrenme metrikleri (okuma) ---
         ("GET", "/api/learning/summary"),
         ("GET", "/api/rag-mastery"),
-        ("GET", "/api/understanding-score"),
+        # ⛔ `/api/understanding-score` BİLİNÇLİ OLARAK YOK: `record=true` sorgu
+        #    parametresiyle çağrıldığında kalıcı snapshot + JSON rapor YAZAR
+        #    (`record_understanding`). Parametre OpenAPI'den tool argümanı olarak
+        #    türediği için motor onu kendisi `true` yapabilirdi. Salt-okuma ihtiyacını
+        #    aşağıdaki `/history` ucu karşılar.
+        ("GET", "/api/understanding-score/history"),
     }
 )
 

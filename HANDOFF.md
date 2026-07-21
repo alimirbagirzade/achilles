@@ -8,6 +8,90 @@ Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple S
 
 ---
 
+## ⚡🔍 2026-07-21 — P6: RUN hattı E2E doğrulama + eğitim-öncesi Kademe-2 av (TAMAMLANDI)
+
+Motor bağlama roadmap'i (P1–P6) **KAPANDI**. Bu paket doğrulama paketiydi:
+"çalışıyor" demeden önce kanıt aramak. **5 iddiadan 1'i yanlış çıktı, 1'i kısmen yanlış.**
+
+### ⛔ DURDUR koşan motoru KESMİYORDU (gerçek kusur — düzeltildi)
+`AutoDriver` motoru bloklayan `subprocess.run` ile doğuruyordu ve süreç tutamacı hiçbir
+yerde saklanmıyordu. STOP_ALL yalnız `storage/STOP_ALL` **bayrak dosyasını** yazıyordu →
+motor **30 dk zaman aşımına kadar koşup abonelik kotası yakmaya devam ediyordu**. Üstelik
+arayüz "durduruldu" deyip ⚡ tekrar-giriş kilidini açtığı için ÜSTÜNE ikinci motor
+doğurulabiliyordu — PR#122'nin kapattığı **"5 eşzamanlı spawn"** kazasının DURDUR
+yolundan geri dönüşü.
+
+Düzeltme (3 parça):
+- `app/orchestration/engine_procs.py` — canlı motor süreç kaydı (`run_id` başına).
+- `driver._default_runner` — `Popen` + yoklama döngüsü; STOP_ALL etkinleşince gerçekten
+  `terminate()`/`kill()`. Kesilen koşu `STOPPED_RC` → `drive()` `stopped=True` raporlar
+  ("av FAIL" demez; av koşmadı, kesildi).
+- `/api/supervisor/stop-all` — bayrakla BİRLİKTE `terminate_all()`; yanıtta
+  `engines_terminated` sayısı döner (sessiz "durduruldu" yok).
+
+### ⚠️ SÜR MODU HÂLÂ BAĞLI DEĞİL (kapatılmadı — görünür kılındı)
+`build_drive_command` **hiçbir spawn yolundan çağrılmıyor**. ⚡ RUN yalnız **av** modunu
+doğurur; av modu `--safe-mode` ile başlar ve o bayrak **MCP'yi de kapatır** → motor
+Achilles MCP araçlarını **GÖRMEZ**, veri hattını **İLERLETEMEZ**.
+👉 **"RUN → MCP araçları görünüyor → ajanlar sürülüyor" iddiası BUGÜN DOĞRU DEĞİL.**
+Duman testi bunu `≈ drive-mode-wiring` satırıyla açıkça uyarır. Sür modunu bağlamak
+**P7**'ye kaldı (bu paket doğrulama paketiydi; eksik özelliği sessizce "tamam"
+göstermektense görünür kılındı).
+
+### 🔍 Kademe-2 av — 3 onaylanan bulgu, hepsi AYNI SINIF
+Allow-list'te "okuma" etiketli ama **kalıcı YAZAN GET** uçları (üçü de çıkarıldı):
+
+| Uç | Ne yapıyordu |
+|----|--------------|
+| `GET /api/backtest/{id}/risk` | `rr_<id>` sabit anahtarıyla risk raporunu **EZİYORDU**; içerik motorun sorgu parametrelerinden türüyordu (drawdown uyarısını susturup pozisyonu şişirmek mümkündü) |
+| `GET /api/understanding-score` | `record=true` ile kalıcı snapshot + JSON yazıyordu |
+| `GET /api/sentinel/overview` | `run(persist=True)` ile her çağrıda geçmişe yazıyordu |
+
+**KÖK SEBEP (ders):** allow-list sözleşmesi **HTTP METODUNA** göre denetleniyordu —
+`test_yazma_metodlari_tamamen_elenir` yalnız POST/PUT/DELETE/PATCH'e bakıyordu, yan
+etkili GET sessizce geçiyordu. **"GET = salt-okuma" bu depoda YANLIŞ bir varsayımdır.**
+Sınıf-düzeyi kapı: `tests/test_mcp_allowlist_side_effects.py` handler **kaynak kodunu**
+tarar (üç ucu da yakaladığı elle doğrulandı). Yerine salt-okuma muadilleri eklendi
+(`/api/understanding-score/history`, `/api/sentinel/history`).
+
+### Duman testi genişletildi
+`uv run achilles orchestrate-smoke` artık İKİ bölüm: **runtime** (eskisi) +
+**⚡ RUN sözleşmeleri** (10 yoklama). `--skip-runtime` / `--skip-run-pipeline`.
+⛔ **Gerçek motor doğurmaz** (kota yakmaz): `live-spawn` bilinçli `skip` ve raporda
+"KANITLANMAZ" der.
+
+### 🔍 Kademe-2 av — 2. tur (düşen 3 finder yeniden koşturuldu): 8 onaylanan bulgu
+
+İlk turda 6 finder'ın 3'ü API hatasıyla düşmüştü (tam da odak alanları: token sızıntısı,
+scope izolasyonu, alt-süreç enjeksiyonu) → **yeniden koşturuldu, 63/63 ajan tamamlandı.**
+
+**BU PAKETTE DÜZELTİLDİ:**
+
+| Sev | Bulgu | Düzeltme |
+|-----|-------|----------|
+| 🔴 high (3/3) | **Motor binary'si mutlak yol olmadan + cwd pinlenmeden doğuruluyordu** → çalışma dizinine bırakılan sahte `claude.exe` gerçek CLI yerine koşar; taklitçi son satıra `PASS` yazıp **zorunlu derin av kapısını düşürürdü** (Kural 8). Sertleştirme bayrakları sahte binary'ye hiçbir şey yaptıramaz. | `_resolve_executable` (PATH'ten cwd atılır) + `cwd=_REPO_ROOT` pinlendi; 3 regresyon testi |
+| 🟡 low | `/api/understanding-score/history` `limit` **sınırsız** (allow-list'e bu pakette eklendi) | `min(max(1,limit),200)` |
+| 🟡 low | `DRIVE_TOKEN_TTL_S` **ölü sabit**; testi yalnız büyüklüğünü ölçüp sahte güvence veriyor | Açık "HENÜZ KULLANILMIYOR" uyarısı + P7 talimatı |
+
+**⚠️ ONAYLANDI AMA DÜZELTİLMEDİ — tasarım kararı gerektiriyor (SIRADAKİ İŞ):**
+
+| Sev | Bulgu | Neden ertelendi |
+|-----|-------|-----------------|
+| 🔴 high (3/3) | **İnsan API token'ı URL sorgu dizesinde** (`/api/training/stream`, SSE) → uvicorn erişim log'una **düz metin** düşer. EventSource özel başlık gönderemediği için böyle yapılmış. | Doğru çözüm kısa ömürlü **tek-kullanımlık SSE bileti** (ayrı authenticated POST → ticket). Auth akışı değişikliği; ayrı paket. |
+| 🔴 high (2/3) | **`hunt_ack` motorun KENDİ stdout'undan yazılıyor.** HTTP'de `hunt_ack=true` insan-yalnızdır (v5 regresyon gerekçesiyle), ama `AutoDriver` aynı bayrağı motorun son satırındaki `ACHILLES_HUNT_VERDICT: PASS` metnine bakarak **doğrulamasız** kalıcı yazar. Bağımsız kanıt (rapor artefaktı, bulgu sayısı) aranmaz. Prompt-injection ya da tembellik → **denetlenmemiş denetim kapısı**. | Fail-closed tarafı sağlam (işaretçi yoksa FAIL) ve eğitim yine taze insan onayı ister; ama av kapısı motorun öz-beyanına dayanıyor. Çözüm: PASS için rapor artefaktı şartı + panelde "motor beyanı" rozeti. Tasarım kararı senin. |
+| 🔴 high (2/3) | Av motoru `Read/Grep/Glob` ile **`.env` gibi sır dosyalarını okuyabilir** — `build_child_env` yalnız SÜREÇ ORTAMINI temizler, dosya sistemini değil. | Av'ın işlevi için Read şart; araç seviyesinde dosya kısıtı yok. Azaltım: `.env`'i repo dışına almak ya da motoru izole çalışma alanında koşturmak. |
+| 🟠 medium (2/3) | Aynı `run_id`'de **eşzamanlı autodrive**: `mint()` kardeş motorun token'ını koşu ORTASINDA iptal eder (uçta koşu-başına kilit yok). | Koşu-başına kilit gerekiyor; UI'daki tekrar-giriş kilidi güvenlik sınırı değil. |
+
+**Reddedilen 11 iddia** (adversarial 3-lens, çoğunluk çürüttü) — ayrıntı workflow
+journal'ında. Örn. "sürücü STOP_ALL basabiliyor ama kaldıramıyor" = **kasıtlı** asimetri.
+
+### ⚠️ Bu pakette KANITLANMAYANLAR (dürüstlük notu)
+- Gerçek `claude -p` spawn'ı **koşturulmadı** (kota koruması). MCP araçlarının canlı
+  görünürlüğü ve ajanların gerçekten sürülmesi **kanıtlanmadı**.
+- Av bir **statik kod incelemesidir**; çalışma zamanı davranışı ayrıca doğrulanmadı.
+
+---
+
 ## 🔐 2026-07-21 — SCOPE İZOLASYONU: sürücü-motor ≠ insan yetkisi (PR #116 + #117)
 
 **Kapatılan zafiyet:** Achilles kendi `claude -p` motorunu doğuruyor ve bu motor insanla

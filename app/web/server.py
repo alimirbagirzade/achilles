@@ -817,10 +817,15 @@ def api_understanding_score(
 
 @app.get("/api/understanding-score/history", dependencies=[api_auth])
 def api_understanding_history(limit: int = 20) -> dict:
-    """KALICI anlama skoru geçmişi (zaman serisi) — understanding_snapshots."""
+    """KALICI anlama skoru geçmişi (zaman serisi) — understanding_snapshots.
+
+    `limit` sunucu tarafında kıstırılır: bu uç MCP allow-list'inde olduğu için sınırsız
+    bırakılsaydı, motorun tek çağrıyla tüm tabloyu çekebildiği tek liste ucu olurdu
+    (komşu uçların hepsi zaten 200'de kıstırıyor).
+    """
     from app.verification.exams.understanding_record import load_understanding_history
 
-    return {"history": load_understanding_history(limit=limit)}
+    return {"history": load_understanding_history(limit=min(max(1, limit), 200))}
 
 
 @app.get("/api/synthesis/reports", dependencies=[api_auth])
@@ -2044,10 +2049,25 @@ def api_healthz() -> dict:
 
 @app.post("/api/supervisor/stop-all", dependencies=[api_auth])
 def api_stop_all(reason: str | None = None) -> dict:
-    """KÜRESEL acil-durdurma: tüm tehlikeli aksiyonları blokla."""
-    from app.agents.runtime import supervisor
+    """KÜRESEL acil-durdurma: tehlikeli aksiyonları blokla + CANLI motorları KES.
 
-    return supervisor.create_stop_all(reason=reason)
+    ⛔ Bayrak yazmak yetmez: STOP_ALL dosyası yalnız YENİ tehlikeli aksiyonları bloklar,
+    o an koşan `claude -p` alt-sürecine dokunmazdı. Kullanıcı DURDUR'a bastığında motor
+    30 dk zaman aşımına kadar koşup abonelik kotasını yakmaya devam ediyordu — üstelik
+    arayüz "durduruldu" deyip ⚡ kilidini açtığı için ÜSTÜNE ikinci motor doğurulabiliyordu.
+    Bu yüzden bayrakla BİRLİKTE canlı motor süreçleri gerçekten sonlandırılır.
+    """
+    from app.agents.runtime import supervisor
+    from app.orchestration import engine_procs
+
+    result = supervisor.create_stop_all(reason=reason)
+    # Motor kesme bayrak yazımını ASLA engellememeli (kill-switch her koşulda yazılır).
+    try:
+        killed = engine_procs.terminate_all()
+    except Exception:  # pragma: no cover - savunmacı
+        logger.exception("STOP_ALL: canlı motorlar kesilemedi")
+        killed = 0
+    return {**result, "engines_terminated": killed}
 
 
 @app.post(

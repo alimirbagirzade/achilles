@@ -14,16 +14,21 @@ Spawn yalnız `execute=True` + `claude` PATH'te iken yapılır; varsayılan DRY-
 
 from __future__ import annotations
 
+import contextlib
+import functools
 import json
 import logging
 import os
 import re
+import shutil
 import subprocess
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from app.orchestration import engines
+from app.orchestration import engine_procs, engines
+from app.orchestration.engine_procs import DEFAULT_GRACE_S
 from app.orchestration.engines import DEFAULT_ENGINE
 from app.orchestration.orchestrator import TrainingOrchestrator
 from app.web import driver_scope
@@ -52,6 +57,12 @@ DRIVE_TIMEOUT_S = 3600  # 60 dk
 # Sürücü token TTL'i sür modu için AYRI hesaplanır. driver_scope.DEFAULT_TTL_S (2100s) av
 # moduna (1800s) göre ayarlıdır; sür modunda kullanılsaydı token koşunun ORTASINDA
 # (~35. dk) ölür, MCP çağrıları 401 almaya başlar ve ajan sebebini anlamadan tıkanırdı.
+# ⚠️ HENÜZ KULLANILMIYOR (ölü sabit — Kademe-2 avında yakalandı): sür modu hiçbir spawn
+# yoluna bağlı olmadığı için tek `mint()` çağrısı varsayılan TTL'i (2100s) kullanır. Sür
+# modu bağlandığında `mint(run_id, ttl_s=DRIVE_TOKEN_TTL_S)` ÇAĞRILMALIDIR; yoksa token
+# koşunun ~35. dakikasında ölür ve MCP çağrıları sebepsiz 401 almaya başlar.
+# Bunu doğrulayan test yalnız sabitin BÜYÜKLÜĞÜNÜ ölçer, KULLANILDIĞINI değil → tek
+# başına güvence saymayın.
 DRIVE_TOKEN_TTL_S = DRIVE_TIMEOUT_S + 300
 
 # Araç deny-list'i motor kayıt tablosunda durur (motora ÖZGÜ bayraklar).
@@ -253,15 +264,132 @@ def claude_available() -> bool:
     return engine_available(DEFAULT_ENGINE)
 
 
-def _default_runner(
-    command: list[str], timeout: int, env: dict[str, str] | None = None
-) -> tuple[int, str]:
-    # shell=False + argv listesi → kabuk enjeksiyonu yok. Çıktı (stdout+stderr) birleşik.
-    # env: insan sırları temizlenmiş + sürücü kimliği eklenmiş ortam (build_child_env).
-    proc = subprocess.run(
-        command, capture_output=True, text=True, timeout=timeout, check=False, env=env
+# ⛔ DURDUR ile kesilen sürecin dönüş kodu (POSIX SIGTERM sözleşmesiyle uyumlu negatif
+# değil, kendi işaretçimiz): drive() bunu görünce "kullanıcı durdurdu" der, verdict
+# yokluğunu "av başarısız" gibi raporlamaz.
+STOPPED_RC = -99
+
+# STOP_ALL yoklama aralığı (saniye). Küçük tutulur: DURDUR'a basan kullanıcı sürecin
+# saniyeler içinde ölmesini bekler. Yoklama yalnız bir dosya-var-mı kontrolüdür (ucuz).
+STOP_POLL_S = 1.0
+
+
+def _resolve_executable(command: list[str]) -> list[str]:
+    """argv[0]'ı MUTLAK yola çöz — çalışma dizinindeki taklitçi binary'yi engeller.
+
+    `shutil.which` çağrılırken cwd BİLİNÇLİ olarak arama yolundan çıkarılır: Windows'ta
+    `which`/`CreateProcess` varsayılan olarak önce çalışma dizinine bakar, bu da depo
+    köküne bırakılmış sahte bir `claude.exe`'nin gerçek CLI yerine koşmasına yol açardı.
+
+    Çözülemezse komut OLDUĞU GİBİ bırakılır → `Popen` `FileNotFoundError` verir ve
+    çağıran bunu "motor kurulu değil" olarak temiz biçimde raporlar (sessiz düşüş yok).
+    """
+    if not command:
+        return command
+    # PATH'ten cwd ve boş girdileri at (boş girdi POSIX'te "geçerli dizin" demektir).
+    yol = os.pathsep.join(
+        p
+        for p in os.environ.get("PATH", "").split(os.pathsep)
+        if p and Path(p).resolve() != Path.cwd().resolve()
     )
-    return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
+    tam = shutil.which(command[0], path=yol)
+    return [tam, *command[1:]] if tam else command
+
+
+def _stop_all_active() -> bool:
+    """STOP_ALL kill-switch'i etkin mi (savunmacı — yoklama patlarsa koşuyu kesme)."""
+    try:
+        from app.agents.runtime import supervisor
+
+        return bool(supervisor.is_stop_all_active())
+    except Exception:
+        log.debug("STOP_ALL yoklanamadı", exc_info=True)
+        return False
+
+
+def _default_runner(
+    command: list[str],
+    timeout: int,
+    env: dict[str, str] | None = None,
+    *,
+    run_id: str = "",
+) -> tuple[int, str]:
+    """Motoru doğur ve KESİLEBİLİR biçimde bekle.
+
+    ⛔ NEDEN Popen + yoklama (eski `subprocess.run` DEĞİL): `subprocess.run` süreç tutamacını
+    kimseye vermeden bloklar. Tutamaç olmadan ⛔ DURDUR koşan motoru KESEMEZ — STOP_ALL
+    yalnız bir bayrak dosyası yazar, süreci öldürmez. Eskiden motor 30 dk zaman aşımına
+    kadar koşup abonelik kotasını yakmaya devam ediyordu (bkz. app/orchestration/
+    engine_procs.py). Burada süreç kaydedilir, STOP_ALL periyodik yoklanır ve etkinleşirse
+    süreç gerçekten sonlandırılır.
+
+    shell=False + argv listesi → kabuk enjeksiyonu yok. Çıktı (stdout+stderr) birleşik.
+    env: insan sırları temizlenmiş + sürücü kimliği eklenmiş ortam (build_child_env).
+
+    ⛔ MUTLAK YOL + SABİT CWD (Kademe-2 avında yakalandı, 3/3 onay):
+    Motor eskiden argv[0]='claude' ile, mutlak yol olmadan ve `cwd` pinlenmeden
+    doğuruluyordu. Windows'ta hem `shutil.which` hem `CreateProcess` arama yolunun
+    BAŞINDA süreç çalışma dizinine bakar → çalışma dizinine bırakılan sahte bir
+    `claude.exe` gerçek CLI'nin YERİNE koşardı. Sertleştirme bayrakları sahte binary'ye
+    hiçbir şey yaptıramaz: taklitçi yalnız son satıra `ACHILLES_HUNT_VERDICT: PASS`
+    yazarak ZORUNLU derin av kapısını düşürürdü (Kural 8).
+    Ayrıca sabitlenmemiş cwd, avın YANLIŞ AĞACI tarayıp "temiz" demesine yol açardı.
+    """
+    command = _resolve_executable(command)
+    proc = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+        # Av HER ZAMAN bu deponun kökünü tarar — sunucuyu kim nereden başlattıysa değil.
+        cwd=str(_REPO_ROOT),
+    )
+    engine_procs.register(run_id, proc)
+    stopped = False
+    deadline = time.monotonic() + timeout
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                # Zaman aşımı: süreci öldür, sözleşmeyi koru (çağıran TimeoutExpired bekler).
+                with contextlib.suppress(Exception):
+                    proc.kill()
+                with contextlib.suppress(Exception):
+                    proc.communicate(timeout=DEFAULT_GRACE_S)
+                raise subprocess.TimeoutExpired(command, timeout)
+            try:
+                # communicate(timeout=...) zaman aşımında ÇIKTIYI KAYBETMEZ (belgelenmiş
+                # davranış): yakalayıp yeniden çağırmak okumaya kaldığı yerden devam eder.
+                out, err = proc.communicate(timeout=min(STOP_POLL_S, remaining))
+                break
+            except subprocess.TimeoutExpired:
+                if _stop_all_active():
+                    stopped = True
+                    if run_id:
+                        engine_procs.terminate_run(run_id)
+                    else:
+                        _terminate_single(proc)
+                    out, err = "", ""
+                    with contextlib.suppress(Exception):
+                        out, err = proc.communicate(timeout=DEFAULT_GRACE_S)
+                    break
+    finally:
+        engine_procs.unregister(run_id, proc)
+    if stopped:
+        return STOPPED_RC, (out or "") + (err or "")
+    return proc.returncode, (out or "") + (err or "")
+
+
+def _terminate_single(proc: subprocess.Popen) -> None:
+    """run_id verilmediğinde (kayıt yokken) tek süreci kes — kayıt yolunun yedeği."""
+    with contextlib.suppress(Exception):
+        proc.terminate()
+    with contextlib.suppress(Exception):
+        proc.wait(timeout=DEFAULT_GRACE_S)
+    with contextlib.suppress(Exception):
+        if proc.poll() is None:
+            proc.kill()
 
 
 class AutoDriver:
@@ -337,7 +465,10 @@ class AutoDriver:
                 **self.orch.status(run_id),
             }
 
-        run_fn = runner or _default_runner
+        # Gerçek spawn yolunda `run_id`'yi bağla → süreç kaydedilir ve ⛔ DURDUR onu
+        # gerçekten kesebilir. Enjekte edilen runner'ın imzası KORUNUR (test yolu
+        # (command, timeout, env) bekler; ona run_id geçirmek imzayı kırardı).
+        run_fn = runner or functools.partial(_default_runner, run_id=run_id)
         # FAIL-CLOSED: sertleştirilmemiş motor DOĞURULMAZ. Araç kısıtı olmayan bir motor
         # auth'suz yerel CLI'yi (`achilles approval-approve`) veya 127.0.0.1:8765'i
         # çağırıp kendi eğitimini onaylayabilir → scope katmanı tamamen delinir (Kural 8).
@@ -378,7 +509,7 @@ class AutoDriver:
         # uçlarda 403 alır (Kural 8). Koşu bitince `finally` ile MUTLAKA iptal edilir.
         token = driver_scope.mint(run_id)
         try:
-            _rc, output = run_fn(command, timeout, build_child_env(token, run_id))
+            rc, output = run_fn(command, timeout, build_child_env(token, run_id))
         except Exception as exc:  # spawn/timeout — koşuyu çökertme, deep-hunt bloklu kalır
             log.exception("AutoDriver: %s çalıştırılamadı", eng.name)
             self.orch.store.add_event(run_id, "deep-hunt", "error", f"Otonom sürüş hatası: {exc}")
@@ -390,6 +521,25 @@ class AutoDriver:
             }
         finally:
             driver_scope.revoke_run(run_id)
+
+        # ⛔ Kullanıcı DURDUR'a bastı → motor kesildi. Bunu "av başarısız" gibi raporlamak
+        # YANILTICI olurdu (av koşmadı, kesildi); ayrı bir durum olarak döner.
+        if rc == STOPPED_RC:
+            self.orch.store.add_event(
+                run_id,
+                "deep-hunt",
+                "warning",
+                "⛔ DURDUR (STOP_ALL): motor süreci kesildi — deep-hunt bloklu kalır.",
+            )
+            return {
+                "ok": True,
+                "drove": True,
+                "stopped": True,
+                "hunt_passed": False,
+                "reason": "Koşu ⛔ DURDUR ile kesildi (STOP_ALL etkin).",
+                "engine": eng.name,
+                **self.orch.status(run_id),
+            }
 
         verdict = parse_hunt_verdict(output)
         if not verdict["passed"]:
