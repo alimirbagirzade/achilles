@@ -42,7 +42,11 @@ def test_hata_mesaji_kayitli_motorlari_listeler() -> None:
 
 
 def test_argv_sablonu_dogru_kurulur() -> None:
-    assert engines.build_command("claude", "SORU") == ["claude", "-p", "SORU"]
+    # `claude` sertleştirme bayrakları taşır (bkz. docs/SCOPE_ISOLATION.md) → argv
+    # üç öğeden uzundur; değişmez olan, prompt'un TEK öğe olarak yerine geçmesidir.
+    claude_cmd = engines.build_command("claude", "SORU")
+    assert claude_cmd[:3] == ["claude", "-p", "SORU"]
+    assert "--safe-mode" in claude_cmd
     assert engines.build_command("codex", "SORU") == ["codex", "exec", "SORU"]
     assert engines.build_command("gemini", "SORU") == ["gemini", "-p", "SORU"]
 
@@ -76,23 +80,28 @@ def test_local_motoru_spawn_etmez() -> None:
 def test_kabuk_metakarakterleri_tek_argv_ogesi_kalir(kotu: str) -> None:
     """Prompt ne olursa olsun TEK argv öğesi olur; yeni öğe/komut doğmaz (shell=False)."""
     cmd = engines.build_command("claude", kotu)
-    assert cmd == ["claude", "-p", kotu]
-    assert len(cmd) == 3
+    # Kötü metin TAM OLARAK BİR argv öğesidir — yeni öğe/komut doğmaz.
+    assert cmd.count(kotu) == 1
+    assert cmd[2] == kotu
     # Prompt dışındaki öğeler sabit şablondan gelir — kullanıcı metni onları değiştiremez.
     assert cmd[:2] == ["claude", "-p"]
+    assert len(cmd) == len(engines.get_engine("claude").argv_template)
 
 
 def test_prompt_sentinelini_iceren_metin_sablonu_bozmaz() -> None:
     """Kullanıcı sentinel'i yazsa bile şablon öğeleri artmaz (değişim öğe-bazlı)."""
     cmd = engines.build_command("claude", f"once {PROMPT} sonra")
-    assert cmd == ["claude", "-p", f"once {PROMPT} sonra"]
+    assert cmd[2] == f"once {PROMPT} sonra"
+    assert len(cmd) == len(engines.get_engine("claude").argv_template)
 
 
 def test_argv_sablonu_degismez() -> None:
     """Komut kurmak kayıt tablosunu mutasyona uğratmaz (frozen dataclass + tuple)."""
     engine = engines.get_engine("claude")
+    before = engine.argv_template
     engines.build_command("claude", "SORU")
-    assert engine.argv_template == ("claude", "-p", PROMPT)
+    assert engine.argv_template == before
+    assert engine.argv_template[:3] == ("claude", "-p", PROMPT)
     with pytest.raises(AttributeError):
         engine.name = "baska"  # type: ignore[misc]
 

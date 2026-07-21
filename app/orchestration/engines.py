@@ -52,6 +52,12 @@ class Engine:
     argv_template: tuple[str, ...]
     quota_warning: str
     spawns: bool = True
+    # Doğurulan ajan ARAÇ SEVİYESİNDE kısıtlanarak mı başlatılıyor?
+    # AutoDriver YALNIZ hardened motorları doğurur (bkz. docs/SCOPE_ISOLATION.md):
+    # kısıtsız bir motor, auth'suz yerel CLI'yi (`achilles approval-approve`) ya da
+    # 127.0.0.1:8765'i çağırıp KENDİ eğitimini onaylayabilir → Kural 8 delinir.
+    # Sertleştirme bayrakları motora ÖZGÜdür, bu yüzden motor bazında işaretlenir.
+    hardened: bool = False
 
     def build_command(self, prompt: str) -> list[str]:
         """argv listesi kur — PROMPT sentinel'i prompt ile değiştirilir (kabuk YOK)."""
@@ -69,9 +75,42 @@ _Q_CODEX = f"{_SHARED} Codex'te pencere 5 saatlik YUVARLANAN kotadır."
 _Q_GEMINI = f"{_SHARED} Google hesabının günlük istek kotasına sayılır."
 _Q_LOCAL = "Abonelik kotası YOK — yerel Ollama hattı (süreç başlatılmaz)."
 
+# ── Sertleştirme (yalnız `claude`) ──────────────────────────────────────────────────────
+# Motorun YASAKLI yerleşik araçları. Derin av SALT-OKUMADIR (Read/Grep/Glob yeter).
+# `Task` de yasak: kısıtsız araçlı bir ALT-ajan doğurup deny-list'i dolaylı aşmasın.
+DISALLOWED_TOOLS: tuple[str, ...] = (
+    "Bash",
+    "Edit",
+    "Write",
+    "NotebookEdit",
+    "WebFetch",
+    "WebSearch",
+    "Task",
+)
+
+# ÜÇÜ BİRLİKTE gerekli (bkz. docs/SCOPE_ISOLATION.md):
+#  --safe-mode          : hook / plugin / MCP / özel ajan-komut-skill kanallarını kapatır.
+#                         Bunlar araç katmanının DIŞINDA çalışır; deny-list onları GÖRMEZ.
+#                         (Hook'lar `-p` modunda güven diyaloğu atlandığı için onaysız koşar.)
+#  --strict-mcp-config  : kemer-askı; --mcp-config verilmediği için sıfır MCP sunucusu.
+#  --disallowedTools    : yerleşik araçları kısar (safe-mode onları kısmaz).
+#                         VARIADIC → argv'nin EN SONUNDA, tek virgüllü arg olarak durmalı,
+#                         aksi halde sonraki bayrakları yutar.
+_CLAUDE_ARGV: tuple[str, ...] = (
+    "claude",
+    "-p",
+    PROMPT,
+    "--safe-mode",
+    "--strict-mcp-config",
+    "--disallowedTools",
+    ",".join(DISALLOWED_TOOLS),
+)
+
 # ── Kayıt tablosu — yeni motor eklemek TEK SATIR ────────────────────────────────────────
+# ⚠️ Yeni motor eklerken `hardened=True` yalnız araç-kısıtı bayrakları DOĞRULANMIŞSA
+# verilmelidir; aksi halde AutoDriver onu doğurmayı REDDEDER (fail-closed, doğru davranış).
 _ENGINES: tuple[Engine, ...] = (
-    Engine("claude", "Claude Code (abonelik)", "claude", ("claude", "-p", PROMPT), _Q_CLAUDE),
+    Engine("claude", "Claude Code (abonelik)", "claude", _CLAUDE_ARGV, _Q_CLAUDE, hardened=True),
     Engine("codex", "Codex CLI (ChatGPT planı)", "codex", ("codex", "exec", PROMPT), _Q_CODEX),
     Engine("gemini", "Gemini CLI (Google hesabı)", "gemini", ("gemini", "-p", PROMPT), _Q_GEMINI),
     Engine("local", "Yerel hat (Ollama)", None, (), _Q_LOCAL, spawns=False),

@@ -53,11 +53,15 @@ def driver(tmp_path: Path) -> AutoDriver:
     return AutoDriver(orchestrator=orch)
 
 
-def _fake_pass(command: list[str], timeout: int) -> tuple[int, str]:
+def _fake_pass(
+    command: list[str], timeout: int, env: dict[str, str] | None = None
+) -> tuple[int, str]:
     return 0, "denetim raporu...\nciddi bulgu yok\nACHILLES_HUNT_VERDICT: PASS\n"
 
 
-def _fake_fail(command: list[str], timeout: int) -> tuple[int, str]:
+def _fake_fail(
+    command: list[str], timeout: int, env: dict[str, str] | None = None
+) -> tuple[int, str]:
     return 0, "BLOCKER: x\nACHILLES_HUNT_VERDICT: FAIL bir sorun var\n"
 
 
@@ -115,7 +119,9 @@ def test_fail_keeps_hunt_blocked(driver: AutoDriver) -> None:
 
 
 def test_runner_exception_is_safe(driver: AutoDriver) -> None:
-    def boom(command: list[str], timeout: int) -> tuple[int, str]:
+    def boom(
+        command: list[str], timeout: int, env: dict[str, str] | None = None
+    ) -> tuple[int, str]:
         raise RuntimeError("spawn patladı")
 
     run_id = driver.orch.start(model="m", profile="p", adapter_name="a")

@@ -103,6 +103,9 @@ async def _lifespan(app: FastAPI):
     configure_logging()
     get_settings().ensure_dirs()
     logger.info("Achilles web başladı — host=%s port=%s", _settings.web_host, _settings.web_port)
+    # api_token boşsa auth KAPALIDIR — bu sessiz kalmamalı (scope izolasyonu da bu
+    # modda yalnız derinlemesine savunmadır, kriptografik sınır değil).
+    security.warn_if_auth_disabled()
     # Phase 2 startup sweep: crash sonrası 'running' kalan bayat koşuları temizle.
     with suppress(Exception):
         from app.agents.runtime.tracker import cancel_stale_running_agent_runs
@@ -204,6 +207,14 @@ async def _security_middleware(request: Request, call_next):
 
 # ====================== API ======================
 api_auth = Depends(security.require_auth)
+
+# İNSAN-YALNIZ kapı (CLAUDE.md Kural 8): sürücü (driver) scope 403 alır. Achilles kendi
+# `claude -p` motorunu doğurduğu için, motorun kendi eğitimini onaylaması / kill-switch'i
+# temizlemesi engellenir. `api_auth` ile BİRLİKTE kullanılır (kimlik + scope).
+# NOT: bu uçlarda ayrıca `include_in_schema=False` var — bu bir GÜVENLİK KONTROLÜ DEĞİL,
+# yalnız OpenAPI/doc gizlemesidir. Erişim kontrolü TAMAMEN `require_human`'dan gelir;
+# schema bayrağı kaldırılsa bile koruma sürer (ve tersi doğru DEĞİLDİR).
+human_only = Depends(security.require_human)
 
 # AI-brain ek-modül uçları (registry/tools/ingestion/eval) + dashboard sayfası ayrı
 # router'da tutulur → server.py minimal dokunulur (çakışma yüzeyi küçük). Salt-okuma/hesap.
@@ -1301,7 +1312,12 @@ def api_training_dry_run(req: TrainDryRunRequest) -> TrainDryRunResponse:
     )
 
 
-@app.post("/api/training/run", response_model=TrainingStartResponse, dependencies=[api_auth])
+@app.post(
+    "/api/training/run",
+    response_model=TrainingStartResponse,
+    dependencies=[api_auth, human_only],
+    include_in_schema=False,
+)
 def api_training_run(req: TrainingStartRequest) -> TrainingStartResponse:
     """Gerçek LoRA eğitimini DETACHED başlat — CLI ile AYNI taze-onay kapısı (Phase 4D-1).
 
@@ -1929,9 +1945,13 @@ def api_list_approvals(status: str | None = None, limit: int = 50) -> dict:
     return {"approvals": [a.model_dump(mode="json") for a in items]}
 
 
-@app.post("/api/approvals/{approval_id}/approve", dependencies=[api_auth])
+@app.post(
+    "/api/approvals/{approval_id}/approve",
+    dependencies=[api_auth, human_only],
+    include_in_schema=False,
+)
 def api_approve(approval_id: str, note: str | None = None) -> dict:
-    """Bir onay isteğini ONAYLA (tek kullanımlık taze onay)."""
+    """Bir onay isteğini ONAYLA (tek kullanımlık taze onay). YALNIZ insan scope'u."""
     from app.agents.runtime import approvals
 
     a = approvals.approve(approval_id, note=note)
@@ -1940,8 +1960,13 @@ def api_approve(approval_id: str, note: str | None = None) -> dict:
     return {"ok": True, "approval": a.model_dump(mode="json")}
 
 
-@app.post("/api/approvals/{approval_id}/reject", dependencies=[api_auth])
+@app.post(
+    "/api/approvals/{approval_id}/reject",
+    dependencies=[api_auth, human_only],
+    include_in_schema=False,
+)
 def api_reject(approval_id: str, note: str | None = None) -> dict:
+    """Bir onay isteğini REDDET. Red de bir yetki kararıdır → YALNIZ insan scope'u."""
     from app.agents.runtime import approvals
 
     a = approvals.reject(approval_id, note=note)
@@ -1983,8 +2008,13 @@ def api_stop_all(reason: str | None = None) -> dict:
     return supervisor.create_stop_all(reason=reason)
 
 
-@app.post("/api/supervisor/clear-stop-all", dependencies=[api_auth])
+@app.post(
+    "/api/supervisor/clear-stop-all",
+    dependencies=[api_auth, human_only],
+    include_in_schema=False,
+)
 def api_clear_stop_all() -> dict:
+    """Kill-switch'i KALDIR — YALNIZ insan scope'u (motor kendi frenini çözemez)."""
     from app.agents.runtime import supervisor
 
     return supervisor.clear_stop_all()
@@ -2118,17 +2148,25 @@ async def api_auto_lora_check() -> dict:
     return await get_auto_pipeline().check_and_prepare()
 
 
-@app.post("/api/auto-lora/train", dependencies=[api_auth])
+@app.post("/api/auto-lora/train", dependencies=[api_auth, human_only], include_in_schema=False)
 async def api_auto_lora_train(adapter_name: str, iters: int = 300) -> dict:
-    """Kullanıcı onayıyla eğitimi başlat (READY_TO_TRAIN durumu gerekir)."""
+    """Kullanıcı onayıyla eğitimi başlat (READY_TO_TRAIN durumu gerekir). YALNIZ insan.
+
+    `/api/training/run` ile AYNI onay-tüketim mekanizmasını kullanır
+    (`approvals.require_fresh_approval`). Kapı olmadan sürücü, insanın onayladığı ama
+    henüz tüketmediği bir onayı ÇALIP eğitimi başlatabilirdi (denetim bulgusu).
+    """
     from app.lora.auto_pipeline import get_auto_pipeline
 
     return await get_auto_pipeline().start_training(adapter_name, iters)
 
 
-@app.post("/api/auto-lora/promote", dependencies=[api_auth])
+@app.post("/api/auto-lora/promote", dependencies=[api_auth, human_only], include_in_schema=False)
 async def api_auto_lora_promote() -> dict:
-    """Kullanıcı onayıyla adapter'ı production'a terfi et (EVAL_PASSED gerekir)."""
+    """Kullanıcı onayıyla adapter'ı production'a terfi et (EVAL_PASSED gerekir). YALNIZ insan.
+
+    Terfi de onay-tüketen bir yetki kararıdır → motor kendi adapter'ını terfi ettiremez.
+    """
     from app.lora.auto_pipeline import get_auto_pipeline
 
     return await get_auto_pipeline().promote_to_production()

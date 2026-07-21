@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import subprocess
 from collections.abc import Callable
@@ -24,6 +25,7 @@ from typing import Any
 from app.orchestration import engines
 from app.orchestration.engines import DEFAULT_ENGINE
 from app.orchestration.orchestrator import TrainingOrchestrator
+from app.web import driver_scope
 
 log = logging.getLogger(__name__)
 
@@ -31,16 +33,38 @@ log = logging.getLogger(__name__)
 _VERDICT_RE = re.compile(r"ACHILLES_HUNT_VERDICT:\s*(PASS|FAIL)", re.IGNORECASE)
 HUNT_TIMEOUT_S = 1800  # 30 dk — CPU'da derin av uzun sürebilir.
 
-# runner sözleşmesi: (command, timeout_s) -> (returncode, combined_output)
-Runner = Callable[[list[str], int], tuple[int, str]]
+# Araç deny-list'i motor kayıt tablosunda durur (motora ÖZGÜ bayraklar).
+# Geriye dönük uyum + tek kaynak: buradan yeniden dışa aktarılır.
+DISALLOWED_TOOLS = engines.DISALLOWED_TOOLS
+
+# Çocuğa GEÇİRİLMEYECEK insan sırları. NOT: anahtarı silmek YETMEZ — Settings
+# `env_file=".env"` kullandığı için silinen anahtar dotenv'den geri okunur
+# (deneyle doğrulandı). Bu yüzden anahtar açıkça BOŞ STRING'e ezilir; env kaynağı
+# pydantic-settings'te dotenv'den önceliklidir.
+_HUMAN_SECRET_ENV = ("ACHILLES_API_TOKEN",)
+
+# Çocuğa geçirilmeyecek AYAR-EZME değişkenleri. `--safe-mode` "admin-managed (policy)
+# settings still apply" der; bu değişkenler harici bir ayar dosyası işaret ederek
+# safe-mode'a rağmen hook/ayar geri getirebilir. Ebeveynin ortamı kirlenmişse
+# (kalıcı shell profili, sistem-genel env) sürücü kısıtı sessizce delinirdi.
+# Derinlemesine savunma: spawn öncesi açıkça temizlenir.
+_SETTINGS_OVERRIDE_ENV = (
+    "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
+    "CLAUDE_CODE_REMOTE_SETTINGS_PATH",
+    "CLAUDE_CODE_MOCK_REMOTE_SETTINGS",
+)
+
+# runner sözleşmesi: (command, timeout_s, env) -> (returncode, combined_output)
+Runner = Callable[..., tuple[int, str]]
 
 
 def build_hunt_prompt(run: dict[str, Any]) -> str:
     """Headless claude -p için Kademe-2 derin av promptu (SALT RAPOR; kod/eğitim YOK)."""
     adapter = run.get("adapter_name", "achilles_lora")
     return (
-        "Sen Achilles deposunda KADEME-2 derin adversarial bug-avı çalıştıran bir ajansın "
-        "(CLAUDE.md). Bu, eğitim ÖNCESİ ZORUNLU denetimdir. KESİNLİKLE: yalnız RAPOR üret; "
+        "Sen Achilles deposunda KADEME-2 derin adversarial bug-avı çalıştıran bir ajansın. "
+        "İLK İŞ: depo kökündeki CLAUDE.md'yi Read ile OKU (safe-mode'da oto-keşif kapalıdır; "
+        "kurallar oradadır). Bu, eğitim ÖNCESİ ZORUNLU denetimdir. KESİNLİKLE: yalnız RAPOR üret; "
         "KOD DEĞİŞTİRME, git commit/push YAPMA, EĞİTİM BAŞLATMA, hiçbir dosyaya yazma. "
         "Alt-sistem başına paralel bul → şüpheci adversarial doğrula (varsayılan çürütülmüş) "
         "→ yalnız onaylanan CİDDİ (HIGH/BLOCKER) bulguları say. Çıktının SON SATIRI tam olarak "
@@ -55,8 +79,31 @@ def build_hunt_prompt(run: dict[str, Any]) -> str:
 def build_hunt_command(run: dict[str, Any], engine: str = DEFAULT_ENGINE) -> list[str]:
     """Seçili motorun argv'si (shell yok → enjeksiyon yok; prompt argv ÖĞESİ olarak geçer).
 
-    Motor adı kayıt tablosundan gelir; bilinmeyen ad ValueError ile REDDEDİLİR."""
+    Motor adı kayıt tablosundan gelir; bilinmeyen ad ValueError ile REDDEDİLİR.
+
+    GÜVENLİK: sertleştirme bayrakları motorun `argv_template`'inde durur
+    (`app/orchestration/engines.py`). `claude` motoru `--safe-mode` +
+    `--strict-mcp-config` + `--disallowedTools` ile doğurulur; gerekçe için
+    `engines.Engine.hardened` ve `docs/SCOPE_ISOLATION.md`.
+    """
     return engines.build_command(engine, build_hunt_prompt(run))
+
+
+def build_child_env(token: str, run_id: str) -> dict[str, str]:
+    """Doğurulan motorun ortamı: insan sırları BOŞA ezilir, sürücü kimliği eklenir.
+
+    Anahtarı ``del`` etmek yerine boş string'e ezmek ZORUNLU — bkz. ``_HUMAN_SECRET_ENV``.
+    """
+    env = dict(os.environ)
+    for key in _HUMAN_SECRET_ENV:
+        env[key] = ""
+    # Ayar-ezme kanalları: burada SİLMEK doğru (boş string de geçerli bir yol sayılıp
+    # hataya yol açabilir; yokluk = "ayar yok" demektir).
+    for key in _SETTINGS_OVERRIDE_ENV:
+        env.pop(key, None)
+    env[driver_scope.DRIVER_TOKEN_ENV] = token
+    env[driver_scope.DRIVER_RUN_ID_ENV] = run_id
+    return env
 
 
 def parse_hunt_verdict(output: str) -> dict[str, Any]:
@@ -86,9 +133,14 @@ def claude_available() -> bool:
     return engine_available(DEFAULT_ENGINE)
 
 
-def _default_runner(command: list[str], timeout: int) -> tuple[int, str]:
+def _default_runner(
+    command: list[str], timeout: int, env: dict[str, str] | None = None
+) -> tuple[int, str]:
     # shell=False + argv listesi → kabuk enjeksiyonu yok. Çıktı (stdout+stderr) birleşik.
-    proc = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
+    # env: insan sırları temizlenmiş + sürücü kimliği eklenmiş ortam (build_child_env).
+    proc = subprocess.run(
+        command, capture_output=True, text=True, timeout=timeout, check=False, env=env
+    )
     return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
 
 
@@ -166,6 +218,28 @@ class AutoDriver:
             }
 
         run_fn = runner or _default_runner
+        # FAIL-CLOSED: sertleştirilmemiş motor DOĞURULMAZ. Araç kısıtı olmayan bir motor
+        # auth'suz yerel CLI'yi (`achilles approval-approve`) veya 127.0.0.1:8765'i
+        # çağırıp kendi eğitimini onaylayabilir → scope katmanı tamamen delinir (Kural 8).
+        # `runner` enjekte edilmişse gerçek spawn yoktur (test yolu) → kısıt aranmaz.
+        if runner is None and not eng.hardened:
+            self.orch.store.add_event(
+                run_id,
+                "deep-hunt",
+                "error",
+                f"Otonom sürüş REDDEDİLDİ: {eng.label} araç-seviyesinde kısıtlanamıyor.",
+            )
+            return {
+                "ok": False,
+                "reason": (
+                    f"{eng.label} sertleştirilmiş değil — AutoDriver yalnız araç-kısıtlı "
+                    "motor doğurur. Kısıtsız motor kendi eğitimini onaylayabilir (Kural 8). "
+                    "Bkz. docs/SCOPE_ISOLATION.md."
+                ),
+                "engine": eng.name,
+                "hardened": False,
+                "command": command,
+            }
         if runner is None and not engine_available(eng.name):
             return {
                 "ok": False,
@@ -180,8 +254,11 @@ class AutoDriver:
             "info",
             f"Otonom sürüş: {eng.label} ile Kademe-2 derin av başladı. {eng.quota_warning}",
         )
+        # Sürücü kimliği: bu koşuya bağlı, kısa ömürlü token. Motor bununla insan-yalnız
+        # uçlarda 403 alır (Kural 8). Koşu bitince `finally` ile MUTLAKA iptal edilir.
+        token = driver_scope.mint(run_id)
         try:
-            _rc, output = run_fn(command, timeout)
+            _rc, output = run_fn(command, timeout, build_child_env(token, run_id))
         except Exception as exc:  # spawn/timeout — koşuyu çökertme, deep-hunt bloklu kalır
             log.exception("AutoDriver: %s çalıştırılamadı", eng.name)
             self.orch.store.add_event(run_id, "deep-hunt", "error", f"Otonom sürüş hatası: {exc}")
@@ -191,6 +268,8 @@ class AutoDriver:
                 "engine": eng.name,
                 "command": command,
             }
+        finally:
+            driver_scope.revoke_run(run_id)
 
         verdict = parse_hunt_verdict(output)
         if not verdict["passed"]:
