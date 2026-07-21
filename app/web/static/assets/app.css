@@ -2340,6 +2340,34 @@ code {
   font-family: var(--mono);
 }
 
+/* İKİ-TIK eğitim onay kapısı — hat `approval`/`train`de bloklanınca açılır */
+.am-gate {
+  margin-top: 12px;
+  padding: 14px 16px;
+  border: 2px solid var(--warn-border);
+  background: var(--warn-soft);
+  border-radius: var(--radius);
+}
+.am-gate[hidden] {
+  display: none;
+}
+.am-gate-head {
+  font-size: 0.95rem;
+  color: var(--warn);
+}
+.am-gate-note {
+  margin: 6px 0 10px;
+}
+.am-approve-btn {
+  font-weight: 700;
+  background: var(--pos);
+  border-color: var(--pos-border);
+  color: #ffffff;
+}
+.am-approve-btn:hover:not(:disabled) {
+  background: var(--pos-strong, #086646);
+}
+
 /* efsane (legend) */
 .am-legend {
   display: flex;

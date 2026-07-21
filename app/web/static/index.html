@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ACHILLES — Trading Research Terminal</title>
-    <link rel="stylesheet" href="/assets/app.css?v=10" />
+    <link rel="stylesheet" href="/assets/app.css?v=11" />
     <link rel="stylesheet" href="/assets/canli-badge.css?v=1" />
   </head>
   <body>
@@ -1004,6 +1004,24 @@
             </div>
             <pre class="am-dryrun-cmd"><code id="amDryRunCmd"></code></pre>
           </div>
+
+          <!-- İKİNCİ TIK: ön kontroller + derin av bitti, hat onay kapısında durdu.
+               Gerçek eğitim YALNIZ buradan, insanın açık onayıyla başlar (Kural 8). -->
+          <div id="amGate" class="am-gate" hidden>
+            <div class="am-gate-head">
+              ⏸ <strong>Eğitim onay kapısında bekliyor</strong>
+              <span class="muted small" id="amGateInfo"></span>
+            </div>
+            <p class="muted small am-gate-note">
+              Ön kontroller ve zorunlu derin av tamamlandı. Gerçek LoRA eğitimi ancak
+              <strong>senin açık onayınla</strong> başlar — motor kendi eğitimini onaylayamaz
+              (Kural 8). Onaylarsan eğitim <strong>detached</strong> başlar; web/terminal
+              kapansa da sürer ve harita canlı yanar.
+            </p>
+            <button class="btn btn-primary am-approve-btn" id="amApproveTrainBtn">
+              ✅ ONAYLA VE EĞİTİMİ BAŞLAT
+            </button>
+          </div>
         </div>
 
         <div class="card">
@@ -1076,7 +1094,7 @@
       </div>
     </div>
 
-    <script src="/assets/app.js?v=10"></script>
+    <script src="/assets/app.js?v=11"></script>
     <script src="/assets/canli-badge.js?v=1"></script>
   </body>
 </html>

@@ -207,3 +207,53 @@ def test_graph_endpoint_shape() -> None:
     assert isinstance(body["nodes"], list) and body["nodes"]
     assert isinstance(body["edges"], list)
     assert isinstance(body["groups"], list) and body["groups"]
+
+
+# ── İKİ-TIK eğitim kapısı (⚡ RUN → onay → gerçek eğitim) ─────────────────────
+def test_gate_box_present() -> None:
+    """Onay kapısı kutusu + butonu panelde var ve varsayılan GİZLİ (hidden)."""
+    section = _panel_section()
+    assert 'id="amGate"' in section
+    assert 'id="amApproveTrainBtn"' in section
+    assert 'id="amGateInfo"' in section
+    # kutu varsayılan gizli olmalı (hat kapıda değilken görünmesin)
+    gate = section[section.index('id="amGate"') :]
+    assert gate[: gate.index(">")].find("hidden") != -1, "amGate varsayılan hidden olmalı"
+
+
+def test_gate_only_opens_when_blocked_at_approval() -> None:
+    """Kutu YALNIZ koşu approval/train aşamasında BLOCKED iken açılır (yanlışlıkla açılmasın)."""
+    js = _appjs()
+    seg = js[js.index("function amRefreshGate") : js.index("function amApproveAndTrain")]
+    assert '"/orchestration/runs?limit=1"' in seg
+    assert 'run.status === "blocked"' in seg
+    assert 'run.current_stage === "approval"' in seg
+    assert 'run.current_stage === "train"' in seg
+    # durum okunamazsa kapı KAPALI kalmalı (güvenli taraf)
+    assert "box.hidden = true" in seg
+
+
+def test_training_requires_human_confirm_and_uses_gated_endpoint() -> None:
+    """Gerçek eğitim: confirm() ŞART ve mevcut taze-onay kapılı /training/run kullanılır."""
+    js = _appjs()
+    seg = js[js.index("function amApproveAndTrain") : js.index("function amStartPoll")]
+    assert "window.confirm(" in seg
+    # confirm, eğitim POST'undan ÖNCE gelmeli
+    assert seg.index("window.confirm(") < seg.index('"/training/run"')
+    # needs_approval → insan yüzeyinden onay → tekrar çağır (onay tüketilir)
+    assert 'status === "needs_approval"' in seg
+    assert "/approvals/" in seg and "/approve" in seg
+    # Kural 8: STOP_ALL / blocked yanıtı kullanıcıya bildirilmeli
+    assert 'status === "blocked"' in seg
+
+
+def test_engine_cannot_selfapprove_no_autoapprove_in_autodrive() -> None:
+    """P1 güvenlik: ⚡ otonom sürüş yolu onay ucuna DOKUNMAZ — onay yalnız insan butonunda.
+
+    Motorun kendi eğitimini onaylaması roadmap'te bloklayıcı açık; ⚡ (autodrive) akışında
+    /approvals/*/approve çağrısı BULUNMAMALI.
+    """
+    js = _appjs()
+    trigger = js[js.index("function amTriggerTraining") : js.index("function loadAgentMap")]
+    assert "/approvals/" not in trigger, "⚡ otonom yol onay veremez (motor kendini onaylamasın)"
+    assert '"/training/run"' not in trigger, "⚡ otonom yol gerçek eğitimi başlatamaz"
