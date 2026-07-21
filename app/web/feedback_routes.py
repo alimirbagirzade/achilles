@@ -14,9 +14,14 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.web.security import require_auth
+from app.web.security import require_auth, require_human
 
 router = APIRouter(prefix="/api/feedback", tags=["feedback"], dependencies=[Depends(require_auth)])
+
+# Onay/red YALNIZ insan scope'u: onaylanan düzeltme SFT adayı olur → eğitim verisini
+# besler. Motorun kendi eğitim verisini onaylaması bir yetki kararıdır (Kural 8 sınıfı).
+# Submit serbesttir (aday üretmek zararsız); kapı yalnız ONAY kararındadır.
+_human_only = Depends(require_human)
 
 
 class FeedbackSubmitRequest(BaseModel):
@@ -58,9 +63,11 @@ def feedback_summary() -> dict[str, Any]:
     return _echo().summary()
 
 
-@router.post("/approve/{correction_id}")
+@router.post("/approve/{correction_id}", dependencies=[_human_only])
 def feedback_approve(correction_id: str) -> dict[str, Any]:
-    """Bir düzeltmeyi onayla (export'a aday). Güvenlik onay anında tekrar kontrol edilir."""
+    """Bir düzeltmeyi onayla (export'a aday). YALNIZ insan scope'u.
+
+    Güvenlik onay anında tekrar kontrol edilir (Kural-1 zehir filtresi)."""
     echo = _echo()
     ok = echo.approve(correction_id)
     if not ok:
@@ -71,9 +78,9 @@ def feedback_approve(correction_id: str) -> dict[str, Any]:
     return {"ok": True, "item": echo.store.get(correction_id)}
 
 
-@router.post("/reject/{correction_id}")
+@router.post("/reject/{correction_id}", dependencies=[_human_only])
 def feedback_reject(correction_id: str) -> dict[str, Any]:
-    """Bir düzeltmeyi reddet."""
+    """Bir düzeltmeyi reddet. YALNIZ insan scope'u (red de yetki kararıdır)."""
     echo = _echo()
     if echo.store.get(correction_id) is None:
         raise HTTPException(status_code=404, detail=f"Düzeltme bulunamadı: {correction_id}")
@@ -81,7 +88,10 @@ def feedback_reject(correction_id: str) -> dict[str, Any]:
     return {"ok": True, "item": echo.store.get(correction_id)}
 
 
-@router.post("/export")
+@router.post("/export", dependencies=[_human_only])
 def feedback_export() -> dict[str, Any]:
-    """Onaylananları AYRI aday SFT dosyasına yaz (eğitim başlatmaz, Kural 8)."""
+    """Onaylananları AYRI aday SFT dosyasına yaz. YALNIZ insan scope'u.
+
+    Eğitim başlatmaz (Kural 8) ama eğitim verisi dosyası ÜRETİR → motor kendi
+    verisini yazamamalı."""
     return _echo().export_approved()
