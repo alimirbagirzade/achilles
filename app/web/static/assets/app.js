@@ -4234,6 +4234,7 @@
   var amSig = null; // düğüm-kümesi imzası → yeniden-kurma yalnız küme değişince
   var amLastData = null;
   var amMainId = null; // ana ajan id (alt tam-genişlik yeşil buton olarak render edilir)
+  var amGateRun = null; // hattın son koşusu — onay kapısında mı diye bakılır (iki-tık akışı)
   var AM_STLBL = {
     idle: "boşta",
     running: "çalışıyor",
@@ -4684,6 +4685,90 @@
       });
   }
 
+  // ── İKİ-TIK EĞİTİM KAPISI ──────────────────────────────────────────────────
+  // ⚡ RUN salt-okuma aşamalarını + zorunlu derin avı sürer, sonra `approval`/`train`
+  // aşamasında DURUR (Kural 8). Burada hattın son koşusuna bakıp, kapıda bekliyorsa
+  // "ONAYLA VE EĞİTİMİ BAŞLAT" kutusunu açarız — onayı İNSAN verir, motor değil.
+  function amRefreshGate() {
+    return api("/orchestration/runs?limit=1")
+      .then(function (d) {
+        var run = ((d && d.runs) || [])[0] || null;
+        amGateRun = run;
+        var box = document.getElementById("amGate");
+        var info = document.getElementById("amGateInfo");
+        var waiting = !!(
+          run &&
+          run.status === "blocked" &&
+          (run.current_stage === "approval" || run.current_stage === "train")
+        );
+        if (box) box.hidden = !waiting;
+        if (info && run) {
+          info.textContent =
+            "· koşu " + (run.run_id || "?") + " · aşama: " + (run.current_stage || "-");
+        }
+      })
+      .catch(function () {
+        var box = document.getElementById("amGate");
+        if (box) box.hidden = true; // durum bilinmiyorsa kapıyı AÇMA (güvenli taraf)
+      });
+  }
+
+  // ✅ İkinci tık: insan onayı + GERÇEK detached eğitim (mevcut /training/run kapısı).
+  // Akış: run → needs_approval ise approvals/{id}/approve → run (onay TÜKETİLİR, eğitim başlar).
+  function amApproveAndTrain() {
+    var btn = document.getElementById("amApproveTrainBtn");
+    var adapter = (amGateRun && amGateRun.adapter_name) || "achilles_lora";
+    var iters = parseInt((amGateRun && amGateRun.iters) || 300, 10) || 300;
+    if (
+      !window.confirm(
+        "✅ GERÇEK LoRA EĞİTİMİ BAŞLATILACAK.\n\n" +
+          "Adapter: " + adapter + " · ~" + iters + " adım.\n" +
+          "Uzun sürer (saatlerce) ve CPU'yu doldurur; bilgisayar açık kalmalı.\n" +
+          "Eğitim DETACHED başlar — web/terminal kapansa da sürer.\n\n" +
+          "Bu senin TAZE onayındır (Kural 8): tek kullanımlıktır ve yalnız bu eğitimi yetkilendirir.\n" +
+          "Başlatılsın mı?"
+      )
+    )
+      return;
+    if (btn) btn.disabled = true;
+    var payload = { adapter_name: adapter, iterations: iters };
+    function runTraining() {
+      return api("/training/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    }
+    runTraining()
+      .then(function (d) {
+        if (d && d.status === "needs_approval" && d.approval_id) {
+          // Onayı İNSAN yüzeyinden ver, sonra eğitimi tekrar çağır (onay tüketilir).
+          return api("/approvals/" + encodeURIComponent(d.approval_id) + "/approve", {
+            method: "POST",
+          }).then(runTraining);
+        }
+        return d;
+      })
+      .then(function (d) {
+        if (d && d.status === "started") {
+          toast("🚀 Eğitim başladı (detached) — harita canlı yanacak.");
+        } else if (d && d.status === "blocked") {
+          toast("Engellendi: " + (d.message || "STOP_ALL aktif olabilir"), true);
+        } else {
+          toast((d && d.message) || "Eğitim başlatılamadı", !(d && d.ok));
+        }
+        amRefreshGate();
+        amRefreshOnce();
+        if (typeof refreshTrain === "function") refreshTrain(); // üst şerit rozetini tazele
+      })
+      .catch(function (e) {
+        toast("Eğitim başlatılamadı: " + e.message, true);
+      })
+      .finally(function () {
+        if (btn) btn.disabled = false;
+      });
+  }
+
   function amStartPoll() {
     if (amPollTimer) return;
     amPollTimer = setInterval(function () {
@@ -4693,6 +4778,7 @@
         return;
       }
       amRefreshOnce();
+      amRefreshGate();
     }, 7000);
   }
 
@@ -4783,6 +4869,7 @@
           );
         }
         amRefreshOnce();
+        amRefreshGate(); // sürüş bitince hat onay kapısına gelmiş olabilir → kutuyu aç
       })
       .catch(function (e) {
         toast("Devreye sokulamadı: " + e.message, true);
@@ -4803,9 +4890,18 @@
     if (tb && !tb._wired) {
       tb._wired = true;
       tb.addEventListener("click", amTriggerTraining);
-      document.getElementById("amRefreshBtn").addEventListener("click", amRefreshOnce);
+      document.getElementById("amRefreshBtn").addEventListener("click", function () {
+        amRefreshOnce();
+        amRefreshGate();
+      });
+    }
+    var ab = document.getElementById("amApproveTrainBtn");
+    if (ab && !ab._wired) {
+      ab._wired = true;
+      ab.addEventListener("click", amApproveAndTrain);
     }
     amRefreshOnce();
+    amRefreshGate();
     amStartPoll();
   }
 
