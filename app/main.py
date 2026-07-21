@@ -3812,29 +3812,50 @@ def orchestrate_autodrive_cmd(
 @app.command("orchestrate-smoke")
 def orchestrate_smoke_cmd(
     as_json: bool = typer.Option(False, "--json", help="Makine-okunabilir JSON çıktı."),
+    skip_runtime: bool = typer.Option(
+        False, "--skip-runtime", help="Canlı runtime yoklamasını atla (yalnız RUN sözleşmeleri)."
+    ),
+    skip_run_pipeline: bool = typer.Option(
+        False, "--skip-run-pipeline", help="⚡ RUN sözleşme yoklamasını atla (yalnız runtime)."
+    ),
 ) -> None:
-    """Gerçek runtime uçtan-uca DUMAN TESTİ ("stub≠runtime") — Ollama+RAG+LLM canlı mı.
+    """Uçtan-uca DUMAN TESTİ — canlı runtime + ⚡ RUN hattı sözleşmeleri.
 
-    Birim testleri stub'la geçse de canlı hat bozuk olabilir. Bu komut yapılandırılmış
-    LLM backend'ini (yerel-öncelikli Ollama) gerçek küçük bir üretim + RAG retrieval ile
-    yoklar. Salt-okuma (üretim atılır); eğitim BAŞLATMAZ. Çıkış kodu: pass→0, skip→0,
-    fail→2 (canlı ama üretim boş/degenere — düzeltilmeli). Aynı yoklama orkestrasyon
-    hattının 'smoke' aşamasında da koşar.
+    İKİ BÖLÜM:
+      1. RUNTIME ("stub≠runtime") — yapılandırılmış LLM backend'i (yerel-öncelikli Ollama)
+         gerçek küçük bir üretim + RAG retrieval ile yoklanır. Runtime kapalıysa `skip`
+         (kusur değil, "şimdi test edilemez").
+      2. ⚡ RUN SÖZLEŞMELERİ — motor sertleştirme bayrakları, MCP config, kurulu-değil
+         hatası, dry-run varsayılanı, Kural-8 onay kapısı, sürücü scope 403'leri ve
+         ⛔ DURDUR'un koşan motoru gerçekten kesmesi. Çevrimdışı ve deterministik.
+
+    ⛔ GERÇEK MOTOR DOĞURULMAZ (kota yakmaz) — `live-spawn` bilinçli `skip`'tir ve
+    raporda "kanıtlanmadı" der. Salt-okuma; eğitim BAŞLATMAZ.
+    Çıkış kodu: pass/skip→0, fail→2.
     """
-    from app.orchestration.smoke import SmokeRunner
+    from app.orchestration.run_smoke import RunPipelineSmoke, RunSmokeResult
+    from app.orchestration.smoke import SmokeResult, SmokeRunner
 
-    result = SmokeRunner().run()
+    # İki bölüm AYNI rapor şeklini paylaşır (verdict/summary/checks) → tek döngüde basılır.
+    bolumler: list[tuple[str, SmokeResult | RunSmokeResult]] = []
+    if not skip_runtime:
+        bolumler.append(("runtime", SmokeRunner().run()))
+    if not skip_run_pipeline:
+        bolumler.append(("run-pipeline", RunPipelineSmoke().run()))
+
     if as_json:
-        console.print_json(json.dumps(result.to_dict(), ensure_ascii=False))
-    else:
-        color = {"pass": "green", "skip": "yellow", "fail": "red"}.get(result.verdict, "white")
-        console.print(
-            f"[{color}]Duman testi: {result.verdict.upper()}[/{color}] — {result.summary}"
+        console.print_json(
+            json.dumps({ad: res.to_dict() for ad, res in bolumler}, ensure_ascii=False, default=str)
         )
-        for c in result.checks:
-            mark = {"pass": "✓", "fail": "✕", "warn": "≈", "skip": "·"}.get(c.status, "?")
-            console.print(f"  {mark} [dim]{c.name}[/dim]: {c.detail}")
-    if result.verdict == "fail":
+    else:
+        for ad, res in bolumler:
+            color = {"pass": "green", "skip": "yellow", "fail": "red"}.get(res.verdict, "white")
+            console.print(f"[{color}]{ad}: {res.verdict.upper()}[/{color}] — {res.summary}")
+            for c in res.checks:
+                mark = {"pass": "✓", "fail": "✕", "warn": "≈", "skip": "·"}.get(c.status, "?")
+                console.print(f"  {mark} [dim]{c.name}[/dim]: {c.detail}")
+
+    if any(res.verdict == "fail" for _ad, res in bolumler):
         raise typer.Exit(2)
 
 

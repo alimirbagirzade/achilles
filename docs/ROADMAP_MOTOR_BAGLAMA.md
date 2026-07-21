@@ -295,9 +295,51 @@ KAPI: make format && make lint && make typecheck && make test → PR → merge.
 
 ---
 
-## P6 — Uçtan uca duman testi + Kademe-2 derin av
+## P6 — Uçtan uca duman testi + Kademe-2 derin av ✅ TAMAMLANDI (2026-07-21)
 
 **Şerit:** kapanış · **Bağımlılık:** P5 · **Paralel:** yok
+
+### Sonuç — 5 iddiadan 4'ü doğrulandı, 1'i YANLIŞ ÇIKTI
+
+| İddia | Sonuç |
+|-------|-------|
+| eğitim adımına gelince DURUYOR (taze onay yok) | ✅ doğrulandı |
+| driver scope onay veremiyor (403), stop-all temizleyemiyor (403) | ✅ doğrulandı |
+| motor kurulu değilken temiz hata, sessiz başarısızlık yok | ✅ doğrulandı (503 + Türkçe sebep) |
+| ⛔ DURDUR koşan motoru gerçekten kesiyor | ❌ **YANLIŞTI → düzeltildi** |
+| RUN → motor spawn → **MCP araçları görünüyor → ajanlar sürülüyor** | ❌ **KISMEN YANLIŞ** (aşağıya bak) |
+
+**⛔ DURDUR kusuru (düzeltildi):** `AutoDriver` motoru bloklayan `subprocess.run` ile
+doğuruyordu; süreç tutamacı saklanmadığı için STOP_ALL yalnız bir **bayrak dosyası**
+yazıyordu. Motor 30 dk zaman aşımına kadar koşup **abonelik kotası yakmaya** devam
+ediyordu — üstelik arayüz "durduruldu" deyip ⚡ kilidini açtığı için ÜSTÜNE ikinci motor
+doğurulabiliyordu (PR#122'nin kapattığı "5 eşzamanlı spawn" kazasının geri dönüşü).
+Düzeltme: `app/orchestration/engine_procs.py` süreç kaydı + `_default_runner`'ın
+Popen+yoklama döngüsü + `/api/supervisor/stop-all`'ın gerçek `terminate_all()` çağrısı.
+
+**Sür modu bağlı değil (bilinen boşluk, kapatılmadı):** `build_drive_command` **hiçbir
+spawn yolundan çağrılmıyor**. ⚡ RUN yalnız **av** modunu doğuruyor; av modu
+`--safe-mode` ile başlar ve o bayrak **MCP'yi de kapatır** → motor Achilles MCP
+araçlarını GÖRMEZ, veri hattını İLERLETEMEZ. Duman testi bunu `≈ drive-mode-wiring`
+uyarısıyla açıkça raporlar. **Sür modunu bağlamak P7'ye kalır** (kapsam kararı: bu paket
+doğrulama paketiydi; eksik özelliği sessizce "tamam" göstermek yerine görünür kılındı).
+
+### Kademe-2 derin av — onaylanan bulgular
+
+3 bulgu adversarial doğrulamadan geçti (hepsi **aynı sınıf**: allow-list'te "okuma"
+etiketli ama kalıcı YAZAN GET uçları) → üçü de allow-list'ten çıkarıldı:
+
+| Uç | Ne yapıyordu |
+|----|--------------|
+| `GET /api/backtest/{id}/risk` | `rr_<id>` sabit anahtarıyla risk raporunu **EZİYORDU**; içerik motorun sorgu parametrelerinden türüyordu |
+| `GET /api/understanding-score` | `record=true` ile kalıcı snapshot + JSON yazıyordu |
+| `GET /api/sentinel/overview` | `run(persist=True)` ile her çağrıda geçmişe yazıyordu |
+
+Kök sebep: allow-list sözleşmesi **HTTP metoduna** göre denetleniyordu
+(`test_yazma_metodlari_tamamen_elenir` yalnız POST/PUT/DELETE/PATCH'e bakıyordu) →
+yan etkili GET sessizce geçiyordu. Sınıf-düzeyi kapı:
+`tests/test_mcp_allowlist_side_effects.py` handler **kaynak kodunu** tarar (üç ucu da
+yakaladığı elle doğrulandı).
 
 ```
 Yeni RUN hattını uçtan uca doğrula ve eğitim öncesi zorunlu derin avı çalıştır.

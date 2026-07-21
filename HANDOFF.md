@@ -8,6 +8,67 @@ Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple S
 
 ---
 
+## ⚡🔍 2026-07-21 — P6: RUN hattı E2E doğrulama + eğitim-öncesi Kademe-2 av (TAMAMLANDI)
+
+Motor bağlama roadmap'i (P1–P6) **KAPANDI**. Bu paket doğrulama paketiydi:
+"çalışıyor" demeden önce kanıt aramak. **5 iddiadan 1'i yanlış çıktı, 1'i kısmen yanlış.**
+
+### ⛔ DURDUR koşan motoru KESMİYORDU (gerçek kusur — düzeltildi)
+`AutoDriver` motoru bloklayan `subprocess.run` ile doğuruyordu ve süreç tutamacı hiçbir
+yerde saklanmıyordu. STOP_ALL yalnız `storage/STOP_ALL` **bayrak dosyasını** yazıyordu →
+motor **30 dk zaman aşımına kadar koşup abonelik kotası yakmaya devam ediyordu**. Üstelik
+arayüz "durduruldu" deyip ⚡ tekrar-giriş kilidini açtığı için ÜSTÜNE ikinci motor
+doğurulabiliyordu — PR#122'nin kapattığı **"5 eşzamanlı spawn"** kazasının DURDUR
+yolundan geri dönüşü.
+
+Düzeltme (3 parça):
+- `app/orchestration/engine_procs.py` — canlı motor süreç kaydı (`run_id` başına).
+- `driver._default_runner` — `Popen` + yoklama döngüsü; STOP_ALL etkinleşince gerçekten
+  `terminate()`/`kill()`. Kesilen koşu `STOPPED_RC` → `drive()` `stopped=True` raporlar
+  ("av FAIL" demez; av koşmadı, kesildi).
+- `/api/supervisor/stop-all` — bayrakla BİRLİKTE `terminate_all()`; yanıtta
+  `engines_terminated` sayısı döner (sessiz "durduruldu" yok).
+
+### ⚠️ SÜR MODU HÂLÂ BAĞLI DEĞİL (kapatılmadı — görünür kılındı)
+`build_drive_command` **hiçbir spawn yolundan çağrılmıyor**. ⚡ RUN yalnız **av** modunu
+doğurur; av modu `--safe-mode` ile başlar ve o bayrak **MCP'yi de kapatır** → motor
+Achilles MCP araçlarını **GÖRMEZ**, veri hattını **İLERLETEMEZ**.
+👉 **"RUN → MCP araçları görünüyor → ajanlar sürülüyor" iddiası BUGÜN DOĞRU DEĞİL.**
+Duman testi bunu `≈ drive-mode-wiring` satırıyla açıkça uyarır. Sür modunu bağlamak
+**P7**'ye kaldı (bu paket doğrulama paketiydi; eksik özelliği sessizce "tamam"
+göstermektense görünür kılındı).
+
+### 🔍 Kademe-2 av — 3 onaylanan bulgu, hepsi AYNI SINIF
+Allow-list'te "okuma" etiketli ama **kalıcı YAZAN GET** uçları (üçü de çıkarıldı):
+
+| Uç | Ne yapıyordu |
+|----|--------------|
+| `GET /api/backtest/{id}/risk` | `rr_<id>` sabit anahtarıyla risk raporunu **EZİYORDU**; içerik motorun sorgu parametrelerinden türüyordu (drawdown uyarısını susturup pozisyonu şişirmek mümkündü) |
+| `GET /api/understanding-score` | `record=true` ile kalıcı snapshot + JSON yazıyordu |
+| `GET /api/sentinel/overview` | `run(persist=True)` ile her çağrıda geçmişe yazıyordu |
+
+**KÖK SEBEP (ders):** allow-list sözleşmesi **HTTP METODUNA** göre denetleniyordu —
+`test_yazma_metodlari_tamamen_elenir` yalnız POST/PUT/DELETE/PATCH'e bakıyordu, yan
+etkili GET sessizce geçiyordu. **"GET = salt-okuma" bu depoda YANLIŞ bir varsayımdır.**
+Sınıf-düzeyi kapı: `tests/test_mcp_allowlist_side_effects.py` handler **kaynak kodunu**
+tarar (üç ucu da yakaladığı elle doğrulandı). Yerine salt-okuma muadilleri eklendi
+(`/api/understanding-score/history`, `/api/sentinel/history`).
+
+### Duman testi genişletildi
+`uv run achilles orchestrate-smoke` artık İKİ bölüm: **runtime** (eskisi) +
+**⚡ RUN sözleşmeleri** (10 yoklama). `--skip-runtime` / `--skip-run-pipeline`.
+⛔ **Gerçek motor doğurmaz** (kota yakmaz): `live-spawn` bilinçli `skip` ve raporda
+"KANITLANMAZ" der.
+
+### ⚠️ Bu pakette KANITLANMAYANLAR (dürüstlük notu)
+- Gerçek `claude -p` spawn'ı **koşturulmadı** (kota koruması). MCP araçlarının canlı
+  görünürlüğü ve ajanların gerçekten sürülmesi **kanıtlanmadı**.
+- Kademe-2 avın 6 finder'ından **3'ü API hatasıyla düştü** (token sızıntısı, scope
+  izolasyonu, alt-süreç enjeksiyonu) ve **yeniden koşturuldu**; sonuçları için bu
+  bölümün altındaki nota bak.
+
+---
+
 ## 🔐 2026-07-21 — SCOPE İZOLASYONU: sürücü-motor ≠ insan yetkisi (PR #116 + #117)
 
 **Kapatılan zafiyet:** Achilles kendi `claude -p` motorunu doğuruyor ve bu motor insanla
