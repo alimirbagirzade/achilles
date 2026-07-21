@@ -382,3 +382,76 @@ def test_human_only_endpoints_hidden_from_openapi() -> None:
     # ...ama gizleme koruma DEĞİL: uç hâlâ var ve scope kapısı çalışıyor.
     token = driver_scope.mint(_RUN_ID)
     assert client.post(_CLEAR, headers=_driver_headers(token)).status_code == 403
+
+
+# ── Sür (drive) modu: MCP erişimli motorun açtığı iki delik ─────────────────────
+
+
+def test_driver_cannot_autodrive() -> None:
+    """Sürücü YENİ sürücü doğuramaz — özyinelemeli spawn + kota yakma kapalı.
+
+    Bu uç gerçek bir `claude -p` alt-süreci başlatır ve OpenAPI şemasındadır → sür
+    modunda motora MCP aracı olarak görünür. `human_only` olmasaydı motor kendi
+    kendini çoğaltabilirdi.
+    """
+    token = driver_scope.mint(_RUN_ID)
+    with patch("app.orchestration.driver.AutoDriver") as m_drv:
+        r = client.post(
+            f"/api/orchestration/autodrive/{_RUN_ID}",
+            json={"execute": True},
+            headers=_driver_headers(token),
+        )
+    assert r.status_code == 403
+    m_drv.assert_not_called()  # sürücüye HİÇ ulaşılmadı (404 kontrolünden bile önce)
+
+
+def test_require_auth_accepts_driver_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """api_token AYARLIYKEN sürücü token'ı KİMLİK olarak kabul edilir (401 değil).
+
+    Motorun ACHILLES_API_TOKEN'ı bilinçli boşaltılır; bu kapı yalnız insan sırrını
+    tanısaydı sür modu token'lı kurulumda tamamen çalışmazdı (her MCP çağrısı 401).
+    """
+    monkeypatch.setattr(security, "get_settings", lambda: _AyarlarSahte("gizli_insan"))
+    token = driver_scope.mint(_RUN_ID)
+    # salt-okuma bir uç: sürücü kimliğiyle GEÇMELİ (403/401 değil)
+    r = client.get("/api/orchestration/runs", headers=_driver_headers(token))
+    assert r.status_code == 200
+
+
+def test_require_auth_driver_token_is_identity_not_authority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """KRİTİK: sürücü token'ı auth'u geçer ama YETKİ VERMEZ — human_only yine 403.
+
+    Bu ayrım bozulursa, auth kapısını gevşetmek Kural 8'i de gevşetmiş olurdu.
+    """
+    monkeypatch.setattr(security, "get_settings", lambda: _AyarlarSahte("gizli_insan"))
+    token = driver_scope.mint(_RUN_ID)
+    with patch("app.training.detached_launch.launch") as m_launch:
+        r = client.post(
+            "/api/training/run",
+            json={"adapter_name": "x", "iterations": 3},
+            headers=_driver_headers(token),
+        )
+    assert r.status_code == 403  # 401 DEĞİL: kimlik tanındı, yetki reddedildi
+    m_launch.assert_not_called()
+
+
+def test_require_auth_still_rejects_tokenless(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Gevşetme yalnız sürücüye özgü: kimliksiz istek hâlâ 401."""
+    monkeypatch.setattr(security, "get_settings", lambda: _AyarlarSahte("gizli_insan"))
+    assert client.get("/api/orchestration/runs").status_code == 401
+
+
+def test_require_auth_rejects_bogus_driver_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Uydurma sürücü token'ı auth'u AÇMAZ (yoksa herkes 'sürücüyüm' derdi)."""
+    monkeypatch.setattr(security, "get_settings", lambda: _AyarlarSahte("gizli_insan"))
+    r = client.get("/api/orchestration/runs", headers=_driver_headers("uydurma_token"))
+    assert r.status_code == 401
+
+
+class _AyarlarSahte:
+    """`get_settings()` yerine geçen minimal sahte (yalnız api_token okunur)."""
+
+    def __init__(self, api_token: str) -> None:
+        self.api_token = api_token
