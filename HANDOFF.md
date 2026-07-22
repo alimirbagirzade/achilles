@@ -1,10 +1,36 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-07-22 (P8 — bağımsız verdict: motorun av "PASS"i artık dosya-sistemiyle teyit edilen yapısal kanıt ister) · Branch: `claude/p7-sur-mode-fixes-323262` · Repo: https://github.com/alimirbagirzade/achilles_
-_Açık PR: P8 (aşağıda). Veri hattı KAPALI (carding✅ RLM✅ curate✅ assemble✅). Dataset 2000 örnek, pretrain-gate **GO**. Sıradaki: LoRA eğitimi (Kural-8 kapılı, insan onayı bekliyor). Motor bağlama roadmap'i P1-P8 KAPANDI._
+_Son güncelleme: 2026-07-22 (P9 — okuma-kanıtı: av "PASS"i artık dosya-var-olma + İÇERİK-alıntısıyla bağımsız doğrulanır) · Branch: `claude/p9-fake-pass-closure-784123` · Repo: https://github.com/alimirbagirzade/achilles_
+_Açık PR: P9 (aşağıda). Veri hattı KAPALI (carding✅ RLM✅ curate✅ assemble✅). Dataset 2000 örnek, pretrain-gate **GO**. Sıradaki: LoRA eğitimi (Kural-8 kapılı, insan onayı bekliyor). Motor bağlama roadmap'i P1-P9 KAPANDI; kalan tek iş DOK (doküman senkronu, mekanik)._
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
+
+---
+
+## 🔒 2026-07-22 — P9: Gelişmiş sahte-PASS'i kapat (var-olma ≠ okundu)
+
+Branch `claude/p9-fake-pass-closure-784123`. P8'in bıraktığı dar boşluk kapatıldı.
+
+- **BOŞLUK (P8 denetimi):** `verdict_audit` motorun beyan ettiği "taranan dosyalar"ın depoda
+  VAR olduğunu teyit ediyordu ama OKUNDUĞUNU değil. Motor 5 GERÇEK var-olan dosya adını
+  (driver.py, engines.py…) **hiç okumadan** listeleyip PASS yazsa denetim GEÇERDİ.
+- **ÇÖZÜM — Seçenek A (deterministik okuma-kanıtı), P8'in ÜSTÜNE.** Motor artık her dosya için
+  `{path, line, quote}` verir (1-tabanlı satır no + o satırın BİREBİR metni). `verdict_audit`
+  dosyayı **bağımsızca** okuyup `lines[line-1].strip() == quote.strip()` doğrular; ≥5 FARKLI
+  dosya için geçerli kanıt şart. Uydurulamaz — belirli dosyanın güncel satır içeriği ancak
+  okuyarak bilinir. İçerik-hash'i reddedildi (safe-mode avında sha256 hesaplanamaz →
+  meşru avlar yanlış reddedilirdi); Seçenek B (ikinci LLM) reddedildi (kota).
+- **Jenerik-satır forgery savunması:** aynı alıntı-satırı + aynı dosya bir kez sayılır;
+  `MIN_QUOTE_LEN=12`; `line: true` (bool) kanıt sayılmaz.
+- **Kural-8 SIKILAŞTI:** P8 var-olma/alt-sistem/iç-tutarsızlık kapıları AYNEN ilk gate;
+  okuma-kanıtı en son+en sıkı gate. `test_listed_but_not_read_rejected` gelişmiş sahte-PASS'i yakalar.
+- **Denetim (rlm-security-reviewer):** PASS. 1 LOW/MEDIUM DoS sertleştirme DÜZELTİLDİ
+  (`MAX_PROOF_FILE_BYTES` + satır-satır okuma → büyük artefakt kanıt hedefi gösterilip denetim
+  belleği tüketilemez). Yol-geçişi/içerik-sızıntısı/tip-karışıklığı/ikili-dosya: temiz.
+- **⚠️ DÜRÜSTLÜK SINIRI:** okuma-kanıtı "hiç açmadan PASS" sınıfını kapatır, "açtı ama
+  düşünmedi" sınıfını değil (o, ikinci bağımsız LLM doğrulayıcı ister — bilinçli ertelendi).
+- **Kanıt:** tam test paketi yeşil (1755 passed, 4 skipped); ruff+mypy temiz.
 
 ---
 

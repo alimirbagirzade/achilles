@@ -110,13 +110,19 @@ def build_hunt_prompt(run: dict[str, Any]) -> str:
         "SON İKİ ÇIKTI (sırayla). ÖNCE tek satırda yapılandırılmış KANIT bloğu — çıktının "
         "verdict'ten hemen önceki bölümüne şu işaretçiyle bir JSON nesnesi yaz:\n"
         f"{verdict_audit.EVIDENCE_MARKER}\n"
-        '{"scanned_files": ["<depo köküne göreli, GERÇEKTEN Read ile okuduğun yol>", ...], '
+        '{"scanned_files": [{"path": "<depo köküne göreli yol>", "line": <1-tabanlı satır no>, '
+        '"quote": "<o satırın BİREBİR metni>"}, ...], '
         '"subsystems": ["<taradığın alt-sistem adı>", ...], '
         '"findings": [{"severity": "HIGH|BLOCKER|MEDIUM|LOW", "file": "<yol>", '
         '"summary": "<kısa>"}]}\n'
         f"KANIT KURALI: en az {verdict_audit.MIN_SCANNED_FILES} FARKLI ve depoda GERÇEKTEN "
         f"var olan dosya, en az {verdict_audit.MIN_SUBSYSTEMS} farklı alt-sistem listele. "
-        "Kanıt dosya sistemiyle bağımsız doğrulanır: uydurma/eksik yol ya da PASS derken "
+        "OKUMA-KANITI ZORUNLU: her dosya için Read çıktısındaki AYIRT EDİCİ bir satırın "
+        f"numarasını ve o satırın BİREBİR metnini (kırpılınca ≥{verdict_audit.MIN_QUOTE_LEN} "
+        "karakter) ver; her dosyada FARKLI bir satır seç (aynı jenerik satırı, ör. "
+        "'from __future__ import annotations', birden çok dosyaya kanıt olarak KULLANMA). "
+        "Denetim bu satırı dosyayı bağımsızca okuyup doğrular → dosyayı gerçekten okumadan "
+        "kanıt üretemezsin. Uydurma/eksik yol, yanlış satır alıntısı ya da PASS derken "
         "HIGH/BLOCKER bulgu listelemek verdict'i DÜŞÜRÜR. PASS ise 'findings' HIGH/BLOCKER "
         "içermemeli (boş ya da yalnız MEDIUM/LOW olabilir).\n"
         "\n"
