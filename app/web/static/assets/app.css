@@ -377,10 +377,40 @@ body {
 /* ---------- gruplar (üst navigasyon) ---------- */
 .groups {
   display: flex;
+  align-items: center;
   gap: 6px;
   padding: 10px 22px 0;
   background: var(--surface);
   overflow-x: auto;
+}
+/* Gelişmiş/gözlem grubu: varsayılan gizli, "⋯ gelişmiş" toggle ile açılır. */
+.group-advanced {
+  display: none;
+}
+.groups.show-advanced .group-advanced {
+  display: inline-block;
+}
+.group-toggle {
+  margin-left: auto;
+  background: none;
+  border: 1px dashed var(--border);
+  color: var(--ink-dim);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 5px 11px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+}
+.group-toggle:hover {
+  color: var(--ink);
+}
+.group-toggle[aria-expanded="true"] {
+  color: var(--ink);
+  border-style: solid;
 }
 .group-btn {
   background: none;
