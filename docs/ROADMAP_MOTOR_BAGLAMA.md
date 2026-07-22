@@ -616,9 +616,37 @@ KAPI: make format && make lint && make typecheck && make test → PR → merge.
 > motor MCP araçlarını görüyor. **Ama denetim P8'de dar bir boşluk ve dokümanlarda kayma
 > buldu.** İkisi de küçük; RUN akışını bloklamıyor.
 
-## P9 — Gelişmiş sahte-PASS'i kapat ⚠️ GÜVENLİK DERİNLİĞİ (opsiyonel ama Kural-8 için değerli)
+## P9 — Gelişmiş sahte-PASS'i kapat ✅ TAMAMLANDI (2026-07-22)
 
 **Şerit:** tek · **Bağımlılık:** P8 (merged) · **Paralel:** DOK ile aynı anda
+
+### Teslim özeti (kanıt: tam test paketi yeşil 1755 passed + rlm-security-reviewer PASS)
+
+Uygulanan tasarım: **Seçenek A (deterministik okuma-kanıtı)**. Seçenek B (ikinci LLM) reddedildi
+(kota + çevrimdışı test edilemez); ayrıca içerik-hash'i de reddedildi — `--safe-mode` avında
+motorun yalnız Read/Grep/Glob'u var, sha256 hesaplayamaz → meşru avlar YANLIŞ reddedilirdi.
+
+- **`verdict_audit.py` — OKUMA-KANITI katmanı (P8 var-olma kapısının ÜSTÜNE eklendi).** Motor artık
+  her "taranan dosya" için `{path, line, quote}` verir: 1-tabanlı satır no + o satırın BİREBİR
+  metni. Denetim dosyayı **bağımsızca** okuyup `lines[line-1].strip() == quote.strip()` doğrular.
+  En az `MIN_READ_PROVEN`(=5) FARKLI dosya için geçerli kanıt gerekir. Uydurulamaz çünkü belirli
+  bir dosyanın GÜNCEL durumundaki belirli satırın içeriği ancak o dosya okunarak bilinir.
+- **Jenerik-satır forgery savunması:** aynı alıntı-satırı ve aynı dosya bir kez sayılır
+  (`from __future__ import annotations`i 5 dosyaya kanıt diye tekrar kullanmak `read_proven_count=1`'e
+  düşer); `MIN_QUOTE_LEN=12` tek-karakterlik satırları eler; `line: true` (bool, int alt sınıfı) kanıt
+  sayılmaz.
+- **Kapı SIKILAŞTI, gevşemedi:** P8'in var-olma/alt-sistem/iç-tutarsızlık kapıları AYNEN ilk gate;
+  okuma-kanıtı en son ve en sıkı gate olarak eklendi. `driver.py:618` hâlâ `verdict.passed AND audit.ok`.
+- **rlm-security-reviewer denetimi:** PASS. 1 LOW/MEDIUM sertleştirme (DoS: büyük artefaktı
+  kanıt hedefi göstererek denetim belleğini tüketme) DÜZELTİLDİ → `MAX_PROOF_FILE_BYTES` sınırı +
+  satır-satır okuma (dosya belleğe alınmaz). Yol-geçişi/mutlak-yol, içerik sızıntısı, tip-karışıklığı,
+  ikili-dosya çökmesi: temiz.
+- **Dürüstlük sınırı (belgelendi):** okuma-kanıtı "hiç açmadan PASS" sınıfını kapatır; "açtı ama
+  düşünmedi" sınıfını değil — onu tam kapatmak ikinci bağımsız LLM doğrulayıcı gerektirir (ertelendi).
+
+---
+
+**(orijinal prompt — referans için korunur)**
 
 Denetimin bulduğu boşluk: P8 motorun "PASS"ini dosya sistemiyle teyit ediyor — motor
 UYDURMA dosya adı yazarsa yakalanıyor (test var). AMA motor 5 GERÇEK var-olan dosya adını
@@ -712,10 +740,9 @@ docs/ROADMAP_MOTOR_BAGLAMA.md dosyasını oku. FAZ 3'teki açık paketi (P9 ve/v
 İkisi paralel; bağımsızlar. Denetim kanıtları prompt'ların içinde dosya:satır ile yazılı.
 ```
 
-**Durum:** P1-P8 ✅ KAPANDI — ⚡ RUN gerçekten sür modunda doğuruyor, motor MCP araçlarını
-görüyor, doğrulama denetimiyle teyit edildi (2026-07-22). **Açık:** P9 (gelişmiş sahte-PASS
-güvenlik derinliği, opsiyonel) + DOK (doküman senkronu, mekanik). İkisi de RUN akışını
-bloklamıyor.
+**Durum:** P1-P9 ✅ KAPANDI — ⚡ RUN gerçekten sür modunda doğuruyor, motor MCP araçlarını
+görüyor; av verdict'i artık dosya-var-olma + OKUMA-KANITI ile bağımsız doğrulanıyor
+(2026-07-22). **Açık:** DOK (doküman senkronu, mekanik) — RUN akışını bloklamıyor.
 
 ## Kapsam dışı (bilinçli erteleme)
 

@@ -6,11 +6,14 @@ asla otomatik başlamaz) doğrulanır.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
+from app.orchestration import verdict_audit
 from app.orchestration.driver import (
+    _REPO_ROOT,
     AutoDriver,
     build_hunt_command,
     parse_hunt_verdict,
@@ -53,15 +56,38 @@ def driver(tmp_path: Path) -> AutoDriver:
     return AutoDriver(orchestrator=orch)
 
 
-# Gerçek bir avın üreteceği YAPILANDIRILMIŞ KANIT (P8): depoda GERÇEKTEN var olan dosyalar,
-# ≥2 alt-sistem. Bağımsız denetim (verdict_audit) bunu dosya sistemiyle teyit eder.
-_VALID_EVIDENCE = (
-    'ACHILLES_HUNT_EVIDENCE\n{"scanned_files": ['
-    '"app/orchestration/driver.py", "app/orchestration/engines.py", '
-    '"app/orchestration/orchestrator.py", "app/web/security.py", '
-    '"app/web/driver_scope.py"], '
-    '"subsystems": ["orchestration", "web"], "findings": []}\n'
-)
+# Gerçek bir avın üreteceği YAPILANDIRILMIŞ KANIT (P8 var-olma + P9 okuma-kanıtı): depoda
+# GERÇEKTEN var olan dosyalar, ≥2 alt-sistem, her dosya için o dosyadan BİREBİR alıntılanmış
+# ayırt edici bir satır. Bağımsız denetim (verdict_audit) bunu dosya sistemiyle teyit eder.
+# Kanıt gerçek depo dosyalarından ÇALIŞMA ANINDA türetilir → satır numaraları değişse de sağlam.
+_HUNT_FILES = [
+    "app/orchestration/driver.py",
+    "app/orchestration/engines.py",
+    "app/orchestration/orchestrator.py",
+    "app/web/security.py",
+    "app/web/driver_scope.py",
+]
+
+
+def _distinctive_proof(rel: str, used: set[str]) -> dict:
+    """Gerçek depo dosyasından, henüz kullanılmamış ayırt edici bir satır + numarasını al."""
+    lines = (_REPO_ROOT / rel).read_text(encoding="utf-8").splitlines()
+    for i, ln in enumerate(lines, start=1):
+        s = ln.strip()
+        if len(s) >= verdict_audit.MIN_QUOTE_LEN and s not in used:
+            used.add(s)
+            return {"path": rel, "line": i, "quote": ln}
+    raise AssertionError(f"{rel}: ayırt edici satır bulunamadı")
+
+
+def _build_valid_evidence() -> str:
+    used: set[str] = set()
+    scanned = [_distinctive_proof(rel, used) for rel in _HUNT_FILES]
+    payload = {"scanned_files": scanned, "subsystems": ["orchestration", "web"], "findings": []}
+    return f"ACHILLES_HUNT_EVIDENCE\n{json.dumps(payload, ensure_ascii=False)}\n"
+
+
+_VALID_EVIDENCE = _build_valid_evidence()
 
 
 def _fake_pass(
