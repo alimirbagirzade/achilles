@@ -25,7 +25,10 @@ Bu dosya **iki işlevi** birden görür:
 `cosine-warmup` · `weight-decay` · `gradient-clipping` · `replay/rehearsal` ·
 `n-gram-repetition-detection` · `assistant_only_loss` · `KL-regularized-SFT` (`kl_reg_beta`,
 entegre edildi Tur 3) · `LoRA-GA` (native durum doğrulandı Tur 3 — entegre EDİLMEDİ, aşağıda) ·
-`MiCA` (PEFT-native init, incelendi Tur 3 — entegre edilmedi)
+`MiCA` (PEFT-native init, incelendi Tur 3 — entegre edilmedi) ·
+`intruder-dimension-reduction` (`reduce_intruder_dimension`, PEFT 0.19.0 native, doğrulandı
+Günlük 2026-07-22 — **eğitim-SONRASI** forgetting-onarım aracı, entegrasyon weekly-deep'e
+havale edildi, aşağıda)
 
 ## Elenen adaylar (dedup anahtarı — yeniden derin-araştırma YOK)
 
@@ -63,6 +66,108 @@ edildi ama replay/corpus-karışım kısmı ayrı veri hattı gerektirdiğinden 
 - huggingface.co/docs/peft/main/en/developer_guides/lora (MiCA init stratejisi — Tur 3 incelendi)
 - github.com/BY571/sft-kl-lora-trainer (community örnek: TRL SFTTrainer + LoRA-base KL loss —
   arXiv 2512.22337 yaklaşımının pratik uygulanabilirliğini doğrulayan bağımsız referans)
+- **arXiv 2410.21228** (Shuttleworth ve ark. — "LoRA vs Full Fine-tuning: An Illusion of
+  Equivalence") — "intruder dimension" kavramının kaynağı; Günlük 2026-07-22'de bulundu
+- github.com/huggingface/peft/releases/tag/v0.19.0 (9 yeni PEFT metodu + `reduce_intruder_dimension`
+  duyurusu) · huggingface.co/docs/peft/main/en/developer_guides/lora (`peft.tuners.lora.intruders.
+  reduce_intruder_dimension` API dokümantasyonu, kullanım örneği) — Günlük 2026-07-22
+
+---
+
+## Günlük tarama — 2026-07-22 (daily-light)
+
+**Tetikleyici:** Otonom `lora-arastirma` ajanı (daily-light modu). `docs/PROTOKOL_LORA_ARASTIRMA.md`
+§7 "daily-light" akışı doğrudan uygulandı. Not: bir önceki günlük tarama girdisi 2026-07-02
+tarihli (Tur 3 2026-07-03'ten sonra ~19 gün boyunca günlük tarama loglanmamış) — bu turda yalnız
+bugünkü tarama yapıldı, geriye dönük telafi denenmedi. CLAUDE.md Kural 2/7/8'e uyuldu; eğitim
+BAŞLATILMADI.
+
+**Yöntem:** Hafif tarama (tam sweep DEĞİL) — WebSearch: (a) arXiv LoRA/SFT catastrophic-forgetting
+son gelişmeler, (b) PEFT GitHub release notları/changelog, (c) Unsloth blog 2026 güncellemeleri.
+Öne çıkan aday, adversarial doğrulama için WebFetch ile birincil kaynaklara (GitHub release
+sayfası, PEFT docs, arXiv paper sayfası) gidildi + **yerelde kurulu PEFT 0.19.1 üzerinde canlı
+`import` testiyle** doğrulandı (`.venv\Scripts\python.exe -c "from peft.tuners.lora.intruders
+import reduce_intruder_dimension; ..."` — başarılı, fonksiyon imzası ve docstring doğrulandı).
+
+**Sonuç: 1 YENİ, doğrulanmış, PEFT-native, v5'e DOĞRUDAN ilgili aday bulundu → bu turda kod
+entegrasyonu YAPILMADI (kapsam-dışı; weekly-deep'e havale), yalnız doküman/log güncellendi →
+`main`'e push (kod dokunulmadı).**
+
+### Öne çıkan aday: `reduce_intruder_dimension` (PEFT 0.19.0, eğitim-SONRASI onarım aracı)
+
+- **Kaynak:** arXiv 2410.21228 (Shuttleworth, Andreas, Torralba, Sordoni — "LoRA vs Full
+  Fine-tuning: An Illusion of Equivalence"), PEFT native uygulaması `v0.19.0`'da (14 Nisan 2026)
+  eklendi, `v0.19.1`'de (yerelde kurulu sürüm) mevcut. `github.com/huggingface/peft/releases/tag/v0.19.0`
+  + `huggingface.co/docs/peft/main/en/developer_guides/lora` ile WebFetch doğrulandı; ayrıca
+  yerel `.venv` üzerinde canlı import ile teyit edildi (varsayım/tahmin değil).
+- **Makale bulgusu:** LoRA ince-ayarı, base modelin önceden-eğitilmiş singular vektörleriyle
+  düşük kosinüs-benzerliğine sahip "intruder dimension" adlı yeni tekil-vektörler yaratıyor; bu
+  boyutların sayısı ile pretraining-dağılımındaki forgetting arasında güçlü korelasyon var
+  (Spearman ρ=0.971). Bulgular LLaMA2-7B/LLaMA-7B/RoBERTa-base üzerinde + AdaLoRA/LoRA+/PiSSA/VeRA
+  gibi çoklu LoRA varyantında genelliyor (yalnız vanilya-LoRA'ya özgü değil).
+  Sequential/continual LoRA senaryolarında intruder boyutları birikip performansı hızla bozuyor.
+- **Fonksiyon:** `peft.tuners.lora.intruders.reduce_intruder_dimension(peft_model,
+  old_adapter_name="default", new_adapter_name="intruder_reduced", top_k=10,
+  threshold_epsilon=0.5, mitigation_lambda=0.75, logging_sink=print)` — zaten eğitilmiş bir LoRA
+  adaptörünü post-process eder; orijinal adaptörün YANINA yeni bir adaptör oluşturur (orijinali
+  bozmaz, `set_adapter(old_adapter_name)` ile geri dönülebilir). `mitigation_lambda` görev-doğruluğu
+  ↔ forgetting-azaltma arasında ödünleşim sağlar. **Yalnız LoRA destekleniyor** (karışık
+  adaptör tipleri desteklenmiyor).
+- **v5 bağlantısı — DİĞER kayıttaki tekniklerden NİTELİK FARKI:** Şimdiye kadar defterdeki tüm
+  entegre/aday teknikler (NEFTune, KL-reg, assistant_only_loss vb.) **eğitim-ZAMANI** hiperparametreleri;
+  yeniden eğitim gerektirir. `reduce_intruder_dimension` ise **eğitim-SONRASI** bir onarım aracı —
+  teorik olarak zaten var olan v5'in degenere/disiplin-bozuk adaptörüne DOĞRUDAN uygulanıp
+  yeniden-eğitim YAPMADAN forgetting'i azaltıp azaltmadığı test edilebilir. Bu, v5 regresyonuna
+  (`memory/v5-adapter-regression`) potansiyel en hızlı/ucuz müdahale yolu olabilir.
+- **GGUF-güvenlik ön-değerlendirmesi:** Fonksiyon yalnız LoRA delta-ağırlıkları üzerinde çalışıyor
+  (base model ağırlıklarını değiştirmiyor, embed/lm_head'e dokunmuyor); çıktısı yine standart bir
+  LoRA adaptörü — mimari/GGUF-dönüştürme sözleşmesini bozmamalı. **Bu ön-değerlendirmedir,
+  adversarial doğrulama YAPILMADI** (Kural 2/7 gereği "GGUF-güvenli" iddiası weekly-deep'te
+  gerçek adaptör üzerinde teyit edilmeden kesinleşmiş sayılmaz).
+- **Bu turda ENTEGRE EDİLMEDİ (kapsam-dışı, weekly-deep'e havale edildi) — gerekçe:** (1)
+  daily-light protokolü yalnız tarama+dedup öngörüyor, tam entegrasyon weekly-deep işi; (2) bu
+  bir eğitim-öncesi reçete parametresi değil, ayrı bir CLI/script akışı (mevcut
+  `PeftTrainConfig`/`build_lora_kwargs` builder desenine uymuyor — `adapter_eval.py` veya yeni bir
+  `app/training/adapter_repair.py` gibi post-hoc bir giriş noktası gerektirir) — tasarım kararı
+  ister; (3) gerçek v5 adaptörü üzerinde denenip `adapter_eval` ile ÖLÇÜLMEDEN "işe yarıyor"
+  denemez (Kural 2).
+- **Önerilen sıradaki adım (weekly-deep veya insan-gözetimli seans için not):** `app/training/
+  adapter_eval.py`'a opt-in bir CLI/fonksiyon eklenip mevcut v5 adaptörüne (offline, eğitim
+  BAŞLATMADAN) uygulanabilir; `adapter_eval` gate'iyle öncesi/sonrası karşılaştırılabilir. Bu,
+  Kural 8'i ihlal ETMEZ (eğitim değil, mevcut adaptörün post-processing'i) ama yine de "test
+  edilmeden daha iyi deme" (Kural 2) geçerli — sonuç ölçülmeden terfi önerilmeyecek.
+
+**Diğer PEFT v0.19.0 yeni metodları (hafif not, derin değerlendirme YAPILMADI → weekly-deep'e
+ertelendi):**
+
+| Yeni yöntem (PEFT 0.19.0) | Durum |
+|---|---|
+| `GraLoRA` (Granular LoRA, blok-altbölümleme) | ⏭️ ERTELENDİ — ifade edici güç artışı, forgetting'e özgü değil |
+| `PSOFT` (Principal Subspace Orthogonal FT) | ⏭️ ERTELENDİ — OFT ailesi, önceki "Beyond LoRA" değerlendirmesiyle benzer olabilir, teyit gerek |
+| `Cartridges` (bağlam sıkıştırma prefix) | ❌ İLGİSİZ — RAG/uzun-bağlam odaklı, LoRA fine-tuning kalitesiyle ilgisiz |
+| `PEANuT`, `TinyLoRA`, `AdaMSS`, `PVeRA` | ⏭️ ERTELENDİ — ilk bakışta v5-forgetting'e doğrudan bağlantı görünmüyor |
+| `BD-LoRA` | ✅ ZATEN ELENDİ (`BDLoRA` dedup'ta mevcut) |
+| `Lily` | 🟡 DURUM-DEĞİŞİKLİĞİ OLASI — önceden "image-gen odaklı" elenmişti (HF blog); PEFT 0.19.0
+resmi açıklaması "Low-Rank Interconnected Adaptation across Layers" (genel LoRA varyantı) diyor,
+image-gen sınırlaması görünmüyor → weekly-deep'te yeniden teyit edilmeli, bu turda dedup
+değiştirilmedi |
+| `LoRA-GA` init iyileştirmesi (v0.19.0 changelog notu) | ✅ ZATEN KAPSANIYOR — Tur 3'te native-durum zaten doğrulanmış/elenmiş |
+
+**NOT (Kural 2):** Hiçbir reçete/kod değişikliği yapılmadı. `reduce_intruder_dimension` güçlü bir
+adaydır ama gerçek adaptör üzerinde ölçülmeden "v5'i düzeltir" DENMEDİ — yalnız hipotez + kaynak.
+**NOT (Kural 7):** Yalnız WebFetch ile doğrulanmış + yerel canlı import ile teyit edilmiş kaynak
+loglandı; ikincil arama sonuçlarında görülen bazı düşük-güvenilirlikli/muhtemelen-üretilmiş
+blog kaynakları (ör. "Microsoft LoRA+ dinamik rank" iddiası — brics-econ.org, thecodeforge.io,
+spheron.network gibi SEO-içerik siteleri) **KULLANILMADI** — tutarsız/doğrulanamayan iddialar
+(bilinen LoRA+ Microsoft ürünü değildir, orijinal kaynağı farklıdır) içerdiğinden reddedildi.
+
+### Kaynaklar (Günlük tarama 2026-07-22)
+
+| Teknik / Konu | Kaynak |
+|---|---|
+| `reduce_intruder_dimension` (ENTEGRASYON BEKLİYOR) | arXiv 2410.21228 · github.com/huggingface/peft/releases/tag/v0.19.0 · huggingface.co/docs/peft/main/en/developer_guides/lora · yerel `.venv` canlı import testi |
+| PEFT v0.19.0 diğer 8 yeni yöntem (hafif tarandı) | github.com/huggingface/peft/releases/tag/v0.19.0 |
+| Unsloth 2026 güncellemeleri (MoE/embedding/RL — v5-ilgisiz, not amaçlı) | unslothai.substack.com/p/unsloth-2026-update-faster-moe |
 
 ---
 
