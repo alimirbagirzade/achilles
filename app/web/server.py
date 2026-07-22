@@ -1494,20 +1494,42 @@ def api_training_logs(lines: int = 40) -> dict:
     return {"lines": parts[-n:]}
 
 
+@app.post("/api/training/stream-ticket", dependencies=[api_auth])
+def api_training_stream_ticket() -> dict:
+    """SSE için KISA ömürlü, TEK-kullanımlık bilet üret (insan normal auth ile alır).
+
+    EventSource özel başlık gönderemediği için SSE ucu kimliği query'den almak zorundadır;
+    ama İNSAN api_token'ının query'ye (log/proxy/geçmiş, TTL'siz) düşmesi kalıcı sır
+    sızıntısıdır. Bunun yerine burada normal ``api_auth`` ile bir bilet alınır ve EventSource
+    yalnız o bileti taşır (bkz. app/web/sse_tickets.py). Token boş (yerel mod) olsa da bilet
+    üretilir; stream ucu token boşken bileti zorunlu tutmaz.
+    """
+    from app.web import sse_tickets
+
+    return {"ticket": sse_tickets.mint(), "ttl_s": sse_tickets.DEFAULT_TTL_S}
+
+
 @app.get("/api/training/stream")
 async def api_training_stream(request: Request) -> Response:
     import json
-    import secrets as _secrets
 
     from fastapi import HTTPException as _HTTPException
     from fastapi.responses import StreamingResponse
 
-    # EventSource özel başlık gönderemez → token query param ile doğrulanır.
+    # ⛔ İNSAN api_token'ı ARTIK query'den KABUL EDİLMEZ (P7 — kalıcı sır sızıntısıydı).
+    # EventSource başlık gönderemediği için KISA ömürlü, TEK-kullanımlık bilet kullanılır:
+    # insan `/api/training/stream-ticket`'tan normal auth ile alır, burada query'de taşır.
+    # Bilet loglara düşse de saniyeler içinde ölür ve ikinci kez kullanılamaz.
     _tok = get_settings().api_token.strip()
     if _tok:
-        _provided = (request.query_params.get("token") or "").strip()
-        if not _secrets.compare_digest(_provided.encode("utf-8"), _tok.encode("utf-8")):
-            raise _HTTPException(status_code=401, detail="Geçersiz veya eksik API token.")
+        from app.web import sse_tickets
+
+        _ticket = (request.query_params.get("ticket") or "").strip()
+        if not sse_tickets.consume(_ticket):
+            raise _HTTPException(
+                status_code=401,
+                detail="Geçersiz, süresi dolmuş veya kullanılmış SSE bileti.",
+            )
 
     from app.web.training_manager import get_training_manager
 

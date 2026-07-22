@@ -1208,10 +1208,7 @@
     el.scrollTop = el.scrollHeight;
   }
 
-  function startSSE() {
-    if (_trainESS) { _trainESS.close(); _trainESS = null; }
-    var tok = getToken();
-    var url = "/api/training/stream" + (tok ? "?token=" + encodeURIComponent(tok) : "");
+  function openTrainStream(url) {
     _trainESS = new EventSource(url);
     _trainESS.onmessage = function (e) {
       try {
@@ -1226,8 +1223,25 @@
       } catch (_) {}
     };
     _trainESS.onerror = function () {
+      // Bilet TEK kullanımlık → EventSource oto-yeniden bağlanamaz; kapat (yeni startSSE
+      // taze bilet alır). İnsan api_token'ı artık query'ye KONMAZ (P7).
       if (_trainESS) { _trainESS.close(); _trainESS = null; }
     };
+  }
+
+  function startSSE() {
+    if (_trainESS) { _trainESS.close(); _trainESS = null; }
+    // İNSAN api_token'ı ARTIK query'ye konmaz (log/proxy/geçmiş sızıntısı — P7). Yerine
+    // KISA ömürlü, TEK-kullanımlık bilet: normal auth ile al, EventSource'a query'de ver.
+    api("/training/stream-ticket", { method: "POST" })
+      .then(function (d) {
+        var q = d && d.ticket ? "?ticket=" + encodeURIComponent(d.ticket) : "";
+        openTrainStream("/api/training/stream" + q);
+      })
+      .catch(function () {
+        // Bilet alınamadı (ör. token gerekli ama SİSTEM sekmesinde girilmemiş) → sessizce
+        // vazgeç; loadTrainingStatus() zaten polling ile ilerlemeyi gösterir.
+      });
   }
 
   var startTrainBtn = document.getElementById("startTrainBtn");
@@ -3914,15 +3928,18 @@
     }
     if (
       !window.confirm(
-        "Otonom sürüş: deep-hunt aşamasını abonelikli `claude -p` ile çalıştıracak " +
-          "(dakikalar sürebilir). Gerçek eğitim yine onay bekler (Kural 8). Başlatılsın mı?"
+        "Otonom AV: deep-hunt aşamasını (zorunlu Kademe-2 derin av, salt rapor) abonelikli " +
+          "`claude -p` ile çalıştıracak (dakikalar sürebilir). Gerçek eğitim yine onay bekler " +
+          "(Kural 8). Başlatılsın mı?"
       )
     )
       return;
+    // ⚠️ Bu buton AV (hunt) tetikleyicisidir — zorunlu Kademe-2 derin avı sürer (MCP KAPALI,
+    // salt rapor). ⚡ RUN (15·AJAN HARİTASI) ise SÜR (drive) modunu doğurur (MCP'li veri hattı).
     api("/orchestration/autodrive/" + encodeURIComponent(orcCurrentRun), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ execute: true }),
+      body: JSON.stringify({ execute: true, mode: "hunt" }),
     })
       .then(function (d) {
         if (d.status === "autodrive_started") {
@@ -5095,7 +5112,8 @@
       .then(function (r) {
         if (r.go && r.d && r.d.status === "autodrive_started") {
           amShowDryRun("");
-          amSetLive(true, eng.label + " sürüyor — derin av devrede (onay kapısında duracak).");
+          amSetLive(true, eng.label + " sürüyor — veri hattı MCP ile ilerletiliyor "
+            + "(eğitim onay kapısında duracak).");
           toast("⚡ Ana ajan devrede — ajanlar aydınlanıyor (timeline: 12·ORKESTRASYON).");
         } else if (r.d && r.d.command) {
           amShowDryRun(Array.isArray(r.d.command) ? r.d.command.join(" ") : r.d.command);

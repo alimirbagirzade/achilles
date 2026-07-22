@@ -19,11 +19,13 @@ sürecidir (kendi ürettiğimiz, kendi kestiğimiz).
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -330,27 +332,37 @@ class RunPipelineSmoke:
 
         Bu ayrım kritiktir: av modu `--safe-mode` ile doğar ve o bayrak MCP sunucularını
         da KAPATIR. Yani av motoru Achilles MCP araçlarını GÖREMEZ — veri hattını
-        ilerletemez, yalnız rapor üretir. "RUN → ajanlar sürülüyor" iddiası ancak
-        `build_drive_command` bir spawn yolundan çağrılıyorsa doğrudur.
+        ilerletemez, yalnız rapor üretir. "RUN → ajanlar sürülüyor" iddiası ancak (a)
+        AutoDriver'ın sür yolu `build_drive_command`'i çağırıyor VE (b) ⚡ RUN ucu
+        varsayılan olarak sür moduna gidiyorsa doğrudur (P7).
         """
         import inspect
 
         from app.orchestration import driver
+        from app.web.orchestration_routes import OrchestrationAutodriveRequest
 
         kaynak = inspect.getsource(driver.AutoDriver)
-        if "build_drive_command" in kaynak:
+        sur_yolu_var = "build_drive_command" in kaynak and hasattr(
+            driver.AutoDriver, "_drive_pipeline"
+        )
+        try:
+            uc_varsayilani = OrchestrationAutodriveRequest().mode
+        except Exception:  # pragma: no cover - model kurulamıyorsa yoklama patlar
+            uc_varsayilani = "?"
+        if sur_yolu_var and uc_varsayilani == "drive":
             return RunCheck(
-                "drive-mode-wiring", "pass", "AutoDriver sür (MCP'li) modunu doğuruyor."
+                "drive-mode-wiring",
+                "pass",
+                "AutoDriver sür (MCP'li) modunu doğuruyor ve ⚡ RUN ucu varsayılan 'drive'.",
             )
         return RunCheck(
             "drive-mode-wiring",
             "warn",
             (
-                "SÜR MODU BAĞLI DEĞİL: `build_drive_command` hiçbir spawn yolundan "
-                "çağrılmıyor — AutoDriver yalnız AV modunu doğuruyor. Av motoru "
-                "`--safe-mode` ile başlar ve bu bayrak MCP'yi de KAPATIR → motor "
-                "Achilles MCP araçlarını GÖRMEZ ve veri hattını İLERLETEMEZ. "
-                "⚡ RUN bugün 'derin av + onay kapısı' sürer, 'ajanları sürme' DEĞİL."
+                "SÜR MODU TAM BAĞLI DEĞİL "
+                f"(sür_yolu={sur_yolu_var}, uç_varsayılan={uc_varsayilani!r}). "
+                "Av motoru `--safe-mode` ile başlar ve bu bayrak MCP'yi de KAPATIR → motor "
+                "Achilles MCP araçlarını GÖRMEZ ve veri hattını İLERLETEMEZ."
             ),
         )
 
@@ -365,11 +377,142 @@ class RunPipelineSmoke:
             (
                 f"Gerçek motor spawn'ı YOKLANMADI (motor kurulu={kurulu}). Duman testi kota "
                 "yakmaz: PR#122 doğrulamasında kazara 5 `claude -p` süreci doğmuştu. "
-                "MCP araçlarının canlı görünürlüğü ve ajanların gerçekten sürülmesi bu "
-                "komutla KANITLANMAZ — elle `achilles orchestrate-autodrive --execute` ile "
-                "denetimli koşulmalıdır."
+                "MCP araçlarının canlı görünürlüğü bu komutla KANITLANMAZ — elle, kapılı "
+                "`achilles orchestrate-drive-live --allow-live-spawn` ile denetimli koşulur."
             ),
         )
+
+
+# ── ELLE TETİKLENEN TEK canlı sür duman adımı (varsayılan KAPALI — kota yakar) ──────────
+# ⚠️ Bu, otomatik duman testinin PARÇASI DEĞİLDİR ve CI'da ASLA koşmaz. Kullanıcı bir kez
+# elle çalıştırıp "sür motoru gerçekten MCP araçlarını görüyor mu" kanıtını görür. Gerçek
+# `claude -p` doğurur → abonelik kotası yakar; bu yüzden açık `--allow-live-spawn` şarttır.
+_LIVE_PROBE_PROMPT = (
+    "Sen bir Achilles SÜR-MODU DUMAN TEST ajanısın. YALNIZ şunları yap, BAŞKA HİÇBİR ŞEY: "
+    "(1) sana MCP üzerinden sunulan Achilles araçlarını (adları `mcp__` ile başlar) say ve "
+    "adlarını yaz; (2) salt-okuma `mcp__achilles__*status*` benzeri bir durum aracını BİR kez "
+    "çağırıp döndüğünü doğrula. EĞİTİM BAŞLATMA, ONAY VERME, DOSYAYA YAZMA. Çıktının SON "
+    "SATIRI tam olarak şu olmalı:\n"
+    "ACHILLES_DRIVE_VERDICT: PASS   (en az bir mcp__ aracı gördüysen)\n"
+    "ACHILLES_DRIVE_VERDICT: FAIL   (hiç MCP aracı görünmüyorsa)"
+)
+
+
+class LiveDriveSmoke:
+    """Kapılı, elle tetiklenen canlı sür duman adımı — TEK motor doğurur, sonra biter.
+
+    Kanıtladığı: (a) sür (drive) argv'siyle doğan motor Achilles MCP araçlarını GERÇEKTEN
+    görüyor (çıktıda `mcp__` + ``ACHILLES_DRIVE_VERDICT: PASS``); (b) motor süreci
+    ``engine_procs``'a KAYITLI doğar → ⛔ DURDUR onu kesebilir (kesme mekanizması otomatik
+    smoke'un ``stop-kills-engine`` yoklamasıyla ayrıca kanıtlanır). ``runner``/``web_check``
+    enjekte edilebilir → gerçek spawn olmadan test edilebilir.
+    """
+
+    def run(
+        self,
+        *,
+        allow_live_spawn: bool = False,
+        runner: Any = None,
+        web_check: Any = None,
+        timeout_s: int = 240,
+    ) -> RunSmokeResult:
+        checks: list[RunCheck] = []
+        if not allow_live_spawn:
+            checks.append(
+                RunCheck(
+                    "live-drive",
+                    "skip",
+                    "Kapılı: gerçek motor doğurmak (kota yakar) için --allow-live-spawn ver.",
+                )
+            )
+            return RunSmokeResult("skip", "Canlı sür adımı KAPALI (varsayılan).", checks)
+
+        from app.orchestration import driver, engines
+        from app.orchestration.orchestrator import TrainingOrchestrator
+        from app.web import driver_scope
+
+        eng = engines.DEFAULT_ENGINE
+        # 1) Motor kurulu mu (gerçek spawn öncesi temiz kapı).
+        if runner is None and not engines.available(eng):
+            checks.append(
+                RunCheck(
+                    "live-drive", "fail", f"`{eng}` CLI PATH'te yok — kurulu değil, spawn yok."
+                )
+            )
+            return RunSmokeResult("fail", "Motor kurulu değil.", checks)
+
+        # 2) Web sunucusu erişilebilir mi? MCP proxy'si ona bağlanır; kapalıysa MCP çağrıları
+        #    başarısız olur → yanıltıcı FAIL yerine anlamlı skip.
+        reachable = web_check() if web_check is not None else self._web_reachable()
+        if not reachable:
+            checks.append(
+                RunCheck(
+                    "live-drive",
+                    "skip",
+                    "Web sunucusu (ACHILLES_WEB_URL) erişilemedi — önce `uv run achilles-web` "
+                    "başlat; MCP araçları çalışan web'e proxy'lenir.",
+                )
+            )
+            return RunSmokeResult("skip", "Web sunucusu kapalı — canlı adım atlandı.", checks)
+
+        # 3) Tek koşuluk throwaway run + MCP config + sür argv'si (özel MİNİMAL probe promptu).
+        orch = TrainingOrchestrator()
+        run_id = orch.store.create_run(
+            model="live-drive-smoke",
+            profile="discipline_safe",
+            adapter_name="live_smoke",
+            params={},
+        )
+        mcp_path = driver.drive_mcp_config_path(run_id)
+        driver.write_mcp_config(mcp_path)
+        command = engines.build_drive_command(eng, _LIVE_PROBE_PROMPT, mcp_path)
+
+        run_fn = runner or __import__("functools").partial(driver._default_runner, run_id=run_id)
+        token = driver_scope.mint(run_id, ttl_s=driver.DRIVE_TOKEN_TTL_S)
+        try:
+            _rc, output = run_fn(command, timeout_s, driver.build_child_env(token, run_id))
+        except Exception as exc:  # canlı adım; hata KUSUR olarak raporlanır
+            checks.append(RunCheck("live-drive", "fail", f"Sür motoru çalıştırılamadı: {exc}"))
+            return RunSmokeResult("fail", "Canlı sür spawn'ı patladı.", checks)
+        finally:
+            driver_scope.revoke_run(run_id)
+            with contextlib.suppress(OSError):
+                Path(mcp_path).unlink(missing_ok=True)
+
+        gordu_mcp = "mcp__" in (output or "")
+        verdict = driver.parse_drive_verdict(output or "")
+        kuyruk = (output or "")[-400:]
+        if gordu_mcp and verdict["passed"]:
+            checks.append(
+                RunCheck(
+                    "live-drive",
+                    "pass",
+                    f"Sür motoru MCP araçlarını GÖRDÜ ve PASS verdi. Çıktı kuyruğu: {kuyruk!r}",
+                )
+            )
+            return RunSmokeResult("pass", "Canlı sür: MCP araçları görünür.", checks)
+        checks.append(
+            RunCheck(
+                "live-drive",
+                "fail",
+                f"MCP görünürlüğü KANITLANAMADI (mcp__ var mı={gordu_mcp}, "
+                f"verdict={verdict['verdict']}). Çıktı kuyruğu: {kuyruk!r}",
+            )
+        )
+        return RunSmokeResult("fail", "Canlı sür: MCP araçları görünmedi.", checks)
+
+    @staticmethod
+    def _web_reachable() -> bool:
+        """ACHILLES_WEB_URL/api/healthz'e kısa bir GET dene (spawn öncesi ucuz kontrol)."""
+        import os
+        import urllib.request
+
+        base = os.environ.get("ACHILLES_WEB_URL", "http://127.0.0.1:8765").rstrip("/")
+        try:
+            with urllib.request.urlopen(f"{base}/api/healthz", timeout=3) as resp:
+                return 200 <= resp.status < 500
+        except Exception:
+            return False
 
 
 class _FakeRequest:

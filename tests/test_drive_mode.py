@@ -273,3 +273,130 @@ def test_mcp_proxy_insan_tokenini_gondermez() -> None:
     mod = _mcp_modulu()
     h = mod.driver_headers({"ACHILLES_API_TOKEN": "insan_sirri"})
     assert h == {}
+
+
+# ── SORUN 1: sür modu artık drive() spawn yoluna BAĞLI (ölü kod değil) ──────────────────
+
+
+def _orch(tmp_path: Path):
+    from app.orchestration.orchestrator import TrainingOrchestrator
+    from app.orchestration.store import OrchestrationStore
+
+    return TrainingOrchestrator(store=OrchestrationStore(db_path=tmp_path / "drv.db"))
+
+
+def test_drive_modu_sur_argvsi_kurar_av_degil(tmp_path: Path) -> None:
+    """drive(mode="drive") SÜR argv'sini kurar: --mcp-config VAR, --safe-mode YOK."""
+    from app.orchestration.driver import DRIVE_TIMEOUT_S, AutoDriver
+
+    yakalanan: dict[str, object] = {}
+
+    def sahte_runner(command, timeout, env=None):
+        yakalanan["command"] = command
+        yakalanan["timeout"] = timeout
+        return 0, "iş bitti\nACHILLES_DRIVE_VERDICT: PASS\n"
+
+    d = AutoDriver(orchestrator=_orch(tmp_path))
+    run_id = d.orch.start(model="m", profile="p", adapter_name="a")
+    res = d.drive(run_id, execute=True, mode="drive", runner=sahte_runner)
+
+    assert res["ok"] is True and res["mode"] == "drive" and res["drive_passed"] is True
+    cmd = yakalanan["command"]
+    assert "--mcp-config" in cmd, "sür argv'si MCP config geçirmeli"
+    assert "--safe-mode" not in cmd, "sür modunda --safe-mode MCP'yi kapatır"
+    # Sür timeout'u AV'dan AYRI sabittir (SORUN 2 gerekçesiyle uzun).
+    assert yakalanan["timeout"] == DRIVE_TIMEOUT_S
+
+
+def test_drive_pass_hunt_acki_acmaz(tmp_path: Path) -> None:
+    """KRİTİK (Kural 8): sür PASS'i hunt_ack YAZMAZ → zorunlu av kapısı bağımsız kalır."""
+    from app.orchestration.driver import AutoDriver
+
+    def sahte_pass(command, timeout, env=None):
+        return 0, "ilerletildi\nACHILLES_DRIVE_VERDICT: PASS\n"
+
+    d = AutoDriver(orchestrator=_orch(tmp_path))
+    run_id = d.orch.start(model="m", profile="p", adapter_name="a")
+    d.drive(run_id, execute=True, mode="drive", runner=sahte_pass)
+
+    run = d.orch.store.get_run(run_id)
+    params = run.get("params") or {}
+    assert params.get("hunt_ack") is not True, "sür PASS'i av kapısını AÇMAMALI"
+
+
+def test_drive_dry_run_mcp_configli_komut_doner(tmp_path: Path) -> None:
+    from app.orchestration.driver import AutoDriver
+
+    d = AutoDriver(orchestrator=_orch(tmp_path))
+    run_id = d.orch.start(model="m", profile="p", adapter_name="a")
+    res = d.drive(run_id, execute=False, mode="drive")
+    assert res["dry_run"] is True and res["mode"] == "drive"
+    assert res["command"][0] == "claude" and "--mcp-config" in res["command"]
+    assert res["mcp_config"].endswith(".json")
+
+
+def test_drive_mint_ttl_gecer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """SORUN 2 FIX: mint GERÇEKTEN ttl_s=DRIVE_TOKEN_TTL_S ile çağrılır (sabit değil, çağrı)."""
+    from app.orchestration import driver
+    from app.orchestration.driver import DRIVE_TOKEN_TTL_S, AutoDriver
+
+    yakalanan: dict[str, object] = {}
+
+    def sahte_mint(run_id, *, ttl_s=None):
+        yakalanan["ttl_s"] = ttl_s
+        return "sahte_token"
+
+    monkeypatch.setattr(driver.driver_scope, "mint", sahte_mint)
+
+    d = AutoDriver(orchestrator=_orch(tmp_path))
+    run_id = d.orch.start(model="m", profile="p", adapter_name="a")
+    d.drive(
+        run_id,
+        execute=True,
+        mode="drive",
+        runner=lambda c, t, e=None: (0, "ACHILLES_DRIVE_VERDICT: PASS"),
+    )
+    assert yakalanan["ttl_s"] == DRIVE_TOKEN_TTL_S
+
+
+def test_drive_desteklemeyen_motor_reddedilir(tmp_path: Path) -> None:
+    """codex/gemini/local sür modunu desteklemez → ok=False (sessizce av'a düşmez)."""
+    from app.orchestration.driver import AutoDriver
+
+    d = AutoDriver(orchestrator=_orch(tmp_path))
+    run_id = d.orch.start(model="m", profile="p", adapter_name="a")
+    res = d.drive(
+        run_id, execute=True, mode="drive", engine="codex", runner=lambda *a, **k: (0, "")
+    )
+    assert res["ok"] is False and "desteklemiyor" in res["reason"]
+
+
+def test_drive_durdurunca_stopped(tmp_path: Path) -> None:
+    from app.orchestration.driver import STOPPED_RC, AutoDriver
+
+    d = AutoDriver(orchestrator=_orch(tmp_path))
+    run_id = d.orch.start(model="m", profile="p", adapter_name="a")
+    res = d.drive(run_id, execute=True, mode="drive", runner=lambda c, t, e=None: (STOPPED_RC, ""))
+    assert res["stopped"] is True and res["drive_passed"] is False and res["mode"] == "drive"
+
+
+def test_bilinmeyen_mod_reddedilir(tmp_path: Path) -> None:
+    from app.orchestration.driver import AutoDriver
+
+    d = AutoDriver(orchestrator=_orch(tmp_path))
+    run_id = d.orch.start(model="m", profile="p", adapter_name="a")
+    res = d.drive(run_id, execute=False, mode="uydurma")
+    assert res["ok"] is False and "Bilinmeyen sürüş modu" in res["reason"]
+
+
+# ── Sür modu MCP yüzeyi allow-list'in 19 ucunu AŞMAZ (aynı sunucu → aynı budama) ────────
+
+
+def test_sur_modu_mcp_yuzeyi_allowlisti_asmaz() -> None:
+    """Sür motoru allow-list'li AYNI MCP sunucusunu kullanır → yüzey ≤ 19 uç."""
+    from mcp_server.allowlist import ALLOWED
+
+    # Sür MCP config'i achilles_mcp.py'yi işaret eder; o da filter_spec ile budanır.
+    assert len(ALLOWED) == 19, "allow-list yüzeyi beklenmedik biçimde değişti (P4 = 19 uç)"
+    cfg = build_mcp_config("/repo")
+    assert any("achilles_mcp.py" in a for a in cfg["mcpServers"]["achilles"]["args"])

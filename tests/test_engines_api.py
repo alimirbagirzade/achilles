@@ -201,14 +201,30 @@ def test_autodrive_rejects_unknown_engine(client: TestClient) -> None:
 
 
 def test_dry_run_uses_selected_engine(client: TestClient) -> None:
-    """Seçilen motor DRY-RUN komutuna yansır (seçici gerçekten bağlı)."""
+    """Seçilen motor DRY-RUN komutuna yansır (seçici gerçekten bağlı).
+
+    AV (hunt) modu birden çok motoru destekler → seçici bağlantısı burada kanıtlanır
+    (gemini'nin komuta yansıması "claude'a hardcode edilmemiş" demektir). Sür (drive)
+    modu yalnız sertleştirilmiş `claude`'u destekler; bu ayrım test_drive_mode.py'de.
+    """
     run_id = _fresh_run(client)
     body = client.post(
         f"/api/orchestration/autodrive/{run_id}",
-        json={"execute": False, "engine": "gemini"},
+        json={"execute": False, "engine": "gemini", "mode": "hunt"},
     ).json()
     assert body["engine"] == "gemini"
     assert body["command"][0] == "gemini"
+
+
+def test_drive_dry_run_default_mode_is_drive(client: TestClient) -> None:
+    """⚡ RUN ucu varsayılan SÜR modu: claude dry-run'ı MCP'li komut döndürür."""
+    run_id = _fresh_run(client)
+    body = client.post(
+        f"/api/orchestration/autodrive/{run_id}",
+        json={"execute": False, "engine": "claude"},
+    ).json()
+    assert body["mode"] == "drive"
+    assert "--mcp-config" in body["command"] and "--safe-mode" not in body["command"]
 
 
 def test_execute_true_is_human_only(client: TestClient) -> None:

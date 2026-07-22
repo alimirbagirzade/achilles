@@ -1,10 +1,36 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-07-04 (ajan haritası frontend #101 + worktree-hazard #102 + UI declutter #103) · Branch: `main` · Repo: https://github.com/alimirbagirzade/achilles_
+_Son güncelleme: 2026-07-22 (P7 — sür modunu fişe tak: ⚡ RUN artık MCP'li sür modu; SSE bilet; TTL fix) · Branch: `claude/motor-baglama-p7-2e8141` · Repo: https://github.com/alimirbagirzade/achilles_
 _Açık PR: yok — tüm PR'lar (#66-#103) MERGED. Veri hattı KAPALI (carding✅ RLM✅ curate✅ assemble✅). Dataset 2000 örnek, pretrain-gate **GO**. Sıradaki: LoRA eğitimi (Kural-8 kapılı, insan onayı bekliyor). Devam eden eşzamanlı iş: agent-map KART yeniden-tasarımı (`claude/agent-map-cards` worktree — o oturumun işi, dokunma)._
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
+
+---
+
+## ⚡ 2026-07-22 — P7: Sür modunu fişe tak + 3 yan-kusur (TAMAMLANDI)
+
+Branch `claude/motor-baglama-p7-2e8141`. **Senin asıl hedefin ("⚡ RUN → ajanlar sürülüyor")
+artık GERÇEK.** Tam test paketi yeşil; `orchestrate-smoke` `drive-mode-wiring` PASS.
+
+- **SORUN 1 (ana hedef) — sür modu FİŞE TAKILDI.** `AutoDriver.drive()` `mode` alır:
+  `mode="drive"` yeni `_drive_pipeline` ile MCP'li sür komutunu doğurur (`--mcp-config`
+  var, `--safe-mode` YOK). **⚡ RUN ucu varsayılan `drive`** (15·AJAN HARİTASI). **AV modu
+  ayrı tetikleyicide korundu** (12·ORKESTRASYON → "Otonom AV", `mode="hunt"`). Sür PASS'i
+  `ACHILLES_DRIVE_VERDICT` okur, `hunt_ack` YAZMAZ → zorunlu Kademe-2 av kapısı bağımsız
+  (Kural 8; P8 bunu daha da sıkılaştıracak).
+- **SORUN 2 — token TTL.** `mint(run_id, ttl_s=DRIVE_TOKEN_TTL_S)` artık çağrılıyor; test
+  mint ÇAĞRISINI assert ediyor (sabit büyüklüğünü değil). Sür token'ı ~35. dk'da ölmüyor.
+- **SORUN 3 — SSE sır sızıntısı.** İnsan `api_token`'ı ARTIK `/api/training/stream`
+  query'sinde KABUL EDİLMİYOR. Yeni `app/web/sse_tickets.py` (kısa ömürlü, TEK-kullanımlık)
+  + `POST /api/training/stream-ticket`. Frontend `startSSE` bilet alıp query'de taşıyor.
+- **Canlı doğrulama (elle, kapılı):** `achilles orchestrate-drive-live --allow-live-spawn`
+  — varsayılan KAPALI, CI'da ASLA koşmaz; tek motor doğurup MCP görünürlüğünü kanıtlar.
+- **⚠️ Hâlâ KANITLANMADI:** sür motorunun MCP araçlarını GERÇEKTEN gördüğü canlı olarak
+  yalnız yukarıdaki elle adımla doğrulanır (otomatik test argv'yi kontrol eder, gerçek
+  spawn YAPMAZ — kota güvenliği). Kullanıcı bir kez elle koşmalı.
+- **Denetim:** `rlm-security-reviewer` + `rlm-integration-agent` çalıştırıldı.
+- **Sıradaki:** P8 (motorun kendi verdict'ine bağımsız doğrulama — driver.py:544 kökü).
 
 ---
 

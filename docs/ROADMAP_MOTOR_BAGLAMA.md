@@ -394,16 +394,39 @@ Gerçek LoRA eğitimi BU PAKETTE BAŞLATILMAZ (Kural-8, insan onayı ayrı).
 |---|---|---|
 | P1 scope izolasyonu | ✅ gerçekten tamam | testler yetki-fn'e HİÇ ulaşılmadığını de kanıtlıyor |
 | P2 motor tablosu | ✅ gerçekten tamam | sertleştirilmemiş motor spawn'ı reddediliyor |
-| P3 sür modu | ⚠️ **yazıldı, BAĞLANMADI** | `build_drive_command` ölü kod → **P7 madde 1** |
+| P3 sür modu | ✅ **P7'de FİŞE TAKILDI** | `_drive_pipeline` çağırıyor; ⚡ RUN varsayılan drive |
 | P4 MCP allow-list | ✅ gerçekten tamam | 116→19 uç; test dependency GRAFİĞİNE bakıyor |
 | P5 RUN deneyimi | ✅ gerçekten tamam | 3-kapılı onay; `logged_in` uydurulmuyor |
 | P6 DURDUR + E2E | ✅ tamam | gerçek `terminate_all()`; canlı adımlar bilerek skip |
 
 ---
 
-## P7 — Sür modunu fişe tak + 3 yan-kusuru kapat 🎯 ANA HEDEF
+## P7 — Sür modunu fişe tak + 3 yan-kusuru kapat ✅ TAMAMLANDI (2026-07-22)
 
 **Şerit:** tek · **Bağımlılık:** P1-P6 (hepsi merged, ✅) · **Paralel:** yok — bu tek iş
+
+### Teslim özeti (kanıt: tam test paketi yeşil + orchestrate-smoke drive-mode-wiring PASS)
+
+- **[SORUN 1 — ANA HEDEF] Sür modu FİŞE TAKILDI.** `AutoDriver.drive()` artık `mode`
+  parametresi alır: `mode="drive"` (yeni `_drive_pipeline`) MCP'li sür komutunu
+  (`build_drive_command` → `--mcp-config` + `--strict-mcp-config`, `--safe-mode` YOK)
+  doğurur. ⚡ RUN ucu (`/api/orchestration/autodrive`, 15·AJAN HARİTASI) **varsayılan
+  `mode="drive"`**; AV modu **ayrı tetikleyicide** korundu (12·ORKESTRASYON → Otonom AV,
+  `mode="hunt"`). Sür PASS'i `ACHILLES_DRIVE_VERDICT` okur ve `hunt_ack` YAZMAZ → zorunlu
+  Kademe-2 av kapısı bağımsız kaldı (Kural 8).
+- **[SORUN 2] TTL düzeltildi.** `_drive_pipeline` token'ı `mint(run_id,
+  ttl_s=DRIVE_TOKEN_TTL_S)` ile mint eder; test mint ÇAĞRISINI assert eder (sabit değil).
+- **[SORUN 3] SSE query-token kaldırıldı.** `app/web/sse_tickets.py` (kısa ömürlü,
+  TEK-kullanımlık bilet) + `POST /api/training/stream-ticket`; `/api/training/stream`
+  artık insan api_token'ını query'de KABUL ETMEZ. Frontend `startSSE` bilet alır.
+- **Canlı doğrulama:** `achilles orchestrate-drive-live --allow-live-spawn` (varsayılan
+  KAPALI, CI'da ASLA koşmaz) — elle tek motor doğurup MCP görünürlüğünü kanıtlar.
+- **Denetim:** `rlm-security-reviewer` + `rlm-integration-agent` PASS; `/codegen-review`
+  kapısı (ruff+mypy+test) yeşil.
+
+---
+
+**(orijinal prompt — referans için korunur)**
 
 Bu paket senin 5. adımını ("RUN → ajanlar sürülüyor") **gerçek** yapar. Denetimde bulunan
 4 somut kusuru kapatır. Kapsamı DAR tut — yeni özellik ekleme, sadece yazılmış-ama-bağlanmamış
@@ -561,10 +584,11 @@ Yeni bir oturuma şunu yapıştır:
 
 ```
 docs/ROADMAP_MOTOR_BAGLAMA.md dosyasını oku. FAZ 2'deki tamamlanmamış ilk paketi
-(P7 → sonra P8) bul, o paketin prompt'unu uygula. Denetim özetini (P6 hükmü) dikkate al.
+(P8) bul, o paketin prompt'unu uygula. Denetim özetini (P6/P7 hükmü) dikkate al.
 ```
 
-**Sıradaki açık paket: P7** (sür modunu fişe tak — senin asıl hedefin). P8 ondan sonra.
+**Sıradaki açık paket: P8** (motorun kendi karnesine güvenme — bağımsız verdict).
+P7 (sür modunu fişe tak) ✅ TAMAMLANDI (2026-07-22).
 
 ## Kapsam dışı (bilinçli erteleme)
 

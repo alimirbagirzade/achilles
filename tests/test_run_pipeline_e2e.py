@@ -341,3 +341,78 @@ def test_run_smoke_gercek_motor_dogurmaz():
     canli = next(c for c in res.checks if c.name == "live-spawn")
     assert canli.status == "skip"
     assert "KANITLANMAZ" in canli.detail
+
+
+def test_drive_mode_wiring_probe_pass():
+    """SÜR MODU artık bağlı → dürüstlük yoklaması 'warn' değil 'pass' vermeli (P7)."""
+    from app.orchestration.run_smoke import RunPipelineSmoke
+
+    res = RunPipelineSmoke().run()
+    wiring = next(c for c in res.checks if c.name == "drive-mode-wiring")
+    assert wiring.status == "pass", wiring.detail
+
+
+# ── ⚡ RUN ucu VARSAYILAN olarak SÜR modunu doğuruyor ─────────────────────────────
+
+
+def test_autodrive_varsayilan_sur_modu_dry_run():
+    """POST /autodrive execute=false → SÜR komutu (MCP'li) döner, av değil."""
+    from app.web.server import app
+
+    with TestClient(app) as client:
+        run_id = client.post(
+            "/api/orchestration/start", json={"adapter_name": "achilles_lora", "iters": 1}
+        ).json()["run_id"]
+        r = client.post(f"/api/orchestration/autodrive/{run_id}", json={"execute": False})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["mode"] == "drive"
+    assert "--mcp-config" in body["command"] and "--safe-mode" not in body["command"]
+
+
+# ── ELLE tetiklenen canlı sür adımı VARSAYILAN KAPALI (kota güvenliği) ────────────
+
+
+def test_live_drive_varsayilan_kapali_spawn_yok(monkeypatch):
+    """--allow-live-spawn OLMADAN hiçbir süreç doğmaz (kota yakılmaz)."""
+    from app.orchestration.run_smoke import LiveDriveSmoke
+
+    # Yanlışlıkla spawn edilirse test PATLASIN diye Popen'i tuzağa düşür.
+    monkeypatch.setattr(
+        driver.subprocess,
+        "Popen",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("kapalıyken spawn edildi!")),
+    )
+    res = LiveDriveSmoke().run(allow_live_spawn=False)
+    assert res.verdict == "skip"
+    assert res.checks[0].name == "live-drive" and res.checks[0].status == "skip"
+
+
+def test_live_drive_web_yoksa_skip(monkeypatch):
+    """Bayrak açık ama web kapalı → anlamlı skip, gerçek spawn YOK."""
+    from app.orchestration.run_smoke import LiveDriveSmoke
+
+    monkeypatch.setattr(engines, "available", lambda name, **kw: True)  # kurulu varsay
+    monkeypatch.setattr(
+        driver.subprocess,
+        "Popen",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("web yokken spawn edildi!")),
+    )
+    res = LiveDriveSmoke().run(allow_live_spawn=True, web_check=lambda: False)
+    assert res.verdict == "skip"
+    assert "Web sunucusu" in res.summary
+
+
+def test_live_drive_enjekte_runner_ile_mcp_gorunurlugu(monkeypatch):
+    """Bayrak + web + (sahte) motor MCP araçlarını görürse → pass (gerçek spawn YOK)."""
+    from app.orchestration.run_smoke import LiveDriveSmoke
+
+    monkeypatch.setattr(engines, "available", lambda name, **kw: True)
+
+    def sahte_runner(command, timeout, env=None):
+        # Sür argv'si + MCP config gerçekten kuruluyor mu?
+        assert "--mcp-config" in command and "--safe-mode" not in command
+        return 0, "araçlar: mcp__achilles__status\nACHILLES_DRIVE_VERDICT: PASS\n"
+
+    res = LiveDriveSmoke().run(allow_live_spawn=True, web_check=lambda: True, runner=sahte_runner)
+    assert res.verdict == "pass", [c.to_dict() for c in res.checks]
