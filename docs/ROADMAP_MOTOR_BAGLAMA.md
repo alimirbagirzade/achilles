@@ -609,18 +609,113 @@ KAPI: make format && make lint && make typecheck && make test → PR → merge.
 
 ---
 
+# FAZ 3 — Kalan iki iş (2026-07-22 kabul denetimi sonrası)
+
+> P7/P8 bağımsız denetimi (Explore ajanı + 1700+ test yeşil) her ikisinin de kabul
+> kriterlerini karşıladığını doğruladı — ⚡ RUN artık gerçekten SÜR modunda doğuruyor,
+> motor MCP araçlarını görüyor. **Ama denetim P8'de dar bir boşluk ve dokümanlarda kayma
+> buldu.** İkisi de küçük; RUN akışını bloklamıyor.
+
+## P9 — Gelişmiş sahte-PASS'i kapat ⚠️ GÜVENLİK DERİNLİĞİ (opsiyonel ama Kural-8 için değerli)
+
+**Şerit:** tek · **Bağımlılık:** P8 (merged) · **Paralel:** DOK ile aynı anda
+
+Denetimin bulduğu boşluk: P8 motorun "PASS"ini dosya sistemiyle teyit ediyor — motor
+UYDURMA dosya adı yazarsa yakalanıyor (test var). AMA motor 5 GERÇEK var-olan dosya adını
+(driver.py, engines.py…) listeleyip **hiç okumadan** PASS yazsa denetim GEÇER; kontrol
+dosyanın *var olduğuna* bakıyor, *okunduğuna* değil. Kural-8 av kapısının tek dayanağı
+bu olduğu için kapatmaya değer.
+
+```
+Achilles av verdict denetimine "motor dosyaları GERÇEKTEN okudu mu" katmanını ekle.
+
+ÖNCE OKU: HANDOFF.md worktree hazard bölümü. Gerçek worktree kur
+(git worktree add "<ayrı-dir>" -b claude/verdict-read-proof origin/main),
+uv sync --extra dev --extra mcp. docs/ROADMAP_MOTOR_BAGLAMA.md P8 + P9 bölümlerini oku.
+
+DOĞRULANMIŞ BOŞLUK (2026-07-22 denetimi):
+app/orchestration/verdict_audit.py motorun ACHILLES_HUNT_EVIDENCE JSON'undaki "taranan
+dosyalar"ı depoda VAR MI diye teyit ediyor (audit_hunt_evidence, driver.py:602-611 çağırıyor).
+Ama VAR-olma ≠ OKUNDU. Motor gerçek dosya adları listeleyip hiç okumadan PASS yazabilir.
+Modülün kendi docstring'i (verdict_audit.py:22-25) bu sınırı zaten kabul ediyor.
+
+İSTENEN — tasarım seçeneklerini DEĞERLENDİR, birini öner+uygula:
+A) Okuma-kanıtı: motordan her "taranan dosya" için, o dosyanın İÇERİĞİNDEN türeyen doğrulanabilir
+   bir işaret iste (ör. dosya içi belirli satır/sembol alıntısı, ya da içerik hash'inin bir
+   parçası) ve bunu bağımsızca dosyayı okuyup teyit et. Uydurulamaz çünkü içeriğe bağlı.
+B) İkinci bağımsız doğrulayıcı adım: PASS ise ayrı bir hafif kod-tarama/ajan, avın
+   iddia ettiği bulguların gerçekten o dosyalarda olup olmadığını adversarial kontrol etsin
+   (varsayılan çürütülmüş — CLAUDE.md av deseni). NOT: ikinci LLM kota/çevrimdışı-test
+   maliyeti getirir; deterministik A seçeneği tercih edilir, B'yi ancak A yetmezse öner.
+
+KISITLAR:
+- Kural-8: kapıyı SIKILAŞTIR, gevşetme. Motor kendi verdict'ini yazabilir ama TEK KANIT olmasın.
+- Determinizm: rastgelelik varsa seed'li. eval/exec YOK — kanıt ayrıştırma güvenli regex/JSON.
+- Çevrimdışı test: gerçek claude -p SPAWN ETME (kota). Kanıtı sentetik motor-çıktısıyla test et.
+- Mevcut P8 yapısal denetimini BOZMA — üstüne ekle (var-olma kontrolü hâlâ ilk kapı kalsın).
+
+KULLAN:
+- `rlm-security-reviewer` ajanı — okuma-kanıtı şemasının uydurulamaz olduğunu adversarial
+  denetlesin (motor bunu dosyayı okumadan üretebilir mi?). Ajan PASS'i olmadan PR açma.
+- `/codegen-review` skill'i — ruff+mypy+test kapısı.
+
+TESTLER (zorunlu, çevrimdışı):
+- gerçek-dosya-adı-listeleyip-okumayan sahte motor çıktısı → audit REDDEDER (yeni test)
+- gerçekten okuyup doğru içerik-kanıtı veren çıktı → GEÇER
+- naif sahte (kanıt yok / uydurma dosya) hâlâ REDDEDİLİYOR (P8 regresyonu korunur)
+
+KAPI: make format && make lint && make typecheck && make test → PR → CI yeşilse merge.
+Gerçek eğitim BAŞLATMA (Kural-8). Kanıt göster; kapatamadıysan "kapatılmadı" de.
+```
+
+---
+
+## DOK — Doküman senkronu 🧹 MEKANİK (5 dk)
+
+**Şerit:** tek · **Bağımlılık:** yok · **Paralel:** P9 ile aynı anda
+
+```
+P7/P8 sonrası eskimiş doküman ifadelerini kodun gerçeğiyle senkronla. SADECE doküman.
+
+ÖNCE: worktree kontrolü (HANDOFF.md hazard). Küçük iş, ayrı worktree şart değil ama
+git add -A YAPMA — yalnız dokunduğun .md dosyalarını dar ekle.
+
+DOĞRULANMIŞ KAYMA (2026-07-22 denetimi): aşağıdaki ifadeler artık YANLIŞ, kod çürüttü:
+- "build_drive_command hiçbir spawn yolundan çağrılmıyor" → ARTIK çağrılıyor (driver.py:714)
+- "DRIVE_TOKEN_TTL_S ölü sabit" → ARTIK mint'e geçiyor (driver.py:774)
+- "SÜR MODU BAĞLI DEĞİL / RUN yalnız av modu" → ARTIK sür modu varsayılan (orchestration_routes.py:145)
+
+İSTENEN:
+1. HANDOFF.md — "sür modu bağlı değil", "P7'ye kaldı", "ölü sabit" gibi eskimiş uyarıları
+   güncelle. P7/P8'in TAMAMLANDIĞINI, ⚡ RUN'ın artık gerçekten sür modunda doğurduğunu yaz.
+   P8'de KALAN boşluğu (gerçek-dosya-listeleyen gelişmiş sahte-PASS → P9) not düş.
+2. docs/ROADMAP_MOTOR_BAGLAMA.md — FAZ 2 giriş metnindeki/durum tablosundaki "sür-modu prompt
+   ❌ yok", "build_drive_command çağrılmıyor" gibi fiks-öncesi satırları düzelt.
+3. README motor bağlama bölümü varsa: ⚡ RUN'ın artık ne yaptığını (sür modu, MCP'li,
+   eğitim onayda durur) sıfır-varsayım/kopyala-yapıştır anlat (memory: readme-beginner-friendly).
+
+KISIT: yalnız GERÇEĞE uydur — yeni özellik/iddia UYDURMA. Emin olmadığın bir durumu
+"tamam" yazma; koddan doğrula (driver.py, orchestration_routes.py, engines.py).
+
+KAPI: doküman-only ise test şart değil ama `make lint` çalıştır (markdown/format bozmadın).
+PR aç, merge et.
+```
+
+---
+
 ## Sonraki chat'e devir notu
 
 Yeni bir oturuma şunu yapıştır:
 
 ```
-docs/ROADMAP_MOTOR_BAGLAMA.md dosyasını oku. FAZ 2 paketlerinin (P7, P8) hepsi TAMAMLANDI.
-Yeni iş için HANDOFF.md "YENİ SEANS BAŞLANGICI" bölümünü ve Kapsam-dışı listesini gözden geçir.
+docs/ROADMAP_MOTOR_BAGLAMA.md dosyasını oku. FAZ 3'teki açık paketi (P9 ve/veya DOK) uygula.
+İkisi paralel; bağımsızlar. Denetim kanıtları prompt'ların içinde dosya:satır ile yazılı.
 ```
 
-**FAZ 2 KAPANDI.** P7 (sür modunu fişe tak) ✅ TAMAMLANDI (2026-07-22) ·
-P8 (bağımsız verdict) ✅ TAMAMLANDI (2026-07-22). Motor bağlama roadmap'inin tüm paketleri
-(P1-P8) kapandı. Açık mimari iş kalmadı; ertelenen kalemler için "Kapsam dışı" bölümüne bak.
+**Durum:** P1-P8 ✅ KAPANDI — ⚡ RUN gerçekten sür modunda doğuruyor, motor MCP araçlarını
+görüyor, doğrulama denetimiyle teyit edildi (2026-07-22). **Açık:** P9 (gelişmiş sahte-PASS
+güvenlik derinliği, opsiyonel) + DOK (doküman senkronu, mekanik). İkisi de RUN akışını
+bloklamıyor.
 
 ## Kapsam dışı (bilinçli erteleme)
 
