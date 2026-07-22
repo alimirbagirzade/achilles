@@ -53,17 +53,25 @@ def test_extract_evidence_missing_or_broken() -> None:
     assert verdict_audit.extract_evidence(f"{verdict_audit.EVIDENCE_MARKER} [1,2,3]") is None
 
 
-def test_extract_evidence_deeply_nested_json_fail_closed() -> None:
-    """Derinden iç-içe JSON `RecursionError` fırlatır (ValueError DEĞİL) — fail-closed None.
+def test_extract_evidence_recursion_error_fail_closed(monkeypatch) -> None:
+    """`raw_decode` `RecursionError` fırlatırsa fail-closed None (sürücüyü çökertmez).
 
-    rlm-security-reviewer bulgusu: motorun kontrol ettiği tek bir çıktı sürücüyü çökertmemeli.
+    rlm-security-reviewer bulgusu: derinden iç-içe JSON `RecursionError` fırlatır ve o
+    `ValueError` DEĞİL `RuntimeError` alt sınıfıdır → dar `except (ValueError, ...)` kaçırırdı.
+    Tetikleyen ÖZYİNELEME DERİNLİĞİ platforma göre değişir (CI'da 5000 sorunsuz ayrışabilir),
+    bu yüzden istisnayı DOĞRUDAN zorlarız → handler'ı deterministik test ederiz.
     """
-    # `{` ile başlamalı ki raw_decode gerçekten çağrılsın (yoksa find('{')==-1 kısa devre yapar);
-    # iç-içe diziler ayrıştırıcıyı özyineleme sınırına iter → RecursionError.
-    kotu = f"{verdict_audit.EVIDENCE_MARKER} " + '{"a":' + "[" * 5000 + "]" * 5000 + "}"
-    assert verdict_audit.extract_evidence(kotu) is None
+
+    def boom(self, s, idx=0):
+        raise RecursionError("derin iç-içe")
+
+    monkeypatch.setattr(json.JSONDecoder, "raw_decode", boom)
+    payload = f'{verdict_audit.EVIDENCE_MARKER} {{"scanned_files": []}}'
+    assert verdict_audit.extract_evidence(payload) is None
     # Uçtan uca: audit da çökmeden reddetmeli.
-    res = verdict_audit.audit_hunt_evidence(f"{kotu}\nACHILLES_HUNT_VERDICT: PASS", root=Path("."))
+    res = verdict_audit.audit_hunt_evidence(
+        f"{payload}\nACHILLES_HUNT_VERDICT: PASS", root=Path(".")
+    )
     assert res["ok"] is False
 
 
