@@ -53,9 +53,27 @@ def driver(tmp_path: Path) -> AutoDriver:
     return AutoDriver(orchestrator=orch)
 
 
+# Gerçek bir avın üreteceği YAPILANDIRILMIŞ KANIT (P8): depoda GERÇEKTEN var olan dosyalar,
+# ≥2 alt-sistem. Bağımsız denetim (verdict_audit) bunu dosya sistemiyle teyit eder.
+_VALID_EVIDENCE = (
+    'ACHILLES_HUNT_EVIDENCE\n{"scanned_files": ['
+    '"app/orchestration/driver.py", "app/orchestration/engines.py", '
+    '"app/orchestration/orchestrator.py", "app/web/security.py", '
+    '"app/web/driver_scope.py"], '
+    '"subsystems": ["orchestration", "web"], "findings": []}\n'
+)
+
+
 def _fake_pass(
     command: list[str], timeout: int, env: dict[str, str] | None = None
 ) -> tuple[int, str]:
+    return 0, f"denetim raporu...\nciddi bulgu yok\n{_VALID_EVIDENCE}ACHILLES_HUNT_VERDICT: PASS\n"
+
+
+def _fake_pass_no_evidence(
+    command: list[str], timeout: int, env: dict[str, str] | None = None
+) -> tuple[int, str]:
+    """Motor derin avı yapmadan sadece 'PASS' yazar (P8'in kapatması gereken sınıf)."""
     return 0, "denetim raporu...\nciddi bulgu yok\nACHILLES_HUNT_VERDICT: PASS\n"
 
 
@@ -107,6 +125,33 @@ def test_pass_advances_to_approval_and_stops(driver: AutoDriver) -> None:
     assert res["run"]["status"] == "blocked"
     assert res["run"]["current_stage"] == "approval"
     assert by_name["train"]["status"] != StageStatus.completed.value
+
+
+def test_fake_pass_without_evidence_is_caught(driver: AutoDriver) -> None:
+    """P8 (Kural 8): motor derin avı yapmadan 'PASS' yazsa BAĞIMSIZ denetim yakalar.
+
+    Yapılandırılmış kanıt yok → verdict PASS olsa bile hunt_ack YAZILMAZ, deep-hunt bloklu
+    kalır. Motorun öz-beyanı artık tek kanıt değildir.
+    """
+    run_id = driver.orch.start(model="m", profile="p", adapter_name="a")
+    res = driver.drive(run_id, execute=True, runner=_fake_pass_no_evidence)
+    assert res["drove"] is True and res["hunt_passed"] is False
+    assert res["audit"]["ok"] is False
+    assert "kanıt" in res["audit"]["reason"].lower()
+    by_name = {s["name"]: s for s in res["stages"]}
+    assert by_name["deep-hunt"]["status"] == StageStatus.blocked.value
+    # KRİTİK: sahte PASS eğitim kapısını AÇMADI.
+    params = driver.orch.store.get_run(run_id).get("params") or {}
+    assert params.get("hunt_ack") is not True
+
+
+def test_pass_with_valid_evidence_reports_audit(driver: AutoDriver) -> None:
+    """Gerçek av PASS'i bağımsız denetimden geçer → audit sayıları döner."""
+    run_id = driver.orch.start(model="m", profile="p", adapter_name="a")
+    res = driver.drive(run_id, execute=True, runner=_fake_pass)
+    assert res["hunt_passed"] is True
+    assert res["audit"]["ok"] is True
+    assert res["audit"]["scanned_count"] >= 5 and res["audit"]["subsystem_count"] >= 2
 
 
 def test_fail_keeps_hunt_blocked(driver: AutoDriver) -> None:
