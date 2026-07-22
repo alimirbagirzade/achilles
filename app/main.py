@@ -3859,6 +3859,38 @@ def orchestrate_smoke_cmd(
         raise typer.Exit(2)
 
 
+@app.command("orchestrate-drive-live")
+def orchestrate_drive_live_cmd(
+    allow_live_spawn: bool = typer.Option(
+        False,
+        "--allow-live-spawn",
+        help="GERÇEK sür motoru doğur (abonelik KOTASI yakar). Varsayılan KAPALI → spawn yok.",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Makine-okunabilir JSON çıktı."),
+) -> None:
+    """ELLE tetiklenen TEK canlı sür duman adımı — sür motoru MCP araçlarını görüyor mu?
+
+    ⚠️ Bu KOMUT OTOMATİK DEĞİLDİR ve CI'da ASLA koşmaz. `--allow-live-spawn` OLMADAN hiçbir
+    süreç doğurmaz (yalnız neden kapalı olduğunu açıklar). Bayrakla: `claude`'u SÜR (drive)
+    argv'siyle bir kez doğurur, çıktıda Achilles MCP araçlarının (`mcp__*`) GERÇEKTEN
+    göründüğünü kanıtlar, sonra biter. Önce `uv run achilles-web` çalışıyor olmalı (MCP proxy
+    ona bağlanır) ve `claude` aboneliğinle girişli olmalı. Gerçek eğitim BAŞLATMAZ (Kural 8).
+    """
+    from app.orchestration.run_smoke import LiveDriveSmoke
+
+    res = LiveDriveSmoke().run(allow_live_spawn=allow_live_spawn)
+    if as_json:
+        console.print_json(json.dumps(res.to_dict(), ensure_ascii=False, default=str))
+    else:
+        color = {"pass": "green", "skip": "yellow", "fail": "red"}.get(res.verdict, "white")
+        console.print(f"[{color}]live-drive: {res.verdict.upper()}[/{color}] — {res.summary}")
+        for c in res.checks:
+            mark = {"pass": "✓", "fail": "✕", "warn": "≈", "skip": "·"}.get(c.status, "?")
+            console.print(f"  {mark} [dim]{c.name}[/dim]: {c.detail}")
+    if res.verdict == "fail":
+        raise typer.Exit(2)
+
+
 @app.command("orchestrate-collision")
 def orchestrate_collision_cmd(
     baseline_head: str = typer.Option(

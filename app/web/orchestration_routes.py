@@ -139,13 +139,17 @@ class OrchestrationAutodriveRequest(BaseModel):
     # Boş → kayıt tablosundaki varsayılan. Kalıp erken-ret içindir; asıl doğrulama
     # `engines.get_engine` (bilinmeyen ad → ValueError) + `run_blocked_reason`.
     engine: str = Field(default="", pattern=r"^[A-Za-z0-9_-]{0,32}$")
+    # ⚡ RUN'ın ANA yolu SÜR (drive) modudur: motor MCP araçlarıyla veri hattını ilerletir.
+    # "hunt" AV modunu tetikler (zorunlu Kademe-2 derin av, salt rapor, MCP KAPALI) — av
+    # ayrı bir tetikleyici olarak KORUNUR (Kademe-2 taraması için hâlâ gerekli).
+    mode: str = Field(default="drive", pattern=r"^(drive|hunt)$")
 
 
-def _run_autodrive_bg(run_id: str, engine: str) -> None:
+def _run_autodrive_bg(run_id: str, engine: str, mode: str) -> None:
     """Arka plan: gerçek otonom sürüş (uzun sürer). Olaylar timeline'a yazılır."""
     from app.orchestration.driver import AutoDriver
 
-    AutoDriver().drive(run_id, execute=True, engine=engine)
+    AutoDriver().drive(run_id, execute=True, engine=engine, mode=mode)
 
 
 # ⛔ `human_only`: bu uç gerçek bir `claude -p` ALT-SÜRECİ doğurur. Sür (drive) modunda
@@ -157,11 +161,15 @@ def _run_autodrive_bg(run_id: str, engine: str) -> None:
 def orchestration_autodrive(
     run_id: str, req: OrchestrationAutodriveRequest, background: BackgroundTasks
 ) -> dict[str, Any]:
-    """deep-hunt'ı headless `claude -p` (abonelik) ile OTONOM sür → onay kapısına ilerlet.
+    """⚡ RUN — headless `claude -p` (abonelik) ile OTONOM sür → veri hattını ilerlet.
+
+    `mode="drive"` (varsayılan, ⚡ RUN): motora MCP araçları verilir, veri hattı ilerletilir.
+    `mode="hunt"`: zorunlu Kademe-2 derin av (salt rapor, MCP kapalı) — ayrı tetikleyici.
 
     `execute=false` (varsayılan): DRY-RUN — çalıştırılacak komutu döner, spawn YOK.
     `execute=true`: gerçek sürüş ARKA PLANDA başlar (timeline'dan izlenir); yanıt hemen döner.
-    Gerçek eğitim yine TAZE insan onayı bekler (Kural 8 — onayda durur).
+    Gerçek eğitim yine TAZE insan onayı bekler (Kural 8 — sür promptu eğitimi başlatmaz;
+    onay/eğitim uçları sürücü kimliğiyle 403 alır).
     """
     from app.orchestration import engines
     from app.orchestration.driver import AutoDriver
@@ -179,7 +187,9 @@ def orchestration_autodrive(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     if not req.execute:
-        return AutoDriver(orchestrator=orch).drive(run_id, execute=False, engine=engine_name)
+        return AutoDriver(orchestrator=orch).drive(
+            run_id, execute=False, engine=engine_name, mode=req.mode
+        )
 
     # ⛔ SUNUCU TARAFI KAPI: kurulu-değil / süreç-başlatmayan / sertleştirilemeyen motor
     # REDDEDİLİR. UI bu motorları zaten gri gösterir, ama gri buton bir güvenlik sınırı
@@ -188,12 +198,28 @@ def orchestration_autodrive(
     blocked = engines.run_blocked_reason(engine_name)
     if blocked:
         raise HTTPException(status_code=503, detail=blocked)
+    # Sür modu MCP erişimli SERTLEŞTİRİLMİŞ şablon ister. `run_blocked_reason` yalnız av
+    # profilini (`hardened`) kontrol eder; sür profili AYRI bayrak (`drive_hardened`) — bu
+    # yüzden burada AÇIKÇA doğrulanır. Aksi halde "av'da sertleşmiş ama sür'de değil" bir
+    # motor (bugün yok, gelecekte olabilir) `run_blocked_reason`'ı geçip arka planda sessizce
+    # reddedilirken HTTP yanıtı yanıltıcı "autodrive_started" derdi. Fail-closed + dürüst yanıt.
+    if req.mode == "drive":
+        eng = engines.get_engine(engine_name)
+        if not engines.drive_supported(engine_name) or not eng.drive_hardened:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    f"{eng.label} sür (drive) modunda sertleştirilemiyor — MCP erişimli "
+                    "sertleştirilmiş şablonu yok (Kural 8; docs/SCOPE_ISOLATION.md)."
+                ),
+            )
 
-    background.add_task(_run_autodrive_bg, run_id, engine_name)
+    background.add_task(_run_autodrive_bg, run_id, engine_name, req.mode)
     return {
         "ok": True,
         "status": "autodrive_started",
         "engine": engine_name,
+        "mode": req.mode,
         "message": "Otonom sürüş arka planda başladı; ilerlemeyi timeline'dan izle.",
         "run_id": run_id,
     }

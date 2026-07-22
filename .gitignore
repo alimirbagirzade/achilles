@@ -101,6 +101,8 @@ storage/STOP_TRAINING
 storage/learning_topic_index
 storage/.training_launching
 storage/_commit_msg.txt
+# Sür (drive) modu MCP config dosyaları — koşu başına üretilir (sır içermez ama runtime)
+storage/mcp/
 
 # OS / editor
 .DS_Store

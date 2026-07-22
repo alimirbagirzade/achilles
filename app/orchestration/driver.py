@@ -57,12 +57,12 @@ DRIVE_TIMEOUT_S = 3600  # 60 dk
 # Sürücü token TTL'i sür modu için AYRI hesaplanır. driver_scope.DEFAULT_TTL_S (2100s) av
 # moduna (1800s) göre ayarlıdır; sür modunda kullanılsaydı token koşunun ORTASINDA
 # (~35. dk) ölür, MCP çağrıları 401 almaya başlar ve ajan sebebini anlamadan tıkanırdı.
-# ⚠️ HENÜZ KULLANILMIYOR (ölü sabit — Kademe-2 avında yakalandı): sür modu hiçbir spawn
-# yoluna bağlı olmadığı için tek `mint()` çağrısı varsayılan TTL'i (2100s) kullanır. Sür
-# modu bağlandığında `mint(run_id, ttl_s=DRIVE_TOKEN_TTL_S)` ÇAĞRILMALIDIR; yoksa token
-# koşunun ~35. dakikasında ölür ve MCP çağrıları sebepsiz 401 almaya başlar.
-# Bunu doğrulayan test yalnız sabitin BÜYÜKLÜĞÜNÜ ölçer, KULLANILDIĞINI değil → tek
-# başına güvence saymayın.
+# ⚠️ SORUN 2 (Kademe-2 avında yakalandı, P7'de düzeltildi): sür modu bağlandığında
+# `_drive_pipeline` bu TTL'i AÇIKÇA `mint(run_id, ttl_s=DRIVE_TOKEN_TTL_S)` ile geçirir
+# (aşağıda). Aksi halde varsayılan TTL (2100s) DRIVE_TIMEOUT_S'den (3600s) kısa olduğundan
+# token koşunun ~35. dakikasında ölür ve MCP çağrıları sebepsiz 401 almaya başlar.
+# Test yalnız sabitin büyüklüğünü değil, mint çağrısının GERÇEKTEN bu TTL ile yapıldığını
+# doğrular (bkz. tests/test_drive_mode.py::test_drive_mint_ttl_gecer).
 DRIVE_TOKEN_TTL_S = DRIVE_TIMEOUT_S + 300
 
 # Araç deny-list'i motor kayıt tablosunda durur (motora ÖZGÜ bayraklar).
@@ -180,6 +180,23 @@ def write_mcp_config(path: str | Path, root: str | None = None) -> str:
         json.dumps(build_mcp_config(root), ensure_ascii=False, indent=2), encoding="utf-8"
     )
     return str(target)
+
+
+# Sür modu MCP config dosyalarının konduğu dizin. Depo içinde SABİT (motor başka bir cwd'de
+# doğsa da mutlak yol geçilir); .gitignore `storage/` çıktısını zaten yok sayar.
+_DRIVE_MCP_DIR = _REPO_ROOT / "storage" / "mcp"
+# run_id dosya adına gömüleceği için yol-geçişi/enjeksiyon karşısında güvenli tabana indir.
+_SAFE_RUN_RE = re.compile(r"[^A-Za-z0-9_-]+")
+
+
+def drive_mcp_config_path(run_id: str) -> str:
+    """Bir koşu için MCP config dosyasının mutlak yolu (koşu başına ayrı dosya).
+
+    run_id serbest metin olabileceğinden dosya adına gömülmeden önce güvenli tabana
+    indirilir (yol-geçişi savunması); config'in kendisi sır taşımaz (bkz. build_mcp_config).
+    """
+    safe = _SAFE_RUN_RE.sub("_", run_id).strip("_")[:64] or "run"
+    return str(_DRIVE_MCP_DIR / f"drive-{safe}.json")
 
 
 def build_drive_command(
@@ -406,14 +423,29 @@ class AutoDriver:
         engine: str = DEFAULT_ENGINE,
         runner: Runner | None = None,
         timeout: int = HUNT_TIMEOUT_S,
+        mode: str = "hunt",
     ) -> dict[str, Any]:
-        """Salt-okuma aşamaları → deep-hunt'ı claude -p ile sür → PASS ise onaya kadar ilerlet.
+        """Otonom sürüş — `mode` iki AYRI işi ayırır:
+
+        * ``mode="hunt"`` (varsayılan, geriye dönük): salt-okuma aşamaları → ZORUNLU
+          Kademe-2 derin avı headless motorla sür → PASS ise ``hunt_ack``+onaya ilerlet.
+          Av modu ``--safe-mode`` ile doğar (MCP KAPALI) — salt rapor üretir (Kural 8 kapısı).
+        * ``mode="drive"`` (⚡ RUN): motora Achilles MCP araçlarına erişim ver ve VERİ HATTINI
+          ilerlet. MCP açık, ``--safe-mode`` YOK; verdict AYRI işaretçi kullanır
+          (``ACHILLES_DRIVE_VERDICT``) → sür PASS'i av ``hunt_ack``'ini AÇMAZ. Bkz.
+          ``_drive_pipeline`` ve docs/ROADMAP_MOTOR_BAGLAMA.md P7.
 
         Varsayılan `execute=False`: gerçek spawn YOK, çalıştırılacak komutu döner (DRY-RUN).
-        `execute=True` + motor PATH'te: gerçek motor koşar; PASS → hunt_ack + onaya kadar
-        ilerletir (Kural 8: onayda DURUR). `runner` enjekte edilirse gerçek spawn yerine o
-        kullanılır (test). `engine` kayıt tablosundan gelir (bilinmeyen ad reddedilir);
-        süreç başlatmayan motorlar (ör. `local`) otonom sürüşte kullanılamaz."""
+        `runner` enjekte edilirse gerçek spawn yerine o kullanılır (test). `engine` kayıt
+        tablosundan gelir (bilinmeyen ad reddedilir); süreç başlatmayan motorlar (ör. `local`)
+        otonom sürüşte kullanılamaz."""
+        if mode == "drive":
+            return self._drive_pipeline(run_id, execute=execute, engine=engine, runner=runner)
+        if mode != "hunt":
+            return {
+                "ok": False,
+                "reason": f"Bilinmeyen sürüş modu: {mode!r} (beklenen: hunt|drive).",
+            }
         try:
             eng = engines.get_engine(engine)
         except ValueError as exc:
@@ -572,3 +604,172 @@ class AutoDriver:
         )
         final = self.orch.run_until_blocked(run_id)
         return {"ok": True, "drove": True, "hunt_passed": True, "verdict": verdict, **final}
+
+    def _drive_pipeline(
+        self,
+        run_id: str,
+        *,
+        execute: bool = False,
+        engine: str = DEFAULT_ENGINE,
+        runner: Runner | None = None,
+    ) -> dict[str, Any]:
+        """⚡ RUN "sür" modu: motoru MCP araçlarıyla veri hattını ilerletmeye SÜRER.
+
+        Av modundan (``drive`` mode="hunt") kritik farkları:
+        - MCP açık (``build_drive_command`` → ``--mcp-config`` + ``--strict-mcp-config``,
+          ``--safe-mode`` YOK). Motor Achilles MCP araçlarını GÖRÜR; ama araç yüzeyi P4
+          allow-list'iyle (19 salt-okuma/POST-ask ucu) + sürücü token'ıyla sınırlıdır.
+        - Verdict AYRI işaretçi (``ACHILLES_DRIVE_VERDICT``): sür PASS'i ``hunt_ack`` YAZMAZ
+          — zorunlu Kademe-2 av kapısı bağımsız kalır (Kural 8; av ayrı tetiklenir).
+        - Token DRIVE_TOKEN_TTL_S ile mint edilir (SORUN 2): koşu 60 dk sürebilir, varsayılan
+          2100s TTL koşu ortasında ölüp MCP çağrılarına 401 attırırdı.
+        - Sür promptu gerçek eğitimi ASLA başlatmaz; onay/eğitim uçları sürücü kimliğiyle
+          403 alır (Kural 8) — bu zaten P1 scope katmanında kurulu, burada KORUNUR.
+
+        `execute=False`: DRY-RUN (spawn yok, komut + MCP config yolu döner). `runner` enjekte
+        edilirse gerçek spawn/kısıt aranmaz (test yolu)."""
+        try:
+            eng = engines.get_engine(engine)
+        except ValueError as exc:
+            return {"ok": False, "reason": str(exc)}
+        if not eng.spawns:
+            return {
+                "ok": False,
+                "reason": (
+                    f"Motor '{eng.name}' süreç başlatmaz (doğrudan yerel hat) — "
+                    "sür modu için spawn eden bir motor seç."
+                ),
+            }
+        if not eng.drive_argv_template:
+            # Sessizce av moduna DÜŞMEZ: av MCP'siz olduğundan sessiz düşüş, araçsız bir
+            # ajan doğururdu (veri hattını ilerletemez). Açık ret doğru davranıştır.
+            return {
+                "ok": False,
+                "reason": (
+                    f"{eng.label} sür (drive) modunu desteklemiyor — MCP erişimli "
+                    "sertleştirilmiş şablonu yok."
+                ),
+                "engine": eng.name,
+            }
+
+        run = self.orch.store.get_run(run_id)
+        if run is None:
+            return {"ok": False, "reason": f"Koşu bulunamadı: {run_id}"}
+
+        # Koşu başına ayrı MCP config YOLU (eşzamanlı koşular çakışmaz). ⚠️ Dosya YALNIZ
+        # gerçek spawn'da (execute=True) diske yazılır ve koşu bitince `finally` içinde
+        # SİLİNİR — dry-run yalnız komutu gösterir, depoya artefakt bırakmaz (repo hijyeni;
+        # rlm-security-reviewer bulgusu). Config sır içermez (token ortamdan miras alınır).
+        mcp_path = drive_mcp_config_path(run_id)
+        command = build_drive_command(run, mcp_path, eng.name)
+
+        if not execute:
+            self.orch.store.add_event(
+                run_id,
+                "drive",
+                "info",
+                f"Sür DRY-RUN: {eng.label} komutu hazır (execute=False; spawn yok).",
+            )
+            return {
+                "ok": True,
+                "drove": False,
+                "dry_run": True,
+                "mode": "drive",
+                "engine": eng.name,
+                "quota_warning": eng.quota_warning,
+                "command": command,
+                "mcp_config": mcp_path,
+                "needs": f"execute=True + kurulu `{eng.binary}` CLI (giriş kendi CLI'sinde)",
+                **self.orch.status(run_id),
+            }
+
+        run_fn = runner or functools.partial(_default_runner, run_id=run_id)
+        # FAIL-CLOSED: sür profili DOĞRULANMAMIŞ motor doğurulmaz. `drive_hardened`, av
+        # modundaki `hardened`'DAN AYRIDIR (sür `--safe-mode` kullanamaz → farklı bayrak seti).
+        if runner is None and not eng.drive_hardened:
+            self.orch.store.add_event(
+                run_id,
+                "drive",
+                "error",
+                f"Sür REDDEDİLDİ: {eng.label} sür modunda araç-seviyesinde kısıtlanamıyor.",
+            )
+            return {
+                "ok": False,
+                "reason": (
+                    f"{eng.label} sür modunda sertleştirilmiş değil — AutoDriver yalnız "
+                    "araç-kısıtlı motor doğurur (Kural 8). Bkz. docs/SCOPE_ISOLATION.md."
+                ),
+                "engine": eng.name,
+                "drive_hardened": False,
+                "command": command,
+            }
+        if runner is None and not engine_available(eng.name):
+            return {
+                "ok": False,
+                "reason": f"`{eng.binary}` CLI PATH'te yok — {eng.label} kurulu olmalı.",
+                "engine": eng.name,
+                "command": command,
+            }
+
+        self.orch.store.add_event(
+            run_id,
+            "drive",
+            "info",
+            f"Sür modu: {eng.label} ile veri hattı MCP üzerinden sürülüyor. {eng.quota_warning}",
+        )
+        # MCP config'i spawn'dan HEMEN ÖNCE yaz (motor `--mcp-config` ile okuyacak).
+        write_mcp_config(mcp_path)
+        # SORUN 2 FIX: token AÇIKÇA DRIVE_TOKEN_TTL_S ile mint edilir (varsayılan 2100s
+        # sür koşusunun ortasında ölürdü). Koşu bitince `finally` ile MUTLAKA iptal edilir.
+        token = driver_scope.mint(run_id, ttl_s=DRIVE_TOKEN_TTL_S)
+        try:
+            rc, output = run_fn(command, DRIVE_TIMEOUT_S, build_child_env(token, run_id))
+        except Exception as exc:  # spawn/timeout — koşuyu çökertme
+            log.exception("AutoDriver sür: %s çalıştırılamadı", eng.name)
+            self.orch.store.add_event(run_id, "drive", "error", f"Sür hatası: {exc}")
+            return {
+                "ok": False,
+                "reason": f"{eng.label} çalıştırılamadı: {exc}",
+                "engine": eng.name,
+                "command": command,
+                "mode": "drive",
+            }
+        finally:
+            driver_scope.revoke_run(run_id)
+            # Koşu bitti (MCP sunucusu motorun çocuğuydu, o da öldü) → config artefaktını sil.
+            with contextlib.suppress(OSError):
+                Path(mcp_path).unlink(missing_ok=True)
+
+        if rc == STOPPED_RC:
+            self.orch.store.add_event(
+                run_id, "drive", "warning", "⛔ DURDUR (STOP_ALL): sür motoru kesildi."
+            )
+            return {
+                "ok": True,
+                "drove": True,
+                "stopped": True,
+                "mode": "drive",
+                "drive_passed": False,
+                "reason": "Sür koşusu ⛔ DURDUR ile kesildi (STOP_ALL etkin).",
+                "engine": eng.name,
+                **self.orch.status(run_id),
+            }
+
+        # ⚠️ KRİTİK (Kural 8): sür verdict'i AV işaretçisinden AYRI okunur ve hunt_ack YAZMAZ.
+        # Zorunlu Kademe-2 av kapısı yalnız gerçek av (mode="hunt") ile açılır.
+        verdict = parse_drive_verdict(output)
+        self.orch.store.add_event(
+            run_id,
+            "drive",
+            "info" if verdict["passed"] else "warning",
+            f"Sür {verdict['verdict']} → veri hattı sürüşü bitti (av kapısı ETKİLENMEZ).",
+        )
+        return {
+            "ok": True,
+            "drove": True,
+            "mode": "drive",
+            "drive_passed": verdict["passed"],
+            "verdict": verdict,
+            "engine": eng.name,
+            **self.orch.status(run_id),
+        }
