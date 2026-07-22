@@ -27,7 +27,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from app.orchestration import engine_procs, engines
+from app.orchestration import engine_procs, engines, verdict_audit
 from app.orchestration.engine_procs import DEFAULT_GRACE_S
 from app.orchestration.engines import DEFAULT_ENGINE
 from app.orchestration.orchestrator import TrainingOrchestrator
@@ -91,7 +91,13 @@ Runner = Callable[..., tuple[int, str]]
 
 
 def build_hunt_prompt(run: dict[str, Any]) -> str:
-    """Headless claude -p için Kademe-2 derin av promptu (SALT RAPOR; kod/eğitim YOK)."""
+    """Headless claude -p için Kademe-2 derin av promptu (SALT RAPOR; kod/eğitim YOK).
+
+    ⚠️ BAĞIMSIZ VERDICT (P8): motor artık serbest bir "PASS" değil, YAPILANDIRILMIŞ KANIT
+    (taranan dosyalar + alt-sistemler + bulgular) üretmek zorundadır. Kanıt, motordan
+    bağımsız olarak dosya sistemiyle doğrulanır (bkz. ``verdict_audit``); uydurulmuş, boş
+    ya da iç-tutarsız kanıt PASS'i düşürür → motorun öz-beyanı TEK kanıt değildir (Kural 8).
+    """
     adapter = run.get("adapter_name", "achilles_lora")
     return (
         "Sen Achilles deposunda KADEME-2 derin adversarial bug-avı çalıştıran bir ajansın. "
@@ -99,8 +105,22 @@ def build_hunt_prompt(run: dict[str, Any]) -> str:
         "kurallar oradadır). Bu, eğitim ÖNCESİ ZORUNLU denetimdir. KESİNLİKLE: yalnız RAPOR üret; "
         "KOD DEĞİŞTİRME, git commit/push YAPMA, EĞİTİM BAŞLATMA, hiçbir dosyaya yazma. "
         "Alt-sistem başına paralel bul → şüpheci adversarial doğrula (varsayılan çürütülmüş) "
-        "→ yalnız onaylanan CİDDİ (HIGH/BLOCKER) bulguları say. Çıktının SON SATIRI tam olarak "
-        "şu biçimde olmalı:\n"
+        "→ yalnız onaylanan CİDDİ (HIGH/BLOCKER) bulguları say.\n"
+        "\n"
+        "SON İKİ ÇIKTI (sırayla). ÖNCE tek satırda yapılandırılmış KANIT bloğu — çıktının "
+        "verdict'ten hemen önceki bölümüne şu işaretçiyle bir JSON nesnesi yaz:\n"
+        f"{verdict_audit.EVIDENCE_MARKER}\n"
+        '{"scanned_files": ["<depo köküne göreli, GERÇEKTEN Read ile okuduğun yol>", ...], '
+        '"subsystems": ["<taradığın alt-sistem adı>", ...], '
+        '"findings": [{"severity": "HIGH|BLOCKER|MEDIUM|LOW", "file": "<yol>", '
+        '"summary": "<kısa>"}]}\n'
+        f"KANIT KURALI: en az {verdict_audit.MIN_SCANNED_FILES} FARKLI ve depoda GERÇEKTEN "
+        f"var olan dosya, en az {verdict_audit.MIN_SUBSYSTEMS} farklı alt-sistem listele. "
+        "Kanıt dosya sistemiyle bağımsız doğrulanır: uydurma/eksik yol ya da PASS derken "
+        "HIGH/BLOCKER bulgu listelemek verdict'i DÜŞÜRÜR. PASS ise 'findings' HIGH/BLOCKER "
+        "içermemeli (boş ya da yalnız MEDIUM/LOW olabilir).\n"
+        "\n"
+        "SONRA çıktının SON SATIRI tam olarak şu biçimde olmalı:\n"
         "ACHILLES_HUNT_VERDICT: PASS    (ciddi bulgu yok — eğitim güvenli)\n"
         "veya\n"
         "ACHILLES_HUNT_VERDICT: FAIL    (ciddi bulgu var — önce düzeltilmeli)\n"
@@ -574,22 +594,43 @@ class AutoDriver:
             }
 
         verdict = parse_hunt_verdict(output)
-        if not verdict["passed"]:
-            self.orch.store.add_event(
-                run_id,
-                "deep-hunt",
-                "warning",
-                f"Derin av {verdict['verdict']} → deep-hunt bloklu kalır (eğitim ilerlemez).",
-            )
+        # ⚠️ BAĞIMSIZ VERDICT (P8, Kural 8): motorun "PASS" beyanı TEK kanıt değildir. Yapısal
+        # kanıt (taranan dosyalar/alt-sistemler) motordan BAĞIMSIZ olarak dosya sistemiyle
+        # doğrulanır — kanıtsız/uydurma/iç-tutarsız bir PASS zorunlu av kapısını AÇAMAZ.
+        # Denetim ASLA koşuyu çökertmemeli (fail-closed): motordan gelen çıktı düşman-kontrollü
+        # sayılır, beklenmedik bir hata güvenli tarafta "geçmedi" olarak sonuçlanır.
+        try:
+            audit = verdict_audit.audit_hunt_evidence(output, root=_REPO_ROOT)
+        except Exception:  # pragma: no cover — verdict_audit zaten iç-fail-closed; bu son kale
+            log.exception("Bağımsız verdict denetimi beklenmedik hata verdi — reddedildi")
+            audit = {
+                "ok": False,
+                "reason": "Bağımsız denetim beklenmedik hata verdi (fail-closed → reddedildi).",
+                "scanned_count": 0,
+                "subsystem_count": 0,
+            }
+        if not (verdict["passed"] and audit["ok"]):
+            if verdict["passed"] and not audit["ok"]:
+                # Motor PASS dedi ama bağımsız denetim geçmedi → en kritik durum: öz-beyanın
+                # tek başına kapıyı açmasını engelleyen tam olarak budur.
+                msg = (
+                    "Derin av PASS beyanı BAĞIMSIZ denetimden geçemedi → deep-hunt bloklu "
+                    f"kalır (motorun öz-beyanı tek kanıt değildir — Kural 8): {audit['reason']}"
+                )
+            else:
+                msg = f"Derin av {verdict['verdict']} → deep-hunt bloklu kalır (eğitim ilerlemez)."
+            self.orch.store.add_event(run_id, "deep-hunt", "warning", msg)
             return {
                 "ok": True,
                 "drove": True,
                 "hunt_passed": False,
                 "verdict": verdict,
+                "audit": audit,
                 **self.orch.status(run_id),
             }
 
-        # 2) PASS → hunt_ack=true işaretle + onay kapısına kadar ilerlet (orada DURUR — Kural 8).
+        # 2) PASS + bağımsız denetim GEÇTİ → hunt_ack=true işaretle + onay kapısına kadar
+        #    ilerlet (orada DURUR — Kural 8).
         params = dict(run.get("params") or {})
         params["hunt_ack"] = True
         params["hunt_driven_by"] = f"{eng.name}-autodrive"
@@ -600,10 +641,19 @@ class AutoDriver:
             run_id,
             "deep-hunt",
             "info",
-            "Derin av PASS → hunt_ack=true; onay kapısına ilerletiliyor (eğitim onay bekler).",
+            "Derin av PASS + bağımsız kanıt denetimi GEÇTİ "
+            f"({audit['scanned_count']} dosya / {audit['subsystem_count']} alt-sistem teyit "
+            "edildi) → hunt_ack=true; onay kapısına ilerletiliyor (eğitim onay bekler).",
         )
         final = self.orch.run_until_blocked(run_id)
-        return {"ok": True, "drove": True, "hunt_passed": True, "verdict": verdict, **final}
+        return {
+            "ok": True,
+            "drove": True,
+            "hunt_passed": True,
+            "verdict": verdict,
+            "audit": audit,
+            **final,
+        }
 
     def _drive_pipeline(
         self,

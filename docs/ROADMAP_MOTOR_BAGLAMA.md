@@ -537,9 +537,40 @@ canlı doğrulamayı (elle koşulduysa) log'la kanıtla. Bağlanmadıysa "bağla
 
 ---
 
-## P8 — Motorun kendi karnesine güvenme (bağımsız verdict) ⚠️ MİMARİ
+## P8 — Motorun kendi karnesine güvenme (bağımsız verdict) ✅ TAMAMLANDI (2026-07-22)
 
 **Şerit:** tek · **Bağımlılık:** P7 · **Paralel:** yok
+
+### Teslim özeti (kanıt: tam test paketi yeşil + rlm-security-reviewer PASS)
+
+Uygulanan tasarım: **Seçenek C (yapılandırılmış kanıt) + Seçenek A (dış-kanıt eşleştirme)**
+deterministik biçimde birleştirildi. Seçenek B (ikinci bağımsız LLM doğrulayıcı) bilinçli
+ERTELENDİ — çevrimdışı test edilemez + kota yakar; dürüstçe "gelecek katman" olarak belgelendi.
+
+- **Yeni `app/orchestration/verdict_audit.py`** — deterministik, çevrimdışı, LLM YOK. Motor
+  artık serbest bir "PASS" değil, `ACHILLES_HUNT_EVIDENCE` JSON kanıt bloğu (taranan dosyalar
+  + alt-sistemler + bulgular) üretmek zorunda. Denetim bu kanıtı **motordan bağımsız bir
+  oracle** ile — DOSYA SİSTEMİYLE — doğrular: uydurma/yok yollar sayılmaz, kapsama tabanı
+  (`MIN_SCANNED_FILES=5`, `MIN_SUBSYSTEMS=2`), yol-geçişi reddi, ve PASS derken HIGH/BLOCKER
+  bulgu listelemek = iç-tutarsız → reddedilir.
+- **`driver.py`** — `build_hunt_prompt` kanıt bloğu ister; `AutoDriver.drive()` hunt yolu
+  `hunt_ack=true`'yu YALNIZ `verdict.passed AND audit.ok` iken yazar. Kanıtsız serbest "PASS"
+  deep-hunt'ı bloklu bırakır (`test_fake_pass_without_evidence_is_caught`).
+- **Kural-8 SIKILAŞTI, gevşemedi:** eskiden son-satır regex'i tek dayanaktı; şimdi (a) yapısal
+  kanıt zorunlu, (b) dosya sistemiyle bağımsız teyit, (c) iç-tutarsız beyan reddi.
+- **rlm-security-reviewer denetimi:** genel PASS; 1 MEDIUM bulgu (derinden iç-içe JSON
+  `RecursionError` fırlatır — `ValueError` değil `RuntimeError` alt sınıfı → dar `except`
+  kaçırıyordu → sürücüyü çökertirdi) **düzeltildi** (`extract_evidence` fail-closed geniş
+  yakalama + `drive()` denetim çağrısı try/except + regresyon testi). Path-traversal, keyfi
+  dosya okuma, bilgi sızıntısı: temiz. Eğitim-kapısı bypass'ı YOK.
+- **Dürüstlük sınırı (belgelendi):** denetim dosyaların VAR olduğunu doğrular, motorun onları
+  GERÇEKTEN okuduğunu değil — bunu tam kapatmak ikinci bağımsız LLM doğrulayıcı gerektirir
+  (Seçenek B, çevrimdışı test edilemez). "Hiç bakmadan PASS yaz" ve iç-tutarsız beyan sınıfları
+  kapatıldı.
+
+---
+
+**(orijinal prompt — referans için korunur)**
 
 Denetimin bulduğu en derin zayıflık; P7'den ayrı çünkü tasarım kararı gerektiriyor,
 mekanik fix değil.
@@ -583,12 +614,13 @@ KAPI: make format && make lint && make typecheck && make test → PR → merge.
 Yeni bir oturuma şunu yapıştır:
 
 ```
-docs/ROADMAP_MOTOR_BAGLAMA.md dosyasını oku. FAZ 2'deki tamamlanmamış ilk paketi
-(P8) bul, o paketin prompt'unu uygula. Denetim özetini (P6/P7 hükmü) dikkate al.
+docs/ROADMAP_MOTOR_BAGLAMA.md dosyasını oku. FAZ 2 paketlerinin (P7, P8) hepsi TAMAMLANDI.
+Yeni iş için HANDOFF.md "YENİ SEANS BAŞLANGICI" bölümünü ve Kapsam-dışı listesini gözden geçir.
 ```
 
-**Sıradaki açık paket: P8** (motorun kendi karnesine güvenme — bağımsız verdict).
-P7 (sür modunu fişe tak) ✅ TAMAMLANDI (2026-07-22).
+**FAZ 2 KAPANDI.** P7 (sür modunu fişe tak) ✅ TAMAMLANDI (2026-07-22) ·
+P8 (bağımsız verdict) ✅ TAMAMLANDI (2026-07-22). Motor bağlama roadmap'inin tüm paketleri
+(P1-P8) kapandı. Açık mimari iş kalmadı; ertelenen kalemler için "Kapsam dışı" bölümüne bak.
 
 ## Kapsam dışı (bilinçli erteleme)
 

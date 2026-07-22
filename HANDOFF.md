@@ -1,10 +1,41 @@
 # HANDOFF — Achilles Trader AI
 
-_Son güncelleme: 2026-07-22 (P7 — sür modunu fişe tak: ⚡ RUN artık MCP'li sür modu; SSE bilet; TTL fix) · Branch: `claude/motor-baglama-p7-2e8141` · Repo: https://github.com/alimirbagirzade/achilles_
-_Açık PR: yok — tüm PR'lar (#66-#103) MERGED. Veri hattı KAPALI (carding✅ RLM✅ curate✅ assemble✅). Dataset 2000 örnek, pretrain-gate **GO**. Sıradaki: LoRA eğitimi (Kural-8 kapılı, insan onayı bekliyor). Devam eden eşzamanlı iş: agent-map KART yeniden-tasarımı (`claude/agent-map-cards` worktree — o oturumun işi, dokunma)._
+_Son güncelleme: 2026-07-22 (P8 — bağımsız verdict: motorun av "PASS"i artık dosya-sistemiyle teyit edilen yapısal kanıt ister) · Branch: `claude/p7-sur-mode-fixes-323262` · Repo: https://github.com/alimirbagirzade/achilles_
+_Açık PR: P8 (aşağıda). Veri hattı KAPALI (carding✅ RLM✅ curate✅ assemble✅). Dataset 2000 örnek, pretrain-gate **GO**. Sıradaki: LoRA eğitimi (Kural-8 kapılı, insan onayı bekliyor). Motor bağlama roadmap'i P1-P8 KAPANDI._
 
 Yerel-öncelikli (local-first) AI **trading araştırma** sistemi (macOS Apple Silicon + Windows).
 **Canlı bot değil, yatırım tavsiyesi değil.**
+
+---
+
+## 🛡️ 2026-07-22 — P8: Motorun kendi karnesine güvenme → BAĞIMSIZ verdict (FAZ 2 KAPANDI)
+
+Branch `claude/p7-sur-mode-fixes-323262`. **Not:** P7 zaten merged (PR#125) çıktı → bu oturum
+P8'e geçti. Denetimin bulduğu en derin zayıflık kapatıldı.
+
+- **SORUN (driver.py):** zorunlu Kademe-2 av kapısı (Kural 8, her eğitimden önce) TAMAMEN
+  motorun kendi stdout son satırındaki `ACHILLES_HUNT_VERDICT: PASS`'ine güveniyordu. Motor
+  derin avı HİÇ yapmadan "PASS" yazsa `hunt_ack=true` yazılır, eğitim hattı açılırdı →
+  **motor kendi başarısının tek kaynağıydı.**
+- **ÇÖZÜM — yapısal kanıt + dosya-sistemi teyidi (Seçenek C+A).** Yeni
+  `app/orchestration/verdict_audit.py`: motor artık `ACHILLES_HUNT_EVIDENCE` JSON bloğu
+  (taranan dosyalar + alt-sistemler + bulgular) üretmek zorunda. `audit_hunt_evidence()`
+  bunu **motordan bağımsız** olarak DOSYA SİSTEMİYLE doğrular: uydurma/yok yollar sayılmaz,
+  kapsama tabanı (5 dosya / 2 alt-sistem), yol-geçişi reddi, PASS+HIGH bulgu = iç-tutarsız →
+  reddedilir. `drive()` hunt yolu `hunt_ack`'i YALNIZ `verdict.passed AND audit.ok` iken yazar.
+- **Kural-8 SIKILAŞTI:** kanıtsız/uydurma/iç-tutarsız "PASS" artık av kapısını AÇAMAZ
+  (`test_fake_pass_without_evidence_is_caught`). Sür (drive) modu ayrı işaretçi kullandığı
+  için etkilenmez (P7 ayrımı korundu).
+- **Denetim (rlm-security-reviewer):** genel PASS. 1 MEDIUM bulgu DÜZELTİLDİ: derinden iç-içe
+  JSON `RecursionError` fırlatır (`ValueError` DEĞİL) → dar `except` kaçırıp sürücüyü
+  çökertiyordu → `extract_evidence` fail-closed geniş yakalama + `drive()` denetim çağrısı
+  try/except + regresyon testi. Eğitim-kapısı bypass'ı YOK (çökme `hunt_ack`'ten ÖNCE = fail-crash,
+  fail-open değil). Path-traversal / keyfi dosya okuma / bilgi sızıntısı: temiz.
+- **⚠️ DÜRÜSTLÜK SINIRI:** denetim dosyaların VAR olduğunu doğrular, motorun onları GERÇEKTEN
+  okuduğunu değil. "Hiç bakmadan PASS yaz" + iç-tutarsız beyan sınıfları kapatıldı; tam
+  kapatma ikinci bağımsız LLM doğrulayıcı (Seçenek B) ister — çevrimdışı test edilemez +
+  kota yakar, bilinçli ertelendi. Sahte güvenlik hissi verilmedi (modül docstring + roadmap).
+- **Kanıt:** tam test paketi yeşil (verdict_audit 11 + driver 2 yeni test dahil); ruff+mypy temiz.
 
 ---
 
