@@ -376,14 +376,195 @@ Gerçek LoRA eğitimi BU PAKETTE BAŞLATILMAZ (Kural-8, insan onayı ayrı).
 
 ---
 
+# FAZ 2 — RUN'ı GERÇEKTEN ÇALIŞTIR (P1-P6 doğrulama sonrası)
+
+> **Neden bu faz var:** 2026-07-21 doğrulama denetimi (3 paralel ajan + tam test paketi,
+> 1700+ test yeşil) P1-P6'nın 6 paketinden **5'inin gerçekten kapandığını**, ama **P3'ün
+> yarım kaldığını** buldu: sür modu eksiksiz yazılmış ama HİÇBİR spawn yolundan çağrılmıyor.
+> Bugün ⚡ RUN yalnız **av modunu** doğuruyor, o da `--safe-mode` ile → MCP KAPALI → motor
+> Achilles araçlarını GÖRMÜYOR, veri hattını İLERLETMİYOR. Yani senin asıl hedefin
+> ("RUN → eğitim ajanları devreye girsin") **henüz gerçek değil.**
+>
+> Ayrıca denetim 3 gerçek yan-kusur buldu (aşağıda P7'de). Hepsi "beyan edilmiş eksik" —
+> repo kendi dokümanlarında dürüstçe yazmış, gizlenmemiş. Bu faz onları kapatır.
+
+## Doğrulanmış durum (2026-07-21 denetim özeti)
+
+| Paket | Hüküm | Not |
+|---|---|---|
+| P1 scope izolasyonu | ✅ gerçekten tamam | testler yetki-fn'e HİÇ ulaşılmadığını de kanıtlıyor |
+| P2 motor tablosu | ✅ gerçekten tamam | sertleştirilmemiş motor spawn'ı reddediliyor |
+| P3 sür modu | ⚠️ **yazıldı, BAĞLANMADI** | `build_drive_command` ölü kod → **P7 madde 1** |
+| P4 MCP allow-list | ✅ gerçekten tamam | 116→19 uç; test dependency GRAFİĞİNE bakıyor |
+| P5 RUN deneyimi | ✅ gerçekten tamam | 3-kapılı onay; `logged_in` uydurulmuyor |
+| P6 DURDUR + E2E | ✅ tamam | gerçek `terminate_all()`; canlı adımlar bilerek skip |
+
+---
+
+## P7 — Sür modunu fişe tak + 3 yan-kusuru kapat 🎯 ANA HEDEF
+
+**Şerit:** tek · **Bağımlılık:** P1-P6 (hepsi merged, ✅) · **Paralel:** yok — bu tek iş
+
+Bu paket senin 5. adımını ("RUN → ajanlar sürülüyor") **gerçek** yapar. Denetimde bulunan
+4 somut kusuru kapatır. Kapsamı DAR tut — yeni özellik ekleme, sadece yazılmış-ama-bağlanmamış
+olanı bağla ve kusurları düzelt.
+
+```
+Achilles'te "sür" modunu gerçek spawn yoluna bağla ve doğrulama denetiminin bulduğu
+3 yan-kusuru kapat. DAR KAPSAM: yeni özellik değil, mevcut ölü kodu fişe takmak + fix.
+
+ÖNCE OKU:
+- HANDOFF.md worktree hazard bölümü. `git rev-parse --show-toplevel` cwd'ni vermiyorsa
+  gerçek worktree kur: git worktree add "<ayrı-dir>" -b claude/drive-mode-wiring origin/main
+- docs/ROADMAP_MOTOR_BAGLAMA.md P7 bölümü (bu dosya) + HANDOFF.md P6 doğrulama özeti
+- docs/SCOPE_ISOLATION.md (P1 sözleşmesi) — bozmayacaksın
+Orada `uv sync --extra dev --extra mcp` çalıştır.
+
+DOĞRULANMIŞ SORUNLAR (2026-07-21 denetimi):
+
+[SORUN 1 — ANA HEDEF] Sür modu ölü kod.
+  app/orchestration/driver.py:111 build_drive_prompt() + build_drive_command() eksiksiz
+  yazılmış AMA hiçbir spawn yolundan çağrılmıyor. AutoDriver.drive() (driver.py:448) yalnız
+  build_hunt_command (AV modu) çağırıyor. Av argv'si _CLAUDE_ARGV (engines.py:128) --safe-mode
+  içeriyor → --safe-mode MCP'yi de kapatır → motor sıfır MCP sunucusuyla başlar.
+  Sür argv şablonu _CLAUDE_DRIVE_ARGV (engines.py:166) DOĞRU yazılmış: --safe-mode YOK;
+  --setting-sources "" + --disable-slash-commands + --strict-mcp-config + --tools Read,Grep,Glob
+  + --mcp-config <path>. build_mcp_config() (driver.py:144) kendine yeten config üretir.
+
+[SORUN 2] Ölü TTL sabiti → koşu 35. dakikada 401.
+  DRIVE_TOKEN_TTL_S (driver.py:66) tanımlı ama driver_scope.mint(run_id) çağrısı (driver.py:510)
+  onu GEÇMİYOR → varsayılan 2100s (driver_scope.py:36) devrede. 3600s'lik bir sür koşusu
+  ~35. dakikada token ölür, MCP çağrıları 401 alır. Test (test_drive_mode.py:216) yalnız
+  sabitin BÜYÜKLÜĞÜNÜ ölçüyor, KULLANILDIĞINI değil → sahte güvence.
+
+[SORUN 3] İnsan token'ı URL sorgu dizesinde.
+  app/web/server.py:1508 GET /api/training/stream token'ı request.query_params.get("token")
+  ile alıyor; frontend app/web/static/assets/app.js:1214 canlı kullanıyor. Sızan şey
+  KISA ÖMÜRLÜ sürücü token'ı DEĞİL, İNSAN SIRRININ KENDİSİ → erişim/proxy loglarına,
+  tarayıcı geçmişine düşer, TTL'i yok. Gerekçe meşru (EventSource özel başlık gönderemez)
+  ama çözüm var: kısa-ömürlü tek-kullanımlık SSE bileti.
+
+İSTENEN:
+
+1. [SORUN 1] drive() sür komutunu çağıran yolu bağla.
+   - ⚡ RUN akışı (execute=true) SÜR modunu doğursun; AV modu ayrı bir tetikleyicide kalsın
+     (av, Kademe-2 bug taraması için hâlâ gerekli — silme).
+   - build_mcp_config() ile üretilen config --mcp-config olarak geçsin; --strict-mcp-config
+     kullanıcı-düzeyi `claude mcp add` kaydını yok saysın (kendine yeten olsun).
+   - Sür koşusuna P1 sürücü scope token'ı geçsin (build_child_env, driver.py:210); insan
+     token'ı ASLA. Bu zaten kurulu — koru.
+   - Verdict: sür modu ACHILLES_DRIVE_VERDICT işaretçisini kullanır (driver.py:50) — sür
+     PASS'i AV hunt_ack'ini AÇMASIN. Bu ayrım zaten var — bozma.
+
+2. [SORUN 2] mint çağrısına ttl_s=DRIVE_TOKEN_TTL_S geçir. Sabiti canlı sür koşusu
+   süresiyle uyumlu yap (HUNT/DRIVE timeout'undan büyük olmalı). Test: token'ın
+   GERÇEKTEN o TTL ile mint edildiğini doğrula (sabit değerini değil, mint çağrısını assert et).
+
+3. [SORUN 3] /api/training/stream'i sorgu-dizesi token'ından kurtar.
+   - Kısa ömürlü (ör. 60s), tek-kullanımlık SSE bileti üret; insan bir kez normal auth'la
+     bilet alır, EventSource o bileti query'de taşır (bilet ≠ kalıcı sır; log'a düşse de
+     60s sonra ölü). VEYA başka temiz çözüm öner ama İNSAN api_token'ını query'den ÇIKAR.
+   - Frontend app.js:1214 buna göre güncellensin.
+
+KRİTİK KISITLAR (denetimden çıkan dersler):
+- "GET = salt-okuma" BU DEPODA YANLIŞ. Sür moduna yeni bir uç/araç eklersen yan-etkisini
+  handler kaynak kodundan doğrula (tests/test_mcp_allowlist_side_effects.py deseni).
+- Sür modunda --tools yalnız YERLEŞİK araçları kapsar, mcp__* araçlarını KAPSAMAZ
+  (engines.py:155). Yani MCP yüzeyinin tek sınırı P4 allow-list'i + sürücü token'ı. Sür
+  moduna açılan MCP araç setini allow-list'in 19 ucuyla SINIRLA; genişletme.
+- Kural-8: sür modu veri hattını ilerletir AMA gerçek eğitimi taze insan onayında DURDURUR.
+  Sür promptu bunu zaten yazıyor (driver.py:126) — koru, gevşetme.
+- API key yolu yasak; abonelik CLI'si. --safe-mode'u sür modunda GERİ GETİRME.
+
+⚠️ CANLI DOĞRULAMA (bu paketin en riskli kısmı — dikkatli):
+  Denetim şunu vurguladı: --setting-sources "", --tools, --disable-slash-commands
+  kombinasyonunun `claude` CLI'de İDDİA EDİLDİĞİ GİBİ davrandığı HİÇ test edilmedi —
+  yalnız argv string'i kontrol ediliyor. PR#122'de kazara 5 gerçek `claude -p` doğup
+  kota yaktı; bu yüzden E2E canlı adımlar bilerek skip'li.
+  - Otomatik testte GERÇEK motor SPAWN ETME (kota yakar, CI'da claude yok).
+  - Bunun yerine: TEK, KONTROLLÜ, elle-tetiklenen bir canlı duman adımı ekle
+    (env bayrağı veya --allow-live-spawn ile kapılı, varsayılan KAPALI). Bu adım tek koşuluk
+    bir sür motoru doğurur, MCP araçlarının GERÇEKTEN göründüğünü kanıtlar, sonra DURUR.
+    Kullanıcı bunu bir kez elle çalıştırıp kanıtı görsün. Otomatik CI'da ASLA koşmaz.
+  - DURDUR'un bu canlı motoru gerçekten kestiğini de aynı adımda doğrula (P6 engine_procs).
+
+KULLAN:
+- `rlm-security-reviewer` ajanı — sür modu bağlamasını + SSE bilet çözümünü PASS/FAIL
+  denetlesin (yeni delik açtın mı: token sızıntısı, scope kaçağı, MCP yüzey genişlemesi).
+  Kendi kodunu kendin onaylama; ajan raporu olmadan PR açma.
+- `rlm-integration-agent` — MCP geçiş yolunun (build_mcp_config + --mcp-config) doğru
+  kurulduğunu gözden geçirsin.
+- `/codegen-review` skill'i — ruff+mypy+test kapısı.
+- `/achilles-web` skill'i — SSE bilet değişikliği frontend'i etkiliyorsa preview ile doğrula.
+
+TESTLER (zorunlu, çevrimdışı — gerçek spawn YOK):
+- drive() çağrıldığında SÜR argv'si kuruluyor (av değil); --safe-mode YOK; --mcp-config VAR
+- mint çağrısı ttl_s=DRIVE_TOKEN_TTL_S ile yapılıyor (mint'i mock'la, argümanı assert et)
+- /api/training/stream artık insan api_token'ını query'den KABUL ETMİYOR; bilet yolu çalışıyor
+- bilet kısa ömürlü + tek-kullanımlık (ikinci kullanım reddedilir; TTL sonrası reddedilir)
+- sür moduna açık MCP araç seti allow-list'in 19 ucunu AŞMIYOR
+- canlı-spawn adımı varsayılan KAPALI (env bayrağı olmadan skip)
+
+KAPI: make format && make lint && make typecheck && make test → PR aç → CI yeşilse merge.
+Gerçek LoRA eğitimi BAŞLATMA (Kural-8). Otomatik canlı motor spawn ETME (kota).
+
+ÇIKTI: "çalışıyor" demeden önce KANIT göster. Sür modunun bağlandığını test çıktısıyla,
+canlı doğrulamayı (elle koşulduysa) log'la kanıtla. Bağlanmadıysa "bağlanmadı" de.
+```
+
+---
+
+## P8 — Motorun kendi karnesine güvenme (bağımsız verdict) ⚠️ MİMARİ
+
+**Şerit:** tek · **Bağımlılık:** P7 · **Paralel:** yok
+
+Denetimin bulduğu en derin zayıflık; P7'den ayrı çünkü tasarım kararı gerektiriyor,
+mekanik fix değil.
+
+```
+Achilles'te motorun av/sür verdict'inin BAĞIMSIZ doğrulamasını ekle.
+
+ÖNCE: worktree kontrolü (HANDOFF.md), -b claude/independent-verdict, uv sync --extra dev.
+
+SORUN (doğrulanmış, driver.py:544):
+parse_hunt_verdict(output) verdict'i TAMAMEN motorun kendi stdout'unun son satırından
+okuyor (ACHILLES_HUNT_VERDICT: PASS). Motor derin avı HİÇ yapmadan "PASS" yazsa hat açılır.
+Bu, ZORUNLU Kademe-2 av kapısının (Kural-8, her eğitimden önce) TEK dayanağı → motor kendi
+başarı raporunun tek kaynağı. Fail-closed korumalar var (satır yoksa FAIL, sahte-binary
+savunması, Write/Edit yasak) ama BAĞIMSIZ kanıt yok.
+
+İSTENEN — tasarım seçeneklerini DEĞERLENDİR, birini öner+uygula:
+A) Dış-kanıt eşleştirme: av "bulgu" iddiasını gerçek artefaktla doğrula (motor bir bulgu
+   raporu dosyası bıraktıysa onu ayrı bir salt-okuma ajanı/kod re-parse etsin; boşsa PASS reddedilir).
+B) İkinci bağımsız doğrulayıcı: verdict PASS ise ayrı bir `rlm-security-reviewer`/hafif
+   kod-tarama ADIMI çalışıp "gerçekten tarandı mı" sorusuna bağımsız cevap versin
+   (adversarial, varsayılan çürütülmüş — CLAUDE.md av deseni).
+C) Av çıktısının yapısal kanıtı: motordan serbest "PASS" değil, YAPILANDIRILMIŞ kanıt iste
+   (taranan dosya sayısı, bulgu listesi hash'i) ve bunu bağımsızca teyit et.
+
+KISIT: Kural-8. Kendi kararını kendine onaylatma zincirini KIRMAK bu paketin amacı —
+gevşetme, sıkılaştır. Motor kendi verdict'ini yazabilir ama TEK KANIT olmasın.
+
+KULLAN: `rlm-security-reviewer` (tasarımı + uygulamayı denetle), `/codegen-review`.
+
+TESTLER: motor sahte "PASS" yazsa bağımsız doğrulayıcı bunu YAKALIYOR; gerçek av PASS'i
+geçiyor; boş/eksik kanıt reddediliyor.
+
+KAPI: make format && make lint && make typecheck && make test → PR → merge.
+```
+
+---
+
 ## Sonraki chat'e devir notu
 
 Yeni bir oturuma şunu yapıştır:
 
 ```
-docs/ROADMAP_MOTOR_BAGLAMA.md dosyasını oku. Tamamlanmamış ilk paketi bul,
-o paketin prompt'unu uygula. Paralel şeritte iş varsa söyle.
+docs/ROADMAP_MOTOR_BAGLAMA.md dosyasını oku. FAZ 2'deki tamamlanmamış ilk paketi
+(P7 → sonra P8) bul, o paketin prompt'unu uygula. Denetim özetini (P6 hükmü) dikkate al.
 ```
+
+**Sıradaki açık paket: P7** (sür modunu fişe tak — senin asıl hedefin). P8 ondan sonra.
 
 ## Kapsam dışı (bilinçli erteleme)
 
