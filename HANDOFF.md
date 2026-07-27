@@ -112,7 +112,13 @@ Düzeltme (3 parça):
 - `/api/supervisor/stop-all` — bayrakla BİRLİKTE `terminate_all()`; yanıtta
   `engines_terminated` sayısı döner (sessiz "durduruldu" yok).
 
-### ⚠️ SÜR MODU HÂLÂ BAĞLI DEĞİL (kapatılmadı — görünür kılındı)
+### ✅ SÜR MODU (P6'da bağlı değildi) → P7'de FİŞE TAKILDI
+> **GÜNCELLEME (P7, 2026-07-22):** Bu P6 bulgusu KAPATILDI. `build_drive_command` artık
+> sür yolundan çağrılıyor (`driver.py:720`) ve ⚡ RUN ucu **varsayılan `mode="drive"`**
+> (`orchestration_routes.py:145`) → motor Achilles MCP araçlarını GÖRÜR, veri hattını
+> İLERLETİR. "RUN → ajanlar sürülüyor" iddiası artık GERÇEK (bkz. yukarıdaki P7 bölümü).
+> Aşağısı P6 anındaki tarihsel durumdur (referans için korunur):
+
 `build_drive_command` **hiçbir spawn yolundan çağrılmıyor**. ⚡ RUN yalnız **av** modunu
 doğurur; av modu `--safe-mode` ile başlar ve o bayrak **MCP'yi de kapatır** → motor
 Achilles MCP araçlarını **GÖRMEZ**, veri hattını **İLERLETEMEZ**.
@@ -154,9 +160,16 @@ scope izolasyonu, alt-süreç enjeksiyonu) → **yeniden koşturuldu, 63/63 ajan
 |-----|-------|----------|
 | 🔴 high (3/3) | **Motor binary'si mutlak yol olmadan + cwd pinlenmeden doğuruluyordu** → çalışma dizinine bırakılan sahte `claude.exe` gerçek CLI yerine koşar; taklitçi son satıra `PASS` yazıp **zorunlu derin av kapısını düşürürdü** (Kural 8). Sertleştirme bayrakları sahte binary'ye hiçbir şey yaptıramaz. | `_resolve_executable` (PATH'ten cwd atılır) + `cwd=_REPO_ROOT` pinlendi; 3 regresyon testi |
 | 🟡 low | `/api/understanding-score/history` `limit` **sınırsız** (allow-list'e bu pakette eklendi) | `min(max(1,limit),200)` |
-| 🟡 low | `DRIVE_TOKEN_TTL_S` **ölü sabit**; testi yalnız büyüklüğünü ölçüp sahte güvence veriyor | Açık "HENÜZ KULLANILMIYOR" uyarısı + P7 talimatı |
+| 🟡 low | `DRIVE_TOKEN_TTL_S` **ölü sabit**; testi yalnız büyüklüğünü ölçüp sahte güvence veriyor | Açık "HENÜZ KULLANILMIYOR" uyarısı + P7 talimatı → **P7'de mint'e geçirildi** (`driver.py:780` `mint(run_id, ttl_s=DRIVE_TOKEN_TTL_S)`); sabit artık ölü değil |
 
 **⚠️ ONAYLANDI AMA DÜZELTİLMEDİ — tasarım kararı gerektiriyor (SIRADAKİ İŞ):**
+
+> **GÜNCELLEME (2026-07-22):** İlk iki satır KAPATILDI — insan API token'ı SSE query'sinden
+> P7'de **tek-kullanımlık bilete** taşındı (`app/web/sse_tickets.py`; `/api/training/stream`
+> artık api_token'ı query'de kabul etmez); `hunt_ack` öz-beyanı P8 (bağımsız `verdict_audit`
+> dosya-sistemi teyidi) + P9 (okuma-kanıtı: `{path,line,quote}` bağımsız doğrulama) ile
+> bağımsız kanıta bağlandı. Son iki satır (av'ın `.env` okuyabilmesi, koşu-başına autodrive
+> kilidi) HÂLÂ AÇIK.
 
 | Sev | Bulgu | Neden ertelendi |
 |-----|-------|-----------------|

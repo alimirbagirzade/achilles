@@ -13,6 +13,12 @@ kimlik bilgisi toplamaz, saklamaz, göstermez.
 
 ## Mevcut durum (2026-07-21 taraması)
 
+> ✅ **GÜNCELLEME (2026-07-22):** Aşağıdaki tablo 2026-07-21 anının fotoğrafıdır. O günden
+> beri **P1-P9 KAPANDI**: onay/kill-switch izolasyonu (P1), MCP allow-list + token iletimi
+> (P4), sür-modu prompt + MCP geçişi (P3 yazıldı, **P7'de fişe takıldı**) ve ⚡ RUN (artık
+> dry-run değil — **sür modu**, P5-P7) tamam. Bu tablodaki "❌ yok / 🟡 dry-run" satırları
+> ARTIK GEÇERLİ DEĞİL. Güncel durum için "FAZ 2 → Doğrulanmış durum" ve "FAZ 3" bölümlerine bak.
+
 | Parça | Durum | Konum |
 |---|---|---|
 | MCP sunucusu (OpenAPI→tool proxy) | ✅ var | `mcp_server/achilles_mcp.py` |
@@ -378,15 +384,21 @@ Gerçek LoRA eğitimi BU PAKETTE BAŞLATILMAZ (Kural-8, insan onayı ayrı).
 
 # FAZ 2 — RUN'ı GERÇEKTEN ÇALIŞTIR (P1-P6 doğrulama sonrası)
 
-> **Neden bu faz var:** 2026-07-21 doğrulama denetimi (3 paralel ajan + tam test paketi,
+> ✅ **DURUM (2026-07-22): BU FAZ KAPANDI.** P7 sür modunu fişe taktı, P8 bağımsız verdict'i
+> ekledi. ⚡ RUN artık **sür (drive) modunda** doğuruyor (varsayılan `mode="drive"`,
+> `orchestration_routes.py:145`); `build_drive_command` sür yolundan çağrılıyor
+> (`driver.py:720`); motor MCP araçlarını görüyor, veri hattını ilerletiyor; eğitim onay
+> kapısında duruyor. Aşağısı bu fazı BAŞLATAN tarihsel gerekçedir:
+>
+> **Neden bu faz vardı:** 2026-07-21 doğrulama denetimi (3 paralel ajan + tam test paketi,
 > 1700+ test yeşil) P1-P6'nın 6 paketinden **5'inin gerçekten kapandığını**, ama **P3'ün
-> yarım kaldığını** buldu: sür modu eksiksiz yazılmış ama HİÇBİR spawn yolundan çağrılmıyor.
-> Bugün ⚡ RUN yalnız **av modunu** doğuruyor, o da `--safe-mode` ile → MCP KAPALI → motor
-> Achilles araçlarını GÖRMÜYOR, veri hattını İLERLETMİYOR. Yani senin asıl hedefin
-> ("RUN → eğitim ajanları devreye girsin") **henüz gerçek değil.**
+> yarım kaldığını** buldu: sür modu eksiksiz yazılmıştı ama HİÇBİR spawn yolundan
+> çağrılmıyordu (**P7 bunu bağladı**). O an ⚡ RUN yalnız **av modunu** doğuruyordu, o da
+> `--safe-mode` ile → MCP KAPALI → motor Achilles araçlarını görmüyordu. Yani asıl hedef
+> ("RUN → eğitim ajanları devreye girsin") o an henüz gerçek değildi — **P7'de gerçek oldu.**
 >
 > Ayrıca denetim 3 gerçek yan-kusur buldu (aşağıda P7'de). Hepsi "beyan edilmiş eksik" —
-> repo kendi dokümanlarında dürüstçe yazmış, gizlenmemiş. Bu faz onları kapatır.
+> repo kendi dokümanlarında dürüstçe yazmış, gizlenmemiş. Bu faz onları kapattı.
 
 ## Doğrulanmış durum (2026-07-21 denetim özeti)
 
