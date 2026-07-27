@@ -278,6 +278,42 @@
     return null;
   }
 
+  // ---------- gelişmiş/gözlem grubu görünürlüğü ----------
+  // "İzleme & sağlık" (öğrenme/ajanlar/nöbetçi/sistem/ajan haritası) saf gözlem
+  // panellerini içerir — varsayılan gizli, "⋯ gelişmiş" ile açılır. Tercih
+  // localStorage'da saklanır. GİZLEME yalnız NAVİGASYON katmanıdır: paneller,
+  // API uçları ve arka plan işleri (öğrenme döngüsü, nöbetçi, orkestrasyon)
+  // her hâlükârda çalışmaya devam eder.
+  var ADVANCED_GROUPS = ["izleme"];
+  var ADVANCED_KEY = "achilles_advanced_on";
+  var groupNav = document.getElementById("groupNav");
+  var advancedToggle = document.getElementById("advancedToggle");
+
+  function isAdvancedGroup(key) {
+    return ADVANCED_GROUPS.indexOf(key) !== -1;
+  }
+  function applyAdvanced(on) {
+    if (groupNav) groupNav.classList.toggle("show-advanced", on);
+    if (advancedToggle)
+      advancedToggle.setAttribute("aria-expanded", on ? "true" : "false");
+    try {
+      window.localStorage.setItem(ADVANCED_KEY, on ? "1" : "0");
+    } catch (e) {}
+  }
+  if (advancedToggle) {
+    advancedToggle.addEventListener("click", function () {
+      var willOpen = !(groupNav && groupNav.classList.contains("show-advanced"));
+      applyAdvanced(willOpen);
+      // Kapatırken aktif sekme gizlenen grupta kaldıysa çekirdeğe dön (research);
+      // yoksa görünmeyen grupta asılı kalır.
+      if (!willOpen) {
+        var active = document.querySelector(".tab.active");
+        var g = active ? TAB_TO_GROUP[active.getAttribute("data-tab")] : null;
+        if (g && isAdvancedGroup(g.key)) setActiveTab("research");
+      }
+    });
+  }
+
   function restoreActiveTab() {
     var name = tabFromHash();
     if (!name) {
@@ -287,6 +323,14 @@
       } catch (e) {}
     }
     if (!name) name = "research";
+    // Gelişmiş toggle: saklı tercih VEYA restore edilen sekme gelişmiş gruptaysa aç
+    // (aksi hâlde gizli grupta aktif sekmede kalıp toggle'ı kapalı göstermek çelişir).
+    var savedAdvanced = false;
+    try {
+      savedAdvanced = window.localStorage.getItem(ADVANCED_KEY) === "1";
+    } catch (e) {}
+    var restoredGroup = TAB_TO_GROUP[name] ? TAB_TO_GROUP[name].key : null;
+    applyAdvanced(savedAdvanced || isAdvancedGroup(restoredGroup));
     // 'research' varsayılan zaten aktif; ilk yüklemede onun loader'ı yok.
     setActiveTab(name, { runLoader: name !== "research" });
   }
