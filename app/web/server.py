@@ -1364,6 +1364,12 @@ def api_training_run(req: TrainingStartRequest) -> TrainingStartResponse:
         ),
         agent_id="lora-trainer",
     )
+    if decision.mode == "stop_all":
+        return TrainingStartResponse(
+            ok=False,
+            status="blocked",
+            message="STOP_ALL aktif — gerçek eğitim bloklandı.",
+        )
     if not decision.authorized:
         return TrainingStartResponse(
             ok=False,

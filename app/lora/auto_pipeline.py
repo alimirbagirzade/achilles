@@ -227,6 +227,8 @@ class AutoLoRAPipeline:
             f"Auto-LoRA gerçek eğitimi: {adapter_name} ({iters} adım)",
             gates_passed=True,
         )
+        if decision.mode == "stop_all":
+            return {"ok": False, "reason": decision.reason, "blocked_by": "stop_all"}
         if not decision.authorized:
             return {
                 "ok": False,
@@ -514,6 +516,8 @@ class AutoLoRAPipeline:
             f"Adapter production terfisi: {adapter_id}",
             gates_passed=True,
         )
+        if decision.mode == "stop_all":
+            return {"ok": False, "reason": decision.reason, "blocked_by": "stop_all"}
         if not decision.authorized:
             return {
                 "ok": False,
