@@ -249,20 +249,21 @@ def approval(ctx: RunContext) -> StageResult:
     yetkilendirir ve onay hiçbir zaman boşa harcanmaz.
     """
     try:
-        from app.agents.runtime import approvals, supervisor
+        from app.training.unattended_policy import authorize_training_action
     except Exception as exc:
         return _result(StageStatus.failed, f"Onay altyapısı yüklenemedi: {exc}", {})
 
-    if supervisor.is_stop_all_active():
-        return _result(
-            StageStatus.blocked, "STOP_ALL aktif — onay alınamaz.", {"blocked_by": "stop_all"}
-        )
-
-    if approvals.has_fresh_approval("lora-trainer", "train_run"):
+    decision = authorize_training_action(
+        "train_run",
+        "Orkestrasyon gate'leri geçmiş yerel LoRA eğitimi",
+        gates_passed=True,
+        agent_id="lora-trainer",
+    )
+    if decision.authorized:
         return _result(
             StageStatus.completed,
-            "Taze eğitim onayı mevcut (lora-trainer/train_run) — train aşaması devralabilir.",
-            {"has_fresh_approval": True, "approval_key": "lora-trainer/train_run"},
+            f"Eğitim yetkisi verildi ({decision.mode}) — train aşaması devralabilir.",
+            {"authorization_mode": decision.mode, "approval_key": "lora-trainer/train_run"},
         )
     return _result(
         StageStatus.blocked,
@@ -271,7 +272,11 @@ def approval(ctx: RunContext) -> StageResult:
             "başlatır (lora-trainer/train_run onayı oluşturur ve gerçek eğitim noktasında "
             "tüketir); onaylandıktan sonra orkestrasyonu sürdür."
         ),
-        {"needs_approval": True, "approval_key": "lora-trainer/train_run"},
+        {
+            "needs_approval": True,
+            "approval_id": decision.approval_id,
+            "approval_key": "lora-trainer/train_run",
+        },
     )
 
 
@@ -280,13 +285,23 @@ def train_handoff(ctx: RunContext) -> StageResult:
     adapter = ctx.run.get("adapter_name", "") or "achilles_lora"
     iters = int(ctx.params.get("iters", 300) or 300)
     cmd = f"achilles train --run --adapter {adapter}"
+    from app.config import get_settings
+
+    unattended = get_settings().unattended_training_enabled
     return _result(
-        StageStatus.blocked,
+        StageStatus.completed if unattended else StageStatus.blocked,
         (
-            "Onay alındı. Gerçek eğitim DEVRİ (detached): web tek-tık akışı bunu otomatik "
-            f"delege eder; elle başlat: {cmd}"
+            "Eğitim yürütmesi tek sahip Auto-LoRA denetleyicisine devredildi."
+            if unattended
+            else f"Detached eğitimi elle başlat: {cmd}"
         ),
-        {"handoff": True, "command": cmd, "adapter": adapter, "iters": iters},
+        {
+            "handoff": True,
+            "owner": "auto-lora-pipeline",
+            "command": cmd,
+            "adapter": adapter,
+            "iters": iters,
+        },
     )
 
 
