@@ -34,7 +34,7 @@ def test_main_agent_flagged() -> None:
 
 
 def test_live_driver_overrides_blocked_run_on_map(monkeypatch) -> None:
-    """DB kapıda blocked olsa da gerçek motor süreci ana ajanı running göstermeli."""
+    """DB kapıda blocked olsa da motor ve sürdüğü orkestratör running görünmeli."""
     from app.orchestration import engine_procs
     from app.orchestration.orchestrator import TrainingOrchestrator
 
@@ -45,8 +45,11 @@ def test_live_driver_overrides_blocked_run_on_map(monkeypatch) -> None:
     )
     monkeypatch.setattr(engine_procs, "live_count", lambda: 1)
 
-    main = next(n for n in build_agent_graph()["nodes"] if n["is_main"])
+    nodes = build_agent_graph()["nodes"]
+    main = next(n for n in nodes if n["is_main"])
+    orchestrator = next(n for n in nodes if n["id"] == "training-orchestrator")
     assert main["status"] == "running"
+    assert orchestrator["status"] == "running"
 
 
 def test_nodes_have_valid_shape() -> None:
