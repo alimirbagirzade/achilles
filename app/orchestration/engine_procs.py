@@ -60,7 +60,15 @@ def unregister(run_id: str, proc: subprocess.Popen) -> None:
 def live_count() -> int:
     """Şu an kayıtlı (henüz bitmemiş) motor süreci sayısı."""
     with _lock:
-        return sum(len(procs) for procs in _live.values())
+        return sum(1 for procs in _live.values() for proc in procs if proc.poll() is None)
+
+
+def is_run_live(run_id: str) -> bool:
+    """Koşuya bağlı gerçekten çalışan bir motor alt-süreci var mı?"""
+    if not run_id:
+        return False
+    with _lock:
+        return any(proc.poll() is None for proc in _live.get(run_id, ()))
 
 
 def _terminate(proc: subprocess.Popen, grace_s: float) -> bool:

@@ -4786,10 +4786,10 @@
           info.textContent =
             "· koşu " + (run.run_id || "?") + " · aşama: " + (run.current_stage || "-");
         }
-        // Canlı şerit GERÇEK koşu durumundan sürülür (yalnız "başlattık" bayrağından değil):
-        // koşu artık running değilse sürüş bitmiştir → şeridi kapat.
+        // Orkestrasyon insan kapısında `blocked` olabilirken motor hâlâ çalışabilir.
+        // Şeridi DB durumundan değil, sunucunun gerçek alt-süreç kaydından sür.
         if (amDriving) {
-          if (run && run.status === "running") {
+          if (run && run.driver_running) {
             var live = document.getElementById("amLiveText");
             if (live) {
               live.textContent =

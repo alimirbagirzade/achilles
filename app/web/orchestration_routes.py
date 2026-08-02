@@ -84,6 +84,9 @@ def orchestration_status(run_id: str) -> dict[str, Any]:
     snap = orch.status(run_id)
     if snap.get("run") is None:
         raise HTTPException(status_code=404, detail=f"Koşu bulunamadı: {run_id}")
+    from app.orchestration import engine_procs
+
+    snap["driver_running"] = engine_procs.is_run_live(run_id)
     return snap
 
 
@@ -123,8 +126,13 @@ def orchestration_resume(
 @router.get("/runs")
 def orchestration_runs(limit: int = 20) -> dict[str, Any]:
     """Son orkestrasyon koşularını listele."""
+    from app.orchestration import engine_procs
+
     orch = _orchestrator()
-    return {"runs": orch.list_runs(limit=limit)}
+    runs = orch.list_runs(limit=limit)
+    for run in runs:
+        run["driver_running"] = engine_procs.is_run_live(str(run.get("run_id", "")))
+    return {"runs": runs}
 
 
 @router.post("/recover")
