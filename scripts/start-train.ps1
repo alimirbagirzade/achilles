@@ -78,6 +78,9 @@ if (-not $uv) { Write-Host "  [HATA] uv bulunamadi." -ForegroundColor Red; exit 
 
 $null = New-Item -ItemType Directory -Path (Split-Path $LogOut) -Force
 $env:ACHILLES_TRAIN_DTYPE = $Dtype
+# Bu script yalnız merkezi unattended eğitim servisi tarafından kullanılır. STOP_ALL
+# yine CLI içinde zorunludur; tekrar başlatmalarda tek kullanımlık insan onayı aranmaz.
+$env:ACHILLES_TRAIN_SUPERVISED = "1"
 # Egitim verisi: lora_sft.jsonl -> train/valid (clobber-proof; bos train.jsonl onarilir)
 & $uv run --project "$ProjectDir" achilles lora-split | Out-Null
 # Temel argumanlar + (profil verildiyse) --profile. Profil bos ise EKLENMEZ (vanilya).

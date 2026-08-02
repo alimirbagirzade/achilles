@@ -191,8 +191,11 @@ def build_training_kwargs(
         "max_grad_norm": cfg.max_grad_norm,
         "fp16": on_cuda,
         "logging_steps": 5,
-        "save_strategy": "epoch",
-        "save_total_limit": 1,
+        # CPU eğitimleri saatler sürer; web/Windows çökmesinde sıfırdan başlamamak için
+        # sık ve dönen checkpoint tut.
+        "save_strategy": "steps",
+        "save_steps": 25,
+        "save_total_limit": 3,
         "eval_strategy": "no",
         "report_to": "none",
         "dataloader_pin_memory": False,
@@ -679,7 +682,12 @@ def train(cfg: PeftTrainConfig) -> dict:
     import datetime as _dt
 
     started_at = _dt.datetime.now().isoformat(timespec="seconds")
-    trainer.train()
+    from transformers.trainer_utils import get_last_checkpoint
+
+    last_checkpoint = get_last_checkpoint(output_dir) if Path(output_dir).is_dir() else None
+    if last_checkpoint:
+        logger.warning("Eğitim son checkpoint'ten sürdürülüyor: %s", last_checkpoint)
+    trainer.train(resume_from_checkpoint=last_checkpoint)
     finished_at = _dt.datetime.now().isoformat(timespec="seconds")
     model.save_pretrained(output_dir)
     tokenizer.save_pretrained(output_dir)

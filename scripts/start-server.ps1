@@ -247,6 +247,23 @@ Set sh = Nothing
         Write-Host "  [!] AchillesWeb gorevi KAYDEDILEMEDI (Yonetici PowerShell gerekebilir)." -ForegroundColor Yellow
     }
 
+    # Eğitim web'den bağımsızdır. Watchdog yalnız PID yoksa train_status.json'daki
+    # reçeteyi yeniden başlatır; PEFT son checkpoint'i otomatik bulup sürdürür.
+    $watchdogScript = Join-Path $ScriptDir "training-watchdog.ps1"
+    $watchdogAction = New-ScheduledTaskAction -Execute "powershell.exe" `
+        -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$watchdogScript`"" `
+        -WorkingDirectory $ProjectDir
+    $watchdogTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
+        -RepetitionInterval (New-TimeSpan -Minutes 5)
+    try {
+        Register-ScheduledTask -TaskName "AchillesTrainingWatchdog" -Action $watchdogAction `
+            -Trigger $watchdogTrigger -Settings $settings -Force -ErrorAction Stop | Out-Null
+        Write-Host "  [OK] Egitim watchdog eklendi (5 dakikada bir)" -ForegroundColor Green
+    } catch {
+        $script:AutostartOk = $false
+        Write-Host "  [!] Egitim watchdog KAYDEDILEMEDI." -ForegroundColor Yellow
+    }
+
     # Gunluk otomatik guncelleme gorevi (her gun 03:00) -- BU repodaki update.ps1
     $updateScript = Join-Path $ProjectDir "update.ps1"
     $updateAction = New-ScheduledTaskAction `
@@ -271,6 +288,7 @@ Set sh = Nothing
 function Repair-Autostart {
     $webEmb = Get-EmbeddedTaskPath -TaskName "AchillesWeb"
     $webTask = Get-ScheduledTask -TaskName "AchillesWeb" -ErrorAction SilentlyContinue
+    $watchdogTask = Get-ScheduledTask -TaskName "AchillesTrainingWatchdog" -ErrorAction SilentlyContinue
     $expectedWebExe = "powershell.exe"
     $updEmb = Get-EmbeddedTaskPath -TaskName "AchillesUpdate"
     $regVal = (Get-ItemProperty -Path $RegPath -Name $RegKey -ErrorAction SilentlyContinue).$RegKey
@@ -278,6 +296,7 @@ function Repair-Autostart {
     if (-not (Test-PathMatchesRepo $webEmb $ProjectDir)) { $needs = $true }
     if (-not $webTask -or $webTask.Actions[0].Execute -ine $expectedWebExe) { $needs = $true }
     if ($webTask -and $webTask.Actions[0].Arguments -notlike "*$WebTaskScript*") { $needs = $true }
+    if (-not $watchdogTask) { $needs = $true }
     if (-not (Test-PathMatchesRepo $updEmb (Join-Path $ProjectDir 'update.ps1'))) { $needs = $true }
     if (-not $regVal -or ($regVal -notlike "*$VbsFile*")) { $needs = $true }
     if (-not $needs) {
@@ -340,6 +359,7 @@ function Uninstall-Autostart {
     Remove-Item $VbsFile -Force -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName "AchillesWeb"    -Confirm:$false -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName "AchillesUpdate" -Confirm:$false -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName "AchillesTrainingWatchdog" -Confirm:$false -ErrorAction SilentlyContinue
     Write-Host "  [OK] Otomatik baslatma ve guncelleme kaldirildi." -ForegroundColor Yellow
 }
 
