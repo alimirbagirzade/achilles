@@ -46,3 +46,11 @@ def sentinel_overview() -> dict[str, Any]:
 def sentinel_history(limit: int = 20) -> dict[str, Any]:
     """Geçmiş nöbetçi koşuları (en yeni önce)."""
     return {"history": _sentinel().history(limit=min(max(1, limit), 200))}
+
+
+@router.get("/self-heal")
+def self_heal_status() -> dict[str, Any]:
+    """Otomatik tamir döngüsünün kalıcı durumu ve son eylemleri."""
+    from app.monitoring.self_heal import get_self_healer
+
+    return get_self_healer().status()

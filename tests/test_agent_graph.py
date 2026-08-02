@@ -22,6 +22,7 @@ def test_graph_has_nodes_and_new_agents() -> None:
         "orchestration-autodrive",
         "echo-feedback",
         "sentinel-monitor",
+        "self-healing-controller",
     } <= ids
     assert len(g["nodes"]) >= 20
 
@@ -34,7 +35,7 @@ def test_main_agent_flagged() -> None:
 
 
 def test_live_driver_overrides_blocked_run_on_map(monkeypatch) -> None:
-    """DB kapıda blocked olsa da gerçek motor süreci ana ajanı running göstermeli."""
+    """DB kapıda blocked olsa da motor ve sürdüğü orkestratör running görünmeli."""
     from app.orchestration import engine_procs
     from app.orchestration.orchestrator import TrainingOrchestrator
 
@@ -45,8 +46,11 @@ def test_live_driver_overrides_blocked_run_on_map(monkeypatch) -> None:
     )
     monkeypatch.setattr(engine_procs, "live_count", lambda: 1)
 
-    main = next(n for n in build_agent_graph()["nodes"] if n["is_main"])
+    nodes = build_agent_graph()["nodes"]
+    main = next(n for n in nodes if n["is_main"])
+    orchestrator = next(n for n in nodes if n["id"] == "training-orchestrator")
     assert main["status"] == "running"
+    assert orchestrator["status"] == "running"
 
 
 def test_nodes_have_valid_shape() -> None:
@@ -83,6 +87,13 @@ def test_motor_controls_rag_memory_pipeline() -> None:
         "to": "rag-learning-loop",
         "kind": "control",
     } in g["edges"]
+
+
+def test_sentinel_self_healing_control_edges_present() -> None:
+    edges = {(e["from"], e["to"]) for e in build_agent_graph()["edges"] if e["kind"] == "control"}
+    assert ("sentinel-monitor", "self-healing-controller") in edges
+    assert ("self-healing-controller", "training-orchestrator") in edges
+    assert ("self-healing-controller", "rag-learning-loop") in edges
 
 
 def test_rag_paused_for_training_is_blocked_on_map(monkeypatch, tmp_path) -> None:

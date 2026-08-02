@@ -45,6 +45,7 @@ _GROUP: dict[str, str] = {
     "orchestration-autodrive": "orkestrasyon",
     "echo-feedback": "geri-bildirim",
     "sentinel-monitor": "izleme",
+    "self-healing-controller": "izleme",
 }
 
 _GROUP_LABELS: dict[str, str] = {
@@ -87,7 +88,10 @@ def _autonomy_value(spec: Any) -> str:
 def _agent_status(agent_id: str, orch_stage_status: dict[str, str]) -> str:
     """Best-effort canlı durum. Bilinmeyen/çözülemeyen → 'idle' (asla çökmez)."""
     # Aktif orkestrasyon koşusundaki aşamalar (orchestrator/autodrive'ı da aydınlatır).
-    if agent_id == "orchestration-autodrive" and orch_stage_status.get("_driver") == "running":
+    if (
+        agent_id in ("training-orchestrator", "orchestration-autodrive")
+        and orch_stage_status.get("_driver") == "running"
+    ):
         return "running"
     if agent_id in ("training-orchestrator", "orchestration-autodrive"):
         if orch_stage_status.get("_run") == "running":
@@ -120,6 +124,17 @@ def _agent_status(agent_id: str, orch_stage_status: dict[str, str]) -> str:
                     return "blocked"
                 if stg == "error":
                     return "error"
+        elif agent_id == "self-healing-controller":
+            import json
+            from pathlib import Path
+
+            p = Path("storage") / "self_heal_state.json"
+            if p.exists():
+                state = json.loads(p.read_text(encoding="utf-8"))
+                if state.get("running"):
+                    return "running"
+                if not state.get("enabled", True):
+                    return "blocked"
     except Exception as exc:  # durum kaynağı okunamasa bile harita çökmesin
         log.debug("agent_graph: %s durumu çözülemedi: %s", agent_id, exc)
     return "idle"
@@ -185,6 +200,19 @@ def build_agent_graph() -> dict[str, Any]:
         seen.add(key)
         edges.append({"from": key[0], "to": key[1], "kind": key[2]})
 
+    # Sentinel sorunlari bulur; self-healing denetleyicisi yalnizca kayitli ve
+    # sinirli runbook'larla orkestrasyon/RAG hattini onarir.
+    node_ids = {n["id"] for n in nodes}
+    for src, dst in (
+        ("sentinel-monitor", "self-healing-controller"),
+        ("self-healing-controller", "training-orchestrator"),
+        ("self-healing-controller", "rag-learning-loop"),
+    ):
+        if {src, dst} <= node_ids:
+            key = (src, dst, "control")
+            seen.add(key)
+            edges.append({"from": src, "to": dst, "kind": "control"})
+
     # 1) Chain kenarları (akış yönü: after → step).
     try:
         from app.agents.runtime.chain import resolve_chain
@@ -207,7 +235,6 @@ def build_agent_graph() -> dict[str, Any]:
         log.debug("agent_graph: chain çözülemedi: %s", exc)
 
     # 2) Veri kenarları (A yazar R, B okur R → A→B). Gürültüyü azalt: aynı çift bir kez.
-    node_ids = {n["id"] for n in nodes}
     for resource, w_agents in writers.items():
         for wa in w_agents:
             for ra in readers.get(resource, []):

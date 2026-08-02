@@ -147,5 +147,6 @@ def test_default_probes_run_offline_without_crash(store: MonitoringStore) -> Non
     r = Sentinel(store=store).run(persist=False)
     assert r.overall in {"ok", "warn", "fail", "skip"}
     names = {p.name for p in r.probes}
+    assert "rag_loop" in names
     assert {"llm", "training", "disk", "sqlite"} <= names
     assert all(p.status in {"ok", "warn", "fail", "skip"} for p in r.probes)
