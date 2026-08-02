@@ -47,6 +47,11 @@ ALLOWED: frozenset[tuple[str, str]] = frozenset(
     {
         # --- Soru-cevap (RAG) ---
         ("POST", "/api/ask"),
+        # --- RAG öğrenme hattı (güvenli otomasyon) ---
+        # Motor kalıcı enable/config yetkisi ALMAZ; yalnız durumu okuyup idempotent tek tur
+        # isteyebilir. Tur kendi eşzamanlılık, bütçe ve training-pause kapılarını uygular.
+        ("GET", "/api/rag-loop/status"),
+        ("POST", "/api/rag-loop/run-once"),
         # --- Bilgi kartları (okuma) ---
         ("GET", "/api/cards/pending"),
         ("GET", "/api/cards/approved"),
@@ -105,6 +110,8 @@ FORBIDDEN_SUBSTRINGS: tuple[str, ...] = (
     "/api/auto-lora/promote",  # adaptör terfisi
     "/api/auto-lora/train",
     "/api/auto-lora/enable",
+    "/api/rag-loop/enable",  # kalıcı arka-plan yetkisi yalnız insan/panel
+    "/api/rag-loop/config",  # motor kendi bütçe ve ağ kadansını değiştiremez
 )
 
 # NOT: bu liste ELLE bakım edilir ve tek başına yeterli DEĞİLDİR — asıl garanti

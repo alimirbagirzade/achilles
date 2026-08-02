@@ -66,6 +66,7 @@ def _operations(s: dict) -> set[tuple[str, str]]:
         "/api/feedback/approve/{correction_id}",
         "/api/papers/upload",
         "/api/rag-loop/enable",
+        "/api/rag-loop/config",
     ],
 )
 def test_yasak_uclar_sunulmaz(filtered: dict, path: str) -> None:
@@ -73,9 +74,12 @@ def test_yasak_uclar_sunulmaz(filtered: dict, path: str) -> None:
 
 
 def test_yazma_metodlari_tamamen_elenir(filtered: dict) -> None:
-    """İzin verilen tek yazma ucu /api/ask; başka POST/DELETE/PUT/PATCH kalmamalı."""
+    """Yalnız açıkça güvenli iki POST; başka yazma metodu kalmamalı."""
     yazma = {(m, p) for m, p in _operations(filtered) if m in {"POST", "PUT", "DELETE", "PATCH"}}
-    assert yazma == {("POST", "/api/ask")}, f"Beklenmeyen yazma ucu: {yazma}"
+    assert yazma == {
+        ("POST", "/api/ask"),
+        ("POST", "/api/rag-loop/run-once"),
+    }, f"Beklenmeyen yazma ucu: {yazma}"
 
 
 def test_ayni_path_uzerinde_yalniz_izinli_metod_kalir(filtered: dict) -> None:

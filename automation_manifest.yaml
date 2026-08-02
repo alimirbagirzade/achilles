@@ -159,10 +159,10 @@ agents:
       - "modül import edilemezse ilgili probe skip"
 
   - agent_id: rag-learning-loop
-    name: RAG Learning Loop
+    name: RAG Öğrenme ve Hafıza Hattı
     file: app/research/rag_learning_loop.py
     entrypoint: RagLearningLoop.run_one_cycle / background_loop / trigger_once_bg
-    trigger: "asyncio background_loop (15s heartbeat) + web /api/rag-loop/*"
+    trigger: "asyncio background_loop (15s heartbeat) + web /api/rag-loop/* + motor MCP run-once"
     autonomy: autonomous
     dangerous: false
     default_enabled: false
@@ -176,6 +176,7 @@ agents:
       - "is_substantive_card içerik kapısı (dejenerasyon kartlarını reddeder)"
       - "tur başına bütçeler (cards_per_cycle vb. clamp'li)"
       - "asyncio lock — eşzamanlı tur yok"
+      - "motor yalnız status + run-once görür; kalıcı enable/config MCP'de kapalı"
       - "varsayılan KAPALI (enabled=false)"
     approval_required: false
     stop_method: "/api/rag-loop/enable false (+ enabled state'i kalıcı)"

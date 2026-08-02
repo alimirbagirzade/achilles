@@ -411,10 +411,10 @@ def test_bilinmeyen_mod_reddedilir(tmp_path: Path) -> None:
 
 
 def test_sur_modu_mcp_yuzeyi_allowlisti_asmaz() -> None:
-    """Sür motoru allow-list'li AYNI MCP sunucusunu kullanır → yüzey ≤ 19 uç."""
+    """Sür motoru allow-list'li AYNI MCP sunucusunu kullanır → yüzey 21 uç."""
     from mcp_server.allowlist import ALLOWED
 
     # Sür MCP config'i achilles_mcp.py'yi işaret eder; o da filter_spec ile budanır.
-    assert len(ALLOWED) == 19, "allow-list yüzeyi beklenmedik biçimde değişti (P4 = 19 uç)"
+    assert len(ALLOWED) == 21, "allow-list yüzeyi beklenmedik biçimde değişti"
     cfg = build_mcp_config("/repo")
     assert any("achilles_mcp.py" in a for a in cfg["mcpServers"]["achilles"]["args"])
