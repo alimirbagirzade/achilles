@@ -283,6 +283,11 @@ def test_live_strip_follows_real_run_status() -> None:
     assert "amSetLive(false)" in seg
 
 
+def test_control_edges_have_distinct_rag_motor_style() -> None:
+    assert 'e.kind === "control"' in _appjs()
+    assert ".am-edge-control" in _appcss()
+
+
 def test_dynamic_content_is_escaped() -> None:
     js = _appjs()
     h = js.index("// ---------- 15 · AJAN HARİTASI")

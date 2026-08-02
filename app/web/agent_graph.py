@@ -49,7 +49,7 @@ _GROUP: dict[str, str] = {
 
 _GROUP_LABELS: dict[str, str] = {
     "arastirma": "Araştırma & Kaynak",
-    "ogrenme": "Öğrenme & Anlama",
+    "ogrenme": "Öğrenme & Hafıza (RAG)",
     "dogrulama": "Doğrulama",
     "egitim": "Eğitim Hattı",
     "orkestrasyon": "Orkestrasyon (Ana Ajan)",
@@ -116,6 +116,8 @@ def _agent_status(agent_id: str, orch_stage_status: dict[str, str]) -> str:
                 stg = str(json.loads(p.read_text(encoding="utf-8")).get("stage", ""))
                 if stg and stg not in ("idle", "error", "paused_training"):
                     return "running"
+                if stg == "paused_training":
+                    return "blocked"
                 if stg == "error":
                     return "error"
     except Exception as exc:  # durum kaynağı okunamasa bile harita çökmesin
@@ -175,6 +177,13 @@ def build_agent_graph() -> dict[str, Any]:
 
     edges: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
+
+    # Motorun güvenli MCP yüzeyinden tetiklediği RAG hafıza hattını açıkça göster.
+    # Bu ilişki veri read/write eşleşmesi değil, çalışma-zamanı kontrol bağıdır.
+    if {_MAIN_AGENT, "rag-learning-loop"} <= {n["id"] for n in nodes}:
+        key = (_MAIN_AGENT, "rag-learning-loop", "control")
+        seen.add(key)
+        edges.append({"from": key[0], "to": key[1], "kind": key[2]})
 
     # 1) Chain kenarları (akış yönü: after → step).
     try:

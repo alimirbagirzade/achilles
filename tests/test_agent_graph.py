@@ -76,6 +76,27 @@ def test_chain_flow_edge_present() -> None:
     assert ("arxiv-fetcher", "rag-learning-loop") in chain_edges
 
 
+def test_motor_controls_rag_memory_pipeline() -> None:
+    g = build_agent_graph()
+    assert {
+        "from": "orchestration-autodrive",
+        "to": "rag-learning-loop",
+        "kind": "control",
+    } in g["edges"]
+
+
+def test_rag_paused_for_training_is_blocked_on_map(monkeypatch, tmp_path) -> None:
+    storage = tmp_path / "storage"
+    storage.mkdir()
+    (storage / "rag_learning_state.json").write_text(
+        '{"stage":"paused_training"}', encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    rag = next(n for n in build_agent_graph()["nodes"] if n["id"] == "rag-learning-loop")
+    assert rag["status"] == "blocked"
+
+
 # ── web ─────────────────────────────────────────────────────────────────────
 
 pytest.importorskip("fastapi")
