@@ -35,6 +35,7 @@ $PidFile    = Join-Path $ProjectDir ".web.pid"
 $VbsFile    = Join-Path $ScriptDir "achilles-autostart.vbs"
 $RegPath    = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 $RegKey     = "AchillesWeb"
+$WebExe     = Join-Path $ProjectDir ".venv\Scripts\achilles-web.exe"
 
 # ---------------------------------------------------------------- uv bul
 function Find-Uv {
@@ -227,10 +228,9 @@ Set sh = Nothing
     # Start-Process yapip hemen cikarsa gorev Ready durumuna doner ve Windows
     # onun alt prosesini temizleyebilir. uv'yi dogrudan action yapmak gorevi
     # sunucu yasadigi surece Running tutar.
-    $action = New-ScheduledTaskAction `
-        -Execute $UvPath `
-        -Argument "run --no-sync --project `"$ProjectDir`" achilles-web" `
-        -WorkingDirectory $ProjectDir
+    $taskExe = if (Test-Path $WebExe) { $WebExe } else { $UvPath }
+    $taskArgs = if ($taskExe -eq $WebExe) { "" } else { "run --no-sync --project `"$ProjectDir`" achilles-web" }
+    $action = New-ScheduledTaskAction -Execute $taskExe -Argument $taskArgs -WorkingDirectory $ProjectDir
     $trigger  = New-ScheduledTaskTrigger -AtLogOn
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -StartWhenAvailable `
         -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 2)
@@ -266,10 +266,13 @@ Set sh = Nothing
 # Kayitli gorev/Registry yolu bu repodan farkliysa (veya yoksa) yeniden gom. git'e DOKUNMAZ.
 function Repair-Autostart {
     $webEmb = Get-EmbeddedTaskPath -TaskName "AchillesWeb"
+    $webTask = Get-ScheduledTask -TaskName "AchillesWeb" -ErrorAction SilentlyContinue
+    $expectedWebExe = if (Test-Path $WebExe) { $WebExe } else { $UvPath }
     $updEmb = Get-EmbeddedTaskPath -TaskName "AchillesUpdate"
     $regVal = (Get-ItemProperty -Path $RegPath -Name $RegKey -ErrorAction SilentlyContinue).$RegKey
     $needs = $false
     if (-not (Test-PathMatchesRepo $webEmb $ProjectDir)) { $needs = $true }
+    if (-not $webTask -or $webTask.Actions[0].Execute -ine $expectedWebExe) { $needs = $true }
     if (-not (Test-PathMatchesRepo $updEmb (Join-Path $ProjectDir 'update.ps1'))) { $needs = $true }
     if (-not $regVal -or ($regVal -notlike "*$VbsFile*")) { $needs = $true }
     if (-not $needs) {
