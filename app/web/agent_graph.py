@@ -116,6 +116,8 @@ def _agent_status(agent_id: str, orch_stage_status: dict[str, str]) -> str:
                 stg = str(json.loads(p.read_text(encoding="utf-8")).get("stage", ""))
                 if stg and stg not in ("idle", "error", "paused_training"):
                     return "running"
+                if stg == "paused_training":
+                    return "blocked"
                 if stg == "error":
                     return "error"
     except Exception as exc:  # durum kaynağı okunamasa bile harita çökmesin
