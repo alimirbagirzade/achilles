@@ -158,6 +158,32 @@ agents:
       - "web sunucu kapalıyken web=warn (CLI onsuz çalışır)"
       - "modül import edilemezse ilgili probe skip"
 
+  - agent_id: self-healing-controller
+    name: Self-Healing Controller (Tamir Döngüsü)
+    file: app/monitoring/self_heal.py
+    entrypoint: SelfHealingController.background_loop / run_once
+    trigger: "web lifespan background loop (60s)"
+    autonomy: autonomous
+    dangerous: false
+    default_enabled: true
+    writes:
+      - storage/self_heal_state.json
+      - "sqlite: orchestration state (yalnız stale recover runbook)"
+    reads:
+      - "Sentinel health probes"
+      - storage/rag_learning_state.json
+    safety_gates:
+      - "3 ardışık hata olmadan tamir yok"
+      - "yalnız açık allow-list idempotent runbook; shell/git/kod değişikliği yok"
+      - "tamir sonrası probe ile doğrulama"
+      - "başarısızlıkta exponential backoff + circuit breaker"
+      - "eğitim başlatma, approval ve model terfisi yok"
+    approval_required: false
+    stop_method: "storage/self_heal_state.json enabled=false"
+    status_location: storage/self_heal_state.json
+    known_failure_modes:
+      - "runbook başarısızsa cooldown büyür; sistem retry storm üretmez"
+
   - agent_id: rag-learning-loop
     name: RAG Öğrenme ve Hafıza Hattı
     file: app/research/rag_learning_loop.py

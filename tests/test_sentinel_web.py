@@ -50,3 +50,12 @@ def test_history_endpoint(client: TestClient) -> None:
     assert isinstance(hist, list) and len(hist) >= 1
     assert hist[0]["overall"] in _VALID
     assert isinstance(hist[0]["probes"], list)
+
+
+def test_self_heal_status_endpoint(client: TestClient) -> None:
+    r = client.get("/api/sentinel/self-heal")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["enabled"] is True
+    assert isinstance(body["consecutive"], dict)
+    assert isinstance(body["history"], list)

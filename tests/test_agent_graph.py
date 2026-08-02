@@ -22,6 +22,7 @@ def test_graph_has_nodes_and_new_agents() -> None:
         "orchestration-autodrive",
         "echo-feedback",
         "sentinel-monitor",
+        "self-healing-controller",
     } <= ids
     assert len(g["nodes"]) >= 20
 
@@ -86,6 +87,13 @@ def test_motor_controls_rag_memory_pipeline() -> None:
         "to": "rag-learning-loop",
         "kind": "control",
     } in g["edges"]
+
+
+def test_sentinel_self_healing_control_edges_present() -> None:
+    edges = {(e["from"], e["to"]) for e in build_agent_graph()["edges"] if e["kind"] == "control"}
+    assert ("sentinel-monitor", "self-healing-controller") in edges
+    assert ("self-healing-controller", "training-orchestrator") in edges
+    assert ("self-healing-controller", "rag-learning-loop") in edges
 
 
 def test_rag_paused_for_training_is_blocked_on_map(monkeypatch, tmp_path) -> None:
