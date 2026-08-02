@@ -99,6 +99,7 @@ _settings = get_settings()
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     import asyncio as _asyncio
+    import os as _os
 
     configure_logging()
     get_settings().ensure_dirs()
@@ -122,13 +123,17 @@ async def _lifespan(app: FastAPI):
     from app.lora.auto_pipeline import get_auto_pipeline
     from app.monitoring.self_heal import get_self_healer
     from app.orchestration.unattended_supervisor import get_unattended_supervisor
-    from app.research.rag_learning_loop import get_rag_loop
+
+    isolate_chroma = _os.environ.get("ACHILLES_WEB_ISOLATE_CHROMA") == "1"
 
     _bg_task = _asyncio.create_task(get_auto_pipeline().background_loop())
     _bg_task.add_done_callback(lambda _t: None)
     # RAG öğrenme döngüsü (sunucu-taraflı; varsayılan KAPALI — yalnız web'den açılınca çalışır).
-    _rag_task = _asyncio.create_task(get_rag_loop().background_loop())
-    _rag_task.add_done_callback(lambda _t: None)
+    if not isolate_chroma:
+        from app.research.rag_learning_loop import get_rag_loop
+
+        _rag_task = _asyncio.create_task(get_rag_loop().background_loop())
+        _rag_task.add_done_callback(lambda _t: None)
     _heal_task = _asyncio.create_task(get_self_healer().background_loop())
     _heal_task.add_done_callback(lambda _t: None)
     _unattended_task = _asyncio.create_task(get_unattended_supervisor().background_loop())
@@ -140,7 +145,7 @@ async def _lifespan(app: FastAPI):
         from app.config import get_settings as _gs
 
         _s = _gs()
-        if _s.rag_router or _s.rag_hybrid or _s.rag_rrf or _s.rag_graph:
+        if not isolate_chroma and (_s.rag_router or _s.rag_hybrid or _s.rag_rrf or _s.rag_graph):
             import threading as _threading
 
             def _warm_bm25() -> None:
@@ -261,6 +266,8 @@ app.include_router(_engines_router)
 
 @app.get("/api/status", response_model=StatusResponse, dependencies=[api_auth])
 def api_status() -> StatusResponse:
+    import os
+
     from app.brain.local_llm import LocalLLM
     from app.memory.chroma_store import ChromaStore
     from app.memory.embedding_service import EmbeddingService
@@ -270,10 +277,13 @@ def api_status() -> StatusResponse:
     store = SqliteStore()
     emb = EmbeddingService()
     llm = LocalLLM()
-    try:
-        n_chunks = ChromaStore().count()
-    except Exception:
+    if os.environ.get("ACHILLES_WEB_ISOLATE_CHROMA") == "1":
         n_chunks = 0
+    else:
+        try:
+            n_chunks = ChromaStore().count()
+        except Exception:
+            n_chunks = 0
     return StatusResponse(
         llm_model=s.llm_model,
         llm_backend=s.llm_backend,
