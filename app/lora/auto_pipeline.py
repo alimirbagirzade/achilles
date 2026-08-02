@@ -166,6 +166,7 @@ class AutoLoRAPipeline:
                 return {"ok": False, "reason": self._state.gate_summary}
 
             log.info("Auto-LoRA: Gate 0-8 başlatılıyor (%d kart)", n_approved)
+
             # SqliteStore thread-affine'dir: kontrol düzlemini çalışacağı worker
             # thread'inin içinde kur. Event-loop thread'indeki `store`u taşıma.
             def _run_gates():
