@@ -102,6 +102,12 @@ async def _lifespan(app: FastAPI):
 
     configure_logging()
     get_settings().ensure_dirs()
+    # Dashboard endpoint'leri worker thread'lerde paralel yuklenmeden once NumPy'nin
+    # ilk import'unu tek thread'de tamamla. Aksi halde Windows'ta kismi import ve
+    # 0xC0000005 proses cokmesi gorulebiliyor.
+    import numpy as _numpy
+
+    logger.debug("NumPy preload tamamlandi: %s", _numpy.__version__)
     logger.info("Achilles web başladı — host=%s port=%s", _settings.web_host, _settings.web_port)
     # api_token boşsa auth KAPALIDIR — bu sessiz kalmamalı (scope izolasyonu da bu
     # modda yalnız derinlemesine savunmadır, kriptografik sınır değil).
