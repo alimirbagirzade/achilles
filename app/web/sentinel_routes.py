@@ -54,3 +54,11 @@ def self_heal_status() -> dict[str, Any]:
     from app.monitoring.self_heal import get_self_healer
 
     return get_self_healer().status()
+
+
+@router.get("/unattended")
+def unattended_status() -> dict[str, Any]:
+    """Kalıcı motor bağlantısı ve reconciliation döngüsü durumu."""
+    from app.orchestration.unattended_supervisor import get_unattended_supervisor
+
+    return get_unattended_supervisor().status()

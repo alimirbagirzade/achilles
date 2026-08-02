@@ -35,6 +35,8 @@ $PidFile    = Join-Path $ProjectDir ".web.pid"
 $VbsFile    = Join-Path $ScriptDir "achilles-autostart.vbs"
 $RegPath    = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 $RegKey     = "AchillesWeb"
+$WebExe     = Join-Path $ProjectDir ".venv\Scripts\achilles-web.exe"
+$WebTaskScript = Join-Path $ScriptDir "run-web-service.ps1"
 
 # ---------------------------------------------------------------- uv bul
 function Find-Uv {
@@ -162,7 +164,10 @@ function Stop-AchillesServer {
         return
     }
     $procs = Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -like "*achilles*" }
+        Where-Object {
+            $_.CommandLine -like "*app.web.server*" -or
+            $_.CommandLine -like "*achilles-web*"
+        }
     if ($procs) {
         $procs | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
         Write-Host "  [OK] Durduruldu." -ForegroundColor Yellow
@@ -223,8 +228,13 @@ Set sh = Nothing
     Write-Host "  [OK] Windows acilisina eklendi (Registry Run)" -ForegroundColor Green
     Write-Host "       $VbsFile" -ForegroundColor Gray
 
-    # Task Scheduler (web servisi yedek)
-    $action   = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$VbsFile`"" -WorkingDirectory $ProjectDir
+    # Task Scheduler web servisinin GERCEK sahibi olmali. WScript yalnizca
+    # Start-Process yapip hemen cikarsa gorev Ready durumuna doner ve Windows
+    # onun alt prosesini temizleyebilir. uv'yi dogrudan action yapmak gorevi
+    # sunucu yasadigi surece Running tutar.
+    $taskExe = "powershell.exe"
+    $taskArgs = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$WebTaskScript`""
+    $action = New-ScheduledTaskAction -Execute $taskExe -Argument $taskArgs -WorkingDirectory $ProjectDir
     $trigger  = New-ScheduledTaskTrigger -AtLogOn
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -StartWhenAvailable `
         -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 2)
@@ -235,6 +245,23 @@ Set sh = Nothing
     } catch {
         $script:AutostartOk = $false
         Write-Host "  [!] AchillesWeb gorevi KAYDEDILEMEDI (Yonetici PowerShell gerekebilir)." -ForegroundColor Yellow
+    }
+
+    # Eğitim web'den bağımsızdır. Watchdog yalnız PID yoksa train_status.json'daki
+    # reçeteyi yeniden başlatır; PEFT son checkpoint'i otomatik bulup sürdürür.
+    $watchdogScript = Join-Path $ScriptDir "training-watchdog.ps1"
+    $watchdogAction = New-ScheduledTaskAction -Execute "powershell.exe" `
+        -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$watchdogScript`"" `
+        -WorkingDirectory $ProjectDir
+    $watchdogTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
+        -RepetitionInterval (New-TimeSpan -Minutes 5)
+    try {
+        Register-ScheduledTask -TaskName "AchillesTrainingWatchdog" -Action $watchdogAction `
+            -Trigger $watchdogTrigger -Settings $settings -Force -ErrorAction Stop | Out-Null
+        Write-Host "  [OK] Egitim watchdog eklendi (5 dakikada bir)" -ForegroundColor Green
+    } catch {
+        $script:AutostartOk = $false
+        Write-Host "  [!] Egitim watchdog KAYDEDILEMEDI." -ForegroundColor Yellow
     }
 
     # Gunluk otomatik guncelleme gorevi (her gun 03:00) -- BU repodaki update.ps1
@@ -260,10 +287,16 @@ Set sh = Nothing
 # Kayitli gorev/Registry yolu bu repodan farkliysa (veya yoksa) yeniden gom. git'e DOKUNMAZ.
 function Repair-Autostart {
     $webEmb = Get-EmbeddedTaskPath -TaskName "AchillesWeb"
+    $webTask = Get-ScheduledTask -TaskName "AchillesWeb" -ErrorAction SilentlyContinue
+    $watchdogTask = Get-ScheduledTask -TaskName "AchillesTrainingWatchdog" -ErrorAction SilentlyContinue
+    $expectedWebExe = "powershell.exe"
     $updEmb = Get-EmbeddedTaskPath -TaskName "AchillesUpdate"
     $regVal = (Get-ItemProperty -Path $RegPath -Name $RegKey -ErrorAction SilentlyContinue).$RegKey
     $needs = $false
-    if (-not (Test-PathMatchesRepo $webEmb $VbsFile)) { $needs = $true }
+    if (-not (Test-PathMatchesRepo $webEmb $ProjectDir)) { $needs = $true }
+    if (-not $webTask -or $webTask.Actions[0].Execute -ine $expectedWebExe) { $needs = $true }
+    if ($webTask -and $webTask.Actions[0].Arguments -notlike "*$WebTaskScript*") { $needs = $true }
+    if (-not $watchdogTask) { $needs = $true }
     if (-not (Test-PathMatchesRepo $updEmb (Join-Path $ProjectDir 'update.ps1'))) { $needs = $true }
     if (-not $regVal -or ($regVal -notlike "*$VbsFile*")) { $needs = $true }
     if (-not $needs) {
@@ -326,6 +359,7 @@ function Uninstall-Autostart {
     Remove-Item $VbsFile -Force -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName "AchillesWeb"    -Confirm:$false -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName "AchillesUpdate" -Confirm:$false -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName "AchillesTrainingWatchdog" -Confirm:$false -ErrorAction SilentlyContinue
     Write-Host "  [OK] Otomatik baslatma ve guncelleme kaldirildi." -ForegroundColor Yellow
 }
 
@@ -344,7 +378,7 @@ function Show-Status {
     $upd = Get-ScheduledTask -TaskName "AchillesUpdate" -ErrorAction SilentlyContinue
     Write-Host "  Guncelleme : $(if ($upd) { 'kayitli (her gece 03:00)' } else { 'kayitli degil' })" -ForegroundColor Gray
     # Gomulu gorev yollari BU repoyu mu isaret ediyor? (olu/yabanci yol tespiti)
-    Write-Host "  Web yolu   : $(Format-PathMatch (Get-EmbeddedTaskPath 'AchillesWeb') $VbsFile)" -ForegroundColor Gray
+    Write-Host "  Web yolu   : $(Format-PathMatch (Get-EmbeddedTaskPath 'AchillesWeb') $ProjectDir)" -ForegroundColor Gray
     Write-Host "  Upd yolu   : $(Format-PathMatch (Get-EmbeddedTaskPath 'AchillesUpdate') (Join-Path $ProjectDir 'update.ps1'))" -ForegroundColor Gray
     Write-Host "  Bu repo    : $ProjectDir" -ForegroundColor Gray
     Write-Host "  Log        : $LogOut" -ForegroundColor Gray

@@ -102,6 +102,12 @@ async def _lifespan(app: FastAPI):
 
     configure_logging()
     get_settings().ensure_dirs()
+    # Dashboard endpoint'leri worker thread'lerde paralel yuklenmeden once NumPy'nin
+    # ilk import'unu tek thread'de tamamla. Aksi halde Windows'ta kismi import ve
+    # 0xC0000005 proses cokmesi gorulebiliyor.
+    import numpy as _numpy
+
+    logger.debug("NumPy preload tamamlandi: %s", _numpy.__version__)
     logger.info("Achilles web başladı — host=%s port=%s", _settings.web_host, _settings.web_port)
     # api_token boşsa auth KAPALIDIR — bu sessiz kalmamalı (scope izolasyonu da bu
     # modda yalnız derinlemesine savunmadır, kriptografik sınır değil).
@@ -115,6 +121,7 @@ async def _lifespan(app: FastAPI):
             logger.info("Startup sweep: %d bayat 'running' koşu iptal edildi", len(swept))
     from app.lora.auto_pipeline import get_auto_pipeline
     from app.monitoring.self_heal import get_self_healer
+    from app.orchestration.unattended_supervisor import get_unattended_supervisor
     from app.research.rag_learning_loop import get_rag_loop
 
     _bg_task = _asyncio.create_task(get_auto_pipeline().background_loop())
@@ -124,6 +131,8 @@ async def _lifespan(app: FastAPI):
     _rag_task.add_done_callback(lambda _t: None)
     _heal_task = _asyncio.create_task(get_self_healer().background_loop())
     _heal_task.add_done_callback(lambda _t: None)
+    _unattended_task = _asyncio.create_task(get_unattended_supervisor().background_loop())
+    _unattended_task.add_done_callback(lambda _t: None)
     # BM25 warm-up: hibrit/router/rrf AÇIKSA korpus indeksini ARKA PLAN thread'inde önceden
     # kur (~170s, tek-seferlik) → ilk lexical sorgu 170s soğuk-başlatmaya takılmaz. build-lock
     # ile thundering-herd yok. Dense-only'de gereksiz → atlanır. Sunucu açılışını bloklamaz.

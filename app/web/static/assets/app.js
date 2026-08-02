@@ -83,7 +83,7 @@
       function () {
         // ağ hatası — sunucuya hiç ulaşılamadı
         throw new Error(
-          "Sunucuya ulaşılamadı — web servisi çalışıyor mu? (yerel: uv run achilles-web)"
+          "Achilles backend'e ulaşılamadı. PowerShell: .\\scripts\\run-web-service.ps1"
         );
       }
     );
