@@ -193,6 +193,14 @@ function Test-PathMatchesRepo {
     } catch { return $false }
 }
 
+# Status ekraninda kayitli hedefi ve checkout ile uyumunu tek satirda goster.
+function Format-PathMatch {
+    param([string]$Embedded, [string]$Expected)
+    if (-not $Embedded) { return "kayitli yol yok [UYUMSUZ]" }
+    $match = if (Test-PathMatchesRepo $Embedded $Expected) { "[OK]" } else { "[UYUMSUZ]" }
+    return "$Embedded $match"
+}
+
 # VBS + Registry Run + AchillesWeb/AchillesUpdate gorevlerini MEVCUT checkout'a yaz
 # (idempotent kendini-onarma). Cagrildigi $ProjectDir/$ScriptDir'e gomer. git'e DOKUNMAZ.
 # Yukseltilmemis (non-admin) oturumda Register-ScheduledTask basarisiz olabilir; sessiz

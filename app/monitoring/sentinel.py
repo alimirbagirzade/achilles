@@ -264,6 +264,23 @@ def probe_contention() -> ProbeResult:
     return _guard("contention", _run)
 
 
+def probe_rag_loop() -> ProbeResult:
+    """RAG döngüsü hata verdi mi; eğitim nedeniyle duraklama sağlıklı sayılır."""
+
+    def _run() -> ProbeResult:
+        from app.research.rag_learning_loop import get_rag_loop
+
+        state = get_rag_loop().get_status()
+        stage = str(state.get("stage", "idle"))
+        if stage == "error":
+            return ProbeResult("rag_loop", "fail", str(state.get("last_error") or "RAG loop error"))
+        return ProbeResult(
+            "rag_loop", "ok", f"RAG loop stage={stage}, enabled={bool(state.get('enabled'))}."
+        )
+
+    return _guard("rag_loop", _run)
+
+
 def default_probes() -> list[Probe]:
     """Üretim varsayılanı — sıra UI'daki gösterim sırasıdır."""
     return [
@@ -275,6 +292,7 @@ def default_probes() -> list[Probe]:
         probe_disk,
         probe_sqlite,
         probe_feedback,
+        probe_rag_loop,
         probe_contention,
     ]
 
