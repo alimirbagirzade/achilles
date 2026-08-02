@@ -155,20 +155,20 @@ PIPELINE: tuple[StageDef, ...] = (
     StageDef(
         name="approval",
         kind=StageKind.approval,
-        title="Onay kapısı",
-        autonomous=False,
+        title="Eğitim yetki politikası",
+        autonomous=True,
         description=(
-            "Gerçek eğitim için TAZE insan onayı (Kural 8). Orchestrator burada durur; "
-            "onay tüketilene kadar train aşamasına geçmez."
+            "Tek UnattendedTrainingPolicy karar verir: gate zinciri geçtiyse otomatik, "
+            "aksi durumda taze insan onayı gerekir."
         ),
     ),
     StageDef(
         name="train",
         kind=StageKind.train,
         title="LoRA eğitimi",
-        autonomous=False,
+        autonomous=True,
         description=(
-            "Gerçek eğitim — yalnız taze onay + STOP_ALL kapalı iken detached delege edilir."
+            "Gerçek eğitim yürütmesi merkezi politika kararıyla Auto-LoRA sahibine delege edilir."
         ),
     ),
     StageDef(

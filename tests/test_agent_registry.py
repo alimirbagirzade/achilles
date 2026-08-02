@@ -53,7 +53,8 @@ def test_dangerous_agents_marked() -> None:
 
 def test_agents_requiring_approval() -> None:
     ids = {a.agent_id for a in agents_requiring_approval()}
-    assert "auto-lora-pipeline" in ids
+    assert "auto-lora-pipeline" not in ids
+    assert "training-orchestrator" not in ids
     assert "rules-updater" in ids
 
 

@@ -435,7 +435,8 @@ def train(
         # Phase 2: STOP_ALL + TAZE manuel onay kapısı (CLAUDE.md Kural 8).
         import os as _os
 
-        from app.agents.runtime import approvals, supervisor
+        from app.agents.runtime import supervisor
+        from app.training.unattended_policy import authorize_training_action
 
         if supervisor.is_stop_all_active():
             console.print(
@@ -447,13 +448,10 @@ def train(
         # auto_pipeline/launch zaten kendi onayını aldıysa (supervised) iç kapı atlanır
         # — çift onay olmasın; ama STOP_ALL her zaman geçerli.
         if not _os.environ.get("ACHILLES_TRAIN_SUPERVISED"):
-            decision = approvals.require_fresh_approval(
+            decision = authorize_training_action(
+                "train_run",
+                (f"Gerçek LoRA eğitimi: {adapter_name} ({iterations} adım, backend={backend})"),
                 agent_id="lora-trainer",
-                action="train_run",
-                risk="critical",
-                summary=(
-                    f"Gerçek LoRA eğitimi: {adapter_name} ({iterations} adım, backend={backend})"
-                ),
             )
             if not decision.authorized:
                 console.print(

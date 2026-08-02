@@ -262,37 +262,17 @@ def test_recover_stale_does_not_clobber_cancelled_run(store: OrchestrationStore)
     assert store.get_run(run_id)["status"] == RunStatus.cancelled.value  # failed DEĞİL
 
 
-def test_approval_delegate_peeks_not_consumes(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Orchestrate approval delegesi onayı TÜKETMEZ; yalnız lora-trainer/train_run gözler."""
-    import app.agents.runtime.approvals as approvals_mod
+def test_approval_delegate_uses_unattended_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Gate zinciri geçen orkestrasyon tek politikadan otomatik yetki alır."""
     import app.agents.runtime.supervisor as supervisor_mod
     from app.orchestration import delegates
 
     monkeypatch.setattr(supervisor_mod, "is_stop_all_active", lambda *a, **k: False)
 
-    def _no_consume(*a: object, **k: object) -> None:
-        raise AssertionError("approval delegesi onayı TÜKETMEMELİ (require_fresh_approval)")
-
-    monkeypatch.setattr(approvals_mod, "require_fresh_approval", _no_consume)
-
-    seen: list[tuple[str, str]] = []
-
-    def _peek(agent_id: str, action: str, store: object = None) -> bool:
-        seen.append((agent_id, action))
-        return False
-
-    monkeypatch.setattr(approvals_mod, "has_fresh_approval", _peek)
     ctx = RunContext(run_id="r", stage="approval", run={"adapter_name": "a"}, params={}, store=None)  # type: ignore[arg-type]
     res = delegates.approval(ctx)
-    assert res.status == StageStatus.blocked
-    assert res.output.get("needs_approval") is True
-    assert seen == [("lora-trainer", "train_run")]  # train --run ile AYNI anahtar
-
-    # taze onay mevcutsa → completed (yine tüketmeden)
-    monkeypatch.setattr(approvals_mod, "has_fresh_approval", lambda *a, **k: True)
-    res2 = delegates.approval(ctx)
-    assert res2.status == StageStatus.completed
-    assert res2.output.get("has_fresh_approval") is True
+    assert res.status == StageStatus.completed
+    assert res.output["authorization_mode"] == "unattended_policy"
 
 
 def test_default_delegates_halt_at_human_gate_offline(
