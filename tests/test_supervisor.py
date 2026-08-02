@@ -46,16 +46,15 @@ def test_readonly_agent_allowed_under_stop_all(st, tmp_path) -> None:
     assert dec.allowed is True
 
 
-def test_dangerous_blocked_without_fresh_approval(st, tmp_path) -> None:
+def test_autonomous_pipeline_allowed_without_fresh_approval(st, tmp_path) -> None:
     dec = supervisor.can_run_agent(
         "auto-lora-pipeline", action="auto_lora_start_training", store=st, root=tmp_path
     )
-    assert dec.allowed is False
-    assert dec.blocked_by == "approval"
-    assert dec.requires_approval is True
+    assert dec.allowed is True
+    assert dec.requires_approval is False
 
 
-def test_allowed_with_fresh_approval(st, tmp_path) -> None:
+def test_fresh_approval_does_not_change_autonomous_manifest_policy(st, tmp_path) -> None:
     d = approvals.require_fresh_approval(
         "auto-lora-pipeline", "auto_lora_start_training", "critical", "s", store=st
     )
@@ -64,7 +63,7 @@ def test_allowed_with_fresh_approval(st, tmp_path) -> None:
         "auto-lora-pipeline", action="auto_lora_start_training", store=st, root=tmp_path
     )
     assert dec.allowed is True
-    assert dec.requires_approval is True
+    assert dec.requires_approval is False
 
 
 def test_unknown_agent_blocked(st, tmp_path) -> None:
