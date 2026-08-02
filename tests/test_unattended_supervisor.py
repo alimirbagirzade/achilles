@@ -36,8 +36,8 @@ def test_reconcile_starts_one_codex_motor(monkeypatch, tmp_path) -> None:
 
     async def _run() -> dict:
         result = await controller.reconcile_once()
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
+        assert controller._driver_task is not None
+        await controller._driver_task
         return result
 
     result = asyncio.run(_run())
