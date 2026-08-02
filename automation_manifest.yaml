@@ -184,6 +184,34 @@ agents:
     known_failure_modes:
       - "runbook başarısızsa cooldown büyür; sistem retry storm üretmez"
 
+  - agent_id: unattended-supervisor
+    name: Unattended Supervisor (Kesintisiz İşletim)
+    file: app/orchestration/unattended_supervisor.py
+    entrypoint: UnattendedSupervisor.background_loop / reconcile_once
+    trigger: "web lifespan reconciliation loop (60s)"
+    autonomy: autonomous
+    dangerous: false
+    default_enabled: true
+    writes:
+      - storage/unattended_supervisor_state.json
+      - "sqlite: orchestration runs/events"
+      - "subprocess: one hardened subscription motor"
+    reads:
+      - "engine_procs live motor registry"
+      - "sqlite: latest orchestration run"
+      - storage/STOP_ALL
+    safety_gates:
+      - "tek canlı motor; duplicate spawn yok"
+      - "STOP_ALL her zaman üstün"
+      - "yalnız hardened drive profili"
+      - "başarısızlıkta exponential backoff + circuit breaker"
+      - "sunucu restart sonrası kalıcı state'ten reconcile"
+    approval_required: false
+    stop_method: "storage/unattended_supervisor_state.json enabled=false veya STOP_ALL"
+    status_location: storage/unattended_supervisor_state.json
+    known_failure_modes:
+      - "abonelik/CLI erişilemezse backoff büyür; retry storm oluşmaz"
+
   - agent_id: rag-learning-loop
     name: RAG Öğrenme ve Hafıza Hattı
     file: app/research/rag_learning_loop.py
