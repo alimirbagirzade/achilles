@@ -229,8 +229,12 @@ Set sh = Nothing
     # onun alt prosesini temizleyebilir. uv'yi dogrudan action yapmak gorevi
     # sunucu yasadigi surece Running tutar.
     $taskExe = if (Test-Path $WebExe) { $WebExe } else { $UvPath }
-    $taskArgs = if ($taskExe -eq $WebExe) { "" } else { "run --no-sync --project `"$ProjectDir`" achilles-web" }
-    $action = New-ScheduledTaskAction -Execute $taskExe -Argument $taskArgs -WorkingDirectory $ProjectDir
+    if ($taskExe -eq $WebExe) {
+        $action = New-ScheduledTaskAction -Execute $taskExe -WorkingDirectory $ProjectDir
+    } else {
+        $taskArgs = "run --no-sync --project `"$ProjectDir`" achilles-web"
+        $action = New-ScheduledTaskAction -Execute $taskExe -Argument $taskArgs -WorkingDirectory $ProjectDir
+    }
     $trigger  = New-ScheduledTaskTrigger -AtLogOn
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -StartWhenAvailable `
         -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 2)
