@@ -275,11 +275,11 @@ def test_live_strip_and_visible_stop_button() -> None:
 
 
 def test_live_strip_follows_real_run_status() -> None:
-    """Canlı şerit 'başlattık' bayrağına değil GERÇEK koşu durumuna bakar (koşu bitince kapanır)."""
+    """Canlı şerit DB aşamasına değil GERÇEK motor süreç kaydına bakar."""
     js = _appjs()
     h = js.index("function amRefreshGate")
     seg = js[h : js.index("function amApproveAndTrain")]
-    assert 'run.status === "running"' in seg
+    assert "run.driver_running" in seg
     assert "amSetLive(false)" in seg
 
 

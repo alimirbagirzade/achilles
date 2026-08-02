@@ -87,6 +87,8 @@ def _autonomy_value(spec: Any) -> str:
 def _agent_status(agent_id: str, orch_stage_status: dict[str, str]) -> str:
     """Best-effort canlı durum. Bilinmeyen/çözülemeyen → 'idle' (asla çökmez)."""
     # Aktif orkestrasyon koşusundaki aşamalar (orchestrator/autodrive'ı da aydınlatır).
+    if agent_id == "orchestration-autodrive" and orch_stage_status.get("_driver") == "running":
+        return "running"
     if agent_id in ("training-orchestrator", "orchestration-autodrive"):
         if orch_stage_status.get("_run") == "running":
             return "running"
@@ -130,11 +132,14 @@ def build_agent_graph() -> dict[str, Any]:
     # Aktif orkestrasyon koşusunun bütünsel durumu (ana-ajan düğümlerini aydınlatmak için).
     orch_stage_status: dict[str, str] = {}
     try:
+        from app.orchestration import engine_procs
         from app.orchestration.orchestrator import TrainingOrchestrator
 
         runs = TrainingOrchestrator().list_runs(limit=1)
         if runs:
             orch_stage_status["_run"] = str(runs[0].get("status", ""))
+        if engine_procs.live_count() > 0:
+            orch_stage_status["_driver"] = "running"
     except Exception as exc:
         log.debug("agent_graph: orkestrasyon durumu okunamadı: %s", exc)
 
