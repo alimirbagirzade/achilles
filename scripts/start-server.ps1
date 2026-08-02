@@ -36,6 +36,7 @@ $VbsFile    = Join-Path $ScriptDir "achilles-autostart.vbs"
 $RegPath    = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 $RegKey     = "AchillesWeb"
 $WebExe     = Join-Path $ProjectDir ".venv\Scripts\achilles-web.exe"
+$WebTaskScript = Join-Path $ScriptDir "run-web-service.ps1"
 
 # ---------------------------------------------------------------- uv bul
 function Find-Uv {
@@ -228,13 +229,9 @@ Set sh = Nothing
     # Start-Process yapip hemen cikarsa gorev Ready durumuna doner ve Windows
     # onun alt prosesini temizleyebilir. uv'yi dogrudan action yapmak gorevi
     # sunucu yasadigi surece Running tutar.
-    $taskExe = if (Test-Path $WebExe) { $WebExe } else { $UvPath }
-    if ($taskExe -eq $WebExe) {
-        $action = New-ScheduledTaskAction -Execute $taskExe -WorkingDirectory $ProjectDir
-    } else {
-        $taskArgs = "run --no-sync --project `"$ProjectDir`" achilles-web"
-        $action = New-ScheduledTaskAction -Execute $taskExe -Argument $taskArgs -WorkingDirectory $ProjectDir
-    }
+    $taskExe = "powershell.exe"
+    $taskArgs = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$WebTaskScript`""
+    $action = New-ScheduledTaskAction -Execute $taskExe -Argument $taskArgs -WorkingDirectory $ProjectDir
     $trigger  = New-ScheduledTaskTrigger -AtLogOn
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -StartWhenAvailable `
         -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 2)
@@ -271,12 +268,13 @@ Set sh = Nothing
 function Repair-Autostart {
     $webEmb = Get-EmbeddedTaskPath -TaskName "AchillesWeb"
     $webTask = Get-ScheduledTask -TaskName "AchillesWeb" -ErrorAction SilentlyContinue
-    $expectedWebExe = if (Test-Path $WebExe) { $WebExe } else { $UvPath }
+    $expectedWebExe = "powershell.exe"
     $updEmb = Get-EmbeddedTaskPath -TaskName "AchillesUpdate"
     $regVal = (Get-ItemProperty -Path $RegPath -Name $RegKey -ErrorAction SilentlyContinue).$RegKey
     $needs = $false
     if (-not (Test-PathMatchesRepo $webEmb $ProjectDir)) { $needs = $true }
     if (-not $webTask -or $webTask.Actions[0].Execute -ine $expectedWebExe) { $needs = $true }
+    if ($webTask -and $webTask.Actions[0].Arguments -notlike "*$WebTaskScript*") { $needs = $true }
     if (-not (Test-PathMatchesRepo $updEmb (Join-Path $ProjectDir 'update.ps1'))) { $needs = $true }
     if (-not $regVal -or ($regVal -notlike "*$VbsFile*")) { $needs = $true }
     if (-not $needs) {
