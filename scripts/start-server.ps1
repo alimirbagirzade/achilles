@@ -223,8 +223,14 @@ Set sh = Nothing
     Write-Host "  [OK] Windows acilisina eklendi (Registry Run)" -ForegroundColor Green
     Write-Host "       $VbsFile" -ForegroundColor Gray
 
-    # Task Scheduler (web servisi yedek)
-    $action   = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$VbsFile`"" -WorkingDirectory $ProjectDir
+    # Task Scheduler web servisinin GERCEK sahibi olmali. WScript yalnizca
+    # Start-Process yapip hemen cikarsa gorev Ready durumuna doner ve Windows
+    # onun alt prosesini temizleyebilir. uv'yi dogrudan action yapmak gorevi
+    # sunucu yasadigi surece Running tutar.
+    $action = New-ScheduledTaskAction `
+        -Execute $UvPath `
+        -Argument "run --no-sync --project `"$ProjectDir`" achilles-web" `
+        -WorkingDirectory $ProjectDir
     $trigger  = New-ScheduledTaskTrigger -AtLogOn
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -StartWhenAvailable `
         -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 2)
@@ -263,7 +269,7 @@ function Repair-Autostart {
     $updEmb = Get-EmbeddedTaskPath -TaskName "AchillesUpdate"
     $regVal = (Get-ItemProperty -Path $RegPath -Name $RegKey -ErrorAction SilentlyContinue).$RegKey
     $needs = $false
-    if (-not (Test-PathMatchesRepo $webEmb $VbsFile)) { $needs = $true }
+    if (-not (Test-PathMatchesRepo $webEmb $ProjectDir)) { $needs = $true }
     if (-not (Test-PathMatchesRepo $updEmb (Join-Path $ProjectDir 'update.ps1'))) { $needs = $true }
     if (-not $regVal -or ($regVal -notlike "*$VbsFile*")) { $needs = $true }
     if (-not $needs) {
@@ -344,7 +350,7 @@ function Show-Status {
     $upd = Get-ScheduledTask -TaskName "AchillesUpdate" -ErrorAction SilentlyContinue
     Write-Host "  Guncelleme : $(if ($upd) { 'kayitli (her gece 03:00)' } else { 'kayitli degil' })" -ForegroundColor Gray
     # Gomulu gorev yollari BU repoyu mu isaret ediyor? (olu/yabanci yol tespiti)
-    Write-Host "  Web yolu   : $(Format-PathMatch (Get-EmbeddedTaskPath 'AchillesWeb') $VbsFile)" -ForegroundColor Gray
+    Write-Host "  Web yolu   : $(Format-PathMatch (Get-EmbeddedTaskPath 'AchillesWeb') $ProjectDir)" -ForegroundColor Gray
     Write-Host "  Upd yolu   : $(Format-PathMatch (Get-EmbeddedTaskPath 'AchillesUpdate') (Join-Path $ProjectDir 'update.ps1'))" -ForegroundColor Gray
     Write-Host "  Bu repo    : $ProjectDir" -ForegroundColor Gray
     Write-Host "  Log        : $LogOut" -ForegroundColor Gray
