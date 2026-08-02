@@ -46,6 +46,7 @@ _GROUP: dict[str, str] = {
     "echo-feedback": "geri-bildirim",
     "sentinel-monitor": "izleme",
     "self-healing-controller": "izleme",
+    "unattended-supervisor": "orkestrasyon",
 }
 
 _GROUP_LABELS: dict[str, str] = {
@@ -137,6 +138,18 @@ def _agent_status(agent_id: str, orch_stage_status: dict[str, str]) -> str:
                     return "running"
                 if not state.get("enabled", True):
                     return "blocked"
+        elif agent_id == "unattended-supervisor":
+            import json
+            from pathlib import Path
+
+            p = Path("storage") / "unattended_supervisor_state.json"
+            if p.exists():
+                state = json.loads(p.read_text(encoding="utf-8"))
+                status = str(state.get("status", "idle"))
+                if status in {"running", "starting"}:
+                    return "running"
+                if status in {"backoff", "blocked_stop_all", "disabled"}:
+                    return "blocked"
     except Exception as exc:  # durum kaynağı okunamasa bile harita çökmesin
         log.debug("agent_graph: %s durumu çözülemedi: %s", agent_id, exc)
     return "idle"
@@ -206,6 +219,9 @@ def build_agent_graph() -> dict[str, Any]:
     # sinirli runbook'larla orkestrasyon/RAG hattini onarir.
     node_ids = {n["id"] for n in nodes}
     for src, dst in (
+        ("unattended-supervisor", "orchestration-autodrive"),
+        ("unattended-supervisor", "self-healing-controller"),
+        ("unattended-supervisor", "auto-lora-pipeline"),
         ("sentinel-monitor", "self-healing-controller"),
         ("self-healing-controller", "training-orchestrator"),
         ("self-healing-controller", "rag-learning-loop"),

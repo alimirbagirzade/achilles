@@ -59,3 +59,11 @@ def test_self_heal_status_endpoint(client: TestClient) -> None:
     assert body["enabled"] is True
     assert isinstance(body["consecutive"], dict)
     assert isinstance(body["history"], list)
+
+
+def test_unattended_status_endpoint(client: TestClient) -> None:
+    r = client.get("/api/sentinel/unattended")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["enabled"] is True
+    assert body["engine"] == "codex"

@@ -115,6 +115,7 @@ async def _lifespan(app: FastAPI):
             logger.info("Startup sweep: %d bayat 'running' koşu iptal edildi", len(swept))
     from app.lora.auto_pipeline import get_auto_pipeline
     from app.monitoring.self_heal import get_self_healer
+    from app.orchestration.unattended_supervisor import get_unattended_supervisor
     from app.research.rag_learning_loop import get_rag_loop
 
     _bg_task = _asyncio.create_task(get_auto_pipeline().background_loop())
@@ -124,6 +125,8 @@ async def _lifespan(app: FastAPI):
     _rag_task.add_done_callback(lambda _t: None)
     _heal_task = _asyncio.create_task(get_self_healer().background_loop())
     _heal_task.add_done_callback(lambda _t: None)
+    _unattended_task = _asyncio.create_task(get_unattended_supervisor().background_loop())
+    _unattended_task.add_done_callback(lambda _t: None)
     # BM25 warm-up: hibrit/router/rrf AÇIKSA korpus indeksini ARKA PLAN thread'inde önceden
     # kur (~170s, tek-seferlik) → ilk lexical sorgu 170s soğuk-başlatmaya takılmaz. build-lock
     # ile thundering-herd yok. Dense-only'de gereksiz → atlanır. Sunucu açılışını bloklamaz.
