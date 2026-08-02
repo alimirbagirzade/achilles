@@ -33,6 +33,22 @@ def test_main_agent_flagged() -> None:
     assert len(main) == 1 and main[0]["id"] == "orchestration-autodrive"
 
 
+def test_live_driver_overrides_blocked_run_on_map(monkeypatch) -> None:
+    """DB kapıda blocked olsa da gerçek motor süreci ana ajanı running göstermeli."""
+    from app.orchestration import engine_procs
+    from app.orchestration.orchestrator import TrainingOrchestrator
+
+    monkeypatch.setattr(
+        TrainingOrchestrator,
+        "list_runs",
+        lambda self, limit=1: [{"run_id": "orc-live", "status": "blocked"}],
+    )
+    monkeypatch.setattr(engine_procs, "live_count", lambda: 1)
+
+    main = next(n for n in build_agent_graph()["nodes"] if n["is_main"])
+    assert main["status"] == "running"
+
+
 def test_nodes_have_valid_shape() -> None:
     g = build_agent_graph()
     for n in g["nodes"]:
