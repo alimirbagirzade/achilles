@@ -87,7 +87,10 @@ def _autonomy_value(spec: Any) -> str:
 def _agent_status(agent_id: str, orch_stage_status: dict[str, str]) -> str:
     """Best-effort canlı durum. Bilinmeyen/çözülemeyen → 'idle' (asla çökmez)."""
     # Aktif orkestrasyon koşusundaki aşamalar (orchestrator/autodrive'ı da aydınlatır).
-    if agent_id == "orchestration-autodrive" and orch_stage_status.get("_driver") == "running":
+    if (
+        agent_id in ("training-orchestrator", "orchestration-autodrive")
+        and orch_stage_status.get("_driver") == "running"
+    ):
         return "running"
     if agent_id in ("training-orchestrator", "orchestration-autodrive"):
         if orch_stage_status.get("_run") == "running":
