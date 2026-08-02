@@ -579,6 +579,6 @@ def get_auto_pipeline() -> AutoLoRAPipeline:
             check_interval_min=getattr(s, "auto_lora_check_interval_min", 60),
             eval_pass_threshold=getattr(s, "auto_lora_eval_threshold", 0.5),
             eval_sample_n=getattr(s, "auto_lora_eval_sample_n", 8),
-            auto_enabled=getattr(s, "auto_lora_enabled", False),
+            auto_enabled=s.unattended_training_enabled,
         )
     return _pipeline
