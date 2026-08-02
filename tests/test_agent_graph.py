@@ -24,6 +24,7 @@ def test_graph_has_nodes_and_new_agents() -> None:
         "sentinel-monitor",
         "self-healing-controller",
         "unattended-supervisor",
+        "training-guardian",
     } <= ids
     assert len(g["nodes"]) >= 20
 
@@ -98,6 +99,8 @@ def test_sentinel_self_healing_control_edges_present() -> None:
     assert ("unattended-supervisor", "orchestration-autodrive") in edges
     assert ("unattended-supervisor", "self-healing-controller") in edges
     assert ("unattended-supervisor", "auto-lora-pipeline") in edges
+    assert ("unattended-supervisor", "training-guardian") in edges
+    assert ("training-guardian", "auto-lora-pipeline") in edges
 
 
 def test_rag_paused_for_training_is_blocked_on_map(monkeypatch, tmp_path) -> None:

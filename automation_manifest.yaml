@@ -184,6 +184,34 @@ agents:
     known_failure_modes:
       - "runbook başarısızsa cooldown büyür; sistem retry storm üretmez"
 
+  - agent_id: training-guardian
+    name: Training Guardian (Checkpoint ve Otomatik Tamir)
+    file: scripts/training-watchdog.ps1
+    entrypoint: AchillesTrainingWatchdog scheduled task / PEFT auto-resume
+    trigger: "Windows Task Scheduler (5 dk loop)"
+    autonomy: autonomous
+    dangerous: false
+    default_enabled: true
+    writes:
+      - storage/train_status.json
+      - models/adapters/*/checkpoint-*
+      - "subprocess: exactly one detached LoRA training tree"
+    reads:
+      - logs/train-full-err.log
+      - storage/train_status.json
+      - storage/STOP_ALL
+    safety_gates:
+      - "global mutex + fresh-log heartbeat duplicate spawn'i engeller"
+      - "web restart eğitim süreçlerine dokunmaz"
+      - "her 25 adım checkpoint; son 3 checkpoint korunur"
+      - "çökmede son checkpoint'ten otomatik resume"
+      - "STOP_ALL her zaman üstün"
+    approval_required: false
+    stop_method: "storage/STOP_ALL veya scripts/start-train.ps1 -Stop"
+    status_location: "logs/train-full-err.log + models/adapters/*/checkpoint-*"
+    known_failure_modes:
+      - "makine kapanırsa ilk görev turunda yeniden başlar; en fazla 24 adım kayıp"
+
   - agent_id: unattended-supervisor
     name: Unattended Supervisor (Kesintisiz İşletim)
     file: app/orchestration/unattended_supervisor.py
