@@ -92,9 +92,12 @@ class SelfHealingController:
 
         actions: list[dict[str, Any]] = []
         try:
-            report = report or await asyncio.to_thread(self.sentinel.run, persist=True)
+            if report is None:
+                active_report = await asyncio.to_thread(self.sentinel.run, persist=True)
+            else:
+                active_report = report
             self.state.last_check_at = _now().isoformat()
-            by_name = {p.name: p for p in report.probes}
+            by_name = {p.name: p for p in active_report.probes}
             for name, repair in self.repairs.items():
                 probe = by_name.get(name)
                 unhealthy = probe is not None and probe.status in {"warn", "fail"}
@@ -112,7 +115,7 @@ class SelfHealingController:
                 self.state.attempts[name] = attempt
                 result = await repair()
                 verified = bool(result.get("verified"))
-                action = {
+                action: dict[str, Any] = {
                     "at": _now().isoformat(),
                     "probe": name,
                     "attempt": attempt,
@@ -133,7 +136,7 @@ class SelfHealingController:
                     ).isoformat()
 
             self.state.history = self.state.history[-100:]
-            return {"ok": True, "overall": report.overall, "actions": actions}
+            return {"ok": True, "overall": active_report.overall, "actions": actions}
         finally:
             self.state.running = False
             self._save()
