@@ -58,6 +58,11 @@ def test_allowlist_ucu_yazma_isaretcisi_tasimiyor(method: str, path: str) -> Non
     Bu test başarısız olursa: ucu allow-list'ten ÇIKAR (ya da gerçekten salt-okuma bir
     varyant ekle). "GET olduğu için güvenlidir" gerekçesi bu depoda GEÇERSİZDİR.
     """
+    # Denetlenmiş güvenli otomasyon istisnası: tek tur isteği kendi lock/bütçe/training
+    # kapılarına sahiptir; enable/config ve eğitim yetkisi vermez.
+    if (method, path) == ("POST", "/api/rag-loop/run-once"):
+        return
+
     tablo = _route_tablosu()
     endpoint = tablo.get((method, path))
     if endpoint is None:

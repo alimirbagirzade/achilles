@@ -76,6 +76,15 @@ def test_chain_flow_edge_present() -> None:
     assert ("arxiv-fetcher", "rag-learning-loop") in chain_edges
 
 
+def test_motor_controls_rag_memory_pipeline() -> None:
+    g = build_agent_graph()
+    assert {
+        "from": "orchestration-autodrive",
+        "to": "rag-learning-loop",
+        "kind": "control",
+    } in g["edges"]
+
+
 # ── web ─────────────────────────────────────────────────────────────────────
 
 pytest.importorskip("fastapi")

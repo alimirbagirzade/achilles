@@ -4537,7 +4537,7 @@
       var a = L.pos[e.from],
         b = L.pos[e.to];
       if (!a || !b) return;
-      var kind = e.kind === "data" ? "data" : "chain";
+      var kind = e.kind === "data" ? "data" : e.kind === "control" ? "control" : "chain";
       var arrow = kind === "data" ? "" : ' marker-end="url(#am-arrow)"';
       out.push(
         '<path class="am-edge am-edge-' + kind + '" data-from="' + esc(e.from) +

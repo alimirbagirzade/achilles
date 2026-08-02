@@ -2695,6 +2695,11 @@ code {
   stroke-dasharray: 3 4;
   stroke-width: 1.2;
 }
+.am-edge-control {
+  stroke: var(--pos);
+  stroke-width: 2;
+  stroke-dasharray: 7 4;
+}
 .am-arrow-head {
   fill: var(--border-strong);
 }
