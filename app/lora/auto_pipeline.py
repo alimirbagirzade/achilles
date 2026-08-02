@@ -142,6 +142,7 @@ class AutoLoRAPipeline:
         async with self._lock:
             self._state.stage = PipelineStage.CHECKING
             self._state.last_check = _utcnow()
+            self._state.last_error = ""
             self._save_state()
 
         try:
