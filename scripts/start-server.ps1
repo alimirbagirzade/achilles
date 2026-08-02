@@ -164,7 +164,10 @@ function Stop-AchillesServer {
         return
     }
     $procs = Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -like "*achilles*" }
+        Where-Object {
+            $_.CommandLine -like "*app.web.server*" -or
+            $_.CommandLine -like "*achilles-web*"
+        }
     if ($procs) {
         $procs | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
         Write-Host "  [OK] Durduruldu." -ForegroundColor Yellow
