@@ -174,17 +174,19 @@ def test_drive_variadic_bayrak_sirasi() -> None:
     assert cmd[cmd.index("--tools") + 2].startswith("--")  # --tools'un ardı bayrak
 
 
-def test_drive_hardened_bayragi_yalniz_claude() -> None:
+def test_drive_hardened_bayragi_desteklenen_motorlarda() -> None:
     """Sür profili doğrulanmayan motorda açılmamalı (fail-closed)."""
     assert engines.get_engine("claude").drive_hardened is True
-    for ad in ("codex", "gemini", "local"):
+    assert engines.get_engine("codex").drive_hardened is True
+    for ad in ("gemini", "local"):
         assert engines.get_engine(ad).drive_hardened is False
 
 
 def test_desteklemeyen_motor_surulemez() -> None:
     """Sessizce av moduna DÜŞMEZ — araçsız ajan doğurmak yerine ValueError."""
     assert engines.drive_supported("claude") is True
-    for ad in ("codex", "gemini", "local"):
+    assert engines.drive_supported("codex") is True
+    for ad in ("gemini", "local"):
         assert engines.drive_supported(ad) is False
         with pytest.raises(ValueError, match="sür"):
             engines.build_drive_command(ad, "p", _CFG)
@@ -359,16 +361,32 @@ def test_drive_mint_ttl_gecer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert yakalanan["ttl_s"] == DRIVE_TOKEN_TTL_S
 
 
-def test_drive_desteklemeyen_motor_reddedilir(tmp_path: Path) -> None:
-    """codex/gemini/local sür modunu desteklemez → ok=False (sessizce av'a düşmez)."""
+def test_codex_drive_guvenli_argv_kullanir(tmp_path: Path) -> None:
+    """Codex ChatGPT oturumuyla, read-only ve yalnız Achilles MCP ile sürülür."""
     from app.orchestration.driver import AutoDriver
 
     d = AutoDriver(orchestrator=_orch(tmp_path))
     run_id = d.orch.start(model="m", profile="p", adapter_name="a")
-    res = d.drive(
-        run_id, execute=True, mode="drive", engine="codex", runner=lambda *a, **k: (0, "")
-    )
-    assert res["ok"] is False and "desteklemiyor" in res["reason"]
+    captured: dict[str, object] = {}
+
+    def runner(command, timeout, env=None):
+        captured["command"] = command
+        return 0, "ACHILLES_DRIVE_VERDICT: PASS"
+
+    res = d.drive(run_id, execute=True, mode="drive", engine="codex", runner=runner)
+    assert res["ok"] is True
+    cmd = captured["command"]
+    assert cmd[:2] == ["codex", "exec"]
+    assert "read-only" in cmd and 'approval_policy="never"' in cmd
+    assert "--ignore-user-config" in cmd and "--ignore-rules" in cmd
+    assert "mcp_servers={}" in cmd
+    assert any(str(x).startswith("mcp_servers.achilles.command=") for x in cmd)
+    assert "mcp_servers.achilles.required=true" in cmd
+
+
+def test_codex_drive_config_yoksa_fail_closed() -> None:
+    with pytest.raises(ValueError, match="Codex MCP config okunamadı"):
+        engines.build_drive_command("codex", "p", "olmayan.json")
 
 
 def test_drive_durdurunca_stopped(tmp_path: Path) -> None:

@@ -21,11 +21,13 @@ enjekte edilebilir → testler gerçek PATH'e ve gerçek zamana bağlı değildi
 
 from __future__ import annotations
 
+import json
 import logging
 import shutil
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 log = logging.getLogger(__name__)
 
@@ -177,6 +179,23 @@ _CLAUDE_DRIVE_ARGV: tuple[str, ...] = (
     MCP_CONFIG,
 )
 
+# Codex non-interactive modu kayıtlı ChatGPT abonelik oturumunu kullanır. Dosya ve kabuk
+# tarafı read-only sandbox + never approval ile kapanır; tek yazma yüzeyi server-side driver
+# scope ve allow-list ile kısıtlanan Achilles MCP'dir. Kullanıcı config/rules yüklenmez.
+_CODEX_DRIVE_ARGV: tuple[str, ...] = (
+    "codex",
+    "exec",
+    "--sandbox",
+    "read-only",
+    "--ephemeral",
+    "--ignore-user-config",
+    "--ignore-rules",
+    "-c",
+    'approval_policy="never"',
+    MCP_CONFIG,
+    PROMPT,
+)
+
 # ── Kayıt tablosu — yeni motor eklemek TEK SATIR ────────────────────────────────────────
 # ⚠️ Yeni motor eklerken `hardened=True` yalnız araç-kısıtı bayrakları DOĞRULANMIŞSA
 # verilmelidir; aksi halde AutoDriver onu doğurmayı REDDEDER (fail-closed, doğru davranış).
@@ -202,6 +221,9 @@ _ENGINES: tuple[Engine, ...] = (
         "codex",
         ("codex", "exec", PROMPT),
         _Q_CODEX,
+        hardened=True,
+        drive_argv_template=_CODEX_DRIVE_ARGV,
+        drive_hardened=True,
         install_hint=(
             "Kur: `npm install -g @openai/codex` → sonra kendi terminalinde `codex` "
             "çalıştırıp ChatGPT hesabınla giriş yap."
@@ -258,6 +280,43 @@ def build_command(name: str, prompt: str) -> list[str]:
 
 def build_drive_command(name: str, prompt: str, mcp_config_path: str) -> list[str]:
     """Verilen motor için "sür" modu argv'si (bilinmeyen/desteklemeyen motor → ValueError)."""
+    if name == "codex":
+        # Codex ayrı bir config-file bayrağı sunmadığından ortak MCP yolundan depo kökünü
+        # türetip aynı güvenilir sunucu tanımını CLI `-c` değerleri olarak veririz. Dry-run'da
+        # config dosyası henüz yazılmadığı için dosyayı okumaya bağımlı olamayız.
+        path = Path(mcp_config_path)
+        try:
+            repo_root = path.parents[2]
+        except IndexError as exc:
+            raise ValueError(f"Codex MCP config okunamadı: {path}") from exc
+        command = "uv"
+        args = [
+            "run",
+            "--project",
+            str(repo_root),
+            "--extra",
+            "mcp",
+            "python",
+            str(repo_root / "mcp_server" / "achilles_mcp.py"),
+        ]
+
+        overrides = (
+            "-c",
+            "mcp_servers={}",
+            "-c",
+            f"mcp_servers.achilles.command={json.dumps(command)}",
+            "-c",
+            f"mcp_servers.achilles.args={json.dumps(args)}",
+            "-c",
+            "mcp_servers.achilles.required=true",
+        )
+        command_line: list[str] = []
+        for part in get_engine(name).drive_argv_template:
+            if part == MCP_CONFIG:
+                command_line.extend(overrides)
+            else:
+                command_line.append(prompt if part == PROMPT else part)
+        return command_line
     return get_engine(name).build_drive_command(prompt, mcp_config_path)
 
 
