@@ -107,7 +107,9 @@ def _agent_status(agent_id: str, orch_stage_status: dict[str, str]) -> str:
             stage = str(get_auto_pipeline().get_status().get("stage", "idle"))
             if stage in ("checking", "training", "evaluating"):
                 return "running"
-            if stage in ("gate_failed", "train_failed", "eval_failed"):
+            if stage == "gate_failed":
+                return "blocked"
+            if stage in ("train_failed", "eval_failed"):
                 return "error"
             if stage in ("ready_to_train", "eval_passed"):
                 return "blocked"  # insan onayı bekliyor
