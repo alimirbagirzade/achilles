@@ -173,7 +173,7 @@ def test_execute_rejects_unhardened_engine(client: TestClient) -> None:
     run_id = _fresh_run(client)
     r = client.post(
         f"/api/orchestration/autodrive/{run_id}",
-        json={"execute": True, "engine": "codex"},
+        json={"execute": True, "engine": "gemini"},
     )
     assert r.status_code == 503
     assert "kısıt" in r.json()["detail"].lower()
