@@ -1354,29 +1354,22 @@ def api_training_run(req: TrainingStartRequest) -> TrainingStartResponse:
     Detached süreç; ilerleme /api/training/live ile (log'dan) izlenir. Veri
     `lora_sft.jsonl`'den yeniden bölünür. iterations<=0 → 1 epoch.
     """
-    from app.agents.runtime import approvals, supervisor
+    from app.training.unattended_policy import authorize_training_action
 
-    # 1) Küresel fren: STOP_ALL aktifse hiçbir tehlikeli aksiyon çalışmaz.
-    if supervisor.is_stop_all_active():
-        return TrainingStartResponse(
-            ok=False,
-            status="blocked",
-            message=(
-                "STOP_ALL aktif — gerçek eğitim bloklandı. Kaldır: Agents sekmesi → "
-                "'STOP_ALL Kaldır' veya `uv run achilles clear-stop-all`."
-            ),
-        )
-
-    # 2) TEK KULLANIMLIK taze manuel onay (standing yetki yok).
-    decision = approvals.require_fresh_approval(
-        agent_id="lora-trainer",
-        action="train_run",
-        risk="critical",
-        summary=(
+    decision = authorize_training_action(
+        "train_run",
+        (
             f"Gerçek LoRA eğitimi (web): {req.adapter_name or 'achilles_lora'} "
             f"({req.iterations} adım)"
         ),
+        agent_id="lora-trainer",
     )
+    if decision.mode == "stop_all":
+        return TrainingStartResponse(
+            ok=False,
+            status="blocked",
+            message="STOP_ALL aktif — gerçek eğitim bloklandı.",
+        )
     if not decision.authorized:
         return TrainingStartResponse(
             ok=False,

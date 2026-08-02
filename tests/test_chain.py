@@ -34,7 +34,7 @@ def test_chain_steps_are_known_agents() -> None:
 
 def test_chain_human_gates_flagged() -> None:
     steps = {s.step: s for s in resolve_chain()}
-    assert steps["auto-lora-pipeline"].requires_approval is True  # tehlikeli + onay
+    assert steps["auto-lora-pipeline"].requires_approval is False  # tek unattended politika
     assert steps["rules-updater"].requires_approval is True
     assert steps["arxiv-fetcher"].requires_approval is False  # otonom
 

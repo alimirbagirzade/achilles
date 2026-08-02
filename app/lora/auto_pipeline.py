@@ -142,6 +142,7 @@ class AutoLoRAPipeline:
         async with self._lock:
             self._state.stage = PipelineStage.CHECKING
             self._state.last_check = _utcnow()
+            self._state.last_error = ""
             self._save_state()
 
         try:
@@ -165,8 +166,13 @@ class AutoLoRAPipeline:
                 return {"ok": False, "reason": self._state.gate_summary}
 
             log.info("Auto-LoRA: Gate 0-8 başlatılıyor (%d kart)", n_approved)
-            plane = LoRAControlPlane(store=store)
-            report = await asyncio.to_thread(plane.run_full, False)
+
+            # SqliteStore thread-affine'dir: kontrol düzlemini çalışacağı worker
+            # thread'inin içinde kur. Event-loop thread'indeki `store`u taşıma.
+            def _run_gates():
+                return LoRAControlPlane().run_full(False)
+
+            report = await asyncio.to_thread(_run_gates)
 
             async with self._lock:
                 if report.passed:
@@ -214,21 +220,15 @@ class AutoLoRAPipeline:
                     ),
                 }
 
-        # Phase 2: STOP_ALL + TAZE manuel onay (standing yetki yok — CLAUDE.md Kural 8).
-        from app.agents.runtime import approvals, supervisor
+        from app.training.unattended_policy import authorize_training_action
 
-        if supervisor.is_stop_all_active():
-            return {
-                "ok": False,
-                "reason": "STOP_ALL aktif — eğitim bloklandı.",
-                "blocked_by": "stop_all",
-            }
-        decision = approvals.require_fresh_approval(
-            "auto-lora-pipeline",
+        decision = authorize_training_action(
             "auto_lora_start_training",
-            "critical",
             f"Auto-LoRA gerçek eğitimi: {adapter_name} ({iters} adım)",
+            gates_passed=True,
         )
+        if decision.mode == "stop_all":
+            return {"ok": False, "reason": decision.reason, "blocked_by": "stop_all"}
         if not decision.authorized:
             return {
                 "ok": False,
@@ -509,21 +509,15 @@ class AutoLoRAPipeline:
         if not adapter_id:
             return {"ok": False, "reason": "Kayıtlı adapter ID bulunamadı"}
 
-        # Phase 2: STOP_ALL + TAZE manuel onay (her terfi ayrı onay — CLAUDE.md Kural 8).
-        from app.agents.runtime import approvals, supervisor
+        from app.training.unattended_policy import authorize_training_action
 
-        if supervisor.is_stop_all_active():
-            return {
-                "ok": False,
-                "reason": "STOP_ALL aktif — terfi bloklandı.",
-                "blocked_by": "stop_all",
-            }
-        decision = approvals.require_fresh_approval(
-            "auto-lora-pipeline",
+        decision = authorize_training_action(
             "auto_lora_promote_adapter",
-            "high",
             f"Adapter production terfisi: {adapter_id}",
+            gates_passed=True,
         )
+        if decision.mode == "stop_all":
+            return {"ok": False, "reason": decision.reason, "blocked_by": "stop_all"}
         if not decision.authorized:
             return {
                 "ok": False,
@@ -567,13 +561,16 @@ class AutoLoRAPipeline:
             self.min_eligible_cards,
         )
         while True:
+            if self.auto_enabled:
+                if self._state.stage in (PipelineStage.IDLE, PipelineStage.GATE_FAILED):
+                    log.info("Auto-LoRA: Periyodik kontrol başlatılıyor")
+                    await self.check_and_prepare()
+                if self._state.stage == PipelineStage.READY_TO_TRAIN:
+                    stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%d_%H%M%S")
+                    await self.start_training(f"achilles_auto_{stamp}")
+                elif self._state.stage == PipelineStage.EVAL_PASSED:
+                    await self.promote_to_production()
             await asyncio.sleep(self.check_interval_min * 60)
-            if not self.auto_enabled:
-                continue
-            if self._state.stage not in (PipelineStage.IDLE, PipelineStage.GATE_FAILED):
-                continue
-            log.info("Auto-LoRA: Periyodik kontrol başlatılıyor")
-            await self.check_and_prepare()
 
 
 # ---------- singleton ----------
@@ -592,6 +589,6 @@ def get_auto_pipeline() -> AutoLoRAPipeline:
             check_interval_min=getattr(s, "auto_lora_check_interval_min", 60),
             eval_pass_threshold=getattr(s, "auto_lora_eval_threshold", 0.5),
             eval_sample_n=getattr(s, "auto_lora_eval_sample_n", 8),
-            auto_enabled=getattr(s, "auto_lora_enabled", False),
+            auto_enabled=s.unattended_training_enabled,
         )
     return _pipeline

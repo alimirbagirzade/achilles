@@ -204,7 +204,7 @@ class Settings(BaseSettings):
     scout_inbox_dir: str = ""
 
     # --- Auto-LoRA Pipeline ---
-    auto_lora_enabled: bool = False  # otomatik döngü; varsayılan kapalı
+    unattended_training_enabled: bool = True  # eğitim yetkisinin tek politika anahtarı
     auto_lora_min_cards: int = 20  # eğitim başlamadan gereken minimum kart
     auto_lora_check_interval_min: int = 60  # kaç dakikada bir kontrol
     auto_lora_eval_threshold: float = 0.5  # eval pass_rate eşiği

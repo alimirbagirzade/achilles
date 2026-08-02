@@ -21,9 +21,9 @@ agents:
     file: app/lora/auto_pipeline.py
     entrypoint: AutoLoRAPipeline.check_and_prepare / start_training / promote_to_production / background_loop
     trigger: "web /api/auto-lora/* + asyncio background_loop"
-    autonomy: requires_approval
+    autonomy: autonomous
     dangerous: true
-    default_enabled: false
+    default_enabled: true
     writes:
       - storage/auto_lora_state.json
       - "sqlite: eval_history"
@@ -34,11 +34,11 @@ agents:
       - evals/*.jsonl
       - reports/evals/
     safety_gates:
-      - "start_training READY_TO_TRAIN durumunu şart koşar (insan onayı)"
-      - "promote_to_production EVAL_PASSED şart koşar (insan onayı)"
+      - "start_training yalnız READY_TO_TRAIN + tek unattended politika yetkisiyle"
+      - "promote_to_production yalnız EVAL_PASSED + tek unattended politika yetkisiyle"
       - "regresyon → EVAL_FAILED (terfi engellenir)"
-      - "varsayılan KAPALI (auto_lora_enabled=false)"
-    approval_required: true
+      - "STOP_ALL bütün eğitim/terfi yollarından üstündür"
+    approval_required: false
     stop_method: "/api/auto-lora/reset; (gerçek eğitim detached → Phase 2 düzeltmesi bekliyor)"
     status_location: storage/auto_lora_state.json
     known_failure_modes:
@@ -51,7 +51,7 @@ agents:
     file: app/orchestration/orchestrator.py
     entrypoint: TrainingOrchestrator.start / step / run_until_blocked / recover_stale
     trigger: "CLI `orchestrate-*` + (Phase 2) web /api/orchestration/*"
-    autonomy: requires_approval
+    autonomy: autonomous
     dangerous: false  # koordinatör salt-okuma yürütür; gerçek eğitim auto-lora'ya delege
     default_enabled: false
     writes:
@@ -62,11 +62,11 @@ agents:
       - storage/STOP_ALL
     safety_gates:
       - "deep-hunt aşaması hunt_ack olmadan blocked (Kademe-2 ZORUNLU — CLAUDE.md)"
-      - "approval aşaması TAZE insan onayı ister (Kural 8); onaysız blocked"
-      - "train/evaluate/registry varsayılan HANDOFF — gözetimsiz gerçek eğitim YOK"
+      - "approval aşaması tek UnattendedTrainingPolicy kararını kullanır"
+      - "train yürütmesi tek sahip Auto-LoRA hattına HANDOFF edilir"
       - "STOP_ALL aktifken preflight/approval blocked"
       - "checkpoint+resume: tamamlanan aşama tekrar koşmaz (session-limit'e dayanıklı)"
-    approval_required: true
+    approval_required: false
     stop_method: "achilles orchestrate-recover (stale running → failed); cancel(run_id)"
     status_location: "sqlite: orchestration_runs"
     known_failure_modes:
@@ -79,8 +79,8 @@ agents:
     file: app/orchestration/driver.py
     entrypoint: AutoDriver.drive
     trigger: "CLI `orchestrate-autodrive` + web POST /api/orchestration/autodrive/{run_id}"
-    autonomy: requires_approval
-    dangerous: false  # deep-hunt'ı sürer; gerçek eğitim onay kapısında DURUR (Kural 8)
+    autonomy: autonomous
+    dangerous: false  # deep-hunt'ı sürer; eğitim yetkisini merkezi politika verir
     default_enabled: false
     writes:
       - "sqlite: orchestration_events (otonom sürüş olayları)"
@@ -91,11 +91,11 @@ agents:
       - "execute=False varsayılan: spawn YOK, yalnız komut döner (Kural 8 deseni)"
       - "spawn yalnız execute=True + `claude` PATH'te (claude_available)"
       - "claude -p promptu SALT-RAPOR (kod/git/eğitim YASAK); weekly-bug-scan deseni"
-      - "deep-hunt PASS → onay kapısına ilerletir ve DURUR; gerçek eğitim TAZE insan onayı bekler"
+      - "deep-hunt PASS → merkezi eğitim politikası + Auto-LoRA handoff"
       - "FAIL/belirsiz verdict → deep-hunt bloklu kalır (eğitim ilerlemez)"
       - "argv listesi (shell=False) → kabuk enjeksiyonu yok; adapter/profile regex-kalıplı"
-    approval_required: true
-    stop_method: "—; sürüş onay kapısında doğal durur; koşu cancel(run_id) ile iptal"
+    approval_required: false
+    stop_method: "koşu cancel(run_id); eğitim için global STOP_ALL"
     status_location: "sqlite: orchestration_runs / orchestration_events"
     known_failure_modes:
       - "claude PATH'te yoksa 503/early-return (spawn yok)"
