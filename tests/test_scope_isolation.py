@@ -298,21 +298,25 @@ def test_child_env_strips_settings_override_vars(monkeypatch: pytest.MonkeyPatch
     assert "CLAUDE_CODE_MOCK_REMOTE_SETTINGS" not in env
 
 
-def test_only_claude_engine_is_hardened() -> None:
-    """Sertleştirme bayrakları motora ÖZGÜ → yalnız doğrulanan motor hardened olmalı.
+def test_only_verified_engines_are_hardened() -> None:
+    """Sertleştirme bayrakları motora ÖZGÜ → yalnız doğrulanan motorlar hardened olmalı.
 
-    Kısıtsız bir motor (codex/gemini) doğurulursa scope katmanı tamamen delinir:
+    Kısıtsız bir motor doğurulursa scope katmanı tamamen delinir:
     araç kısıtı olmadan auth'suz `achilles approval-approve` çağrılabilir.
     """
     from app.orchestration import engines
 
     assert engines.get_engine("claude").hardened is True
-    for name in ("codex", "gemini", "local"):
+    assert engines.get_engine("codex").hardened is True
+    for name in ("gemini", "local"):
         assert engines.get_engine(name).hardened is False, f"{name} doğrulanmadan hardened"
 
 
-def test_driver_refuses_unhardened_engine(tmp_path) -> None:
+def test_driver_refuses_unhardened_engine(monkeypatch, tmp_path) -> None:
     """FAIL-CLOSED: sertleştirilmemiş motor için gerçek spawn REDDEDİLİR."""
+    from dataclasses import replace
+
+    from app.orchestration import engines
     from app.orchestration.driver import AutoDriver
     from app.orchestration.orchestrator import RunContext, StageResult, TrainingOrchestrator
     from app.orchestration.pipeline import StageStatus
@@ -330,6 +334,11 @@ def test_driver_refuses_unhardened_engine(tmp_path) -> None:
     )
     drv = AutoDriver(orchestrator=orch)
     run_id = orch.start(model="m", profile="p", adapter_name="a")
+
+    # Kayıt tablosundaki doğrulanmış Codex'i bu testte bilinçli olarak güvensiz yap;
+    # böylece PATH/kurulum durumundan önce fail-closed sertleştirme kapısını sınarız.
+    unsafe = replace(engines.get_engine("codex"), hardened=False)
+    monkeypatch.setattr(engines, "get_engine", lambda name: unsafe)
 
     # runner enjekte EDİLMEDEN (gerçek spawn yolu) → kısıt aranır ve reddedilir.
     res = drv.drive(run_id, execute=True, engine="codex")
