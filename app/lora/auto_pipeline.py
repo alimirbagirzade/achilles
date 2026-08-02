@@ -165,8 +165,12 @@ class AutoLoRAPipeline:
                 return {"ok": False, "reason": self._state.gate_summary}
 
             log.info("Auto-LoRA: Gate 0-8 başlatılıyor (%d kart)", n_approved)
-            plane = LoRAControlPlane(store=store)
-            report = await asyncio.to_thread(plane.run_full, False)
+            # SqliteStore thread-affine'dir: kontrol düzlemini çalışacağı worker
+            # thread'inin içinde kur. Event-loop thread'indeki `store`u taşıma.
+            def _run_gates():
+                return LoRAControlPlane().run_full(False)
+
+            report = await asyncio.to_thread(_run_gates)
 
             async with self._lock:
                 if report.passed:
