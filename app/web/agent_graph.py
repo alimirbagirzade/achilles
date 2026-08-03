@@ -37,6 +37,7 @@ _GROUP: dict[str, str] = {
     "dataset-quality-gate": "egitim",
     "model-data-registry": "egitim",
     "auto-lora-pipeline": "egitim",
+    "training-guardian": "egitim",
     "adapter-eval": "egitim",
     "tool-use-trainer": "egitim",
     "rules-updater": "egitim",
@@ -150,6 +151,16 @@ def _agent_status(agent_id: str, orch_stage_status: dict[str, str]) -> str:
                     return "running"
                 if status in {"backoff", "blocked_stop_all", "disabled"}:
                     return "blocked"
+        elif agent_id == "training-guardian":
+            from app.training.detached_launch import training_status
+
+            state = training_status()
+            if state.get("running"):
+                return "running"
+            from pathlib import Path
+
+            if (Path("storage") / "STOP_ALL").exists():
+                return "blocked"
     except Exception as exc:  # durum kaynağı okunamasa bile harita çökmesin
         log.debug("agent_graph: %s durumu çözülemedi: %s", agent_id, exc)
     return "idle"
@@ -222,6 +233,8 @@ def build_agent_graph() -> dict[str, Any]:
         ("unattended-supervisor", "orchestration-autodrive"),
         ("unattended-supervisor", "self-healing-controller"),
         ("unattended-supervisor", "auto-lora-pipeline"),
+        ("unattended-supervisor", "training-guardian"),
+        ("training-guardian", "auto-lora-pipeline"),
         ("sentinel-monitor", "self-healing-controller"),
         ("self-healing-controller", "training-orchestrator"),
         ("self-healing-controller", "rag-learning-loop"),
